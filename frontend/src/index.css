@@ -26,6 +26,12 @@ body {
   color: var(--color-bone);
 }
 
+/* Typewriter cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* Grid spinner animation — fast snap on, slow fade off for trail effect */
 @keyframes grid-blink {
   0%, 100% { background-color: var(--color-grain); }

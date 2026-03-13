@@ -1,5 +1,45 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { GridSpinner } from '../../shared/components/GridSpinner';
+
+const HEADLINES = [
+  'Generate any problem.',
+  'Practice on demand.',
+  'Build real fluency.',
+  'Learn by doing.',
+  'Ship better code.',
+];
+
+function useTypewriter(phrases: string[], typingSpeed = 60, deletingSpeed = 35, pauseMs = 1800) {
+  const [displayed, setDisplayed] = useState('');
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const tick = useCallback(() => {
+    const current = phrases[phraseIndex];
+    if (!isDeleting) {
+      setDisplayed(current.slice(0, displayed.length + 1));
+      if (displayed.length + 1 === current.length) {
+        setTimeout(() => setIsDeleting(true), pauseMs);
+        return;
+      }
+    } else {
+      setDisplayed(current.slice(0, displayed.length - 1));
+      if (displayed.length - 1 === 0) {
+        setIsDeleting(false);
+        setPhraseIndex((i) => (i + 1) % phrases.length);
+        return;
+      }
+    }
+  }, [displayed, isDeleting, phraseIndex, phrases, pauseMs]);
+
+  useEffect(() => {
+    const delay = isDeleting ? deletingSpeed : typingSpeed;
+    const timer = setTimeout(tick, delay);
+    return () => clearTimeout(timer);
+  }, [tick, isDeleting, typingSpeed, deletingSpeed]);
+
+  return displayed;
+}
 
 const EXAMPLES = [
   'Pagination API pattern in Express',
@@ -11,6 +51,7 @@ const EXAMPLES = [
 ];
 
 export function GeneratePage() {
+  const headline = useTypewriter(HEADLINES);
   const [prompt, setPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -53,7 +94,12 @@ export function GeneratePage() {
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-24">
-      <h1 className="text-xs font-bold tracking-[0.2em] text-ink mb-8 uppercase">Generate</h1>
+      <div className="mb-10 h-10 flex items-end" aria-live="polite" aria-label={headline}>
+        <h1 className="text-2xl font-bold text-ink tracking-tight leading-tight text-balance">
+          {headline}
+          <span className="inline-block w-[2px] h-[1.1em] bg-ink ml-[2px] align-middle animate-[blink_1s_step-end_infinite]" aria-hidden="true" />
+        </h1>
+      </div>
 
       <div ref={barRef} className="relative">
         <div

@@ -86,7 +86,7 @@ export function ProblemDetailPage() {
   return (
     <div className="h-[calc(100vh-3rem)] flex">
       {/* Left: Problem Description */}
-      <div className="w-[45%] border-r border-ink overflow-y-auto p-6 bg-bone">
+      <div className="w-[45%] border-r border-chalk overflow-y-auto p-6 bg-white">
         <h1 className="text-sm font-bold text-ink mb-1">{problem.title}</h1>
         <div className="flex gap-3 mb-4 text-[10px] tracking-[0.1em] text-ash">
           <span>{problem.language.toUpperCase()}</span>
@@ -99,14 +99,17 @@ export function ProblemDetailPage() {
 
         {/* Hints */}
         {problem.hints && problem.hints.length > 0 && (
-          <div className="mt-6 border-t border-chalk pt-4">
-            <h3 className="text-[10px] font-bold tracking-[0.2em] text-ash mb-3 uppercase">
+          <div className="mt-6 pt-4 border-t border-chalk">
+            <h3 className="text-[10px] font-bold tracking-[0.15em] text-ash mb-3 uppercase">
               Hints
             </h3>
             {problem.hints.map((hint, i) => (
               <div key={i} className="mb-2">
                 {i < hintsRevealed ? (
-                  <p className="text-xs text-graphite border border-chalk px-3 py-2">{hint.text}</p>
+                  <p className="text-xs text-graphite rounded-xl border border-chalk bg-bone px-4 py-3"
+                    style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    {hint.text}
+                  </p>
                 ) : (
                   <button
                     onClick={() => setHintsRevealed(i + 1)}
@@ -143,7 +146,8 @@ export function ProblemDetailPage() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="px-4 py-1 m-1.5 bg-bone text-ink text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-parchment disabled:opacity-40 transition-colors"
+            className="px-4 py-1.5 m-1.5 rounded-lg bg-white text-ink text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-parchment disabled:opacity-40 transition-colors"
+            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
           >
             {submitting ? 'RUNNING' : 'RUN'}
           </button>

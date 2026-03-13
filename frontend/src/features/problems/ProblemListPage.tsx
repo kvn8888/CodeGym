@@ -29,18 +29,19 @@ export function ProblemListPage() {
   const languages = [...new Set(problems.map((p) => p.language))];
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xs font-bold tracking-[0.2em] text-ink uppercase">Problems</h1>
+    <div className="max-w-3xl mx-auto px-6 py-10">
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-bold text-ink tracking-tight">Problems</h1>
         <select
           value={languageFilter}
           onChange={(e) => setLanguageFilter(e.target.value)}
-          className="bg-transparent border border-ink rounded-lg px-3 py-1.5 text-xs text-ink cursor-pointer focus:outline-none"
+          className="rounded-xl border border-chalk bg-white px-3 py-1.5 text-xs text-ink cursor-pointer focus:outline-none"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }}
         >
-          <option value="">ALL</option>
+          <option value="">All Languages</option>
           {languages.map((l) => (
             <option key={l} value={l}>
-              {l.toUpperCase()}
+              {l.charAt(0).toUpperCase() + l.slice(1)}
             </option>
           ))}
         </select>
@@ -52,26 +53,28 @@ export function ProblemListPage() {
         </div>
       ) : problems.length === 0 ? (
         <div className="text-xs text-ash text-center py-16 tracking-[0.1em]">
-          NO PROBLEMS FOUND
+          No problems found
         </div>
       ) : (
-        <div className="border-t border-ink">
+        <div className="flex flex-col gap-3">
           {problems.map((problem) => (
             <Link
               key={problem.id}
               to={`/problems/${problem.id}`}
-              className="flex items-center justify-between border-b border-chalk px-2 py-3 no-underline hover:bg-parchment transition-colors group"
+              className="flex items-center justify-between rounded-2xl border border-chalk bg-white px-5 py-4 no-underline hover:border-ash transition-colors"
+              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }}
             >
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-ink">{problem.title}</span>
-                <span className="text-[10px] tracking-[0.1em] text-graphite">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-ink">{problem.title}</span>
+                <span className="text-[10px] tracking-[0.1em] text-ash">
                   {difficultyLabels[problem.difficulty] ?? '\u2014'}
                 </span>
               </div>
-              <div className="flex items-center gap-3 text-[10px] tracking-[0.1em] text-ash">
+              <div className="flex items-center gap-2 text-[10px] tracking-[0.08em] text-ash">
                 <span>{problem.language.toUpperCase()}</span>
                 {problem.framework && <span>{problem.framework.toUpperCase()}</span>}
-                <span>{problem.estimated_minutes}M</span>
+                <span className="text-chalk">/</span>
+                <span>{problem.estimated_minutes}m</span>
               </div>
             </Link>
           ))}

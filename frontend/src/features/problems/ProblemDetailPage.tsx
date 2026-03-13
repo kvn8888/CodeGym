@@ -84,7 +84,7 @@ export function ProblemDetailPage() {
   const monacoLang = languageMap[problem.language] ?? 'plaintext';
 
   return (
-    <div className="h-[calc(100vh-3rem)] flex">
+    <div className="h-screen flex">
       {/* Left: Problem Description */}
       <div className="w-[45%] border-r border-chalk overflow-y-auto p-6 bg-white">
         <h1 className="text-sm font-bold text-ink mb-1">{problem.title}</h1>

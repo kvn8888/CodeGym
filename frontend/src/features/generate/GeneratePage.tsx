@@ -160,7 +160,9 @@ export function GeneratePage() {
         )}
       </div>
 
-      <p className="text-[10px] text-ash mt-2 tracking-wide">CMD+ENTER TO SUBMIT</p>
+      {!showExamples && (
+        <p className="text-[10px] text-ash mt-2 tracking-wide">CMD+ENTER TO SUBMIT</p>
+      )}
 
       {generating && (
         <div className="mt-16 flex flex-col items-center gap-4">

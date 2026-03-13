@@ -24,8 +24,14 @@
 ### Frontend Direct
 
 - `cd frontend && npm run dev`
+- `cd frontend && npm run storybook` — component dev viewer at <http://localhost:6006>
 - `cd frontend && npm run lint`
 - `cd frontend && npm run build`
+
+### Storybook Config
+
+- `.storybook/main.ts` — addons: `@storybook/addon-docs`, `@storybook/addon-a11y`; framework: `@storybook/react-vite`
+- `.storybook/preview.tsx` — global MemoryRouter decorator; imports `../src/index.css` for Tailwind
 
 ## Backend Architecture
 

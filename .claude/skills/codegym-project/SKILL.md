@@ -42,10 +42,12 @@ Use this skill to execute CodeGym tasks without re-discovering project conventio
 ### Frontend
 
 - Start client with `make dev-frontend` (runs Vite).
+- Start Storybook with `cd frontend && npm run storybook` (runs at port 6006).
 - Define app routes in `frontend/src/App.tsx`.
 - Keep pages grouped by feature under `frontend/src/features/`.
 - Use `frontend/src/shared/api/client.ts` for all HTTP calls.
 - Keep TypeScript API contracts in `frontend/src/shared/api/types.ts` synchronized with backend JSON fields.
+- For new page components, add a `.stories.tsx` file next to the component file.
 
 ### Problem Packs
 
@@ -55,6 +57,32 @@ Use this skill to execute CodeGym tasks without re-discovering project conventio
 - Keep IDs unique across all `problem.yaml` files (duplicate IDs are skipped at load time).
 
 ## Task Workflows
+
+### Add or Update a Story (Storybook)
+
+Storybook 10 runs at http://localhost:6006. Stories live next to their component files as `ComponentName.stories.tsx`.
+
+Key conventions:
+- The global decorator in `.storybook/preview.tsx` wraps every story in a `MemoryRouter` + `Routes` + `Route`. Stories that need `useParams` must set `parameters.initialPath` and `parameters.routePath` so the router populates params correctly.
+- Mock `globalThis.fetch` inside story-level decorators (not `beforeEach` — `@storybook/test`'s lifecycle hooks depend on vitest, which is not installed).
+- Tailwind styles work automatically — the `@tailwindcss/vite` plugin is inherited from `vite.config.ts` by the `react-vite` Storybook framework. No extra config needed.
+- `@storybook/test` is installed but do NOT use `beforeEach` from it — use decorators instead.
+
+Example story with fetch mock and route params:
+```tsx
+export const MyStory: Story = {
+  parameters: {
+    initialPath: '/problems/two-sum',
+    routePath: '/problems/:id',
+  },
+  decorators: [
+    (Story) => {
+      globalThis.fetch = myMockFetch as typeof fetch;
+      return <Story />;
+    },
+  ],
+};
+```
 
 ### Add or Update a Problem
 

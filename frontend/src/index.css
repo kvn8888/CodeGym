@@ -26,11 +26,11 @@ body {
   color: var(--color-bone);
 }
 
-/* Grid spinner animation */
+/* Grid spinner animation — fast snap on, slow fade off for trail effect */
 @keyframes grid-blink {
   0%, 100% { background-color: var(--color-grain); }
-  4% { background-color: var(--color-ink); }
-  8% { background-color: var(--color-grain); }
+  3% { background-color: var(--color-ink); }
+  25% { background-color: var(--color-grain); }
 }
 
 /* Markdown prose styling — brutalist */

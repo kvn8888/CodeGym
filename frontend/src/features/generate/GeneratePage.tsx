@@ -1,15 +1,27 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { GridSpinner } from '../../shared/components/GridSpinner';
+
+const EXAMPLES = [
+  'Pagination API pattern in Express',
+  'Iterator pattern in Java',
+  'Go goroutines for fan-out/fan-in',
+  'REST API with Python FastAPI',
+  'Linked list implementation in C++',
+  'Simple neural network with PyTorch',
+];
 
 export function GeneratePage() {
   const [prompt, setPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [showExamples, setShowExamples] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
 
   const handleGenerate = async () => {
     if (!prompt.trim() || generating) return;
     setGenerating(true);
     setStatus(null);
+    setShowExamples(false);
     // TODO: Call /api/v1/generate and poll for status
     setTimeout(() => {
       setStatus('Generation endpoint not yet implemented');
@@ -23,38 +35,83 @@ export function GeneratePage() {
     }
   };
 
+  const handleSelectExample = (example: string) => {
+    setPrompt(example);
+    setShowExamples(false);
+  };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (barRef.current && !barRef.current.contains(e.target as Node)) {
+        setShowExamples(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   return (
     <div className="max-w-2xl mx-auto px-6 py-24">
       <h1 className="text-xs font-bold tracking-[0.2em] text-ink mb-8 uppercase">Generate</h1>
 
-      <div className="flex items-end gap-3">
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Describe what you want to practice..."
-          rows={3}
-          className="flex-1 bg-transparent border border-ink rounded-xl px-4 py-3 text-sm text-ink placeholder-ash resize-none focus:outline-none focus:border-ink"
-        />
-        <button
-          onClick={handleGenerate}
-          disabled={generating || !prompt.trim()}
-          className="w-11 h-11 bg-ink text-bone rounded-xl flex items-center justify-center shrink-0 hover:bg-ink-soft disabled:bg-chalk disabled:cursor-not-allowed transition-colors"
-          aria-label="Generate"
+      <div ref={barRef} className="relative">
+        <div
+          className="flex items-center rounded-xl px-4 py-2.5 bg-white"
+          style={{ boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <input
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => !prompt && setShowExamples(true)}
+            placeholder="Describe what you want to practice..."
+            className="flex-1 bg-transparent text-sm text-ink placeholder-ash focus:outline-none"
+          />
+          <button
+            onClick={handleGenerate}
+            disabled={generating || !prompt.trim()}
+            className="w-7 h-7 bg-ink text-bone rounded-lg flex items-center justify-center shrink-0 ml-2 hover:bg-ink-soft disabled:bg-chalk disabled:cursor-not-allowed transition-colors"
+            aria-label="Generate"
           >
-            <path d="M3 8h10M9 4l4 4-4 4" />
-          </svg>
-        </button>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 8h10M9 4l4 4-4 4" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Example prompts dropdown */}
+        {showExamples && (
+          <div
+            className="absolute left-0 right-0 top-full mt-1 border border-chalk rounded-xl bg-bone overflow-hidden z-10"
+            style={{ boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)' }}
+          >
+            <div className="px-4 py-2 border-b border-chalk">
+              <span className="text-[10px] font-bold tracking-[0.2em] text-ash uppercase">
+                Examples
+              </span>
+            </div>
+            {EXAMPLES.map((example) => (
+              <button
+                key={example}
+                onClick={() => handleSelectExample(example)}
+                className="block w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment px-4 py-2.5 transition-colors"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <p className="text-[10px] text-ash mt-2 tracking-wide">CMD+ENTER TO SUBMIT</p>
@@ -71,30 +128,6 @@ export function GeneratePage() {
           {status}
         </div>
       )}
-
-      <div className="mt-16 border-t border-chalk pt-6">
-        <h3 className="text-[10px] font-bold tracking-[0.2em] text-ash mb-4 uppercase">
-          Example prompts
-        </h3>
-        <div className="space-y-1">
-          {[
-            'Pagination API pattern in Express',
-            'Iterator pattern in Java',
-            'Go goroutines for fan-out/fan-in',
-            'REST API with Python FastAPI',
-            'Linked list implementation in C++',
-            'Simple neural network with PyTorch',
-          ].map((example) => (
-            <button
-              key={example}
-              onClick={() => setPrompt(example)}
-              className="block w-full text-left text-xs text-graphite hover:text-ink px-2 py-1.5 transition-colors"
-            >
-              {'\u2192'} {example}
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

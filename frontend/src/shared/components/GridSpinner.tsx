@@ -6,12 +6,12 @@ interface GridSpinnerProps {
 
 /**
  * Generates a clockwise spiral sequence of (row, col) coordinates
- * for a 9x9 grid, starting from the top-left of the outermost ring
+ * for a 5x5 grid, starting from the top-left of the outermost ring
  * and spiraling inward to the center cell.
  */
 function getClockwiseSequence(): [number, number][] {
   const sequence: [number, number][] = [];
-  const n = 9;
+  const n = 5;
 
   for (let ring = 0; ring <= Math.floor(n / 2); ring++) {
     const start = ring;
@@ -44,13 +44,13 @@ SEQUENCE.forEach(([r, c], i) => {
 });
 
 const SIZES = {
-  sm: { cell: 3, gap: 1 },
-  md: { cell: 5, gap: 2 },
-  lg: { cell: 7, gap: 3 },
+  sm: { cell: 4, gap: 2 },
+  md: { cell: 7, gap: 3 },
+  lg: { cell: 10, gap: 4 },
 };
 
-const TOTAL_CELLS = 81;
-const TOTAL_DURATION = 4; // seconds
+const TOTAL_CELLS = 25;
+const TOTAL_DURATION = 2.5; // seconds
 const STAGGER = (TOTAL_DURATION * 0.7) / TOTAL_CELLS;
 
 export function GridSpinner({ size = 'md' }: GridSpinnerProps) {
@@ -58,8 +58,8 @@ export function GridSpinner({ size = 'md' }: GridSpinnerProps) {
 
   const cells = useMemo(() => {
     const result = [];
-    for (let row = 0; row < 9; row++) {
-      for (let col = 0; col < 9; col++) {
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 5; col++) {
         const seqIndex = DELAY_MAP.get(`${row},${col}`) ?? 0;
         result.push({ row, col, delay: seqIndex * STAGGER });
       }
@@ -67,7 +67,7 @@ export function GridSpinner({ size = 'md' }: GridSpinnerProps) {
     return result;
   }, []);
 
-  const gridSize = 9 * cell + 8 * gap;
+  const gridSize = 5 * cell + 4 * gap;
 
   return (
     <div
@@ -75,7 +75,7 @@ export function GridSpinner({ size = 'md' }: GridSpinnerProps) {
       aria-label="Loading"
       style={{
         display: 'inline-grid',
-        gridTemplateColumns: `repeat(9, ${cell}px)`,
+        gridTemplateColumns: `repeat(5, ${cell}px)`,
         gap: `${gap}px`,
         width: gridSize,
         height: gridSize,

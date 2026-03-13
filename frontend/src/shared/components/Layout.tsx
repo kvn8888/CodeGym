@@ -1,30 +1,30 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const navItems = [
-  { path: '/', label: 'Problems' },
-  { path: '/generate', label: 'Generate' },
-  { path: '/dashboard', label: 'Dashboard' },
+  { path: '/', label: 'PROBLEMS' },
+  { path: '/generate', label: 'GENERATE' },
+  { path: '/dashboard', label: 'DASHBOARD' },
 ];
 
 export function Layout() {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-slate-700 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold text-blue-400 tracking-tight no-underline">
-            CodeGym
+    <div className="min-h-screen flex flex-col bg-bone">
+      <header className="border-b border-ink bg-bone sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 h-12 flex items-center justify-between">
+          <Link to="/" className="text-sm font-bold tracking-[0.2em] text-ink no-underline">
+            CODEGYM
           </Link>
-          <nav className="flex gap-1">
+          <nav className="flex items-center gap-6">
             {navItems.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium no-underline transition-colors ${
+                className={`text-xs tracking-[0.15em] no-underline pb-0.5 transition-colors ${
                   location.pathname === item.path
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    ? 'text-ink border-b border-ink'
+                    : 'text-ash border-b border-transparent hover:text-ink'
                 }`}
               >
                 {item.label}

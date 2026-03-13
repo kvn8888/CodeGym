@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import Editor from '@monaco-editor/react';
 import { api } from '../../shared/api/client';
 import type { Problem, SubmissionFile, TestResult, TestCaseResult } from '../../shared/api/types';
+import { GridSpinner } from '../../shared/components/GridSpinner';
 
 const languageMap: Record<string, string> = {
   go: 'go',
@@ -54,7 +55,6 @@ export function ProblemDetailPage() {
         problem_id: problem.id,
         files,
       });
-      // Poll for result (TODO: replace with WebSocket)
       const poll = async () => {
         const sub = await api.get<{ status: string; result?: TestResult }>(
           `/submissions/${res.submission_id}`,
@@ -74,43 +74,46 @@ export function ProblemDetailPage() {
   };
 
   if (!problem) {
-    return <div className="text-slate-400 text-center py-12">Loading...</div>;
+    return (
+      <div className="flex justify-center py-16">
+        <GridSpinner size="md" />
+      </div>
+    );
   }
 
   const monacoLang = languageMap[problem.language] ?? 'plaintext';
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] flex">
+    <div className="h-[calc(100vh-3rem)] flex">
       {/* Left: Problem Description */}
-      <div className="w-[45%] border-r border-slate-700 overflow-y-auto p-6">
-        <h1 className="text-xl font-bold mb-1">{problem.title}</h1>
-        <div className="flex gap-2 mb-4 text-sm">
-          <span className="bg-slate-700 px-2 py-0.5 rounded">{problem.language}</span>
-          {problem.framework && (
-            <span className="bg-slate-700 px-2 py-0.5 rounded">{problem.framework}</span>
-          )}
-          <span className="bg-slate-700 px-2 py-0.5 rounded">
-            {problem.estimated_minutes}m
-          </span>
+      <div className="w-[45%] border-r border-ink overflow-y-auto p-6 bg-bone">
+        <h1 className="text-sm font-bold text-ink mb-1">{problem.title}</h1>
+        <div className="flex gap-3 mb-4 text-[10px] tracking-[0.1em] text-ash">
+          <span>{problem.language.toUpperCase()}</span>
+          {problem.framework && <span>{problem.framework.toUpperCase()}</span>}
+          <span>{problem.estimated_minutes}M</span>
         </div>
-        <div className="prose prose-invert prose-sm max-w-none">
+        <div className="prose-brutalist text-xs text-graphite">
           <ReactMarkdown>{problem.description}</ReactMarkdown>
         </div>
 
         {/* Hints */}
         {problem.hints && problem.hints.length > 0 && (
-          <div className="mt-6 border-t border-slate-700 pt-4">
-            <h3 className="text-sm font-medium text-slate-400 mb-2">Hints</h3>
+          <div className="mt-6 border-t border-chalk pt-4">
+            <h3 className="text-[10px] font-bold tracking-[0.2em] text-ash mb-3 uppercase">
+              Hints
+            </h3>
             {problem.hints.map((hint, i) => (
               <div key={i} className="mb-2">
                 {i < hintsRevealed ? (
-                  <p className="text-sm text-slate-300 bg-slate-800 p-2 rounded">{hint.text}</p>
+                  <p className="text-xs text-graphite border border-chalk px-3 py-2">{hint.text}</p>
                 ) : (
                   <button
                     onClick={() => setHintsRevealed(i + 1)}
-                    className="text-sm text-blue-400 hover:text-blue-300"
+                    className="text-xs text-ash hover:text-ink transition-colors"
                   >
-                    Reveal hint {i + 1} {hint.cost > 0 ? `(${hint.cost} credit)` : '(free)'}
+                    {'\u2192'} Reveal hint {i + 1}{' '}
+                    {hint.cost > 0 ? `(${hint.cost} credit)` : ''}
                   </button>
                 )}
               </div>
@@ -120,17 +123,17 @@ export function ProblemDetailPage() {
       </div>
 
       {/* Right: Editor + Results */}
-      <div className="w-[55%] flex flex-col">
+      <div className="w-[55%] flex flex-col bg-[#1e1e1e]">
         {/* File tabs */}
-        <div className="flex items-center border-b border-slate-700 bg-slate-900">
+        <div className="flex items-center border-b border-[#333] bg-[#252526]">
           {files.map((file, i) => (
             <button
               key={file.path}
               onClick={() => setActiveFile(i)}
-              className={`px-4 py-2 text-sm border-r border-slate-700 ${
+              className={`px-4 py-2 text-xs border-r border-[#333] transition-colors ${
                 i === activeFile
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  ? 'bg-[#1e1e1e] text-[#ccc]'
+                  : 'text-[#666] hover:text-[#ccc]'
               }`}
             >
               {file.path}
@@ -140,9 +143,9 @@ export function ProblemDetailPage() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="px-4 py-1.5 m-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white text-sm font-medium rounded transition-colors"
+            className="px-4 py-1 m-1.5 bg-bone text-ink text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-parchment disabled:opacity-40 transition-colors"
           >
-            {submitting ? 'Running...' : 'Run Tests'}
+            {submitting ? 'RUNNING' : 'RUN'}
           </button>
         </div>
 
@@ -156,7 +159,9 @@ export function ProblemDetailPage() {
               value={files[activeFile]?.content ?? ''}
               onChange={handleCodeChange}
               options={{
-                fontSize: 14,
+                fontSize: 13,
+                fontFamily:
+                  "'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
                 padding: { top: 12 },
@@ -167,41 +172,53 @@ export function ProblemDetailPage() {
           )}
         </div>
 
+        {/* Running indicator */}
+        {submitting && (
+          <div className="border-t border-[#333] bg-[#252526] p-6 flex justify-center">
+            <GridSpinner size="sm" />
+          </div>
+        )}
+
         {/* Results Panel */}
         {result && (
-          <div className="border-t border-slate-700 bg-slate-900 max-h-[40%] overflow-y-auto">
-            <div className="p-3 border-b border-slate-700 flex items-center gap-3">
+          <div className="border-t border-[#333] bg-[#1e1e1e] max-h-[40%] overflow-y-auto">
+            <div className="px-4 py-2 border-b border-[#333] flex items-center gap-3">
               <span
-                className={`font-bold text-sm ${
-                  result.status === 'pass' ? 'text-green-400' : 'text-red-400'
+                className={`text-xs font-bold ${
+                  result.status === 'pass' ? 'text-[#4ec9b0]' : 'text-[#f14c4c]'
                 }`}
               >
-                {result.status === 'pass' ? 'All Tests Passed' : 'Tests Failed'}
+                {result.status === 'pass' ? 'PASS' : 'FAIL'}
               </span>
-              <span className="text-xs text-slate-400">
-                {result.passed}/{result.total} passed &middot; {result.duration_ms}ms
+              <span className="text-[10px] text-[#666]">
+                {result.passed}/{result.total} {'\u2014'} {result.duration_ms}ms
               </span>
             </div>
-            <div className="divide-y divide-slate-800">
+            <div>
               {result.test_cases.map((tc: TestCaseResult, i: number) => (
-                <div key={i} className="px-3 py-2 flex items-start gap-2">
-                  <span className={tc.status === 'pass' ? 'text-green-400' : 'text-red-400'}>
-                    {tc.status === 'pass' ? '✓' : '✗'}
+                <div
+                  key={i}
+                  className="px-4 py-1.5 flex items-start gap-2 border-b border-[#252526]"
+                >
+                  <span
+                    className={`text-xs ${tc.status === 'pass' ? 'text-[#4ec9b0]' : 'text-[#f14c4c]'}`}
+                  >
+                    {tc.status === 'pass' ? '\u2713' : '\u2717'}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm text-slate-300">{tc.name}</span>
+                    <span className="text-xs text-[#ccc]">{tc.name}</span>
                     {tc.error && (
-                      <pre className="text-xs text-red-400 mt-1 whitespace-pre-wrap">
+                      <pre className="text-[10px] text-[#f14c4c] mt-1 whitespace-pre-wrap">
                         {tc.error}
                       </pre>
                     )}
                   </div>
-                  <span className="text-xs text-slate-500">{tc.duration_ms}ms</span>
+                  <span className="text-[10px] text-[#555]">{tc.duration_ms}ms</span>
                 </div>
               ))}
             </div>
             {result.compile_error && (
-              <pre className="p-3 text-xs text-red-400 whitespace-pre-wrap bg-red-950/30">
+              <pre className="p-3 text-[10px] text-[#f14c4c] whitespace-pre-wrap">
                 {result.compile_error}
               </pre>
             )}

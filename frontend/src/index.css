@@ -1,28 +1,111 @@
 @import "tailwindcss";
 
-:root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-card: #1e293b;
-  --border: #334155;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --success: #22c55e;
-  --danger: #ef4444;
-  --warning: #f59e0b;
+@theme {
+  --color-bone: #FAF9F6;
+  --color-parchment: #F0EFEC;
+  --color-ink: #1a1a1a;
+  --color-ink-soft: #333333;
+  --color-graphite: #6b6b6b;
+  --color-ash: #999999;
+  --color-chalk: #d4d0c8;
+  --color-grain: #e8e6e1;
+  --color-moss: #2d5a27;
+  --color-rust: #8b2500;
 }
 
 body {
   margin: 0;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--color-bone);
+  color: var(--color-ink);
+  font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, 'Courier New', monospace;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: var(--color-ink);
+  color: var(--color-bone);
+}
+
+/* Grid spinner animation */
+@keyframes grid-blink {
+  0%, 100% { background-color: var(--color-grain); }
+  4% { background-color: var(--color-ink); }
+  8% { background-color: var(--color-grain); }
+}
+
+/* Markdown prose styling — brutalist */
+.prose-brutalist h1,
+.prose-brutalist h2,
+.prose-brutalist h3 {
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: var(--color-ink);
+}
+
+.prose-brutalist h1 { font-size: 1.1em; }
+.prose-brutalist h2 { font-size: 1em; }
+.prose-brutalist h3 { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.1em; }
+
+.prose-brutalist p {
+  margin-bottom: 0.75em;
+  line-height: 1.8;
+}
+
+.prose-brutalist code {
+  background: var(--color-grain);
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+}
+
+.prose-brutalist pre {
+  background: #1e1e1e;
+  color: #ccc;
+  padding: 1em;
+  overflow-x: auto;
+  margin: 1em 0;
+  font-size: 0.85em;
+}
+
+.prose-brutalist pre code {
+  background: none;
+  padding: 0;
+}
+
+.prose-brutalist ul, .prose-brutalist ol {
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+.prose-brutalist li {
+  margin-bottom: 0.25em;
+  line-height: 1.7;
+}
+
+.prose-brutalist li::marker {
+  color: var(--color-ash);
+}
+
+.prose-brutalist a {
+  color: var(--color-ink);
+  text-decoration: underline;
+}
+
+.prose-brutalist blockquote {
+  border-left: 2px solid var(--color-chalk);
+  padding-left: 1em;
+  color: var(--color-graphite);
+  margin: 1em 0;
 }
 
 /* Monaco editor overrides */
 .monaco-editor .margin,
 .monaco-editor .monaco-editor-background {
-  background-color: var(--bg-secondary) !important;
+  background-color: #1e1e1e !important;
 }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-chalk); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-ash); }

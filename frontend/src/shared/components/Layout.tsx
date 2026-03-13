@@ -21,10 +21,10 @@ export function Layout() {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`text-xs tracking-[0.15em] no-underline pb-0.5 transition-colors ${
+                className={`text-xs tracking-[0.1em] no-underline px-2 py-1 transition-colors ${
                   location.pathname === item.path
-                    ? 'text-ink border-b border-ink'
-                    : 'text-ash border-b border-transparent hover:text-ink'
+                    ? 'text-bone bg-ink'
+                    : 'text-ash hover:text-ink'
                 }`}
               >
                 {item.label}

@@ -102,10 +102,7 @@ export function GeneratePage() {
       </div>
 
       <div ref={barRef} className="relative">
-        <div
-          className="flex items-center rounded-2xl border border-chalk bg-white px-4 py-3"
-          style={{ boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03)' }}
-        >
+        <div className="flex items-center rounded-lg border border-chalk bg-white px-4 py-3">
           <input
             type="text"
             value={prompt}
@@ -118,7 +115,7 @@ export function GeneratePage() {
           <button
             onClick={handleGenerate}
             disabled={generating || !prompt.trim()}
-            className="w-9 h-9 bg-ink text-bone rounded-xl flex items-center justify-center shrink-0 ml-3 hover:bg-ink-soft disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
+            className="w-8 h-8 bg-ink text-bone rounded-md flex items-center justify-center shrink-0 ml-3 hover:bg-ink-soft disabled:bg-grain disabled:text-ash disabled:cursor-not-allowed transition-colors"
             aria-label="Generate"
           >
             <svg
@@ -139,8 +136,8 @@ export function GeneratePage() {
         {/* Example prompts dropdown */}
         {showExamples && (
           <div
-            className="absolute left-0 right-0 top-full mt-2 border border-chalk rounded-2xl bg-white overflow-hidden z-10"
-            style={{ boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)' }}
+            className="absolute left-0 right-0 top-full mt-1 border border-chalk rounded-lg bg-white overflow-hidden z-10"
+            style={{ boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)' }}
           >
             <div className="px-4 py-2 border-b border-chalk">
               <span className="text-[10px] font-bold tracking-[0.2em] text-ash uppercase">

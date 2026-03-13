@@ -57,8 +57,8 @@ export function GeneratePage() {
 
       <div ref={barRef} className="relative">
         <div
-          className="flex items-center rounded-xl px-4 py-2.5 bg-white"
-          style={{ boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}
+          className="flex items-center rounded-2xl border border-chalk bg-white px-4 py-3"
+          style={{ boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03)' }}
         >
           <input
             type="text"
@@ -72,12 +72,12 @@ export function GeneratePage() {
           <button
             onClick={handleGenerate}
             disabled={generating || !prompt.trim()}
-            className="w-7 h-7 bg-ink text-bone rounded-lg flex items-center justify-center shrink-0 ml-2 hover:bg-ink-soft disabled:bg-chalk disabled:cursor-not-allowed transition-colors"
+            className="w-9 h-9 bg-ink text-bone rounded-xl flex items-center justify-center shrink-0 ml-3 hover:bg-ink-soft disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
             aria-label="Generate"
           >
             <svg
-              width="12"
-              height="12"
+              width="14"
+              height="14"
               viewBox="0 0 16 16"
               fill="none"
               stroke="currentColor"
@@ -93,8 +93,8 @@ export function GeneratePage() {
         {/* Example prompts dropdown */}
         {showExamples && (
           <div
-            className="absolute left-0 right-0 top-full mt-1 border border-chalk rounded-xl bg-bone overflow-hidden z-10"
-            style={{ boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)' }}
+            className="absolute left-0 right-0 top-full mt-2 border border-chalk rounded-2xl bg-white overflow-hidden z-10"
+            style={{ boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)' }}
           >
             <div className="px-4 py-2 border-b border-chalk">
               <span className="text-[10px] font-bold tracking-[0.2em] text-ash uppercase">

@@ -36,6 +36,8 @@ docker/tmp/
 
 # Generated
 backend/internal/store/db/generated/
+__pycache__/
+*.pyc
 
 # Test
 coverage/

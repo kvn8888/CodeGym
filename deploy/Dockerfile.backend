@@ -1,0 +1,15 @@
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /build
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ .
+RUN CGO_ENABLED=0 go build -o codegym-server ./cmd/server
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /build/codegym-server /usr/local/bin/codegym-server
+
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/codegym-server"]

@@ -1,0 +1,43 @@
+# Binaries
+backend/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+backend/vendor/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker/tmp/
+
+# Generated
+backend/internal/store/db/generated/
+
+# Test
+coverage/
+*.cover
+*.out

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { HelpFlashcard } from './HelpFlashcard';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -103,6 +103,10 @@ export function MarathonPage() {
   // Which phase the marathon is in.
   const [phase, setPhase] = useState<'idle' | 'active' | 'results'>('idle');
 
+  // Guard: prevents accidental option selection when Next button unmounts
+  // and mouseup lands on an option button underneath.
+  const advancingRef = useRef(false);
+
   // Index of the current question (0-based).
   const [questionIndex, setQuestionIndex] = useState(0);
 
@@ -148,7 +152,7 @@ export function MarathonPage() {
 
   /** User selects an answer option (radio-style, can change before confirming). */
   const handleSelect = (index: number) => {
-    if (confirmed) return; // locked in after confirm
+    if (confirmed || advancingRef.current) return; // locked or transitioning
     setSelectedIndex(index);
   };
 
@@ -168,6 +172,11 @@ export function MarathonPage() {
 
   /** Advance to the next question or show results. */
   const handleNext = () => {
+    // Block option clicks until the next frame to prevent the mouseup
+    // from the disappearing Next button from selecting an option.
+    advancingRef.current = true;
+    requestAnimationFrame(() => { advancingRef.current = false; });
+
     if (questionIndex < questions.length - 1) {
       setQuestionIndex((i) => i + 1);
       setElapsed(0);

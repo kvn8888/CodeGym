@@ -311,17 +311,15 @@ export function MarathonPage() {
       <div className="flex flex-col gap-3 mb-8">
         {currentQ.options.map((option, i) => {
           const isSelected = selectedIndex === i;
+          const isCorrect = i === currentQ.correctIndex;
 
           // Before confirm: radio highlight on the selected option only.
-          // After confirm: green if selected+correct, red if selected+wrong.
-          // Non-selected options stay neutral — only the user's pick is highlighted.
+          // After confirm: green bg on correct answer, red bg on selected wrong answer.
           let classes = 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone';
-          if (confirmed && isSelected) {
-            classes = isSelected && selectedIndex === currentQ.correctIndex
-              ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-              : 'border-red-400 bg-red-50 text-red-700';
-          } else if (confirmed) {
-            classes = 'border-chalk bg-white text-ash';
+          if (confirmed) {
+            if (isCorrect) classes = 'border-green-500 bg-green-100 text-green-800';
+            else if (isSelected) classes = 'border-red-500 bg-red-100 text-red-800';
+            else classes = 'border-chalk bg-white text-ash';
           } else if (isSelected) {
             classes = 'border-ink bg-parchment text-ink font-medium';
           }
@@ -334,21 +332,28 @@ export function MarathonPage() {
               className={`w-full text-left text-sm px-4 py-3 rounded-xl border transition-all duration-150 ${classes}`}
             >
               <div className="flex items-center gap-3">
-                {/* Radio circle — filled only for the selected option */}
+                {/* Radio circle — filled for selected option and correct answer after confirm */}
                 <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
-                  confirmed && isSelected
-                    ? (selectedIndex === currentQ.correctIndex ? 'border-emerald-400' : 'border-red-400')
+                  confirmed
+                    ? (isCorrect ? 'border-green-500' : isSelected ? 'border-red-500' : 'border-chalk')
                     : (isSelected ? 'border-ink' : 'border-chalk')
                 }`}>
-                  {isSelected && (
+                  {(isSelected || (confirmed && isCorrect)) && (
                     <div className={`w-2 h-2 rounded-full ${
                       confirmed
-                        ? (selectedIndex === currentQ.correctIndex ? 'bg-emerald-500' : 'bg-red-500')
+                        ? (isCorrect ? 'bg-green-600' : 'bg-red-600')
                         : 'bg-ink'
                     }`} />
                   )}
                 </div>
                 {option}
+                {/* Small label after confirming */}
+                {confirmed && isCorrect && (
+                  <span className="ml-auto text-xs text-green-700 font-medium">✓ Correct</span>
+                )}
+                {confirmed && isSelected && !isCorrect && (
+                  <span className="ml-auto text-xs text-red-700 font-medium">✗ Wrong</span>
+                )}
               </div>
             </button>
           );

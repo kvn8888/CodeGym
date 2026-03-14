@@ -154,20 +154,25 @@ export function GeneratePage() {
             ))}
           </select>
 
-          {/* Generate button — circular plus icon (matches "New chat" reference) */}
+          {/* Generate button — send arrow */}
           <button
             onClick={handleGenerate}
             disabled={generating || !prompt.trim()}
-            className="group shrink-0 ml-3 flex items-center justify-center"
+            className="w-9 h-9 bg-ink text-bone rounded-xl flex items-center justify-center shrink-0 ml-3 hover:bg-ink-soft disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
             aria-label="Generate"
           >
-            <div className="flex items-center justify-center rounded-full transition-all ease-in-out group-hover:-rotate-3 group-hover:scale-110 group-active:rotate-6 group-active:scale-[0.98]">
-              <div className="flex items-center justify-center rounded-full w-8 h-8 bg-ash/15 group-hover:bg-ash/25 group-disabled:bg-chalk transition-colors">
-                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" className="text-ash group-hover:text-ink transition-colors" aria-hidden="true" style={{ flexShrink: 0 }}>
-                  <path d="M10 3C10.4142 3 10.75 3.33579 10.75 3.75V9.25H16.25C16.6642 9.25 17 9.58579 17 10C17 10.3882 16.7051 10.7075 16.3271 10.7461L16.25 10.75H10.75V16.25C10.75 16.6642 10.4142 17 10 17C9.58579 17 9.25 16.6642 9.25 16.25V10.75H3.75C3.33579 10.75 3 10.4142 3 10C3 9.58579 3.33579 9.25 3.75 9.25H9.25V3.75C9.25 3.33579 9.58579 3 10 3Z" />
-                </svg>
-              </div>
-            </div>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 8h10M9 4l4 4-4 4" />
+            </svg>
           </button>
         </div>
 

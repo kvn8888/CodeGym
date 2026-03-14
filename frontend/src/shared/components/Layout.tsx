@@ -1,12 +1,9 @@
 import { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
-// ── Sidebar width constant ─────────────────────────────────────────────────────
-// Must match the Tailwind class "w-56" (14rem = 224px at default scale).
-// The toggle button uses this value to ride along the sidebar's right edge
-// during the collapse/expand animation via transform: translateX().
-const SIDEBAR_WIDTH_PX = 224; // 14rem × 16px/rem
-
+// ── Sidebar widths ─────────────────────────────────────────────────────────────
+// Expanded  → w-56   (14rem / 224px)
+// Collapsed → w-12   (3rem  /  48px) — thin icon-only strip
 const navItems = [
   {
     path: '/',
@@ -40,111 +37,118 @@ const navItems = [
   },
 ];
 
+// Panel / sidebar-layout icon provided by the design.
+// Looks like a split-panel rectangle — left strip + right body.
+const PanelIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+    <path d="M16.5 4C17.3284 4 18 4.67157 18 5.5V14.5C18 15.3284 17.3284 16 16.5 16H3.5C2.67157 16 2 15.3284 2 14.5V5.5C2 4.67157 2.67157 4 3.5 4H16.5ZM7 15H16.5C16.7761 15 17 14.7761 17 14.5V5.5C17 5.22386 16.7761 5 16.5 5H7V15ZM3.5 5C3.22386 5 3 5.22386 3 5.5V14.5C3 14.7761 3.22386 15 3.5 15H6V5H3.5Z" />
+  </svg>
+);
+
 export function Layout() {
   const location = useLocation();
-  // Controls whether the sidebar is fully collapsed (w-0) or expanded (w-56).
+  // true → sidebar is the thin icon-only strip (w-12)
+  // false → sidebar is fully expanded (w-56)
   const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="min-h-screen flex bg-bone">
       {/* ── Sidebar ──────────────────────────────────────────────────────────
-          Width transitions between w-56 and w-0.  overflow-hidden clips
-          the contents as the frame shrinks so nothing bleeds out.         */}
+          Width transitions between w-56 (14rem) and w-12 (3rem).
+          overflow-hidden clips all inner content as the frame shrinks so
+          nothing bleeds into the main area during the animation.           */}
       <aside
         className={`${
-          collapsed ? 'w-0' : 'w-56'
+          collapsed ? 'w-12' : 'w-56'
         } shrink-0 flex flex-col h-screen sticky top-0 bg-parchment border-r border-grain overflow-hidden transition-[width] duration-300 ease-in-out`}
       >
-        {/* Inner wrapper fades out quickly (150 ms) so the text/icons
-            disappear before the sidebar frame finishes collapsing.
-            pointer-events-none prevents clicks on invisible elements.    */}
-        <div
-          className={`flex flex-col flex-1 min-w-[14rem] transition-opacity duration-150 ${
-            collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
-        >
-          {/* Logo */}
-          <div className="px-5 pt-6 pb-4">
+        {/* ── Header: logo + toggle ──────────────────────────────────────── */}
+        <div className="flex items-center gap-2 px-3 pt-5 pb-3">
+          {/* Logo text fades out at 150ms — quicker than the 300ms width
+              transition — so it disappears before the frame is fully narrow. */}
+          <div
+            className={`flex-1 min-w-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 ${
+              collapsed ? 'opacity-0' : 'opacity-100'
+            }`}
+          >
             <Link to="/" className="text-sm font-bold tracking-[0.18em] text-ink no-underline">
               CODEGYM
             </Link>
           </div>
 
-          {/* Nav */}
-          <nav className="flex-1 px-3 py-2 flex flex-col gap-0.5">
-            {navItems.map((item) => {
-              const active =
-                item.path === '/'
-                  ? location.pathname === '/' || location.pathname.startsWith('/problems')
-                  : location.pathname.startsWith(item.path);
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm no-underline transition-colors ${
-                    active
-                      ? 'bg-white text-ink font-medium'
-                      : 'text-graphite hover:bg-grain hover:text-ink'
-                  }`}
-                  style={active ? { boxShadow: '0 1px 3px rgba(0,0,0,0.06)' } : {}}
-                >
-                  <span className={active ? 'text-ink' : 'text-ash'}>{item.icon}</span>
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+          {/* Panel toggle button — always visible in the sidebar.
+              Uses the split-panel icon so it communicates "toggle a panel".  */}
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain transition-colors"
+          >
+            <PanelIcon />
+          </button>
+        </div>
 
-          {/* Footer */}
-          <div className="px-5 py-5 border-t border-grain">
-            <span className="text-xs text-ash tracking-wide">v0.1</span>
-          </div>
+        {/* ── Navigation items ──────────────────────────────────────────── */}
+        <nav className="flex-1 px-2 py-2 flex flex-col gap-0.5">
+          {navItems.map((item) => {
+            const active =
+              item.path === '/'
+                ? location.pathname === '/' || location.pathname.startsWith('/problems')
+                : location.pathname.startsWith(item.path);
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                // title shows as a native tooltip when collapsed — useful
+                // accessibility hint since labels are invisible.
+                title={collapsed ? item.label : undefined}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm no-underline transition-colors ${
+                  active
+                    ? 'bg-white text-ink font-medium'
+                    : 'text-graphite hover:bg-grain hover:text-ink'
+                }`}
+                style={active ? { boxShadow: '0 1px 3px rgba(0,0,0,0.06)' } : {}}
+              >
+                {/* Icon is always visible (shrink-0 prevents it from being squished) */}
+                <span className={`shrink-0 ${active ? 'text-ink' : 'text-ash'}`}>
+                  {item.icon}
+                </span>
+
+                {/* Label fades fast (100ms) and collapses to zero width so it
+                    doesn't shift the icon position once the sidebar is narrow. */}
+                <span
+                  className={`whitespace-nowrap overflow-hidden transition-opacity duration-100 ${
+                    collapsed ? 'opacity-0 max-w-0' : 'opacity-100'
+                  }`}
+                >
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* ── Footer ────────────────────────────────────────────────────── */}
+        <div className="px-3 py-5 border-t border-grain">
+          <span
+            className={`text-xs text-ash tracking-wide whitespace-nowrap transition-opacity duration-150 ${
+              collapsed ? 'opacity-0' : 'opacity-100'
+            }`}
+          >
+            v0.1
+          </span>
         </div>
       </aside>
 
-      {/* ── Sidebar toggle button ─────────────────────────────────────────────
-          Fixed to the viewport and translated along the X axis to keep it
-          sitting on the sidebar's right border at all times. The same
-          easing/duration (300 ms ease-in-out) as the sidebar width transition
-          makes the button appear to ride the collapsing edge.
-
-          Layout:
-            collapsed=false  → translateX(SIDEBAR_WIDTH_PX - 10px)
-                                 centre of the 20px button ≈ right border
-            collapsed=true   → translateX(4px)
-                                 flush with left edge of viewport             */}
-      <button
-        onClick={() => setCollapsed((c) => !c)}
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="fixed top-5 left-0 z-50 w-5 h-5 rounded-full bg-white border border-chalk flex items-center justify-center transition-transform duration-300 ease-in-out hover:bg-grain"
-        style={{
-          transform: `translateX(${collapsed ? 4 : SIDEBAR_WIDTH_PX - 10}px)`,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-        }}
-      >
-        {/* Chevron flips direction: pointing left when expanded (to collapse),
-            pointing right when collapsed (to expand).                        */}
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`text-graphite transition-transform duration-300 ${collapsed ? '' : 'rotate-180'}`}
-        >
-          <path d="M6.5 2L3.5 5l3 3" />
-        </svg>
-      </button>
-
       {/* ── Main content ──────────────────────────────────────────────────────
-          flex-1 automatically fills whichever width the sidebar vacates,
-          so the expansion is a free side-effect of the sidebar's transition. */}
+          flex-1 fills whatever width the sidebar doesn't claim, so the
+          expansion/contraction is automatically synchronized — no extra
+          animation code needed here.                                        */}
       <main className="flex-1 min-w-0">
         <Outlet />
       </main>
     </div>
   );
 }
+
+
+

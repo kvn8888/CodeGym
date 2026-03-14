@@ -109,3 +109,11 @@ export const MyStory: Story = {
 ## Reference File
 
 Read `references/api_reference.md` when detailed repository maps, key files, API endpoints, and environment variable defaults are needed.
+
+## Generation Architecture
+
+Problem generation uses an agent-driven flow (see `codegym-generation-flow` skill for full details):
+- A Claude agent interviews the user via a multi-choice question modal (max 3 questions per series).
+- A Gemini Flash model maintains a persistent user profile memory (skill level, history, preferences).
+- The generation agent reads the user profile when creating personalized problems.
+- Problem creation happens entirely in the backend — the frontend only handles the question modal UI and status polling.

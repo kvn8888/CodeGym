@@ -59,19 +59,10 @@ const TOPIC_CHIPS = [
   { label: 'Data Structures', icon: '📦' },
 ];
 
-const DIFFICULTIES = ['Beginner', 'Junior', 'Senior'] as const;
-
-// Maps difficulty level to a prompt suffix for the generation agent.
-const DIFFICULTY_PROMPTS: Record<string, string> = {
-  Beginner: 'Make this problem beginner-friendly: use simple inputs, provide detailed hints, and focus on fundamental concepts.',
-  Junior: 'Target a junior developer level: moderate complexity, some edge cases, and practical real-world relevance.',
-  Senior: 'Make this senior-level: complex edge cases, performance constraints, system-design considerations, and minimal hand-holding.',
-};
 
 export function GeneratePage() {
   const headline = useTypewriter(HEADLINES);
   const [prompt, setPrompt] = useState('');
-  const [difficulty, setDifficulty] = useState<string>('Junior');
   const [generating, setGenerating] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showExamples, setShowExamples] = useState(false);
@@ -82,8 +73,7 @@ export function GeneratePage() {
     setGenerating(true);
     setStatus(null);
     setShowExamples(false);
-    // Build the full prompt with difficulty context appended
-    const fullPrompt = `${prompt.trim()} ${DIFFICULTY_PROMPTS[difficulty] ?? ''}`.trim();
+    const fullPrompt = prompt.trim();
     // TODO: Call /api/v1/generate with fullPrompt and poll for status
     console.log('[generate]', fullPrompt);
     setTimeout(() => {
@@ -137,22 +127,6 @@ export function GeneratePage() {
             placeholder="Describe what you want to practice..."
             className="flex-1 bg-transparent text-sm text-ink placeholder-ash focus:outline-none"
           />
-
-          {/* Difficulty selector pill — styled like screen reference */}
-          <select
-            value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value)}
-            className="shrink-0 rounded-full border border-chalk bg-parchment px-3 py-1.5 text-xs text-ink cursor-pointer focus:outline-none appearance-none pr-7 ml-2"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 10 10' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2.5 4L5 6.5L7.5 4' stroke='%236b6b6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 8px center',
-            }}
-          >
-            {DIFFICULTIES.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
 
           {/* Generate button — send arrow */}
           <button

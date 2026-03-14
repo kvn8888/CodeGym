@@ -311,15 +311,17 @@ export function MarathonPage() {
       <div className="flex flex-col gap-3 mb-8">
         {currentQ.options.map((option, i) => {
           const isSelected = selectedIndex === i;
-          const isCorrect = i === currentQ.correctIndex;
 
-          // Before confirm: radio-style selection (highlight selected option).
-          // After confirm: show correct (green) and wrong (red) feedback.
+          // Before confirm: radio highlight on the selected option only.
+          // After confirm: green if selected+correct, red if selected+wrong.
+          // Non-selected options stay neutral — only the user's pick is highlighted.
           let classes = 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone';
-          if (confirmed) {
-            if (isCorrect) classes = 'border-emerald-400 bg-emerald-50 text-emerald-700';
-            else if (isSelected) classes = 'border-red-400 bg-red-50 text-red-700';
-            else classes = 'border-chalk bg-white text-ash';
+          if (confirmed && isSelected) {
+            classes = isSelected && selectedIndex === currentQ.correctIndex
+              ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+              : 'border-red-400 bg-red-50 text-red-700';
+          } else if (confirmed) {
+            classes = 'border-chalk bg-white text-ash';
           } else if (isSelected) {
             classes = 'border-ink bg-parchment text-ink font-medium';
           }
@@ -332,16 +334,16 @@ export function MarathonPage() {
               className={`w-full text-left text-sm px-4 py-3 rounded-xl border transition-all duration-150 ${classes}`}
             >
               <div className="flex items-center gap-3">
-                {/* Radio-style circle indicator (matches QuestionModal) */}
+                {/* Radio circle — filled only for the selected option */}
                 <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
-                  confirmed
-                    ? (isCorrect ? 'border-emerald-400' : isSelected ? 'border-red-400' : 'border-chalk')
+                  confirmed && isSelected
+                    ? (selectedIndex === currentQ.correctIndex ? 'border-emerald-400' : 'border-red-400')
                     : (isSelected ? 'border-ink' : 'border-chalk')
                 }`}>
-                  {(isSelected || (confirmed && isCorrect)) && (
+                  {isSelected && (
                     <div className={`w-2 h-2 rounded-full ${
                       confirmed
-                        ? (isCorrect ? 'bg-emerald-500' : 'bg-red-500')
+                        ? (selectedIndex === currentQ.correctIndex ? 'bg-emerald-500' : 'bg-red-500')
                         : 'bg-ink'
                     }`} />
                   )}

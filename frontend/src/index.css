@@ -26,6 +26,22 @@ body {
   color: var(--color-bone);
 }
 
+/*
+ * Continuous corners (squircle) — Apple-style smooth corner curvature.
+ * Uses CSS corner-shape (Chrome 139+, Edge 139+). Browsers that don't
+ * support it (Safari, Firefox) simply ignore the property and fall back
+ * to standard circular border-radius — no layout or rendering breakage.
+ *
+ * Applied globally: any element with a border-radius automatically gets
+ * smoother, more organic corners. Pill-shaped elements (rounded-full /
+ * border-radius: 9999px) are excluded — they stay perfectly circular.
+ */
+/* *,
+*::before,
+*::after {
+  corner-shape: squircle;
+} */
+
 /* Typewriter cursor blink */
 @keyframes blink {
   0%, 100% { opacity: 1; }

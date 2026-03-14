@@ -86,6 +86,26 @@ font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monos
 
 ---
 
+## Continuous Corners (Squircle)
+
+All rounded elements use **CSS `corner-shape: squircle`** for Apple-style continuous corner smoothing. This is applied globally in `index.css`:
+
+```css
+*, *::before, *::after {
+  corner-shape: squircle;
+}
+```
+
+**How it works**: When `border-radius` is set, `corner-shape: squircle` makes the edge transition seamlessly into the corner with a superellipse curve instead of the standard circular arc. The result is smoother, more organic corners.
+
+**Browser support**: Chrome 139+, Edge 139+. Safari and Firefox ignore the property entirely — they just render standard `border-radius` with no breakage.
+
+**Exception**: Elements with `rounded-full` (pills, dots, avatars) remain circular since `squircle` on a 9999px radius still looks round.
+
+**Rule**: Never add `corner-shape` to individual components. The global rule handles everything. Just use normal Tailwind `rounded-*` classes.
+
+---
+
 ## Component Patterns
 
 ### Card

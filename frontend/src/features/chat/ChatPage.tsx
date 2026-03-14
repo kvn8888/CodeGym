@@ -166,7 +166,7 @@ export function ChatPage() {
 
           {/* Memory status indicator */}
           <div className="mt-2 flex items-center gap-1.5 px-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#2d5a27' }} />
             <span className="text-[10px] text-ash">Memory synced</span>
           </div>
         </div>

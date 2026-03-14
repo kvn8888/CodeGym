@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { HelpFlashcard } from './HelpFlashcard';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -112,8 +112,11 @@ export function MarathonPage() {
   // Timer: seconds elapsed on the current question.
   const [elapsed, setElapsed] = useState(0);
 
-  // Whether the user selected an answer (pauses timer, shows feedback).
+  // Which option the user has selected (before confirming). null = none.
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  // Whether the user has confirmed their answer (locks in + shows feedback).
+  const [confirmed, setConfirmed] = useState(false);
 
   // Whether the help flashcard is visible.
   const [showHelp, setShowHelp] = useState(false);
@@ -126,10 +129,11 @@ export function MarathonPage() {
 
   // ── Timer logic ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (phase !== 'active' || selectedIndex !== null) return;
+    // Timer runs only while the question is active and not yet confirmed.
+    if (phase !== 'active' || confirmed) return;
     const interval = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(interval);
-  }, [phase, selectedIndex]);
+  }, [phase, confirmed]);
 
   /** Start the marathon. */
   const handleStart = () => {
@@ -138,25 +142,29 @@ export function MarathonPage() {
     setResults([]);
     setElapsed(0);
     setSelectedIndex(null);
+    setConfirmed(false);
     setHelpUsed(false);
   };
 
-  /** User selects an answer option. */
-  const handleAnswer = useCallback(
-    (index: number) => {
-      if (selectedIndex !== null) return; // already answered
-      setSelectedIndex(index);
-      const result: QuestionResult = {
-        questionId: currentQ.id,
-        selectedIndex: index,
-        correct: index === currentQ.correctIndex,
-        timeMs: elapsed * 1000,
-        usedHelp: helpUsed,
-      };
-      setResults((prev) => [...prev, result]);
-    },
-    [selectedIndex, currentQ, elapsed, helpUsed]
-  );
+  /** User selects an answer option (radio-style, can change before confirming). */
+  const handleSelect = (index: number) => {
+    if (confirmed) return; // locked in after confirm
+    setSelectedIndex(index);
+  };
+
+  /** User confirms their selection — locks in the answer and shows feedback. */
+  const handleConfirm = () => {
+    if (selectedIndex === null || confirmed) return;
+    setConfirmed(true);
+    const result: QuestionResult = {
+      questionId: currentQ.id,
+      selectedIndex,
+      correct: selectedIndex === currentQ.correctIndex,
+      timeMs: elapsed * 1000,
+      usedHelp: helpUsed,
+    };
+    setResults((prev) => [...prev, result]);
+  };
 
   /** Advance to the next question or show results. */
   const handleNext = () => {
@@ -164,6 +172,7 @@ export function MarathonPage() {
       setQuestionIndex((i) => i + 1);
       setElapsed(0);
       setSelectedIndex(null);
+      setConfirmed(false);
       setShowHelp(false);
       setHelpUsed(false);
     } else {
@@ -289,32 +298,45 @@ export function MarathonPage() {
       {/* Question text */}
       <h2 className="text-lg font-bold text-ink mb-6 leading-relaxed">{currentQ.text}</h2>
 
-      {/* Option buttons */}
+      {/* Option buttons — radio-style selection (same behavior as QuestionModal) */}
       <div className="flex flex-col gap-3 mb-8">
         {currentQ.options.map((option, i) => {
-          const answered = selectedIndex !== null;
           const isSelected = selectedIndex === i;
           const isCorrect = i === currentQ.correctIndex;
 
-          // Determine styling based on answer state.
+          // Before confirm: radio-style selection (highlight selected option).
+          // After confirm: show correct (green) and wrong (red) feedback.
           let classes = 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone';
-          if (answered) {
+          if (confirmed) {
             if (isCorrect) classes = 'border-emerald-400 bg-emerald-50 text-emerald-700';
             else if (isSelected) classes = 'border-red-400 bg-red-50 text-red-700';
             else classes = 'border-chalk bg-white text-ash';
+          } else if (isSelected) {
+            classes = 'border-ink bg-parchment text-ink font-medium';
           }
 
           return (
             <button
               key={i}
-              onClick={() => handleAnswer(i)}
-              disabled={answered}
+              onClick={() => handleSelect(i)}
+              disabled={confirmed}
               className={`w-full text-left text-sm px-4 py-3 rounded-xl border transition-all duration-150 ${classes}`}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xs text-ash w-5 shrink-0">
-                  {String.fromCharCode(65 + i)}.
-                </span>
+                {/* Radio-style circle indicator (matches QuestionModal) */}
+                <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
+                  confirmed
+                    ? (isCorrect ? 'border-emerald-400' : isSelected ? 'border-red-400' : 'border-chalk')
+                    : (isSelected ? 'border-ink' : 'border-chalk')
+                }`}>
+                  {(isSelected || (confirmed && isCorrect)) && (
+                    <div className={`w-2 h-2 rounded-full ${
+                      confirmed
+                        ? (isCorrect ? 'bg-emerald-500' : 'bg-red-500')
+                        : 'bg-ink'
+                    }`} />
+                  )}
+                </div>
                 {option}
               </div>
             </button>
@@ -322,12 +344,12 @@ export function MarathonPage() {
         })}
       </div>
 
-      {/* Footer: Help + Next */}
+      {/* Footer: Help + Confirm/Next */}
       <div className="flex items-center justify-between">
-        {/* Help button (only enabled before answering) */}
+        {/* Help button (only enabled before confirming) */}
         <button
           onClick={handleHelp}
-          disabled={selectedIndex !== null}
+          disabled={confirmed}
           className="flex items-center gap-1.5 text-xs text-graphite hover:text-ink disabled:text-ash disabled:cursor-not-allowed transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -337,8 +359,16 @@ export function MarathonPage() {
           Help
         </button>
 
-        {/* Next/Finish button (only visible after answering) */}
-        {selectedIndex !== null && (
+        {/* Confirm button (before confirming) or Next button (after confirming) */}
+        {!confirmed && selectedIndex !== null && (
+          <button
+            onClick={handleConfirm}
+            className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft transition-colors"
+          >
+            Confirm
+          </button>
+        )}
+        {confirmed && (
           <button
             onClick={handleNext}
             className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft transition-colors"

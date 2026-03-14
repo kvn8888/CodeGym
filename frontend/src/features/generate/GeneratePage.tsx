@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { GridSpinner } from '../../shared/components/GridSpinner';
+import { QuestionModal, type Question, type Answer } from './QuestionModal';
 
 const HEADLINES = [
   'Generate any problem.',
@@ -66,6 +67,8 @@ export function GeneratePage() {
   const [generating, setGenerating] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showExamples, setShowExamples] = useState(false);
+  const [showQuestions, setShowQuestions] = useState(false);
+  const [agentQuestions, setAgentQuestions] = useState<Question[]>([]);
   const barRef = useRef<HTMLDivElement>(null);
 
   const handleGenerate = async () => {
@@ -74,8 +77,37 @@ export function GeneratePage() {
     setStatus(null);
     setShowExamples(false);
     const fullPrompt = prompt.trim();
-    // TODO: Call /api/v1/generate with fullPrompt and poll for status
+    // TODO: Call /api/v1/generate/questions with fullPrompt to get real questions.
+    // For now, use mock questions to demonstrate the modal flow.
     console.log('[generate]', fullPrompt);
+    const mockQuestions: Question[] = [
+      {
+        id: 'q1',
+        text: 'What programming language would you like to use?',
+        options: ['Python', 'Go', 'JavaScript', 'TypeScript', 'Specify…'],
+      },
+      {
+        id: 'q2',
+        text: 'What area should this problem focus on?',
+        options: ['Core algorithm', 'Data structure design', 'API integration', 'Specify…'],
+      },
+      {
+        id: 'q3',
+        text: 'How challenging should this be?',
+        options: ['Beginner friendly', 'Moderate complexity', 'Senior-level challenge', 'Specify…'],
+      },
+    ];
+    setAgentQuestions(mockQuestions);
+    setShowQuestions(true);
+    setGenerating(false);
+  };
+
+  /** Called when the user answers all questions in the modal. */
+  const handleQuestionsComplete = (answers: Answer[]) => {
+    setShowQuestions(false);
+    setGenerating(true);
+    console.log('[generate] answers:', answers);
+    // TODO: Call POST /api/v1/generate with prompt + answers
     setTimeout(() => {
       setStatus('Generation endpoint not yet implemented');
       setGenerating(false);
@@ -201,6 +233,15 @@ export function GeneratePage() {
         <div className="mt-6 text-xs text-graphite border border-chalk rounded-lg px-4 py-3">
           {status}
         </div>
+      )}
+
+      {/* Agent question modal — shown after user submits a prompt */}
+      {showQuestions && agentQuestions.length > 0 && (
+        <QuestionModal
+          questions={agentQuestions}
+          onComplete={handleQuestionsComplete}
+          onClose={() => setShowQuestions(false)}
+        />
       )}
     </div>
   );

@@ -247,14 +247,14 @@ export function MarathonPage() {
             {results.map((r, i) => (
               <div key={r.questionId} className="flex items-center gap-3 text-xs">
                 <span className="text-ash w-4">{i + 1}.</span>
-                <span className={r.correct ? 'text-emerald-600' : 'text-red-500'}>
+                <span className={r.correct ? 'text-moss' : 'text-rust'}>
                   {r.correct ? '✓' : '✗'}
                 </span>
                 <span className="text-graphite flex-1 truncate">
                   {questions.find((q) => q.id === r.questionId)?.concept}
                 </span>
                 <span className="text-ash">{Math.round(r.timeMs / 1000)}s</span>
-                {r.usedHelp && <span className="text-amber-500 text-[10px]">help</span>}
+                {r.usedHelp && <span className="text-ash text-[10px]">help</span>}
               </div>
             ))}
           </div>
@@ -314,11 +314,11 @@ export function MarathonPage() {
           const isCorrect = i === currentQ.correctIndex;
 
           // Before confirm: radio highlight on the selected option only.
-          // After confirm: green bg on correct answer, red bg on selected wrong answer.
+          // After confirm: moss (correct) and rust (wrong) using project color tokens.
           let classes = 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone';
           if (confirmed) {
-            if (isCorrect) classes = 'border-green-500 bg-green-100 text-green-800';
-            else if (isSelected) classes = 'border-red-500 bg-red-100 text-red-800';
+            if (isCorrect) classes = 'border-moss bg-moss/10 text-moss';
+            else if (isSelected) classes = 'border-rust bg-rust/10 text-rust';
             else classes = 'border-chalk bg-white text-ash';
           } else if (isSelected) {
             classes = 'border-ink bg-parchment text-ink font-medium';
@@ -335,13 +335,13 @@ export function MarathonPage() {
                 {/* Radio circle — filled for selected option and correct answer after confirm */}
                 <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
                   confirmed
-                    ? (isCorrect ? 'border-green-500' : isSelected ? 'border-red-500' : 'border-chalk')
+                    ? (isCorrect ? 'border-moss' : isSelected ? 'border-rust' : 'border-chalk')
                     : (isSelected ? 'border-ink' : 'border-chalk')
                 }`}>
                   {(isSelected || (confirmed && isCorrect)) && (
                     <div className={`w-2 h-2 rounded-full ${
                       confirmed
-                        ? (isCorrect ? 'bg-green-600' : 'bg-red-600')
+                        ? (isCorrect ? 'bg-moss' : 'bg-rust')
                         : 'bg-ink'
                     }`} />
                   )}
@@ -349,10 +349,10 @@ export function MarathonPage() {
                 {option}
                 {/* Small label after confirming */}
                 {confirmed && isCorrect && (
-                  <span className="ml-auto text-xs text-green-700 font-medium">✓ Correct</span>
+                  <span className="ml-auto text-xs text-moss font-medium">✓ Correct</span>
                 )}
                 {confirmed && isSelected && !isCorrect && (
-                  <span className="ml-auto text-xs text-red-700 font-medium">✗ Wrong</span>
+                  <span className="ml-auto text-xs text-rust font-medium">✗ Wrong</span>
                 )}
               </div>
             </button>

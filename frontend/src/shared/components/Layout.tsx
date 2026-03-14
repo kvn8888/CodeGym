@@ -62,6 +62,18 @@ export function Layout() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // Cmd+/ (Mac) or Ctrl+/ (Windows/Linux) toggles the sidebar
+  useEffect(() => {
+    const handleKeyboard = (e: KeyboardEvent) => {
+      if (e.key === '/' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setCollapsed((c) => !c);
+      }
+    };
+    document.addEventListener('keydown', handleKeyboard);
+    return () => document.removeEventListener('keydown', handleKeyboard);
+  }, []);
+
   return (
     <div className="min-h-screen flex bg-bone">
       {/* ── Sidebar ──────────────────────────────────────────────────────────

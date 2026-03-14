@@ -59,12 +59,19 @@ const TOPIC_CHIPS = [
   { label: 'Data Structures', icon: '📦' },
 ];
 
-const DIFFICULTIES = ['All Difficulties', 'Easy', 'Medium', 'Hard'] as const;
+const DIFFICULTIES = ['Beginner', 'Junior', 'Senior'] as const;
+
+// Maps difficulty level to a prompt suffix for the generation agent.
+const DIFFICULTY_PROMPTS: Record<string, string> = {
+  Beginner: 'Make this problem beginner-friendly: use simple inputs, provide detailed hints, and focus on fundamental concepts.',
+  Junior: 'Target a junior developer level: moderate complexity, some edge cases, and practical real-world relevance.',
+  Senior: 'Make this senior-level: complex edge cases, performance constraints, system-design considerations, and minimal hand-holding.',
+};
 
 export function GeneratePage() {
   const headline = useTypewriter(HEADLINES);
   const [prompt, setPrompt] = useState('');
-  const [difficulty, setDifficulty] = useState<string>('All Difficulties');
+  const [difficulty, setDifficulty] = useState<string>('Junior');
   const [generating, setGenerating] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showExamples, setShowExamples] = useState(false);
@@ -75,7 +82,10 @@ export function GeneratePage() {
     setGenerating(true);
     setStatus(null);
     setShowExamples(false);
-    // TODO: Call /api/v1/generate and poll for status
+    // Build the full prompt with difficulty context appended
+    const fullPrompt = `${prompt.trim()} ${DIFFICULTY_PROMPTS[difficulty] ?? ''}`.trim();
+    // TODO: Call /api/v1/generate with fullPrompt and poll for status
+    console.log('[generate]', fullPrompt);
     setTimeout(() => {
       setStatus('Generation endpoint not yet implemented');
       setGenerating(false);
@@ -144,24 +154,20 @@ export function GeneratePage() {
             ))}
           </select>
 
-          {/* Generate button — plus icon matching the design reference */}
+          {/* Generate button — circular plus icon (matches "New chat" reference) */}
           <button
             onClick={handleGenerate}
             disabled={generating || !prompt.trim()}
-            className="w-9 h-9 bg-ink text-bone rounded-xl flex items-center justify-center shrink-0 ml-3 hover:bg-ink-soft disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
+            className="group shrink-0 ml-3 flex items-center justify-center"
             aria-label="Generate"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <path d="M8 3v10M3 8h10" />
-            </svg>
+            <div className="flex items-center justify-center rounded-full transition-all ease-in-out group-hover:-rotate-3 group-hover:scale-110 group-active:rotate-6 group-active:scale-[0.98]">
+              <div className="flex items-center justify-center rounded-full w-8 h-8 bg-ash/15 group-hover:bg-ash/25 group-disabled:bg-chalk transition-colors">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" className="text-ash group-hover:text-ink transition-colors" aria-hidden="true" style={{ flexShrink: 0 }}>
+                  <path d="M10 3C10.4142 3 10.75 3.33579 10.75 3.75V9.25H16.25C16.6642 9.25 17 9.58579 17 10C17 10.3882 16.7051 10.7075 16.3271 10.7461L16.25 10.75H10.75V16.25C10.75 16.6642 10.4142 17 10 17C9.58579 17 9.25 16.6642 9.25 16.25V10.75H3.75C3.33579 10.75 3 10.4142 3 10C3 9.58579 3.33579 9.25 3.75 9.25H9.25V3.75C9.25 3.33579 9.58579 3 10 3Z" />
+                </svg>
+              </div>
+            </div>
           </button>
         </div>
 

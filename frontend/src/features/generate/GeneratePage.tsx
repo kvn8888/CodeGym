@@ -50,9 +50,21 @@ const EXAMPLES = [
   'Simple neural network with PyTorch',
 ];
 
+// Topic chips shown below the prompt bar for quick-start generation.
+const TOPIC_CHIPS = [
+  { label: 'DSA', icon: '🧩' },
+  { label: 'API Patterns', icon: '🔌' },
+  { label: 'System Design', icon: '🏗️' },
+  { label: 'Algorithms', icon: '⚡' },
+  { label: 'Data Structures', icon: '📦' },
+];
+
+const DIFFICULTIES = ['All Difficulties', 'Easy', 'Medium', 'Hard'] as const;
+
 export function GeneratePage() {
   const headline = useTypewriter(HEADLINES);
   const [prompt, setPrompt] = useState('');
+  const [difficulty, setDifficulty] = useState<string>('All Difficulties');
   const [generating, setGenerating] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showExamples, setShowExamples] = useState(false);
@@ -115,6 +127,24 @@ export function GeneratePage() {
             placeholder="Describe what you want to practice..."
             className="flex-1 bg-transparent text-sm text-ink placeholder-ash focus:outline-none"
           />
+
+          {/* Difficulty selector pill — styled like screen reference */}
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value)}
+            className="shrink-0 rounded-full border border-chalk bg-parchment px-3 py-1.5 text-xs text-ink cursor-pointer focus:outline-none appearance-none pr-7 ml-2"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 10 10' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2.5 4L5 6.5L7.5 4' stroke='%236b6b6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 8px center',
+            }}
+          >
+            {DIFFICULTIES.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+
+          {/* Generate button — plus icon matching the design reference */}
           <button
             onClick={handleGenerate}
             disabled={generating || !prompt.trim()}
@@ -129,9 +159,8 @@ export function GeneratePage() {
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
-              strokeLinejoin="round"
             >
-              <path d="M3 8h10M9 4l4 4-4 4" />
+              <path d="M8 3v10M3 8h10" />
             </svg>
           </button>
         </div>
@@ -161,7 +190,19 @@ export function GeneratePage() {
       </div>
 
       {!showExamples && (
-        <p className="text-[10px] text-ash mt-2 tracking-wide">CMD+ENTER TO SUBMIT</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {TOPIC_CHIPS.map((chip) => (
+            <button
+              key={chip.label}
+              onClick={() => setPrompt(chip.label + ' ')}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-chalk bg-white text-xs text-graphite hover:text-ink hover:border-ash transition-colors"
+              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+            >
+              <span>{chip.icon}</span>
+              {chip.label}
+            </button>
+          ))}
+        </div>
       )}
 
       {generating && (

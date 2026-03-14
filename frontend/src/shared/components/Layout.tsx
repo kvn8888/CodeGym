@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 // ── Sidebar widths ─────────────────────────────────────────────────────────────
@@ -47,9 +47,20 @@ const PanelIcon = () => (
 
 export function Layout() {
   const location = useLocation();
-  // true → sidebar is the thin icon-only strip (w-12)
-  // false → sidebar is fully expanded (w-56)
   const [collapsed, setCollapsed] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  // Close profile popup on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   return (
     <div className="min-h-screen flex bg-bone">
@@ -63,12 +74,14 @@ export function Layout() {
         } shrink-0 flex flex-col h-screen sticky top-0 bg-parchment border-r border-grain overflow-hidden transition-[width] duration-300 ease-in-out`}
       >
         {/* ── Header: logo + toggle ──────────────────────────────────────── */}
-        <div className="flex items-center gap-2 px-3 pt-5 pb-3">
-          {/* Logo text fades out at 150ms — quicker than the 300ms width
-              transition — so it disappears before the frame is fully narrow. */}
+        <div className={`flex items-center pt-5 pb-3 transition-all duration-300 ${
+          collapsed ? 'justify-center px-0' : 'gap-2 px-3'
+        }`}>
+          {/* Logo wrapper — transitions to max-w-0 when collapsed so
+              the toggle button auto-centers in the thin strip. */}
           <div
-            className={`flex-1 min-w-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 ${
-              collapsed ? 'opacity-0' : 'opacity-100'
+            className={`min-w-0 overflow-hidden whitespace-nowrap transition-all duration-200 ${
+              collapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100 flex-1'
             }`}
           >
             <Link to="/" className="text-sm font-bold tracking-[0.18em] text-ink no-underline">
@@ -76,19 +89,19 @@ export function Layout() {
             </Link>
           </div>
 
-          {/* Panel toggle button — always visible in the sidebar.
-              Uses the split-panel icon so it communicates "toggle a panel".  */}
           <button
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain transition-colors"
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain transition-colors"
           >
             <PanelIcon />
           </button>
         </div>
 
         {/* ── Navigation items ──────────────────────────────────────────── */}
-        <nav className="flex-1 px-2 py-2 flex flex-col gap-0.5">
+        <nav className={`flex-1 py-2 flex flex-col gap-0.5 transition-all duration-300 ${
+          collapsed ? 'px-1' : 'px-2'
+        }`}>
           {navItems.map((item) => {
             const active =
               item.path === '/'
@@ -98,45 +111,74 @@ export function Layout() {
               <Link
                 key={item.path}
                 to={item.path}
-                // title shows as a native tooltip when collapsed — useful
-                // accessibility hint since labels are invisible.
                 title={collapsed ? item.label : undefined}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm no-underline transition-colors ${
+                className={`flex items-center py-2.5 rounded-xl text-sm no-underline transition-all duration-200 ${
+                  collapsed ? 'justify-center px-0 gap-0' : 'px-3 gap-3'
+                } ${
                   active
                     ? 'bg-white text-ink font-medium'
                     : 'text-graphite hover:bg-grain hover:text-ink'
                 }`}
                 style={active ? { boxShadow: '0 1px 3px rgba(0,0,0,0.06)' } : {}}
               >
-                {/* Icon is always visible (shrink-0 prevents it from being squished) */}
                 <span className={`shrink-0 ${active ? 'text-ink' : 'text-ash'}`}>
                   {item.icon}
                 </span>
-
-                {/* Label fades fast (100ms) and collapses to zero width so it
-                    doesn't shift the icon position once the sidebar is narrow. */}
-                <span
-                  className={`whitespace-nowrap overflow-hidden transition-opacity duration-100 ${
-                    collapsed ? 'opacity-0 max-w-0' : 'opacity-100'
-                  }`}
-                >
-                  {item.label}
-                </span>
+                {!collapsed && (
+                  <span className="whitespace-nowrap overflow-hidden">
+                    {item.label}
+                  </span>
+                )}
               </Link>
             );
           })}
         </nav>
 
-        {/* ── Footer ────────────────────────────────────────────────────── */}
-        <div className="px-3 py-5 border-t border-grain">
-          <span
-            className={`text-xs text-ash tracking-wide whitespace-nowrap transition-opacity duration-150 ${
-              collapsed ? 'opacity-0' : 'opacity-100'
+        {/* ── Profile ───────────────────────────────────────────────────── */}
+        <div ref={profileRef} className="relative border-t border-grain">
+          <button
+            onClick={() => setProfileOpen((o) => !o)}
+            className={`flex items-center w-full py-3 hover:bg-grain transition-all duration-300 ${
+              collapsed ? 'justify-center px-0' : 'gap-3 px-3'
             }`}
           >
-            v0.1
-          </span>
+            <div className="w-7 h-7 rounded-full bg-ink text-bone flex items-center justify-center text-[10px] font-bold shrink-0">
+              KC
+            </div>
+            {!collapsed && (
+              <span className="text-xs text-graphite truncate">kvn.c8888</span>
+            )}
+          </button>
+
+          {/* Profile popup — anchored above the avatar */}
+          {profileOpen && (
+            <div
+              className="absolute bottom-full left-1 mb-2 w-56 border border-chalk rounded-2xl bg-white overflow-hidden z-50"
+              style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
+            >
+              <div className="px-4 py-3 border-b border-chalk">
+                <span className="text-xs text-ink font-medium">kvn.c8888@gmail.com</span>
+              </div>
+              <div className="py-1">
+                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment px-4 py-2.5 transition-colors">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /></svg>
+                  Settings
+                </button>
+                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment px-4 py-2.5 transition-colors">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                  Get help
+                </button>
+              </div>
+              <div className="border-t border-chalk py-1">
+                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment px-4 py-2.5 transition-colors">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                  Log out
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
       </aside>
 
       {/* ── Main content ──────────────────────────────────────────────────────

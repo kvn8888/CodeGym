@@ -36,11 +36,11 @@ body {
  * smoother, more organic corners. Pill-shaped elements (rounded-full /
  * border-radius: 9999px) are excluded — they stay perfectly circular.
  */
-/* *,
+*,
 *::before,
 *::after {
   corner-shape: squircle;
-} */
+}
 
 /* Typewriter cursor blink */
 @keyframes blink {

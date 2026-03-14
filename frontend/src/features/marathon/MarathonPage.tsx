@@ -247,7 +247,7 @@ export function MarathonPage() {
             {results.map((r, i) => (
               <div key={r.questionId} className="flex items-center gap-3 text-xs">
                 <span className="text-ash w-4">{i + 1}.</span>
-                <span className={r.correct ? 'text-moss' : 'text-rust'}>
+                <span style={{ color: r.correct ? '#2d5a27' : '#8b2500' }}>
                   {r.correct ? '✓' : '✗'}
                 </span>
                 <span className="text-graphite flex-1 truncate">
@@ -314,14 +314,28 @@ export function MarathonPage() {
           const isCorrect = i === currentQ.correctIndex;
 
           // Before confirm: radio highlight on the selected option only.
-          // After confirm: moss (correct) and rust (wrong) using project color tokens.
-          let classes = 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone';
+          // After confirm: green (correct) and red (wrong) via inline styles for reliability.
+          const baseStyle = 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone';
+          const selectedStyle = 'border-ink bg-parchment text-ink font-medium';
+          const mutedStyle = 'border-chalk bg-white text-ash';
+
+          // Use inline style overrides for confirmed feedback colors since
+          // Tailwind @theme custom colors may not be available in Storybook.
+          let feedbackStyle: React.CSSProperties = {};
+          let classes = baseStyle;
+
           if (confirmed) {
-            if (isCorrect) classes = 'border-moss bg-moss/10 text-moss';
-            else if (isSelected) classes = 'border-rust bg-rust/10 text-rust';
-            else classes = 'border-chalk bg-white text-ash';
+            if (isCorrect) {
+              classes = mutedStyle; // base, override with inline
+              feedbackStyle = { borderColor: '#2d5a27', backgroundColor: '#2d5a270d', color: '#2d5a27' };
+            } else if (isSelected) {
+              classes = mutedStyle;
+              feedbackStyle = { borderColor: '#8b2500', backgroundColor: '#8b25000d', color: '#8b2500' };
+            } else {
+              classes = mutedStyle;
+            }
           } else if (isSelected) {
-            classes = 'border-ink bg-parchment text-ink font-medium';
+            classes = selectedStyle;
           }
 
           return (
@@ -329,30 +343,37 @@ export function MarathonPage() {
               key={i}
               onClick={() => handleSelect(i)}
               disabled={confirmed}
+              style={feedbackStyle}
               className={`w-full text-left text-sm px-4 py-3 rounded-xl border transition-all duration-150 ${classes}`}
             >
               <div className="flex items-center gap-3">
                 {/* Radio circle — filled for selected option and correct answer after confirm */}
-                <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
-                  confirmed
-                    ? (isCorrect ? 'border-moss' : isSelected ? 'border-rust' : 'border-chalk')
-                    : (isSelected ? 'border-ink' : 'border-chalk')
-                }`}>
+                <div
+                  className="w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors"
+                  style={
+                    confirmed
+                      ? { borderColor: isCorrect ? '#2d5a27' : isSelected ? '#8b2500' : undefined }
+                      : { borderColor: isSelected ? '#1a1a1a' : undefined }
+                  }
+                >
                   {(isSelected || (confirmed && isCorrect)) && (
-                    <div className={`w-2 h-2 rounded-full ${
-                      confirmed
-                        ? (isCorrect ? 'bg-moss' : 'bg-rust')
-                        : 'bg-ink'
-                    }`} />
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{
+                        backgroundColor: confirmed
+                          ? (isCorrect ? '#2d5a27' : '#8b2500')
+                          : '#1a1a1a',
+                      }}
+                    />
                   )}
                 </div>
                 {option}
                 {/* Small label after confirming */}
                 {confirmed && isCorrect && (
-                  <span className="ml-auto text-xs text-moss font-medium">✓ Correct</span>
+                  <span className="ml-auto text-xs font-medium" style={{ color: '#2d5a27' }}>✓ Correct</span>
                 )}
                 {confirmed && isSelected && !isCorrect && (
-                  <span className="ml-auto text-xs text-rust font-medium">✗ Wrong</span>
+                  <span className="ml-auto text-xs font-medium" style={{ color: '#8b2500' }}>✗ Wrong</span>
                 )}
               </div>
             </button>

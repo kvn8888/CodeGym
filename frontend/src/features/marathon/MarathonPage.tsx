@@ -1,0 +1,361 @@
+import { useState, useEffect, useCallback } from 'react';
+import { HelpFlashcard } from './HelpFlashcard';
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+/** A single multiple-choice question in the marathon. */
+interface MarathonQuestion {
+  id: string;
+  text: string;
+  options: string[];
+  correctIndex: number;
+  concept: string;
+  helpContent: string;
+}
+
+/** Result for a single answered question. */
+interface QuestionResult {
+  questionId: string;
+  selectedIndex: number;
+  correct: boolean;
+  timeMs: number;
+  usedHelp: boolean;
+}
+
+// ── Mock data ────────────────────────────────────────────────────────────────
+
+/** Sample questions for the marathon demo. In production, these come from
+ *  POST /api/v1/marathon/generate which reads the user's memory file. */
+const MOCK_QUESTIONS: MarathonQuestion[] = [
+  {
+    id: 'mq1',
+    text: 'What is the time complexity of binary search?',
+    options: ['O(n)', 'O(log n)', 'O(n log n)', 'O(1)'],
+    correctIndex: 1,
+    concept: 'Binary Search Complexity',
+    helpContent:
+      'Binary search works by repeatedly halving the search space. Each comparison eliminates half of the remaining elements, so the number of steps is proportional to log₂(n).',
+  },
+  {
+    id: 'mq2',
+    text: 'Which data structure uses FIFO ordering?',
+    options: ['Stack', 'Queue', 'Heap', 'Hash Map'],
+    correctIndex: 1,
+    concept: 'Queue Data Structure',
+    helpContent:
+      'FIFO stands for First-In, First-Out. Elements are removed in the same order they were added. Think of a line at a coffee shop — the first person in line is served first.',
+  },
+  {
+    id: 'mq3',
+    text: 'What does the "two pointer" technique typically optimize?',
+    options: [
+      'Space complexity from O(n) to O(1)',
+      'Time complexity from O(n²) to O(n)',
+      'Both time and space',
+      'Neither — it simplifies code',
+    ],
+    correctIndex: 1,
+    concept: 'Two Pointer Technique',
+    helpContent:
+      'The two pointer technique uses two references that move through the data structure, usually from opposite ends or at different speeds. It commonly reduces nested loops (O(n²)) to a single pass (O(n)).',
+  },
+  {
+    id: 'mq4',
+    text: 'In a hash table, what is a collision?',
+    options: [
+      'When two keys produce the same hash',
+      'When the table runs out of space',
+      'When a key is deleted',
+      'When lookup takes O(n)',
+    ],
+    correctIndex: 0,
+    concept: 'Hash Collisions',
+    helpContent:
+      'A collision occurs when two different keys are mapped to the same index by the hash function. Common resolution strategies include chaining (linked lists at each bucket) and open addressing (probing for the next open slot).',
+  },
+  {
+    id: 'mq5',
+    text: 'What traversal order does BFS use?',
+    options: ['Depth-first', 'Level-order', 'In-order', 'Post-order'],
+    correctIndex: 1,
+    concept: 'Breadth-First Search',
+    helpContent:
+      'BFS explores nodes level by level, visiting all neighbors of a node before moving to the next depth. It uses a queue to track the frontier and is ideal for finding the shortest path in unweighted graphs.',
+  },
+];
+
+// ── Component ────────────────────────────────────────────────────────────────
+
+/**
+ * MarathonPage — timed multiple-choice question marathon.
+ *
+ * The LLM generates a set of 5–10 questions based on the user's memory file.
+ * Each question is timed. The results (right/wrong, time, help usage) feed
+ * back into the user's memory to reinforce known concepts and expand into
+ * new territory.
+ *
+ * Three states:
+ * - idle: start screen (select topic, see previous scores)
+ * - active: question display with timer + options + help button
+ * - results: score summary + time breakdown + recommendations
+ */
+export function MarathonPage() {
+  // Which phase the marathon is in.
+  const [phase, setPhase] = useState<'idle' | 'active' | 'results'>('idle');
+
+  // Index of the current question (0-based).
+  const [questionIndex, setQuestionIndex] = useState(0);
+
+  // Accumulated results for each answered question.
+  const [results, setResults] = useState<QuestionResult[]>([]);
+
+  // Timer: seconds elapsed on the current question.
+  const [elapsed, setElapsed] = useState(0);
+
+  // Whether the user selected an answer (pauses timer, shows feedback).
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  // Whether the help flashcard is visible.
+  const [showHelp, setShowHelp] = useState(false);
+
+  // Whether help was used on the current question.
+  const [helpUsed, setHelpUsed] = useState(false);
+
+  const questions = MOCK_QUESTIONS;
+  const currentQ = questions[questionIndex];
+
+  // ── Timer logic ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'active' || selectedIndex !== null) return;
+    const interval = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [phase, selectedIndex]);
+
+  /** Start the marathon. */
+  const handleStart = () => {
+    setPhase('active');
+    setQuestionIndex(0);
+    setResults([]);
+    setElapsed(0);
+    setSelectedIndex(null);
+    setHelpUsed(false);
+  };
+
+  /** User selects an answer option. */
+  const handleAnswer = useCallback(
+    (index: number) => {
+      if (selectedIndex !== null) return; // already answered
+      setSelectedIndex(index);
+      const result: QuestionResult = {
+        questionId: currentQ.id,
+        selectedIndex: index,
+        correct: index === currentQ.correctIndex,
+        timeMs: elapsed * 1000,
+        usedHelp: helpUsed,
+      };
+      setResults((prev) => [...prev, result]);
+    },
+    [selectedIndex, currentQ, elapsed, helpUsed]
+  );
+
+  /** Advance to the next question or show results. */
+  const handleNext = () => {
+    if (questionIndex < questions.length - 1) {
+      setQuestionIndex((i) => i + 1);
+      setElapsed(0);
+      setSelectedIndex(null);
+      setShowHelp(false);
+      setHelpUsed(false);
+    } else {
+      setPhase('results');
+    }
+  };
+
+  /** Open the help flashcard. */
+  const handleHelp = () => {
+    setShowHelp(true);
+    setHelpUsed(true);
+  };
+
+  // ── Idle state: start screen ─────────────────────────────────────────────
+  if (phase === 'idle') {
+    return (
+      <div className="max-w-lg mx-auto px-6 py-24 text-center">
+        <h1 className="text-2xl font-bold text-ink tracking-tight mb-3">MCQ Marathon</h1>
+        <p className="text-sm text-graphite mb-8 leading-relaxed">
+          Test your knowledge with timed multiple-choice questions. The AI adapts
+          to reinforce what you know and introduce new concepts.
+        </p>
+        <button
+          onClick={handleStart}
+          className="px-6 py-3 bg-ink text-bone text-sm font-medium rounded-xl hover:bg-ink-soft transition-colors"
+        >
+          Start Marathon ({questions.length} questions)
+        </button>
+      </div>
+    );
+  }
+
+  // ── Results state: summary ───────────────────────────────────────────────
+  if (phase === 'results') {
+    const correct = results.filter((r) => r.correct).length;
+    const totalTime = results.reduce((sum, r) => sum + r.timeMs, 0);
+    const avgTime = Math.round(totalTime / results.length / 1000);
+
+    return (
+      <div className="max-w-lg mx-auto px-6 py-24">
+        <h1 className="text-2xl font-bold text-ink tracking-tight mb-6 text-center">Results</h1>
+
+        {/* Score card */}
+        <div
+          className="rounded-2xl border border-chalk bg-white p-6 mb-6"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-3xl font-bold text-ink">
+                {correct}/{results.length}
+              </div>
+              <div className="text-xs text-ash mt-1">correct answers</div>
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-bold text-ink">{avgTime}s</div>
+              <div className="text-xs text-ash mt-1">avg per question</div>
+            </div>
+          </div>
+
+          {/* Per-question breakdown */}
+          <div className="flex flex-col gap-2 mt-4 border-t border-chalk pt-4">
+            {results.map((r, i) => (
+              <div key={r.questionId} className="flex items-center gap-3 text-xs">
+                <span className="text-ash w-4">{i + 1}.</span>
+                <span className={r.correct ? 'text-emerald-600' : 'text-red-500'}>
+                  {r.correct ? '✓' : '✗'}
+                </span>
+                <span className="text-graphite flex-1 truncate">
+                  {questions.find((q) => q.id === r.questionId)?.concept}
+                </span>
+                <span className="text-ash">{Math.round(r.timeMs / 1000)}s</span>
+                {r.usedHelp && <span className="text-amber-500 text-[10px]">help</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-3 justify-center">
+          <button
+            onClick={handleStart}
+            className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft transition-colors"
+          >
+            Try Again
+          </button>
+          <button
+            onClick={() => setPhase('idle')}
+            className="px-5 py-2.5 border border-chalk text-xs text-graphite rounded-xl hover:border-ash transition-colors"
+          >
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Active state: question display ───────────────────────────────────────
+  return (
+    <div className="max-w-lg mx-auto px-6 py-12">
+      {/* Header: question counter + timer + score */}
+      <div className="flex items-center justify-between mb-8">
+        <span className="text-xs text-ash font-medium">
+          {questionIndex + 1} of {questions.length}
+        </span>
+        <div className="flex items-center gap-4">
+          {/* Timer display */}
+          <span className="text-xs text-graphite tabular-nums">{elapsed}s</span>
+          {/* Score tally */}
+          <span className="text-xs text-ash">
+            {results.filter((r) => r.correct).length}✓ {results.filter((r) => !r.correct).length}✗
+          </span>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1 rounded-full bg-chalk mb-8">
+        <div
+          className="h-1 rounded-full bg-ink transition-all duration-300"
+          style={{ width: `${((questionIndex + 1) / questions.length) * 100}%` }}
+        />
+      </div>
+
+      {/* Question text */}
+      <h2 className="text-lg font-bold text-ink mb-6 leading-relaxed">{currentQ.text}</h2>
+
+      {/* Option buttons */}
+      <div className="flex flex-col gap-3 mb-8">
+        {currentQ.options.map((option, i) => {
+          const answered = selectedIndex !== null;
+          const isSelected = selectedIndex === i;
+          const isCorrect = i === currentQ.correctIndex;
+
+          // Determine styling based on answer state.
+          let classes = 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone';
+          if (answered) {
+            if (isCorrect) classes = 'border-emerald-400 bg-emerald-50 text-emerald-700';
+            else if (isSelected) classes = 'border-red-400 bg-red-50 text-red-700';
+            else classes = 'border-chalk bg-white text-ash';
+          }
+
+          return (
+            <button
+              key={i}
+              onClick={() => handleAnswer(i)}
+              disabled={answered}
+              className={`w-full text-left text-sm px-4 py-3 rounded-xl border transition-all duration-150 ${classes}`}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-ash w-5 shrink-0">
+                  {String.fromCharCode(65 + i)}.
+                </span>
+                {option}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Footer: Help + Next */}
+      <div className="flex items-center justify-between">
+        {/* Help button (only enabled before answering) */}
+        <button
+          onClick={handleHelp}
+          disabled={selectedIndex !== null}
+          className="flex items-center gap-1.5 text-xs text-graphite hover:text-ink disabled:text-ash disabled:cursor-not-allowed transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01" />
+          </svg>
+          Help
+        </button>
+
+        {/* Next/Finish button (only visible after answering) */}
+        {selectedIndex !== null && (
+          <button
+            onClick={handleNext}
+            className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft transition-colors"
+          >
+            {questionIndex < questions.length - 1 ? 'Next' : 'See Results'}
+          </button>
+        )}
+      </div>
+
+      {/* Help flashcard modal */}
+      {showHelp && (
+        <HelpFlashcard
+          concept={currentQ.concept}
+          explanation={currentQ.helpContent}
+          onClose={() => setShowHelp(false)}
+        />
+      )}
+    </div>
+  );
+}

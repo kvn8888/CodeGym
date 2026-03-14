@@ -1,223 +1,304 @@
 ---
 name: codegym-generation-flow
-description: Architecture for the agent-driven problem generation flow. Covers the Claude agent question modal, Gemini-powered user profile memory, and backend generation pipeline. Use when implementing or modifying the generation feature, user profile system, or the multi-step question modal.
+description: Architecture for the agent-driven learning flow. Covers the Claude agent question modal, Chat interface, MCQ Marathon format, recommendation engine, Gemini-powered user profile memory, and backend generation pipeline. Use when implementing or modifying any learning feature, user profile system, the multi-step question modal, chat, or marathon.
 ---
 
-# Agent-Driven Problem Generation Flow
+# Agent-Driven Learning Flow
 
 ## Overview
 
-Problem generation in CodeGym is **agent-driven, not form-driven**. Instead of a
-static difficulty selector, an LLM agent (Claude) interviews the user with
-context-aware questions before generating a problem. A secondary agent (Gemini
-Flash) maintains a persistent user profile/memory that the generation agent reads
-to personalize difficulty and topic selection.
+CodeGym uses **agent-driven, personalized learning** rather than static forms.
+Three main learning formats are available, each powered by LLM agents:
+
+1. **Problem Generation** — Claude interviews the user, then generates a
+   LeetCode-style coding problem tailored to their skill level.
+2. **Chat** — A conversational interface with Claude for learning goals,
+   knowledge assessment, and memory management.
+3. **MCQ Marathon** — Timed multiple-choice question sets that reinforce known
+   concepts and expand into new territory.
+
+A **persistent user memory file** is read/written by all agents, ensuring
+continuity across formats. A **recommendation engine** suggests the best format
+based on the user's prompt and profile.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    FRONTEND                              │
-│                                                         │
-│  GeneratePage                                           │
-│  ┌─────────────────────────────────────────────┐        │
-│  │  Prompt bar: "Describe what to practice..." │        │
-│  │  Topic chips: DSA, API Patterns, etc.       │        │
-│  │  [Send] button                              │        │
-│  └──────────────────┬──────────────────────────┘        │
-│                     │                                    │
-│                     ▼                                    │
-│  ┌─────────────────────────────────────────────┐        │
-│  │  QuestionModal (max 3 questions per series) │        │
-│  │  ┌─────────────────────────────────────┐    │        │
-│  │  │  Multiple-choice options            │    │        │
-│  │  │  Last option: "Specify..." (free)   │    │        │
-│  │  │  [Next] button                      │    │        │
-│  │  └─────────────────────────────────────┘    │        │
-│  │  Claude may ask another series if needed    │        │
-│  └──────────────────┬──────────────────────────┘        │
-│                     │                                    │
-│                     ▼                                    │
-│  POST /api/v1/generate                                  │
-│  { prompt, answers[], userProfileId }                   │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────────────┐
-│                    BACKEND                               │
-│                                                         │
-│  1. Read user profile/memory from DB                    │
-│  2. Call Claude with:                                   │
-│     - User's prompt                                     │
-│     - User's question answers                           │
-│     - User's profile memory (progress, history, skills) │
-│  3. Claude generates problem YAML + skeleton + tests    │
-│  4. Store generated problem in filesystem               │
-│  5. Return problem ID to frontend                       │
-│                                                         │
-│  Gemini Flash (async, triggered on activity):           │
-│  - Reads recent: problems generated, submissions,      │
-│    question answers, completion rates                   │
-│  - Updates user profile memory/summary                  │
-│  - Dormancy check: skip if user inactive > N days       │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         FRONTEND                                 │
+│                                                                 │
+│  ┌──────────┐  ┌────────────┐  ┌─────────────┐  ┌───────────┐ │
+│  │ Generate  │  │    Chat    │  │  Marathon    │  │ Dashboard │ │
+│  │  Page     │  │   Page     │  │   Page      │  │   Page    │ │
+│  └─────┬─────┘  └─────┬──────┘  └──────┬──────┘  └───────────┘ │
+│        │              │               │                         │
+│        ▼              ▼               ▼                         │
+│  QuestionModal   Message List   TimedQuestion                   │
+│  + Recommend     + Input Bar    + HelpFlashcard                 │
+│                                 + Results                       │
+│        │              │               │                         │
+│        └──────────────┼───────────────┘                         │
+│                       ▼                                         │
+│              POST /api/v1/...                                   │
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────────────┐
+│                        BACKEND                                   │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  User Memory (profile_memory TEXT in users table)        │   │
+│  │  - Goals, familiarity, progress, strengths, weaknesses   │   │
+│  │  - Read by ALL agents; written by chat/marathon/generate │   │
+│  │  - Updated by Gemini Flash on activity events            │   │
+│  │  - Dormancy check: skip if inactive > 14 days            │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  Agents:                                                        │
+│  ├─ Claude: question generation, problem creation, chat, recs  │
+│  └─ Gemini Flash: profile memory maintenance (async)            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Question Modal Component
+## 1. Problem Generation Flow
 
-### Behavior
+### Steps
 
 1. User submits a prompt from the Generate page.
-2. Frontend calls `POST /api/v1/generate/questions` with the prompt and user ID.
-3. Backend responds with a series of **max 3 questions**.
-4. A modal slides up with the first question.
-5. Each question shows:
-   - A question text (e.g., "What language do you prefer?")
-   - Multiple-choice options (e.g., "Python", "Go", "JavaScript")
-   - A final **"Specify..."** option → reveals a text input for free-form response
-   - A **[Next]** button to advance to the next question
-6. After all questions answered, frontend calls `POST /api/v1/generate` with the
-   prompt + answers.
-7. Claude may request **another series** of questions if it needs more context.
-   The modal re-opens for the follow-up series.
+2. Backend calls Claude to produce a **recommendation JSON** and questions.
+3. Frontend shows the QuestionModal (max 3 questions per series).
+4. After answers, Claude generates the problem (YAML + skeleton + tests).
+5. Claude's recommendation may suggest Marathon instead (see §4).
 
-### Component Structure
+### Recommendation JSON
 
-```
-QuestionModal
-├── QuestionCard (one per question)
-│   ├── Question text
-│   ├── OptionList (multiple-choice buttons)
-│   │   ├── OptionButton (selectable, radio-style)
-│   │   └── SpecifyOption (last item, expands to text input)
-│   └── NextButton
-├── ProgressDots (shows 1 of 3)
-└── SkipButton (optional: "Generate without answering")
-```
+After analyzing the user's prompt + memory, Claude returns:
 
-### State Flow
-
-```typescript
-interface QuestionSeries {
-  questions: Question[];
-  seriesIndex: number;      // which round of questions (0, 1, ...)
-}
-
-interface Question {
-  id: string;
-  text: string;
-  options: string[];        // last option is always "Specify..."
-}
-
-interface Answer {
-  questionId: string;
-  selectedOption: string;   // the chosen option text
-  freeText?: string;        // populated if "Specify..." was chosen
+```json
+{
+  "recommendation": "problem",       // "problem" | "marathon"
+  "confidence": 0.85,
+  "reason": "User asked for a specific DSA topic — a focused problem is ideal.",
+  "questions": [ ... ],              // QuestionModal questions
+  "marathon_config": null            // populated if recommendation is "marathon"
 }
 ```
 
-## User Profile Memory (Gemini Flash)
+The frontend shows the recommendation as the default selection but lets the
+user switch formats.
+
+## 2. Chat Interface
+
+### Purpose
+
+The Chat page provides a conversational interface with Claude whose primary
+mission is to:
+
+- **Learn the user's goals** (career, interview prep, learning for fun, etc.)
+- **Assess existing knowledge** (languages, frameworks, DSA comfort)
+- **Generate/adjust the user's memory file** based on the conversation
+
+### Frontend Component: ChatPage
+
+```
+ChatPage
+├── MessageList (scrollable, auto-scroll to bottom)
+│   ├── UserMessage (right-aligned, bg-parchment)
+│   └── AssistantMessage (left-aligned, bg-white, border)
+├── InputBar (bottom-fixed, similar to Generate prompt bar)
+│   ├── TextInput (multi-line)
+│   └── SendButton (arrow icon)
+└── MemoryIndicator (shows when memory was last updated)
+```
+
+### API
+
+- `POST /api/v1/chat` — Send a message, receive Claude's response + updated
+  memory (if applicable).
+- `GET /api/v1/chat/history` — Retrieve past messages for the session.
+
+### Memory Integration
+
+Every Chat response may include a `memory_update` field:
+
+```json
+{
+  "message": "Great! I see you're comfortable with Python but want to...",
+  "memory_update": {
+    "goals": ["interview prep for FAANG"],
+    "familiar_with": ["python", "basic-dsa"],
+    "learning_targets": ["system-design", "go"]
+  }
+}
+```
+
+## 3. MCQ Marathon
+
+### Purpose
+
+A timed multiple-choice quiz that reinforces concepts the user knows and
+gradually expands into adjacent topics. The LLM generates questions based on:
+
+- The user's **memory file** (strengths, weaknesses, history)
+- **Previous answers** in the current marathon (adaptive difficulty)
+- **Time spent** on each question (hesitation signals uncertainty)
+
+### Frontend Component: MarathonPage
+
+```
+MarathonPage
+├── MarathonHeader
+│   ├── QuestionCounter ("3 of 10")
+│   ├── Timer (seconds elapsed on current question)
+│   └── ScoreBar (correct/incorrect tally)
+├── QuestionCard
+│   ├── QuestionText
+│   ├── OptionButtons (4 choices, single-select)
+│   └── HelpButton (opens HelpFlashcard modal)
+├── HelpFlashcard (modal overlay)
+│   ├── ConceptTitle
+│   ├── Explanation (does NOT answer the question)
+│   └── CloseButton
+└── ResultsView (shown after all questions)
+    ├── Score summary
+    ├── Time breakdown per question
+    ├── Weak areas identified
+    └── Recommended next steps
+```
+
+### Question Generation
+
+Each marathon set is 5–10 questions. The backend generates them in a batch:
+
+```json
+{
+  "questions": [
+    {
+      "id": "mq1",
+      "text": "What is the time complexity of binary search?",
+      "options": ["O(n)", "O(log n)", "O(n log n)", "O(1)"],
+      "correct_index": 1,
+      "concept": "binary-search-complexity",
+      "help_content": "Binary search halves the search space each step..."
+    }
+  ],
+  "topic_distribution": {
+    "reinforcement": 0.6,
+    "expansion": 0.4
+  }
+}
+```
+
+### Timer + Scoring
+
+- Timer starts when the question is displayed.
+- Answering stops the timer and records `time_ms`.
+- After all questions, the results are sent to the backend:
+
+```json
+{
+  "marathon_id": "uuid",
+  "results": [
+    {
+      "question_id": "mq1",
+      "selected_index": 1,
+      "correct": true,
+      "time_ms": 4200,
+      "used_help": false
+    }
+  ]
+}
+```
+
+### Memory Integration
+
+After a marathon, Gemini Flash updates the user's memory with:
+
+- Questions answered correctly/incorrectly
+- Average response time per topic
+- Whether help was used (signals the concept needs more reinforcement)
+- New topics to introduce in the next marathon
+
+### API Endpoints
+
+- `POST /api/v1/marathon/generate` — Generate a question set.
+- `POST /api/v1/marathon/submit` — Submit completed marathon results.
+
+## 4. Recommendation Engine
+
+After the QuestionModal in the Generate flow, Claude produces a
+**recommendation JSON** that suggests the best learning format:
+
+| Signal | Suggests |
+|--------|----------|
+| Specific topic + "practice" | Problem (default) |
+| Broad topic + "review" | Marathon |
+| "I don't know where to start" | Chat |
+| Memory shows topic weakness | Marathon for that topic |
+| Memory shows readiness | Problem with higher difficulty |
+
+The frontend shows the recommendation with a toggle to switch formats.
+
+## 5. User Memory File
+
+### Purpose
+
+A persistent profile that ALL agents in the project read and write. Ensures
+continuity across problem generation, chat, and marathon sessions.
 
 ### What it stores
 
-A Gemini Flash model maintains a **living summary** of each user's profile:
-
-- **Skill assessment**: inferred skill level per language/topic based on
-  submission history and completion rates
-- **Problem history**: types of problems generated, topics covered, difficulty
-  distribution
-- **Question answers**: aggregated preferences from past generation question
-  modals (preferred languages, domains, learning goals)
-- **Progress trajectory**: improving, plateauing, or struggling in specific areas
-
-### When it updates
-
-Gemini Flash updates the profile memory on **user activity events**:
-
-- Problem generated
-- Submission graded (pass/fail)
-- Question answers submitted
-
-**Dormancy check**: If the user has been inactive for a configurable threshold
-(e.g., 14 days), Gemini Flash does NOT run. The stale profile is still readable
-by the generation agent — it just won't be refreshed until the user returns.
+- **Goals**: career targets, interview prep, learning for fun, etc.
+- **Familiarity**: languages, frameworks, DSA comfort level
+- **Progress**: topics covered, completion rates, improvement trajectory
+- **Strengths**: concepts the user consistently gets right quickly
+- **Weaknesses**: concepts with low accuracy or high help usage
 
 ### Storage
 
-The profile memory is stored as a text blob in the `users` table (or a dedicated
-`user_profiles` table). The generation agent reads it as context when creating
-problems.
+Stored as a TEXT blob in the `users` table (or a dedicated `user_profiles`
+table). Updated by Gemini Flash on activity events.
 
 ```sql
 ALTER TABLE users ADD COLUMN profile_memory TEXT DEFAULT '';
 ALTER TABLE users ADD COLUMN profile_updated_at TIMESTAMP;
 ```
 
+### When it updates
+
+Gemini Flash fires on user activity:
+- Problem generated / submission graded
+- Chat message exchanged
+- Marathon completed (results + time + help usage)
+
+**Dormancy check**: Skip Gemini updates if user inactive > 14 days.
+
 ## API Endpoints (Planned)
 
-### POST /api/v1/generate/questions
+### Problem Generation
 
-Request:
-```json
-{
-  "prompt": "Two pointer problems in Go",
-  "user_id": "uuid"
-}
-```
+- `POST /api/v1/generate/questions` — Claude generates clarifying questions.
+- `POST /api/v1/generate` — Claude generates problem from prompt + answers.
+- `GET /api/v1/generate/status/:id` — Poll generation progress.
 
-Response:
-```json
-{
-  "data": {
-    "series_id": "uuid",
-    "questions": [
-      {
-        "id": "q1",
-        "text": "What's your experience with Go?",
-        "options": ["Beginner", "Intermediate", "Advanced", "Specify..."]
-      },
-      {
-        "id": "q2",
-        "text": "What aspect of two pointers do you want to focus on?",
-        "options": ["Sliding window", "Fast/slow pointers", "Meeting in middle", "Specify..."]
-      }
-    ]
-  }
-}
-```
+### Chat
 
-### POST /api/v1/generate
+- `POST /api/v1/chat` — Send message, receive response + optional memory update.
+- `GET /api/v1/chat/history` — Retrieve past messages.
 
-Request:
-```json
-{
-  "prompt": "Two pointer problems in Go",
-  "answers": [
-    { "question_id": "q1", "selected_option": "Intermediate" },
-    { "question_id": "q2", "selected_option": "Sliding window" }
-  ],
-  "series_id": "uuid",
-  "user_id": "uuid"
-}
-```
+### Marathon
 
-Response:
-```json
-{
-  "data": {
-    "problem_id": "go-two-pointer-sliding-window-abc123",
-    "status": "generating"
-  }
-}
-```
-
-### POST /api/v1/generate/status/:id
-
-Poll for generation completion.
+- `POST /api/v1/marathon/generate` — Generate a timed question set.
+- `POST /api/v1/marathon/submit` — Submit completed marathon results.
 
 ## Implementation Order
 
-1. **QuestionModal component** — frontend modal with multi-choice + specify + next
-2. **POST /api/v1/generate/questions** — backend endpoint, Claude generates questions
-3. **POST /api/v1/generate** — backend endpoint, Claude generates problem from prompt + answers + profile
-4. **User profile memory** — Gemini Flash integration, profile_memory column, activity triggers
-5. **Dormancy check** — skip Gemini updates when user is inactive
+1. ~~QuestionModal component~~ ✅ (committed 813086d)
+2. **Chat page + sidebar nav** — conversational Claude interface
+3. **Marathon page + HelpFlashcard** — timed MCQ with concept help
+4. **POST /api/v1/generate/questions** — backend, Claude generates questions
+5. **POST /api/v1/generate** — backend, Claude generates problem
+6. **POST /api/v1/chat** — backend chat endpoint
+7. **POST /api/v1/marathon/generate** — backend marathon endpoint
+8. **User profile memory** — Gemini Flash integration, profile_memory column
+9. **Recommendation engine** — Claude returns recommendation JSON after questions
+10. **Dormancy check** — skip Gemini updates when user is inactive

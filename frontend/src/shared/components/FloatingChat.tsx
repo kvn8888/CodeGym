@@ -21,8 +21,8 @@ import {
   type ChatBounds,
 } from './floatingChatGeometry';
 
-const CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)';
-const WINDOW_SHADOW = '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)';
+const CARD_SHADOW = '3px 3px 0 0 var(--color-ink)';
+const WINDOW_SHADOW = '5px 5px 0 0 var(--color-ink)';
 const RADIUS_CLOSED = BUBBLE_SIZE / 2;
 const RADIUS_OPEN = 16;
 const CHAT_LAYOUT_ID = 'codegym-floating-chat-shell';
@@ -60,8 +60,10 @@ function ChatChrome({
               : 'flex-1 min-w-0'
           }
         >
-          <div className="text-sm font-medium text-ink">Assistant</div>
-          <div className="text-[10px] text-ash">Goals, skills, and memory</div>
+          <div className="font-display text-base font-semibold tracking-tight text-ink">
+            Assistant<span className="text-tangerine">.</span>
+          </div>
+          <div className="text-[10px] text-graphite">Goals, skills, and memory</div>
         </div>
         <button
           onClick={onClose}
@@ -255,7 +257,7 @@ export function FloatingChat() {
             aria-label="Open chat"
           >
             <motion.span
-              className="absolute inset-0 flex items-center justify-center rounded-full bg-ink hover:bg-ink-soft"
+              className="absolute inset-0 flex items-center justify-center rounded-full bg-tangerine hover:bg-tangerine-deep"
               initial={false}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.72 }}
@@ -284,7 +286,7 @@ export function FloatingChat() {
             aria-label="Chat assistant"
           >
             <motion.div
-              className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-chalk bg-white"
+              className="flex h-full w-full flex-col overflow-hidden rounded-2xl border-2 border-ink bg-shell"
               style={{ boxShadow: WINDOW_SHADOW }}
               initial={false}
               animate={{
@@ -348,7 +350,7 @@ export function FloatingChat() {
             zIndex: 50,
             boxShadow: WINDOW_SHADOW,
           }}
-          className={`react-rnd overflow-hidden rounded-2xl border border-chalk bg-white ${
+          className={`react-rnd overflow-hidden rounded-2xl border-2 border-ink bg-shell ${
             snapTransitioning ? 'chat-snap-transition' : ''
           }`}
         >

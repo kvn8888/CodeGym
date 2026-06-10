@@ -239,14 +239,18 @@ export function ProblemDetailPage() {
     <div ref={pageRef} className="h-screen flex">
       {/* Left: Problem Description */}
       <div
-        className="shrink-0 min-w-0 overflow-y-auto p-6 bg-white"
+        className="shrink-0 min-w-0 overflow-y-auto p-6 bg-bone"
         style={{ width: `${descriptionWidth}%` }}
       >
-        <h1 className="text-sm font-bold text-ink mb-1">{problem.title}</h1>
-        <div className="flex gap-3 mb-4 text-[10px] tracking-[0.1em] text-ash">
-          <span>{problem.language.toUpperCase()}</span>
-          {problem.framework && <span>{problem.framework.toUpperCase()}</span>}
-          <span>{problem.estimated_minutes}M</span>
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink mb-3">{problem.title}</h1>
+        <div className="flex gap-2 mb-5 text-[10px] tracking-[0.08em] font-bold">
+          <span className="rounded-md bg-grain px-2 py-1 text-graphite">{problem.language.toUpperCase()}</span>
+          {problem.framework && (
+            <span className="rounded-md bg-grain px-2 py-1 text-graphite">{problem.framework.toUpperCase()}</span>
+          )}
+          <span className="rounded-md px-2 py-1" style={{ color: 'var(--color-tangerine-deep)', backgroundColor: 'var(--color-tangerine-tint)' }}>
+            {problem.estimated_minutes} MIN
+          </span>
         </div>
         <div className="prose-brutalist text-xs text-graphite">
           <ReactMarkdown>{problem.description}</ReactMarkdown>
@@ -255,20 +259,25 @@ export function ProblemDetailPage() {
         {/* Hints */}
         {problem.hints && problem.hints.length > 0 && (
           <div className="mt-6 pt-4 border-t border-chalk">
-            <h3 className="text-[10px] font-bold tracking-[0.15em] text-ash mb-3 uppercase">
+            <h3 className="text-[10px] font-bold tracking-[0.15em] text-tangerine-deep mb-3 uppercase">
               Hints
             </h3>
             {problem.hints.map((hint, i) => (
               <div key={i} className="mb-2">
                 {i < hintsRevealed ? (
-                  <p className="text-xs text-graphite rounded-xl border border-chalk bg-bone px-4 py-3"
-                    style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <p
+                    className="text-xs text-graphite rounded-xl px-4 py-3 leading-5"
+                    style={{
+                      backgroundColor: 'var(--color-honey-tint)',
+                      border: '1.5px solid var(--color-honey)',
+                    }}
+                  >
                     {hint.text}
                   </p>
                 ) : (
                   <button
                     onClick={() => setHintsRevealed(i + 1)}
-                    className="text-xs text-ash hover:text-ink transition-colors"
+                    className="text-xs font-bold text-tangerine-deep hover:text-tangerine transition-colors"
                   >
                     {'\u2192'} Reveal hint {i + 1}{' '}
                     {hint.cost > 0 ? `(${hint.cost} credit)` : ''}
@@ -320,8 +329,8 @@ export function ProblemDetailPage() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="px-4 py-1.5 m-1.5 rounded-lg bg-white text-ink text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bone disabled:opacity-40 transition-colors"
-            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
+            className="px-4 py-1.5 m-1.5 rounded-lg bg-tangerine text-shell text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-tangerine-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bone disabled:opacity-40 transition-colors"
+            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
           >
             {submitting ? 'RUNNING' : 'RUN'}
           </button>

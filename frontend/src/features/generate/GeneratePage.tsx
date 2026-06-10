@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'motion/react';
 import {
   ArrowRight,
   ChevronDown,
@@ -30,10 +31,10 @@ const RECENT_PROMPTS = [
 ];
 
 const SPOTLIGHT_TOPICS = [
-  { label: 'DSA', count: 128, color: '#3f9b6e' },
-  { label: 'API Patterns', count: 64, color: '#3f7bb8' },
-  { label: 'System Design', count: 52, color: '#8a6fc0' },
-  { label: 'Concurrency', count: 37, color: '#b8607a' },
+  { label: 'DSA', count: 128, color: '#44792F' },
+  { label: 'API Patterns', count: 64, color: '#2742D6' },
+  { label: 'System Design', count: 52, color: '#6D45C4' },
+  { label: 'Concurrency', count: 37, color: '#E8470A' },
 ];
 
 const EXAMPLES = [
@@ -57,10 +58,10 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   hard: 'Hard',
 };
 
-const DIFFICULTY_STYLES: Record<Difficulty, { color: string; background: string }> = {
-  easy: { color: '#15803d', background: 'rgba(21,128,61,0.09)' },
-  medium: { color: '#b45309', background: 'rgba(180,83,9,0.09)' },
-  hard: { color: '#be123c', background: 'rgba(190,18,60,0.09)' },
+const DIFFICULTY_STYLES: Record<Difficulty, React.CSSProperties> = {
+  easy: { color: '#44792F', background: 'var(--color-moss-tint)', borderColor: '#44792F' },
+  medium: { color: '#C78A00', background: 'var(--color-honey-tint)', borderColor: '#C78A00' },
+  hard: { color: '#B3300E', background: 'var(--color-rust-tint)', borderColor: '#B3300E' },
 };
 
 function currentHourBucket() {
@@ -261,8 +262,8 @@ function CommandGenerateView({
     <main className="flex flex-col items-center px-0 pb-12 pt-14">
       <div className="w-full max-w-3xl">
         <div className="mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-ink">
-            What do you want to practice?
+          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink">
+            What do you want to <span className="marker-tangerine">practice</span>?
           </h1>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 md:flex-nowrap">
             <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-graphite">
@@ -408,11 +409,11 @@ function SpotlightGenerateView({
     <main className="flex items-start justify-center px-0 pt-16">
       <div className="w-full max-w-4xl text-center">
         <div className="mb-10">
-          <div className="mb-5 text-[10px] font-bold tracking-[0.32em] text-ash uppercase">
+          <div className="mb-5 text-[10px] font-bold tracking-[0.32em] text-tangerine uppercase">
             AI Problem Engine
           </div>
-          <h1 className="text-4xl font-semibold tracking-tight text-ink sm:whitespace-nowrap md:text-5xl xl:text-6xl">
-            {sessionPhrase}
+          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink sm:whitespace-nowrap md:text-5xl xl:text-6xl">
+            <em className="marker-tangerine not-italic">{sessionPhrase}</em>
           </h1>
           <p className="mx-auto mt-8 max-w-2xl text-lg leading-8 text-graphite">
             One prompt becomes a unique problem, a test suite, and a sandbox to prove your
@@ -502,16 +503,18 @@ function GenerateButton({
   const isBlueprint = variant === 'blueprint';
 
   return (
-    <button
+    <motion.button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      whileTap={disabled ? undefined : { scale: 0.96 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
       className={`cg-focus cg-transition flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:bg-chalk disabled:text-ash ${
         isBlueprint
-          ? 'bg-blue text-white hover:bg-blue-hover'
-          : 'bg-blue text-white hover:bg-blue-hover'
+          ? 'bg-tangerine text-shell hover:bg-tangerine-deep'
+          : 'bg-tangerine text-shell hover:bg-tangerine-deep'
       }`}
-      style={{ boxShadow: disabled ? undefined : '0 1px 3px rgba(0,0,0,0.08)' }}
+      style={{ boxShadow: disabled ? undefined : '2px 2px 0 0 var(--color-ink)' }}
       aria-label={label}
     >
       {generating ? (
@@ -526,7 +529,7 @@ function GenerateButton({
           </kbd>
         </>
       )}
-    </button>
+    </motion.button>
   );
 }
 

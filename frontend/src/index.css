@@ -1,31 +1,70 @@
-@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap");
 @import "tailwindcss";
 
+/*
+ * ── CodeGym "Ink & Tangerine" ─────────────────────────────────────────────
+ * Warm editorial neo-brutalism. Cream paper ground, confident ink borders,
+ * hard offset "pop" shadows, one loud accent (tangerine) with a small
+ * supporting cast (honey, moss, violet, cobalt) for difficulty + status.
+ * The core tension: Fraunces display serif against a monospace body.
+ *
+ * Token names from earlier design generations (shell/soft/faint/blue/cg-*)
+ * are kept alive and remapped into this palette so every component renders
+ * coherently while pages are migrated.
+ */
 @theme {
-  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
-  --color-bone: #ececee;
-  --color-shell: #fcfcfd;
-  --color-parchment: #f7f7f8;
-  --color-grain: #f4f4f5;
-  --color-soft: #fafafa;
-  --color-ink: #18181b;
-  --color-ink-soft: #3f3f46;
-  --color-graphite: #52525b;
-  --color-ash: #a1a1aa;
-  --color-faint: #b4b4ba;
-  --color-chalk: #d4d4d8;
-  --color-blue: #2563eb;
-  --color-blue-hover: #1d4ed8;
-  --color-moss: #3f9b6e;
-  --color-rust: #b8607a;
+  /* Type — mono body is the brand; Fraunces for display moments */
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-sans: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* Ground — warm paper */
+  --color-bone: #FAF3E3;        /* page background */
+  --color-shell: #FFFCF4;       /* raised card surface */
+  --color-parchment: #F4ECD9;   /* secondary surfaces */
+  --color-grain: #EFE6CF;       /* hover fills, subtle sections */
+  --color-soft: #F8F2E2;
+  --color-chalk: #DCD1B6;       /* hairline borders, disabled */
+
+  /* Ink — warm near-black */
+  --color-ink: #1C1917;
+  --color-ink-soft: #3B342C;
+  --color-graphite: #6B6254;
+  --color-ash: #A2987D;
+  --color-faint: #BFB498;
+
+  /* Accent — the loud one */
+  --color-tangerine: #E8470A;
+  --color-tangerine-deep: #C03A04;
+  --color-tangerine-tint: #FFDFCC;
+
+  /* Supporting cast */
+  --color-honey: #C78A00;
+  --color-honey-tint: #FAECBE;
+  --color-moss: #44792F;
+  --color-moss-tint: #DFECCB;
+  --color-violet: #6D45C4;
+  --color-violet-tint: #E9DFF9;
+  --color-cobalt: #2742D6;
+  --color-cobalt-tint: #DCE3FA;
+  --color-rust: #B3300E;
+  --color-rust-tint: #F8DACB;
+
+  /* Legacy aliases — keep older components on-palette */
+  --color-blue: #E8470A;        /* was cobalt blue; CTAs now tangerine */
+  --color-blue-hover: #C03A04;
+
+  /* Hard offset shadows — the signature card treatment */
+  --shadow-pop: 3px 3px 0 0 var(--color-ink);
+  --shadow-pop-sm: 2px 2px 0 0 var(--color-ink);
+  --shadow-pop-lg: 5px 5px 0 0 var(--color-ink);
+  --shadow-pop-tangerine: 4px 4px 0 0 var(--color-tangerine);
 }
 
 :root {
-  --cg-border-subtle: rgba(16, 17, 26, 0.06);
-  --cg-border-strong: rgba(16, 17, 26, 0.11);
-  --cg-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 26px 60px -30px rgba(0,0,0,0.12);
-  --cg-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.13);
+  --cg-border-subtle: rgba(28, 25, 23, 0.16);
+  --cg-border-strong: rgba(28, 25, 23, 0.9);
+  --cg-shadow: 3px 3px 0 0 var(--color-ink);
+  --cg-focus-ring: 0 0 0 3px rgba(232, 71, 10, 0.3);
 }
 
 html {
@@ -37,13 +76,13 @@ body {
   margin: 0;
   background-color: var(--color-bone);
   color: var(--color-ink);
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background-color: var(--color-ink);
-  color: var(--color-bone);
+  background-color: var(--color-tangerine);
+  color: var(--color-shell);
 }
 
 code,
@@ -53,8 +92,9 @@ pre,
   font-family: var(--font-mono);
 }
 
+/* Raised card: solid ink hairline + hard offset shadow */
 .cg-surface {
-  border: 1px solid var(--cg-border-subtle);
+  border: 1.5px solid var(--color-ink);
   box-shadow: var(--cg-shadow);
 }
 
@@ -90,6 +130,22 @@ pre,
   animation: cgfade 180ms ease both;
 }
 
+/* Marker-pen highlight for headline emphasis */
+.marker-tangerine {
+  background-image: linear-gradient(
+    transparent 56%,
+    var(--color-tangerine-tint) 56%,
+    var(--color-tangerine-tint) 94%,
+    transparent 94%
+  );
+}
+
+/* Dotted paper texture for hero sections */
+.bg-dots {
+  background-image: radial-gradient(var(--color-chalk) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
 /*
  * Continuous corners (squircle) — Apple-style smooth corner curvature.
  * Uses CSS corner-shape (Chrome 139+, Edge 139+). Browsers that don't
@@ -115,23 +171,24 @@ pre,
 /* Grid spinner animation — fast snap on, slow fade off for trail effect */
 @keyframes grid-blink {
   0%, 100% { background-color: var(--color-grain); }
-  3% { background-color: var(--color-ink); }
+  3% { background-color: var(--color-tangerine); }
   25% { background-color: var(--color-grain); }
 }
 
-/* Markdown prose styling — brutalist */
+/* Markdown prose styling — editorial */
 .prose-brutalist h1,
 .prose-brutalist h2,
 .prose-brutalist h3 {
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 600;
   margin-top: 1.5em;
   margin-bottom: 0.5em;
   color: var(--color-ink);
 }
 
-.prose-brutalist h1 { font-size: 1.1em; }
-.prose-brutalist h2 { font-size: 1em; }
-.prose-brutalist h3 { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.1em; }
+.prose-brutalist h1 { font-size: 1.35em; }
+.prose-brutalist h2 { font-size: 1.15em; }
+.prose-brutalist h3 { font-size: 1em; }
 
 .prose-brutalist p {
   margin-bottom: 0.75em;
@@ -142,6 +199,7 @@ pre,
   background: var(--color-grain);
   padding: 0.1em 0.35em;
   font-size: 0.85em;
+  border-radius: 4px;
 }
 
 .prose-brutalist pre {
@@ -151,6 +209,7 @@ pre,
   overflow-x: auto;
   margin: 1em 0;
   font-size: 0.85em;
+  border-radius: 10px;
 }
 
 .prose-brutalist pre code {
@@ -169,16 +228,16 @@ pre,
 }
 
 .prose-brutalist li::marker {
-  color: var(--color-ash);
+  color: var(--color-tangerine);
 }
 
 .prose-brutalist a {
-  color: var(--color-ink);
+  color: var(--color-tangerine-deep);
   text-decoration: underline;
 }
 
 .prose-brutalist blockquote {
-  border-left: 2px solid var(--color-chalk);
+  border-left: 3px solid var(--color-tangerine);
   padding-left: 1em;
   color: var(--color-graphite);
   margin: 1em 0;
@@ -217,13 +276,13 @@ pre,
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-chalk); }
+::-webkit-scrollbar-thumb { background: var(--color-chalk); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-ash); }
 
 .cg-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
 .cg-scroll::-webkit-scrollbar-track { background: transparent; }
 .cg-scroll::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
+  background: var(--color-chalk);
   border-radius: 999px;
 }
-.cg-scroll::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+.cg-scroll::-webkit-scrollbar-thumb:hover { background: var(--color-ash); }

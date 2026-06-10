@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { FloatingChat } from './FloatingChat';
 
 // ── Sidebar widths ─────────────────────────────────────────────────────────────
@@ -19,7 +20,7 @@ const navItems = [
     path: '/generate',
     label: 'Generate',
     icon: (
-      <div className="flex items-center justify-center rounded-full w-[22px] h-[22px] bg-ash/15">
+      <div className="flex items-center justify-center rounded-full w-[22px] h-[22px] bg-tangerine text-shell">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
           <path d="M10 3C10.4142 3 10.75 3.33579 10.75 3.75V9.25H16.25C16.6642 9.25 17 9.58579 17 10C17 10.3882 16.7051 10.7075 16.3271 10.7461L16.25 10.75H10.75V16.25C10.75 16.6642 10.4142 17 10 17C9.58579 17 9.25 16.6642 9.25 16.25V10.75H3.75C3.33579 10.75 3 10.4142 3 10C3 9.58579 3.33579 9.25 3.75 9.25H9.25V3.75C9.25 3.33579 9.58579 3 10 3Z" />
         </svg>
@@ -114,7 +115,7 @@ export function Layout() {
       <aside
         className={`${
           collapsed ? 'w-12' : 'w-56'
-        } relative z-40 shrink-0 flex flex-col h-screen sticky top-0 bg-parchment border-r border-grain transition-[width] duration-300 ease-in-out`}
+        } relative z-40 shrink-0 flex flex-col h-screen sticky top-0 bg-ink transition-[width] duration-300 ease-in-out`}
       >
         <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         {/* ── Header: logo + toggle ──────────────────────────────────────── */}
@@ -128,15 +129,15 @@ export function Layout() {
               collapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100 flex-1'
             }`}
           >
-            <Link to="/" className="text-sm font-bold tracking-[0.18em] text-ink no-underline">
-              CODEGYM
+            <Link to="/" className="font-display text-lg font-semibold tracking-tight text-bone no-underline">
+              CodeGym<span className="text-tangerine">.</span>
             </Link>
           </div>
 
           <button
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-colors"
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-bone/40 hover:text-bone hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink transition-colors"
           >
             <PanelIcon />
           </button>
@@ -155,20 +156,28 @@ export function Layout() {
                 key={item.path}
                 to={item.path}
                 title={collapsed ? item.label : undefined}
-                className={`flex items-center py-2.5 rounded-xl text-sm no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-all duration-200 ${
+                className={`relative flex items-center py-2.5 rounded-xl text-sm no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink transition-colors duration-200 ${
                   collapsed ? 'justify-center px-0 gap-0' : 'px-3 gap-3'
                 } ${
                   active
-                    ? 'bg-white text-ink font-medium'
-                    : 'text-graphite hover:bg-grain hover:text-ink'
+                    ? 'text-ink font-medium'
+                    : 'text-bone/55 hover:bg-white/8 hover:text-bone'
                 }`}
-                style={active ? { boxShadow: '0 1px 3px rgba(0,0,0,0.06)' } : {}}
               >
-                <span className={`shrink-0 ${active ? 'text-ink' : 'text-ash'}`}>
+                {active && (
+                  <motion.span
+                    layoutId="nav-active-pill"
+                    transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                    className="absolute inset-0 rounded-xl bg-bone"
+                    style={{ boxShadow: '2px 2px 0 0 rgba(232,71,10,0.9)' }}
+                    aria-hidden="true"
+                  />
+                )}
+                <span className={`relative z-10 shrink-0 ${active ? 'text-tangerine' : ''}`}>
                   {item.icon}
                 </span>
                 {!collapsed && (
-                  <span className="whitespace-nowrap overflow-hidden">
+                  <span className="relative z-10 whitespace-nowrap overflow-hidden">
                     {item.label}
                   </span>
                 )}
@@ -179,30 +188,30 @@ export function Layout() {
         </div>
 
         {/* ── Profile (outside overflow-hidden shell so popup can escape) ─ */}
-        <div ref={profileRef} className="relative shrink-0 border-t border-grain">
+        <div ref={profileRef} className="relative shrink-0 border-t border-white/10">
           <button
             onClick={() => setProfileOpen((o) => !o)}
-            className={`flex items-center w-full py-3 hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-all duration-300 ${
+            className={`flex items-center w-full py-3 hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink transition-all duration-300 ${
               collapsed ? 'justify-center px-0' : 'gap-3 px-3'
             }`}
           >
-            <div className="w-7 h-7 rounded-full bg-ink text-bone flex items-center justify-center text-[10px] font-bold shrink-0">
+            <div className="w-7 h-7 rounded-full bg-tangerine text-shell flex items-center justify-center text-[10px] font-bold shrink-0">
               KC
             </div>
             {!collapsed && (
-              <span className="text-xs text-graphite truncate">kvn.c8888</span>
+              <span className="text-xs text-bone/60 truncate">kvn.c8888</span>
             )}
           </button>
 
           {/* Profile popup — above avatar when expanded, to the right when collapsed */}
           {profileOpen && (
             <div
-              className={`absolute border border-chalk rounded-2xl bg-white overflow-hidden z-50 ${
+              className={`absolute rounded-2xl bg-shell overflow-hidden z-50 ${
                 collapsed
                   ? 'left-full bottom-0 ml-2 w-56'
                   : 'bottom-full left-2 right-2 mb-2'
               }`}
-              style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
+              style={{ border: '1.5px solid var(--color-ink)', boxShadow: '3px 3px 0 0 var(--color-ink)' }}
             >
               <div className="px-4 py-3 border-b border-chalk">
                 <span className="text-xs text-ink font-medium">kvn.c8888@gmail.com</span>

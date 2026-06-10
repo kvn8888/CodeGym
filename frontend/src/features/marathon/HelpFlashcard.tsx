@@ -27,18 +27,18 @@ export function HelpFlashcard({ concept, explanation, onClose }: HelpFlashcardPr
     >
       {/* Flashcard */}
       <div
-        className="w-full max-w-md mx-4 rounded-2xl border border-chalk bg-white overflow-hidden"
-        style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
+        className="w-full max-w-md mx-4 rounded-2xl bg-shell overflow-hidden"
+        style={{ border: '1.5px solid var(--color-ink)', boxShadow: '5px 5px 0 0 var(--color-ink)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-3">
+        <div className="flex items-center justify-between px-6 pt-5 pb-3" style={{ backgroundColor: 'var(--color-honey-tint)' }}>
           <div className="flex items-center gap-2">
             {/* Lightbulb icon */}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#d4a017' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-honey)' }}>
               <path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2z" />
             </svg>
-            <h2 className="text-sm font-bold tracking-wide text-ink">{concept}</h2>
+            <h2 className="font-display text-base font-semibold tracking-tight text-ink">{concept}</h2>
           </div>
           {/* Close button */}
           <button
@@ -53,7 +53,7 @@ export function HelpFlashcard({ concept, explanation, onClose }: HelpFlashcardPr
         </div>
 
         {/* Explanation */}
-        <div className="px-6 pb-6">
+        <div className="px-6 pb-6 pt-4">
           <p className="text-sm text-graphite leading-relaxed">{explanation}</p>
 
           {/* Disclaimer */}

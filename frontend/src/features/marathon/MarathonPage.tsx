@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
 import { HelpFlashcard } from './HelpFlashcard';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -198,18 +199,24 @@ export function MarathonPage() {
   // ── Idle state: start screen ─────────────────────────────────────────────
   if (phase === 'idle') {
     return (
-      <div className="max-w-lg mx-auto px-6 py-24 text-center">
-        <h1 className="text-2xl font-bold text-ink tracking-tight mb-3">MCQ Marathon</h1>
-        <p className="text-sm text-graphite mb-8 leading-relaxed">
-          Test your knowledge with timed multiple-choice questions. The AI adapts
-          to reinforce what you know and introduce new concepts.
+      <div className="max-w-lg mx-auto px-6 py-24 text-center bg-dots rounded-3xl mt-12">
+        <h1 className="font-display text-5xl font-semibold text-ink tracking-tight mb-4">
+          MCQ <span className="marker-tangerine">Marathon</span>
+        </h1>
+        <p className="text-sm text-graphite mb-10 leading-relaxed max-w-sm mx-auto">
+          Timed multiple-choice reps. The AI adapts — reinforcing what you know,
+          stretching where you don't.
         </p>
-        <button
+        <motion.button
           onClick={handleStart}
-          className="px-6 py-3 bg-ink text-bone text-sm font-medium rounded-xl hover:bg-ink-soft transition-colors"
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.96 }}
+          transition={{ type: 'spring', stiffness: 460, damping: 26 }}
+          className="px-7 py-3.5 bg-tangerine text-shell text-sm font-bold rounded-xl hover:bg-tangerine-deep transition-colors"
+          style={{ border: '1.5px solid var(--color-ink)', boxShadow: '4px 4px 0 0 var(--color-ink)' }}
         >
           Start Marathon ({questions.length} questions)
-        </button>
+        </motion.button>
       </div>
     );
   }
@@ -222,54 +229,74 @@ export function MarathonPage() {
 
     return (
       <div className="max-w-lg mx-auto px-6 py-24">
-        <h1 className="text-2xl font-bold text-ink tracking-tight mb-6 text-center">Results</h1>
+        <h1 className="font-display text-4xl font-semibold text-ink tracking-tight mb-8 text-center">
+          Results<span className="text-tangerine">.</span>
+        </h1>
 
         {/* Score card */}
-        <div
-          className="rounded-2xl border border-chalk bg-white p-6 mb-6"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+          className="rounded-2xl bg-shell p-6 mb-6"
+          style={{ border: '1.5px solid var(--color-ink)', boxShadow: '4px 4px 0 0 var(--color-ink)' }}
         >
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-3xl font-bold text-ink">
-                {correct}/{results.length}
+              <div className="font-display text-5xl font-semibold text-ink">
+                {correct}<span className="text-ash text-3xl">/{results.length}</span>
               </div>
-              <div className="text-xs text-ash mt-1">correct answers</div>
+              <div className="text-xs text-graphite mt-2">correct answers</div>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-bold text-ink">{avgTime}s</div>
-              <div className="text-xs text-ash mt-1">avg per question</div>
+              <div className="font-display text-5xl font-semibold text-tangerine">{avgTime}s</div>
+              <div className="text-xs text-graphite mt-2">avg per question</div>
             </div>
           </div>
 
           {/* Per-question breakdown */}
-          <div className="flex flex-col gap-2 mt-4 border-t border-chalk pt-4">
+          <div className="flex flex-col gap-2 mt-4 border-t-2 border-grain pt-4">
             {results.map((r, i) => (
               <div key={r.questionId} className="flex items-center gap-3 text-xs">
                 <span className="text-ash w-4">{i + 1}.</span>
-                <span style={{ color: r.correct ? '#2d5a27' : '#8b2500' }}>
+                <span
+                  className="flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold"
+                  style={{
+                    color: 'var(--color-shell)',
+                    backgroundColor: r.correct ? 'var(--color-moss)' : 'var(--color-rust)',
+                  }}
+                >
                   {r.correct ? '✓' : '✗'}
                 </span>
                 <span className="text-graphite flex-1 truncate">
                   {questions.find((q) => q.id === r.questionId)?.concept}
                 </span>
                 <span className="text-ash">{Math.round(r.timeMs / 1000)}s</span>
-                {r.usedHelp && <span className="text-ash text-[10px]">help</span>}
+                {r.usedHelp && (
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    style={{ color: 'var(--color-honey)', backgroundColor: 'var(--color-honey-tint)' }}
+                  >
+                    help
+                  </span>
+                )}
               </div>
             ))}
           </div>
-        </div>
+        </motion.div>
 
         <div className="flex gap-3 justify-center">
           <button
             onClick={handleStart}
-            className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft transition-colors"
+            className="px-5 py-2.5 bg-tangerine text-shell text-xs font-bold rounded-xl hover:bg-tangerine-deep transition-colors"
+            style={{ border: '1.5px solid var(--color-ink)', boxShadow: '2px 2px 0 0 var(--color-ink)' }}
           >
             Try Again
           </button>
           <button
             onClick={() => setPhase('idle')}
-            className="px-5 py-2.5 border border-chalk text-xs text-graphite rounded-xl hover:border-ash transition-colors"
+            className="px-5 py-2.5 bg-shell text-xs font-medium text-graphite rounded-xl hover:text-ink transition-colors"
+            style={{ border: '1.5px solid var(--color-ink)', boxShadow: '2px 2px 0 0 var(--color-ink)' }}
           >
             Back
           </button>
@@ -297,15 +324,16 @@ export function MarathonPage() {
       </div>
 
       {/* Progress bar */}
-      <div className="h-1 rounded-full bg-chalk mb-8">
-        <div
-          className="h-1 rounded-full bg-ink transition-all duration-300"
-          style={{ width: `${((questionIndex + 1) / questions.length) * 100}%` }}
+      <div className="h-2 rounded-full bg-grain mb-8 border border-ink/20">
+        <motion.div
+          className="h-full rounded-full bg-tangerine"
+          animate={{ width: `${((questionIndex + 1) / questions.length) * 100}%` }}
+          transition={{ type: 'spring', stiffness: 200, damping: 26 }}
         />
       </div>
 
       {/* Question text */}
-      <h2 className="text-lg font-bold text-ink mb-6 leading-relaxed">{currentQ.text}</h2>
+      <h2 className="font-display text-2xl font-semibold text-ink mb-6 leading-snug">{currentQ.text}</h2>
 
       {/* Option buttons — radio-style selection (same behavior as QuestionModal) */}
       <div className="flex flex-col gap-3 mb-8">
@@ -314,23 +342,29 @@ export function MarathonPage() {
           const isCorrect = i === currentQ.correctIndex;
 
           // Before confirm: radio highlight on the selected option only.
-          // After confirm: green (correct) and red (wrong) via inline styles for reliability.
-          const baseStyle = 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone';
-          const selectedStyle = 'border-ink bg-parchment text-ink font-medium';
-          const mutedStyle = 'border-chalk bg-white text-ash';
+          // After confirm: moss (correct) and rust (wrong) feedback states.
+          const baseStyle = 'border-chalk bg-shell text-graphite hover:border-ash hover:bg-bone';
+          const selectedStyle = 'border-tangerine bg-tangerine-tint text-ink font-medium';
+          const mutedStyle = 'border-chalk bg-shell text-ash';
 
-          // Use inline style overrides for confirmed feedback colors since
-          // Tailwind @theme custom colors may not be available in Storybook.
           let feedbackStyle: React.CSSProperties = {};
           let classes = baseStyle;
 
           if (confirmed) {
             if (isCorrect) {
               classes = mutedStyle; // base, override with inline
-              feedbackStyle = { borderColor: '#2d5a27', backgroundColor: '#2d5a270d', color: '#2d5a27' };
+              feedbackStyle = {
+                borderColor: 'var(--color-moss)',
+                backgroundColor: 'var(--color-moss-tint)',
+                color: 'var(--color-moss)',
+              };
             } else if (isSelected) {
               classes = mutedStyle;
-              feedbackStyle = { borderColor: '#8b2500', backgroundColor: '#8b25000d', color: '#8b2500' };
+              feedbackStyle = {
+                borderColor: 'var(--color-rust)',
+                backgroundColor: 'var(--color-rust-tint)',
+                color: 'var(--color-rust)',
+              };
             } else {
               classes = mutedStyle;
             }
@@ -344,7 +378,7 @@ export function MarathonPage() {
               onClick={() => handleSelect(i)}
               disabled={confirmed}
               style={feedbackStyle}
-              className={`w-full text-left text-sm px-4 py-3 rounded-xl border transition-all duration-150 ${classes}`}
+              className={`w-full text-left text-sm px-4 py-3 rounded-xl border-2 transition-all duration-150 ${classes}`}
             >
               <div className="flex items-center gap-3">
                 {/* Radio circle — filled for selected option and correct answer after confirm */}
@@ -352,8 +386,14 @@ export function MarathonPage() {
                   className="w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors"
                   style={
                     confirmed
-                      ? { borderColor: isCorrect ? '#2d5a27' : isSelected ? '#8b2500' : undefined }
-                      : { borderColor: isSelected ? '#1a1a1a' : undefined }
+                      ? {
+                          borderColor: isCorrect
+                            ? 'var(--color-moss)'
+                            : isSelected
+                              ? 'var(--color-rust)'
+                              : undefined,
+                        }
+                      : { borderColor: isSelected ? 'var(--color-tangerine)' : undefined }
                   }
                 >
                   {(isSelected || (confirmed && isCorrect)) && (
@@ -361,8 +401,8 @@ export function MarathonPage() {
                       className="w-2 h-2 rounded-full"
                       style={{
                         backgroundColor: confirmed
-                          ? (isCorrect ? '#2d5a27' : '#8b2500')
-                          : '#1a1a1a',
+                          ? (isCorrect ? 'var(--color-moss)' : 'var(--color-rust)')
+                          : 'var(--color-tangerine)',
                       }}
                     />
                   )}
@@ -370,10 +410,10 @@ export function MarathonPage() {
                 {option}
                 {/* Small label after confirming */}
                 {confirmed && isCorrect && (
-                  <span className="ml-auto text-xs font-medium" style={{ color: '#2d5a27' }}>✓ Correct</span>
+                  <span className="ml-auto text-xs font-bold" style={{ color: 'var(--color-moss)' }}>✓ Correct</span>
                 )}
                 {confirmed && isSelected && !isCorrect && (
-                  <span className="ml-auto text-xs font-medium" style={{ color: '#8b2500' }}>✗ Wrong</span>
+                  <span className="ml-auto text-xs font-bold" style={{ color: 'var(--color-rust)' }}>✗ Wrong</span>
                 )}
               </div>
             </button>
@@ -398,20 +438,28 @@ export function MarathonPage() {
 
         {/* Confirm button (before confirming) or Next button (after confirming) */}
         {!confirmed && selectedIndex !== null && (
-          <button
+          <motion.button
             onClick={handleConfirm}
-            className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft transition-colors"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileTap={{ scale: 0.95 }}
+            className="px-5 py-2.5 bg-tangerine text-shell text-xs font-bold rounded-xl hover:bg-tangerine-deep transition-colors"
+            style={{ border: '1.5px solid var(--color-ink)', boxShadow: '2px 2px 0 0 var(--color-ink)' }}
           >
             Confirm
-          </button>
+          </motion.button>
         )}
         {confirmed && (
-          <button
+          <motion.button
             onClick={handleNext}
-            className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft transition-colors"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileTap={{ scale: 0.95 }}
+            className="px-5 py-2.5 bg-ink text-bone text-xs font-bold rounded-xl hover:bg-ink-soft transition-colors"
+            style={{ boxShadow: '2px 2px 0 0 var(--color-tangerine)' }}
           >
             {questionIndex < questions.length - 1 ? 'Next' : 'See Results'}
-          </button>
+          </motion.button>
         )}
       </div>
 

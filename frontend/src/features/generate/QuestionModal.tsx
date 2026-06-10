@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'motion/react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,15 +117,18 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
       onClick={onClose}
     >
       {/* ── Modal card ────────────────────────────────────────────── */}
-      <div
-        className="w-full max-w-lg mx-4 rounded-2xl border border-chalk bg-white overflow-hidden"
-        style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92, y: 18 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+        className="w-full max-w-lg mx-4 rounded-2xl bg-shell overflow-hidden"
+        style={{ border: '1.5px solid var(--color-ink)', boxShadow: '5px 5px 0 0 var(--color-ink)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3">
-          <h2 className="text-sm font-bold tracking-wide text-ink">
-            Let's tailor your problem
+          <h2 className="font-display text-lg font-semibold tracking-tight text-ink">
+            Let's tailor your problem<span className="text-tangerine">.</span>
           </h2>
           {/* Close button */}
           <button
@@ -143,8 +147,8 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
           {questions.map((_, i) => (
             <div
               key={i}
-              className={`h-1 rounded-full transition-all duration-300 ${
-                i <= currentIndex ? 'bg-ink flex-[2]' : 'bg-chalk flex-1'
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i <= currentIndex ? 'bg-tangerine flex-[2]' : 'bg-chalk flex-1'
               }`}
             />
           ))}
@@ -164,18 +168,18 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
               <button
                 key={option}
                 onClick={() => handleSelect(option)}
-                className={`w-full text-left text-sm px-4 py-3 rounded-xl border transition-all duration-150 ${
+                className={`w-full text-left text-sm px-4 py-3 rounded-xl border-2 transition-all duration-150 ${
                   selected
-                    ? 'border-ink bg-parchment text-ink font-medium'
-                    : 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone'
+                    ? 'border-tangerine bg-tangerine-tint text-ink font-medium'
+                    : 'border-chalk bg-shell text-graphite hover:border-ash hover:bg-bone'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   {/* Radio-style circle indicator */}
                   <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
-                    selected ? 'border-ink' : 'border-chalk'
+                    selected ? 'border-tangerine' : 'border-chalk'
                   }`}>
-                    {selected && <div className="w-2 h-2 rounded-full bg-ink" />}
+                    {selected && <div className="w-2 h-2 rounded-full bg-tangerine" />}
                   </div>
                   {option}
                 </div>
@@ -214,12 +218,13 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
           <button
             onClick={handleNext}
             disabled={!canAdvance}
-            className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
+            className="px-5 py-2.5 bg-tangerine text-shell text-xs font-bold rounded-xl hover:bg-tangerine-deep disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
+            style={canAdvance ? { boxShadow: '2px 2px 0 0 var(--color-ink)' } : undefined}
           >
             {isLast ? 'Generate' : 'Next'}
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

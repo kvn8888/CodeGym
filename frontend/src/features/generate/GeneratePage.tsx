@@ -30,10 +30,10 @@ const RECENT_PROMPTS = [
 ];
 
 const SPOTLIGHT_TOPICS = [
-  { label: 'DSA', count: 128, accent: 'bg-moss' },
-  { label: 'API Patterns', count: 64, accent: 'bg-graphite' },
-  { label: 'System Design', count: 52, accent: 'bg-ash' },
-  { label: 'Concurrency', count: 37, accent: 'bg-rust' },
+  { label: 'DSA', count: 128, color: '#3f9b6e' },
+  { label: 'API Patterns', count: 64, color: '#3f7bb8' },
+  { label: 'System Design', count: 52, color: '#8a6fc0' },
+  { label: 'Concurrency', count: 37, color: '#b8607a' },
 ];
 
 const EXAMPLES = [
@@ -55,6 +55,12 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   easy: 'Easy',
   medium: 'Medium',
   hard: 'Hard',
+};
+
+const DIFFICULTY_STYLES: Record<Difficulty, { color: string; background: string }> = {
+  easy: { color: '#15803d', background: 'rgba(21,128,61,0.09)' },
+  medium: { color: '#b45309', background: 'rgba(180,83,9,0.09)' },
+  hard: { color: '#be123c', background: 'rgba(190,18,60,0.09)' },
 };
 
 function currentHourBucket() {
@@ -157,21 +163,21 @@ export function GeneratePage() {
   };
 
   return (
-    <div className="min-h-screen bg-bone px-6 py-8">
+    <div className="min-h-screen bg-shell px-6 py-8">
       <div className="mx-auto flex w-full max-w-5xl justify-end">
         <div className="flex items-center gap-3">
-          <span className="hidden text-[10px] font-bold tracking-[0.2em] text-ash uppercase sm:inline">
+          <span className="cg-mono hidden text-[10px] font-medium tracking-[0.2em] text-faint uppercase sm:inline">
             Generate style
           </span>
-          <div className="flex items-center rounded-xl border border-chalk bg-grain p-1">
+          <div className="flex items-center rounded-xl border bg-grain p-1 cg-border-subtle">
             {(['command', 'spotlight'] as GenerateView[]).map((mode) => (
               <button
                 key={mode}
                 type="button"
                 onClick={() => setView(mode)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+                className={`cg-focus cg-transition rounded-lg px-3 py-1.5 text-xs font-medium capitalize ${
                   view === mode
-                    ? 'bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]'
+                    ? 'bg-shell text-ink shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
                     : 'text-ash hover:text-ink'
                 }`}
               >
@@ -255,13 +261,13 @@ function CommandGenerateView({
     <main className="flex flex-col items-center px-0 pb-12 pt-14">
       <div className="w-full max-w-3xl">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">
             What do you want to practice?
           </h1>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 md:flex-nowrap">
             <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-graphite">
               <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-grain">
-                <span className="h-1.5 w-1.5 rounded-full bg-ink" />
+                <span className="h-1.5 w-1.5 rounded-full bg-blue" />
               </span>
               <span>
                 Tuned to your history - lately you worked on{' '}
@@ -271,7 +277,7 @@ function CommandGenerateView({
             </div>
             <Link
               to="/memory"
-              className="shrink-0 text-xs font-medium text-ink underline-offset-4 hover:underline"
+              className="cg-focus rounded-md px-1 text-xs font-medium text-blue underline-offset-4 hover:text-blue-hover hover:underline"
             >
               View memory
             </Link>
@@ -279,19 +285,18 @@ function CommandGenerateView({
         </div>
 
         <section
-          className="overflow-hidden rounded-2xl border border-chalk bg-white"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 20px 48px rgba(0,0,0,0.08)' }}
+          className="overflow-hidden rounded-2xl bg-shell cg-surface"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-chalk bg-bone/60 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-grain px-4 py-3 cg-border-subtle">
             <div className="flex rounded-xl bg-grain p-1">
               {(['problem', 'mcq', 'interview'] as GenerateFormat[]).map((item) => (
                 <button
                   key={item}
                   type="button"
                   onClick={() => onFormatChange(item)}
-                  className={`rounded-lg px-4 py-2 text-xs font-medium transition-colors ${
+                  className={`cg-focus cg-mono cg-transition rounded-lg px-4 py-2 text-xs font-medium ${
                     format === item
-                      ? 'bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]'
+                      ? 'bg-shell text-ink shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
                       : 'text-ash hover:text-ink'
                   }`}
                 >
@@ -300,12 +305,12 @@ function CommandGenerateView({
               ))}
             </div>
 
-            <label className="flex items-center gap-2 rounded-xl border border-chalk bg-white px-3 py-2 text-xs text-graphite">
-              <span className="h-2 w-2 rounded-sm bg-graphite" aria-hidden="true" />
+            <label className="flex items-center gap-2 rounded-xl border bg-shell px-3 py-2 text-xs text-graphite cg-border-subtle">
+              <span className="h-2 w-2 rounded-sm bg-blue" aria-hidden="true" />
               <select
                 value={language}
                 onChange={(event) => onLanguageChange(event.target.value)}
-                className="appearance-none bg-transparent text-xs text-graphite focus-visible:outline-none"
+                className="cg-mono appearance-none bg-transparent text-xs text-graphite focus-visible:outline-none"
                 aria-label="Language"
               >
                 <option value="python">Python</option>
@@ -323,12 +328,12 @@ function CommandGenerateView({
             onKeyDown={onKeyDown}
             placeholder="Describe a challenge - e.g. a hard problem on topological sort with cycle detection, with tricky edge cases..."
             rows={5}
-            className="block min-h-36 w-full resize-none bg-white px-4 py-5 text-sm leading-7 text-ink placeholder-ash focus-visible:outline-none"
+            className="cg-scroll block min-h-36 w-full resize-none bg-shell px-4 py-5 text-sm leading-7 text-ink placeholder-ash focus-visible:outline-none"
           />
 
-          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-chalk bg-bone/60 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-grain px-4 py-3 cg-border-subtle">
             <div className="flex items-center gap-2">
-              <span className="mr-2 text-[10px] font-bold tracking-[0.18em] text-ash uppercase">
+              <span className="cg-mono mr-2 text-[10px] font-medium tracking-[0.18em] text-faint uppercase">
                 Level
               </span>
               {(['easy', 'medium', 'hard'] as Difficulty[]).map((item) => (
@@ -336,11 +341,12 @@ function CommandGenerateView({
                   key={item}
                   type="button"
                   onClick={() => onDifficultyChange(item)}
-                  className={`rounded-xl border px-4 py-2 text-xs transition-colors ${
+                  className={`cg-focus cg-transition rounded-xl border px-4 py-2 text-xs font-medium ${
                     difficulty === item
-                      ? 'border-ink bg-ink text-bone'
-                      : 'border-chalk bg-white text-graphite hover:border-ash hover:text-ink'
+                      ? 'border-transparent'
+                      : 'bg-shell text-graphite hover:text-ink cg-border-subtle'
                   }`}
+                  style={difficulty === item ? DIFFICULTY_STYLES[item] : undefined}
                 >
                   {DIFFICULTY_LABELS[item]}
                 </button>
@@ -358,7 +364,7 @@ function CommandGenerateView({
         </section>
 
         <div className="mt-6 flex flex-wrap items-center gap-2">
-          <span className="mr-2 text-[10px] font-bold tracking-[0.18em] text-ash uppercase">
+          <span className="cg-mono mr-2 text-[10px] font-medium tracking-[0.18em] text-faint uppercase">
             Recent
           </span>
           {RECENT_PROMPTS.map((item) => (
@@ -366,7 +372,7 @@ function CommandGenerateView({
               key={item}
               type="button"
               onClick={() => onUsePrompt(item)}
-              className="rounded-xl border border-chalk bg-white px-4 py-2 text-xs text-graphite transition-colors hover:border-ash hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-bone"
+              className="cg-focus cg-transition rounded-xl border bg-shell px-4 py-2 text-xs text-graphite hover:text-ink cg-border-subtle"
             >
               {item}
             </button>
@@ -405,7 +411,7 @@ function SpotlightGenerateView({
           <div className="mb-5 text-[10px] font-bold tracking-[0.32em] text-ash uppercase">
             AI Problem Engine
           </div>
-          <h1 className="text-4xl font-bold tracking-tight text-ink sm:whitespace-nowrap md:text-5xl xl:text-6xl">
+          <h1 className="text-4xl font-semibold tracking-tight text-ink sm:whitespace-nowrap md:text-5xl xl:text-6xl">
             {sessionPhrase}
           </h1>
           <p className="mx-auto mt-8 max-w-2xl text-lg leading-8 text-graphite">
@@ -415,8 +421,7 @@ function SpotlightGenerateView({
         </div>
 
         <div
-          className="mx-auto flex max-w-3xl items-center rounded-2xl border border-chalk bg-white p-2"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 20px 48px rgba(0,0,0,0.08)' }}
+          className="mx-auto flex max-w-3xl items-center rounded-2xl bg-shell p-2 cg-surface"
         >
           <input
             type="text"
@@ -435,16 +440,20 @@ function SpotlightGenerateView({
           />
         </div>
 
-        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-10 flex flex-wrap justify-center gap-3">
           {SPOTLIGHT_TOPICS.map((topic) => (
             <button
               key={topic.label}
               type="button"
               onClick={() => onUsePrompt(topic.label)}
-              className="flex items-center justify-center gap-3 rounded-2xl border border-chalk bg-white px-5 py-4 text-sm text-ink transition-colors hover:border-ash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-bone"
-              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+              className="cg-focus cg-transition flex min-w-56 items-center justify-center gap-3 rounded-2xl border bg-shell px-5 py-4 text-sm text-ink hover:-translate-y-px cg-border-subtle"
+              style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}
             >
-              <span className={`h-2.5 w-2.5 rounded-sm ${topic.accent}`} aria-hidden="true" />
+              <span
+                className="h-2.5 w-2.5 rounded-sm"
+                style={{ backgroundColor: topic.color }}
+                aria-hidden="true"
+              />
               <span className="font-semibold">{topic.label}</span>
               <span className="text-ash">.{topic.count}</span>
             </button>
@@ -453,7 +462,7 @@ function SpotlightGenerateView({
 
         <div className="mt-8 flex items-center justify-center gap-2 text-xs text-ash">
           <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-grain">
-            <span className="h-1.5 w-1.5 rounded-full bg-ink" />
+            <span className="h-1.5 w-1.5 rounded-full bg-blue" />
           </span>
           <span>Personalized from your recent activity - 3 skills tracked</span>
         </div>
@@ -464,7 +473,7 @@ function SpotlightGenerateView({
               key={example}
               type="button"
               onClick={() => onUsePrompt(example)}
-              className="rounded-full border border-chalk bg-white px-4 py-2 text-xs text-graphite transition-colors hover:border-ash hover:text-ink"
+              className="cg-focus cg-transition rounded-full border bg-shell px-4 py-2 text-xs text-graphite hover:text-ink cg-border-subtle"
             >
               {example}
             </button>
@@ -497,10 +506,10 @@ function GenerateButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-chalk disabled:text-ash ${
+      className={`cg-focus cg-transition flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:bg-chalk disabled:text-ash ${
         isBlueprint
-          ? 'bg-ink text-bone hover:bg-ink-soft focus-visible:ring-offset-white'
-          : 'bg-ink text-bone hover:bg-ink-soft focus-visible:ring-offset-bone'
+          ? 'bg-blue text-white hover:bg-blue-hover'
+          : 'bg-blue text-white hover:bg-blue-hover'
       }`}
       style={{ boxShadow: disabled ? undefined : '0 1px 3px rgba(0,0,0,0.08)' }}
       aria-label={label}
@@ -512,7 +521,7 @@ function GenerateButton({
       ) : (
         <>
           <span>{label}</span>
-          <kbd className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-bone/70">
+          <kbd className="cg-mono rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] text-white/80">
             <Command size={10} strokeWidth={2} className="inline" /> Enter
           </kbd>
         </>
@@ -530,9 +539,9 @@ function GenerationState({
 }) {
   if (generating) {
     return (
-      <div className="mt-12 flex flex-col items-center gap-4">
+      <div className="cg-fade-in mt-12 flex flex-col items-center gap-4">
         <GridSpinner size="md" />
-        <span className="text-[10px] font-bold tracking-[0.18em] text-ash uppercase">
+        <span className="cg-mono text-[10px] font-medium tracking-[0.18em] text-ash uppercase">
           Generating
         </span>
       </div>
@@ -542,7 +551,7 @@ function GenerationState({
   if (!status) return null;
 
   return (
-    <div className="mx-auto mt-6 max-w-xl rounded-xl border border-chalk bg-white px-4 py-3 text-xs text-graphite">
+    <div className="cg-fade-in mx-auto mt-6 max-w-xl rounded-xl border bg-shell px-4 py-3 text-xs text-graphite cg-border-subtle">
       <Sparkles size={14} strokeWidth={1.8} className="mr-2 inline text-ash" />
       {status}
     </div>

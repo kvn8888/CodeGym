@@ -1,29 +1,93 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap");
 @import "tailwindcss";
 
 @theme {
-  --color-bone: #FAF9F6;
-  --color-parchment: #F0EFEC;
-  --color-ink: #1a1a1a;
-  --color-ink-soft: #333333;
-  --color-graphite: #6b6b6b;
-  --color-ash: #999999;
-  --color-chalk: #d4d0c8;
-  --color-grain: #e8e6e1;
-  --color-moss: #2d5a27;
-  --color-rust: #8b2500;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
+  --color-bone: #ececee;
+  --color-shell: #fcfcfd;
+  --color-parchment: #f7f7f8;
+  --color-grain: #f4f4f5;
+  --color-soft: #fafafa;
+  --color-ink: #18181b;
+  --color-ink-soft: #3f3f46;
+  --color-graphite: #52525b;
+  --color-ash: #a1a1aa;
+  --color-faint: #b4b4ba;
+  --color-chalk: #d4d4d8;
+  --color-blue: #2563eb;
+  --color-blue-hover: #1d4ed8;
+  --color-moss: #3f9b6e;
+  --color-rust: #b8607a;
+}
+
+:root {
+  --cg-border-subtle: rgba(16, 17, 26, 0.06);
+  --cg-border-strong: rgba(16, 17, 26, 0.11);
+  --cg-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 26px 60px -30px rgba(0,0,0,0.12);
+  --cg-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.13);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   margin: 0;
   background-color: var(--color-bone);
   color: var(--color-ink);
-  font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, 'Courier New', monospace;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
   background-color: var(--color-ink);
   color: var(--color-bone);
+}
+
+code,
+kbd,
+pre,
+.cg-mono {
+  font-family: var(--font-mono);
+}
+
+.cg-surface {
+  border: 1px solid var(--cg-border-subtle);
+  box-shadow: var(--cg-shadow);
+}
+
+.cg-border-subtle {
+  border-color: var(--cg-border-subtle);
+}
+
+.cg-transition {
+  transition: all 180ms ease;
+}
+
+.cg-focus:focus-visible {
+  outline: none;
+  box-shadow: var(--cg-focus-ring);
+}
+
+@keyframes cgspin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes cgfade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cg-fade-in {
+  animation: cgfade 180ms ease both;
 }
 
 /*
@@ -155,3 +219,11 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-chalk); }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-ash); }
+
+.cg-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.cg-scroll::-webkit-scrollbar-track { background: transparent; }
+.cg-scroll::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 999px;
+}
+.cg-scroll::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }

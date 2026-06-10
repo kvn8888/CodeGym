@@ -42,6 +42,12 @@ body {
   corner-shape: squircle;
 }
 
+.rounded-full,
+.rounded-full::before,
+.rounded-full::after {
+  corner-shape: round;
+}
+
 /* Typewriter cursor blink */
 @keyframes blink {
   0%, 100% { opacity: 1; }
@@ -124,6 +130,46 @@ body {
 .monaco-editor .margin,
 .monaco-editor .monaco-editor-background {
   background-color: #1e1e1e !important;
+}
+
+/* Floating chat resize handles (react-rnd) */
+.chat-motion-shell {
+  opacity: 1 !important;
+}
+
+.react-rnd-handle {
+  background: transparent;
+}
+
+/* Floating chat corner snap */
+.chat-snap-spring {
+  transition:
+    transform 520ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 520ms cubic-bezier(0.16, 1, 0.3, 1),
+    height 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, width, height;
+}
+
+.chat-snap-settle {
+  animation: chat-snap-settle 520ms cubic-bezier(0.2, 0.86, 0.18, 1.18);
+  transform-origin: center;
+}
+
+@keyframes chat-snap-settle {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.012); }
+  72% { transform: scale(0.997); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-snap-spring {
+    transition: none;
+  }
+
+  .chat-snap-settle {
+    animation: none;
+  }
 }
 
 /* Scrollbar */

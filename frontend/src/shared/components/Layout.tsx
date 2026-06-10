@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { FloatingChat } from './FloatingChat';
 
 // ── Sidebar widths ─────────────────────────────────────────────────────────────
 // Expanded  → w-56   (14rem / 224px)
@@ -211,6 +212,8 @@ export function Layout() {
       <main className="flex-1 min-w-0">
         <Outlet />
       </main>
+
+      <FloatingChat />
     </div>
   );
 }

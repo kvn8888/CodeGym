@@ -7,14 +7,11 @@ import { FloatingChat } from './FloatingChat';
 // Collapsed → w-12   (3rem  /  48px) — thin icon-only strip
 const navItems = [
   {
-    path: '/',
-    label: 'Problems',
+    path: '/dashboard',
+    label: 'Dashboard',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
+        <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
       </svg>
     ),
   },
@@ -30,20 +27,42 @@ const navItems = [
     ),
   },
   {
-    path: '/chat',
-    label: 'Chat',
+    path: '/',
+    label: 'Problems',
+    match: (pathname: string) => pathname === '/' || pathname.startsWith('/problems'),
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
       </svg>
     ),
   },
   {
-    path: '/dashboard',
-    label: 'Dashboard',
+    path: '/marathon',
+    label: 'Marathon',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        <path d="M8 6h13" />
+        <path d="M8 12h13" />
+        <path d="M8 18h13" />
+        <path d="M3 6h.01" />
+        <path d="M3 12h.01" />
+        <path d="M3 18h.01" />
+      </svg>
+    ),
+  },
+  {
+    path: '/memory',
+    label: 'Memory',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 4v16" />
+        <path d="M8 7a4 4 0 0 0 0 8" />
+        <path d="M16 7a4 4 0 0 1 0 8" />
+        <path d="M7 11h10" />
+        <path d="M7 15h10" />
       </svg>
     ),
   },
@@ -90,13 +109,14 @@ export function Layout() {
     <div className="min-h-screen flex bg-bone">
       {/* ── Sidebar ──────────────────────────────────────────────────────────
           Width transitions between w-56 (14rem) and w-12 (3rem).
-          overflow-hidden clips all inner content as the frame shrinks so
-          nothing bleeds into the main area during the animation.           */}
+          overflow-hidden on the inner shell clips nav/logo during collapse;
+          the profile block sits outside that shell so its popup isn't clipped. */}
       <aside
         className={`${
           collapsed ? 'w-12' : 'w-56'
-        } shrink-0 flex flex-col h-screen sticky top-0 bg-parchment border-r border-grain overflow-hidden transition-[width] duration-300 ease-in-out`}
+        } relative z-40 shrink-0 flex flex-col h-screen sticky top-0 bg-parchment border-r border-grain transition-[width] duration-300 ease-in-out`}
       >
+        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         {/* ── Header: logo + toggle ──────────────────────────────────────── */}
         <div className={`flex items-center pt-5 pb-3 transition-all duration-300 ${
           collapsed ? 'justify-center px-0' : 'gap-2 px-3'
@@ -116,7 +136,7 @@ export function Layout() {
           <button
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain transition-colors"
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-colors"
           >
             <PanelIcon />
           </button>
@@ -127,16 +147,15 @@ export function Layout() {
           collapsed ? 'px-1' : 'px-2'
         }`}>
           {navItems.map((item) => {
-            const active =
-              item.path === '/'
-                ? location.pathname === '/' || location.pathname.startsWith('/problems')
-                : location.pathname.startsWith(item.path);
+            const active = item.match
+              ? item.match(location.pathname)
+              : location.pathname.startsWith(item.path);
             return (
               <Link
                 key={item.path}
                 to={item.path}
                 title={collapsed ? item.label : undefined}
-                className={`flex items-center py-2.5 rounded-xl text-sm no-underline transition-all duration-200 ${
+                className={`flex items-center py-2.5 rounded-xl text-sm no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-all duration-200 ${
                   collapsed ? 'justify-center px-0 gap-0' : 'px-3 gap-3'
                 } ${
                   active
@@ -157,12 +176,13 @@ export function Layout() {
             );
           })}
         </nav>
+        </div>
 
-        {/* ── Profile ───────────────────────────────────────────────────── */}
-        <div ref={profileRef} className="relative border-t border-grain">
+        {/* ── Profile (outside overflow-hidden shell so popup can escape) ─ */}
+        <div ref={profileRef} className="relative shrink-0 border-t border-grain">
           <button
             onClick={() => setProfileOpen((o) => !o)}
-            className={`flex items-center w-full py-3 hover:bg-grain transition-all duration-300 ${
+            className={`flex items-center w-full py-3 hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-all duration-300 ${
               collapsed ? 'justify-center px-0' : 'gap-3 px-3'
             }`}
           >
@@ -174,27 +194,31 @@ export function Layout() {
             )}
           </button>
 
-          {/* Profile popup — anchored above the avatar */}
+          {/* Profile popup — above avatar when expanded, to the right when collapsed */}
           {profileOpen && (
             <div
-              className="absolute bottom-full left-1 mb-2 w-56 border border-chalk rounded-2xl bg-white overflow-hidden z-50"
+              className={`absolute border border-chalk rounded-2xl bg-white overflow-hidden z-50 ${
+                collapsed
+                  ? 'left-full bottom-0 ml-2 w-56'
+                  : 'bottom-full left-2 right-2 mb-2'
+              }`}
               style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
             >
               <div className="px-4 py-3 border-b border-chalk">
                 <span className="text-xs text-ink font-medium">kvn.c8888@gmail.com</span>
               </div>
               <div className="py-1">
-                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment px-4 py-2.5 transition-colors">
+                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-inset px-4 py-2.5 transition-colors">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /></svg>
                   Settings
                 </button>
-                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment px-4 py-2.5 transition-colors">
+                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-inset px-4 py-2.5 transition-colors">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
                   Get help
                 </button>
               </div>
               <div className="border-t border-chalk py-1">
-                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment px-4 py-2.5 transition-colors">
+                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-inset px-4 py-2.5 transition-colors">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                   Log out
                 </button>
@@ -217,6 +241,4 @@ export function Layout() {
     </div>
   );
 }
-
-
 

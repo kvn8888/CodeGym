@@ -16,15 +16,17 @@ export function ProblemListPage() {
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [languageFilter, setLanguageFilter] = useState('');
+  const filteredProblems = languageFilter
+    ? problems.filter((problem) => problem.language === languageFilter)
+    : problems;
 
   useEffect(() => {
-    const params = languageFilter ? `?language=${languageFilter}` : '';
     api
-      .get<{ problems: ProblemSummary[]; total: number }>(`/problems${params}`)
+      .get<{ problems: ProblemSummary[]; total: number }>('/problems')
       .then((data) => setProblems(data.problems ?? []))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [languageFilter]);
+  }, []);
 
   const languages = [...new Set(problems.map((p) => p.language))];
 
@@ -35,7 +37,7 @@ export function ProblemListPage() {
         <select
           value={languageFilter}
           onChange={(e) => setLanguageFilter(e.target.value)}
-          className="rounded-xl border border-chalk bg-white px-3 py-1.5 text-xs text-ink cursor-pointer focus:outline-none"
+          className="rounded-xl border border-chalk bg-white px-3 py-1.5 text-xs text-ink cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-bone"
           style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }}
         >
           <option value="">All Languages</option>
@@ -51,17 +53,17 @@ export function ProblemListPage() {
         <div className="flex justify-center py-16">
           <GridSpinner size="md" />
         </div>
-      ) : problems.length === 0 ? (
+      ) : filteredProblems.length === 0 ? (
         <div className="text-xs text-ash text-center py-16 tracking-[0.1em]">
           No problems found
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {problems.map((problem) => (
+          {filteredProblems.map((problem) => (
             <Link
               key={problem.id}
               to={`/problems/${problem.id}`}
-              className="flex items-center justify-between rounded-2xl border border-chalk bg-white px-5 py-4 no-underline hover:border-ash transition-colors"
+              className="flex items-center justify-between gap-4 rounded-2xl border border-chalk bg-white px-5 py-4 no-underline hover:border-ash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-bone transition-colors"
               style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }}
             >
               <div className="flex items-center gap-3">
@@ -70,7 +72,7 @@ export function ProblemListPage() {
                   {difficultyLabels[problem.difficulty] ?? '\u2014'}
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-[10px] tracking-[0.08em] text-ash">
+              <div className="flex shrink-0 items-center gap-2 text-[10px] tracking-[0.08em] text-ash">
                 <span>{problem.language.toUpperCase()}</span>
                 {problem.framework && <span>{problem.framework.toUpperCase()}</span>}
                 <span className="text-chalk">/</span>

@@ -87,19 +87,19 @@ That file also clamps sizes to the viewport, calculates each corner position, fi
 The result is that release behavior stays short and readable:
 
 ```ts
-const springToBounds = useCallback((released: ChatBounds) => {
+const snapToBounds = useCallback((released: ChatBounds) => {
   const target = snapToNearestCorner(released);
   saveStoredBounds(target);
-  stopSnapAnimation();
+  stopSnapTransition();
   updateBounds(released);
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      setSnapAnimating(true);
+      setSnapTransitioning(true);
       updateBounds(target);
     });
   });
-}, [stopSnapAnimation, updateBounds]);
+}, [stopSnapTransition, updateBounds]);
 ```
 
 The double `requestAnimationFrame` is intentional. It lets the browser paint the released position first, then transition to the snapped position. Without that separation, React can collapse the two states and the snap looks like a teleport.
@@ -145,7 +145,9 @@ First, during the close animation, the button briefly looked gray before returni
 }
 ```
 
-Second, the resize handles had visible corner marks. They technically communicated resize affordance, but they made the open chat look like a debug overlay instead of a polished app window. The final version keeps the resize hit targets and cursors, but removes the visible marks:
+Second, the release animation initially bounced because I had added a separate scale-settle keyframe after the snap. That made sense when thinking "spring," but it felt strange in a utility window: dropping the chat should feel like it lands, not like it rebounds. The final snap keeps a short ease to the nearest corner and removes the scale overshoot.
+
+Third, the resize handles had visible corner marks. They technically communicated resize affordance, but they made the open chat look like a debug overlay instead of a polished app window. The final version keeps the resize hit targets and cursors, but removes the visible marks:
 
 ```css
 .react-rnd-handle {

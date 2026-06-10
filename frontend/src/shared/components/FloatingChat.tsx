@@ -94,7 +94,7 @@ function initialOpenBounds() {
 export function FloatingChat() {
   const shouldReduceMotion = useReducedMotion();
   const [stage, setStage] = useState<ChatStage>('closed');
-  const [snapAnimating, setSnapAnimating] = useState(false);
+  const [snapTransitioning, setSnapTransitioning] = useState(false);
   const [bounds, setBounds] = useState<ChatBounds>(initialOpenBounds);
   const boundsRef = useRef(bounds);
   const snapTimerRef = useRef<number | null>(null);
@@ -138,37 +138,37 @@ export function FloatingChat() {
     setBounds(next);
   }, []);
 
-  const stopSnapAnimation = useCallback(() => {
+  const stopSnapTransition = useCallback(() => {
     clearSnapTimer();
-    setSnapAnimating(false);
+    setSnapTransitioning(false);
   }, [clearSnapTimer]);
 
-  const springToBounds = useCallback(
+  const snapToBounds = useCallback(
     (released: ChatBounds) => {
       const target = snapToNearestCorner(released);
       saveStoredBounds(target);
-      stopSnapAnimation();
+      stopSnapTransition();
       updateBounds(released);
 
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          setSnapAnimating(true);
+          setSnapTransitioning(true);
           updateBounds(target);
           snapTimerRef.current = window.setTimeout(() => {
-            setSnapAnimating(false);
+            setSnapTransitioning(false);
             snapTimerRef.current = null;
-          }, 560);
+          }, 300);
         });
       });
     },
-    [stopSnapAnimation, updateBounds],
+    [stopSnapTransition, updateBounds],
   );
 
   const handleDragStop = useCallback(
     (_: unknown, data: { x: number; y: number }) => {
-      springToBounds({ ...boundsRef.current, x: data.x, y: data.y });
+      snapToBounds({ ...boundsRef.current, x: data.x, y: data.y });
     },
-    [springToBounds],
+    [snapToBounds],
   );
 
   const handleResizeStop = useCallback(
@@ -179,14 +179,14 @@ export function FloatingChat() {
       ___: unknown,
       position: { x: number; y: number },
     ) => {
-      springToBounds({
+      snapToBounds({
         x: position.x,
         y: position.y,
         width: ref.offsetWidth,
         height: ref.offsetHeight,
       });
     },
-    [springToBounds],
+    [snapToBounds],
   );
 
   const handleDrag = useCallback(
@@ -307,10 +307,10 @@ export function FloatingChat() {
         <Rnd
           size={{ width: bounds.width, height: bounds.height }}
           position={{ x: bounds.x, y: bounds.y }}
-          onDragStart={stopSnapAnimation}
+          onDragStart={stopSnapTransition}
           onDrag={handleDrag}
           onDragStop={handleDragStop}
-          onResizeStart={stopSnapAnimation}
+          onResizeStart={stopSnapTransition}
           onResize={handleResize}
           onResizeStop={handleResizeStop}
           dragHandleClassName="chat-drag-handle"
@@ -321,10 +321,12 @@ export function FloatingChat() {
           maxWidth={maxSize.width}
           maxHeight={maxSize.height}
           enableResizing={{
-            top: true,
-            right: true,
-            bottom: true,
-            left: true,
+            // Edge handles render 10px injected strips that can show as slivers
+            // during the Motion-to-Rnd handoff. Corners keep resize affordance.
+            top: false,
+            right: false,
+            bottom: false,
+            left: false,
             topRight: true,
             bottomRight: true,
             bottomLeft: true,
@@ -347,14 +349,10 @@ export function FloatingChat() {
             boxShadow: WINDOW_SHADOW,
           }}
           className={`react-rnd overflow-hidden rounded-2xl border border-chalk bg-white ${
-            snapAnimating ? 'chat-snap-spring' : ''
+            snapTransitioning ? 'chat-snap-transition' : ''
           }`}
         >
-          <div
-            className={`flex h-full min-h-0 flex-col ${
-              snapAnimating ? 'chat-snap-settle' : ''
-            }`}
-          >
+          <div className="flex h-full min-h-0 flex-col">
             <ChatChrome onClose={beginCloseMorph} draggable />
           </div>
         </Rnd>

@@ -31,10 +31,10 @@ const RECENT_PROMPTS = [
 ];
 
 const SPOTLIGHT_TOPICS = [
-  { label: 'DSA', count: 128, color: '#44792F' },
-  { label: 'API Patterns', count: 64, color: '#2742D6' },
-  { label: 'System Design', count: 52, color: '#6D45C4' },
-  { label: 'Concurrency', count: 37, color: '#E8470A' },
+  { label: 'DSA', count: 128, color: 'var(--color-moss)' },
+  { label: 'API Patterns', count: 64, color: 'var(--color-cobalt)' },
+  { label: 'System Design', count: 52, color: 'var(--color-violet)' },
+  { label: 'Concurrency', count: 37, color: 'var(--color-tangerine)' },
 ];
 
 const EXAMPLES = [
@@ -59,9 +59,21 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
 };
 
 const DIFFICULTY_STYLES: Record<Difficulty, React.CSSProperties> = {
-  easy: { color: '#44792F', background: 'var(--color-moss-tint)', borderColor: '#44792F' },
-  medium: { color: '#C78A00', background: 'var(--color-honey-tint)', borderColor: '#C78A00' },
-  hard: { color: '#B3300E', background: 'var(--color-rust-tint)', borderColor: '#B3300E' },
+  easy: {
+    color: 'var(--color-moss)',
+    background: 'var(--color-moss-tint)',
+    borderColor: 'var(--color-moss)',
+  },
+  medium: {
+    color: 'var(--color-honey)',
+    background: 'var(--color-honey-tint)',
+    borderColor: 'var(--color-honey)',
+  },
+  hard: {
+    color: 'var(--color-rust)',
+    background: 'var(--color-rust-tint)',
+    borderColor: 'var(--color-rust)',
+  },
 };
 
 function currentHourBucket() {

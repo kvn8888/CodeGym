@@ -169,7 +169,7 @@ export function Layout() {
                     layoutId="nav-active-pill"
                     transition={{ type: 'spring', stiffness: 500, damping: 38 }}
                     className="absolute inset-0 rounded-xl bg-bone"
-                    style={{ boxShadow: '2px 2px 0 0 rgba(232,71,10,0.9)' }}
+                    style={{ boxShadow: '2px 2px 0 0 var(--color-tangerine)' }}
                     aria-hidden="true"
                   />
                 )}

@@ -17,41 +17,41 @@
   --font-sans: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 
-  /* Ground — warm paper */
-  --color-bone: #FAF3E3;        /* page background */
-  --color-shell: #FFFCF4;       /* raised card surface */
-  --color-parchment: #F4ECD9;   /* secondary surfaces */
-  --color-grain: #EFE6CF;       /* hover fills, subtle sections */
-  --color-soft: #F8F2E2;
-  --color-chalk: #DCD1B6;       /* hairline borders, disabled */
+  /* Ground — café au lait beige, tone on tone */
+  --color-bone: #E8DFCB;        /* page background */
+  --color-shell: #F7F1E2;       /* raised card surface */
+  --color-parchment: #E0D5BD;   /* secondary surfaces */
+  --color-grain: #DBCFB2;       /* hover fills, subtle sections */
+  --color-soft: #EFE7D3;
+  --color-chalk: #C6B795;       /* hairline borders, disabled */
 
-  /* Ink — warm near-black */
-  --color-ink: #1C1917;
-  --color-ink-soft: #3B342C;
-  --color-graphite: #6B6254;
-  --color-ash: #A2987D;
-  --color-faint: #BFB498;
+  /* Ink — espresso */
+  --color-ink: #2B2317;
+  --color-ink-soft: #4A3D2B;
+  --color-graphite: #70604A;
+  --color-ash: #9D8E72;
+  --color-faint: #B4A687;
 
-  /* Accent — the loud one */
-  --color-tangerine: #E8470A;
-  --color-tangerine-deep: #C03A04;
-  --color-tangerine-tint: #FFDFCC;
+  /* Accent — caramel (token keeps its v1 name) */
+  --color-tangerine: #A2622B;
+  --color-tangerine-deep: #7F4A1D;
+  --color-tangerine-tint: #EBD8B9;
 
-  /* Supporting cast */
-  --color-honey: #C78A00;
-  --color-honey-tint: #FAECBE;
-  --color-moss: #44792F;
-  --color-moss-tint: #DFECCB;
-  --color-violet: #6D45C4;
-  --color-violet-tint: #E9DFF9;
-  --color-cobalt: #2742D6;
-  --color-cobalt-tint: #DCE3FA;
-  --color-rust: #B3300E;
-  --color-rust-tint: #F8DACB;
+  /* Supporting cast — muted, sun-faded */
+  --color-honey: #8F741F;
+  --color-honey-tint: #E9DEB6;
+  --color-moss: #5C6B38;
+  --color-moss-tint: #DCDFC0;
+  --color-violet: #7B5870;
+  --color-violet-tint: #E3D6E0;
+  --color-cobalt: #4A5C7A;
+  --color-cobalt-tint: #D6DCE4;
+  --color-rust: #8C3A1E;
+  --color-rust-tint: #E6CFBE;
 
   /* Legacy aliases — keep older components on-palette */
-  --color-blue: #E8470A;        /* was cobalt blue; CTAs now tangerine */
-  --color-blue-hover: #C03A04;
+  --color-blue: #A2622B;        /* CTAs follow the caramel accent */
+  --color-blue-hover: #7F4A1D;
 
   /* Hard offset shadows — the signature card treatment */
   --shadow-pop: 3px 3px 0 0 var(--color-ink);
@@ -64,7 +64,7 @@
   --cg-border-subtle: rgba(28, 25, 23, 0.16);
   --cg-border-strong: rgba(28, 25, 23, 0.9);
   --cg-shadow: 3px 3px 0 0 var(--color-ink);
-  --cg-focus-ring: 0 0 0 3px rgba(232, 71, 10, 0.3);
+  --cg-focus-ring: 0 0 0 3px rgba(162, 98, 43, 0.35);
 }
 
 html {

@@ -81,7 +81,7 @@ const sampleProblems: ProblemSummary[] = [
 ];
 
 function makeFetchMock(problems: ProblemSummary[]) {
-  return (_url: string) =>
+  return () =>
     Promise.resolve(
       new Response(
         JSON.stringify({ data: { problems, total: problems.length }, error: null }),

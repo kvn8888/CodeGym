@@ -9,6 +9,7 @@ backend/bin/
 backend/vendor/
 
 # Node
+node_modules/
 frontend/node_modules/
 frontend/dist/
 

@@ -69,8 +69,8 @@ class GitHubClient:
         return payload["data"]
 
 
-OWNER_PROJECTS_QUERY = """
-query OwnerProjects($login: String!, $first: Int!) {
+USER_PROJECTS_QUERY = """
+query UserProjects($login: String!, $first: Int!) {
   user(login: $login) {
     projectsV2(first: $first, orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
@@ -97,6 +97,11 @@ query OwnerProjects($login: String!, $first: Int!) {
       }
     }
   }
+}
+"""
+
+ORG_PROJECTS_QUERY = """
+query OrgProjects($login: String!, $first: Int!) {
   organization(login: $login) {
     projectsV2(first: $first, orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
@@ -293,12 +298,24 @@ def token_from_env() -> str:
 
 
 def list_projects(client: GitHubClient, owner: str) -> list[ProjectRef]:
-    data = client.graphql(OWNER_PROJECTS_QUERY, {"login": owner, "first": 50})
-    owner_data = data.get("user") or data.get("organization")
-    if not owner_data:
-        raise GitHubError(f"Could not find GitHub user or organization {owner!r}.")
+    lookup_errors: list[str] = []
+    for query, owner_key in ((USER_PROJECTS_QUERY, "user"), (ORG_PROJECTS_QUERY, "organization")):
+        try:
+            data = client.graphql(query, {"login": owner, "first": 50})
+        except GitHubError as err:
+            lookup_errors.append(str(err))
+            continue
 
-    nodes = owner_data["projectsV2"]["nodes"]
+        owner_data = data.get(owner_key)
+        if owner_data:
+            return project_refs(owner_data["projectsV2"]["nodes"])
+
+    if lookup_errors:
+        raise GitHubError("; ".join(lookup_errors))
+    raise GitHubError(f"Could not find GitHub user or organization {owner!r}.")
+
+
+def project_refs(nodes: list[dict[str, Any]]) -> list[ProjectRef]:
     return [
         ProjectRef(
             id=node["id"],
@@ -651,7 +668,10 @@ def cmd_rename(args: argparse.Namespace, client: GitHubClient) -> None:
         raise GitHubError("Cannot rename an item without content.")
 
     typename = content.get("__typename")
-    variables = {"title": args.title, "body": read_body_arg(args.body, args.body_file)}
+    body = read_body_arg(args.body, args.body_file)
+    if body is None:
+        body = content.get("body")
+    variables = {"title": args.title, "body": body}
     if typename == "DraftIssue":
         variables["draftIssueId"] = content_id
         client.graphql(UPDATE_DRAFT_MUTATION, variables)

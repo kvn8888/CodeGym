@@ -40,6 +40,9 @@ Authorization: Bearer dev:kevin:personal-dev
 If `CODEGYM_DEV_AUTH_TOKEN` is set, the backend accepts only that exact bearer
 token and maps it to `CODEGYM_DEV_USER_ID` / `CODEGYM_DEV_TENANT_ID`.
 
+See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
+full auth -> identity -> tenant request flow.
+
 ## Current Routes
 
 ```text

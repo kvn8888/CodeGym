@@ -201,7 +201,7 @@ export function MarathonPage() {
     return (
       <div className="max-w-lg mx-auto px-6 py-24 text-center bg-dots rounded-3xl mt-12">
         <h1 className="font-display text-5xl font-semibold text-ink tracking-tight mb-4">
-          MCQ <span className="marker-tangerine">Marathon</span>
+          MCQ <span className="marker-accent">Marathon</span>
         </h1>
         <p className="text-sm text-graphite mb-10 leading-relaxed max-w-sm mx-auto">
           Timed multiple-choice reps. The AI adapts — reinforcing what you know,
@@ -212,8 +212,8 @@ export function MarathonPage() {
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.96 }}
           transition={{ type: 'spring', stiffness: 460, damping: 26 }}
-          className="px-7 py-3.5 bg-tangerine text-shell text-sm font-bold rounded-xl hover:bg-tangerine-deep transition-colors"
-          style={{ border: '1.5px solid var(--color-ink)', boxShadow: '4px 4px 0 0 var(--color-ink)' }}
+          className="px-7 py-3.5 bg-ink text-bone text-sm font-bold rounded-xl hover:bg-ink-soft transition-colors"
+          style={{ boxShadow: 'var(--cg-card-shadow)' }}
         >
           Start Marathon ({questions.length} questions)
         </motion.button>
@@ -230,7 +230,7 @@ export function MarathonPage() {
     return (
       <div className="max-w-lg mx-auto px-6 py-24">
         <h1 className="font-display text-4xl font-semibold text-ink tracking-tight mb-8 text-center">
-          Results<span className="text-tangerine">.</span>
+          Results<span className="text-blue">.</span>
         </h1>
 
         {/* Score card */}
@@ -238,8 +238,8 @@ export function MarathonPage() {
           initial={{ opacity: 0, y: 20, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-          className="rounded-2xl bg-shell p-6 mb-6"
-          style={{ border: '1.5px solid var(--color-ink)', boxShadow: '4px 4px 0 0 var(--color-ink)' }}
+          className="rounded-2xl border border-chalk bg-white p-6 mb-6"
+          style={{ boxShadow: 'var(--cg-card-shadow)' }}
         >
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -249,7 +249,7 @@ export function MarathonPage() {
               <div className="text-xs text-graphite mt-2">correct answers</div>
             </div>
             <div className="text-right">
-              <div className="font-display text-5xl font-semibold text-tangerine">{avgTime}s</div>
+              <div className="font-display text-5xl font-semibold text-blue">{avgTime}s</div>
               <div className="text-xs text-graphite mt-2">avg per question</div>
             </div>
           </div>
@@ -288,15 +288,13 @@ export function MarathonPage() {
         <div className="flex gap-3 justify-center">
           <button
             onClick={handleStart}
-            className="px-5 py-2.5 bg-tangerine text-shell text-xs font-bold rounded-xl hover:bg-tangerine-deep transition-colors"
-            style={{ border: '1.5px solid var(--color-ink)', boxShadow: '2px 2px 0 0 var(--color-ink)' }}
+            className="px-5 py-2.5 bg-ink text-bone text-xs font-bold rounded-xl hover:bg-ink-soft transition-colors"
           >
             Try Again
           </button>
           <button
             onClick={() => setPhase('idle')}
-            className="px-5 py-2.5 bg-shell text-xs font-medium text-graphite rounded-xl hover:text-ink transition-colors"
-            style={{ border: '1.5px solid var(--color-ink)', boxShadow: '2px 2px 0 0 var(--color-ink)' }}
+            className="px-5 py-2.5 border border-chalk bg-white text-xs font-medium text-graphite rounded-xl hover:border-ash hover:text-ink transition-colors"
           >
             Back
           </button>
@@ -326,7 +324,7 @@ export function MarathonPage() {
       {/* Progress bar */}
       <div className="h-2 rounded-full bg-grain mb-8 border border-ink/20">
         <motion.div
-          className="h-full rounded-full bg-tangerine"
+          className="h-full rounded-full bg-ink"
           animate={{ width: `${((questionIndex + 1) / questions.length) * 100}%` }}
           transition={{ type: 'spring', stiffness: 200, damping: 26 }}
         />
@@ -344,7 +342,7 @@ export function MarathonPage() {
           // Before confirm: radio highlight on the selected option only.
           // After confirm: moss (correct) and rust (wrong) feedback states.
           const baseStyle = 'border-chalk bg-shell text-graphite hover:border-ash hover:bg-bone';
-          const selectedStyle = 'border-tangerine bg-tangerine-tint text-ink font-medium';
+          const selectedStyle = 'border-blue bg-blue-tint text-ink font-medium';
           const mutedStyle = 'border-chalk bg-shell text-ash';
 
           let feedbackStyle: React.CSSProperties = {};
@@ -393,7 +391,7 @@ export function MarathonPage() {
                               ? 'var(--color-rust)'
                               : undefined,
                         }
-                      : { borderColor: isSelected ? 'var(--color-tangerine)' : undefined }
+                      : { borderColor: isSelected ? 'var(--color-blue)' : undefined }
                   }
                 >
                   {(isSelected || (confirmed && isCorrect)) && (
@@ -402,7 +400,7 @@ export function MarathonPage() {
                       style={{
                         backgroundColor: confirmed
                           ? (isCorrect ? 'var(--color-moss)' : 'var(--color-rust)')
-                          : 'var(--color-tangerine)',
+                          : 'var(--color-blue)',
                       }}
                     />
                   )}
@@ -443,8 +441,7 @@ export function MarathonPage() {
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             whileTap={{ scale: 0.95 }}
-            className="px-5 py-2.5 bg-tangerine text-shell text-xs font-bold rounded-xl hover:bg-tangerine-deep transition-colors"
-            style={{ border: '1.5px solid var(--color-ink)', boxShadow: '2px 2px 0 0 var(--color-ink)' }}
+            className="px-5 py-2.5 bg-ink text-bone text-xs font-bold rounded-xl hover:bg-ink-soft transition-colors"
           >
             Confirm
           </motion.button>
@@ -455,8 +452,7 @@ export function MarathonPage() {
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             whileTap={{ scale: 0.95 }}
-            className="px-5 py-2.5 bg-ink text-bone text-xs font-bold rounded-xl hover:bg-ink-soft transition-colors"
-            style={{ boxShadow: '2px 2px 0 0 var(--color-tangerine)' }}
+            className="px-5 py-2.5 bg-blue text-white text-xs font-bold rounded-xl hover:bg-blue-hover transition-colors"
           >
             {questionIndex < questions.length - 1 ? 'Next' : 'See Results'}
           </motion.button>

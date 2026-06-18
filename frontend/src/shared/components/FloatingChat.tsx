@@ -61,7 +61,7 @@ function ChatChrome({
           }
         >
           <div className="font-display text-base font-semibold tracking-tight text-ink">
-            Assistant<span className="text-tangerine">.</span>
+            Assistant<span className="text-blue">.</span>
           </div>
           <div className="text-[10px] text-graphite">Goals, skills, and memory</div>
         </div>
@@ -257,7 +257,7 @@ export function FloatingChat() {
             aria-label="Open chat"
           >
             <motion.span
-              className="absolute inset-0 flex items-center justify-center rounded-full bg-tangerine hover:bg-tangerine-deep"
+              className="absolute inset-0 flex items-center justify-center rounded-full bg-ink hover:bg-ink-soft"
               initial={false}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.72 }}

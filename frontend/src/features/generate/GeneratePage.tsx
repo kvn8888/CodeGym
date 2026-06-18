@@ -34,7 +34,7 @@ const SPOTLIGHT_TOPICS = [
   { label: 'DSA', count: 128, color: 'var(--color-moss)' },
   { label: 'API Patterns', count: 64, color: 'var(--color-cobalt)' },
   { label: 'System Design', count: 52, color: 'var(--color-violet)' },
-  { label: 'Concurrency', count: 37, color: 'var(--color-tangerine)' },
+  { label: 'Concurrency', count: 37, color: 'var(--color-rust)' },
 ];
 
 const EXAMPLES = [
@@ -65,9 +65,9 @@ const DIFFICULTY_STYLES: Record<Difficulty, React.CSSProperties> = {
     borderColor: 'var(--color-moss)',
   },
   medium: {
-    color: 'var(--color-honey)',
-    background: 'var(--color-honey-tint)',
-    borderColor: 'var(--color-honey)',
+    color: 'var(--color-amber)',
+    background: 'var(--color-amber-tint)',
+    borderColor: 'var(--color-amber)',
   },
   hard: {
     color: 'var(--color-rust)',
@@ -275,7 +275,7 @@ function CommandGenerateView({
       <div className="w-full max-w-3xl">
         <div className="mb-8">
           <h1 className="font-display text-4xl font-semibold tracking-tight text-ink">
-            What do you want to <span className="marker-tangerine">practice</span>?
+            What do you want to <span className="marker-accent">practice</span>?
           </h1>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 md:flex-nowrap">
             <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-graphite">
@@ -421,11 +421,11 @@ function SpotlightGenerateView({
     <main className="flex items-start justify-center px-0 pt-16">
       <div className="w-full max-w-4xl text-center">
         <div className="mb-10">
-          <div className="mb-5 text-[10px] font-bold tracking-[0.32em] text-tangerine uppercase">
+          <div className="mb-5 text-[10px] font-bold tracking-[0.32em] text-blue uppercase">
             AI Problem Engine
           </div>
           <h1 className="font-display text-4xl font-semibold tracking-tight text-ink sm:whitespace-nowrap md:text-5xl xl:text-6xl">
-            <em className="marker-tangerine not-italic">{sessionPhrase}</em>
+            <em className="marker-accent not-italic">{sessionPhrase}</em>
           </h1>
           <p className="mx-auto mt-8 max-w-2xl text-lg leading-8 text-graphite">
             One prompt becomes a unique problem, a test suite, and a sandbox to prove your
@@ -523,10 +523,9 @@ function GenerateButton({
       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
       className={`cg-focus cg-transition flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:bg-chalk disabled:text-ash ${
         isBlueprint
-          ? 'bg-tangerine text-shell hover:bg-tangerine-deep'
-          : 'bg-tangerine text-shell hover:bg-tangerine-deep'
+          ? 'bg-blue text-white hover:bg-blue-hover'
+          : 'bg-ink text-bone hover:bg-ink-soft'
       }`}
-      style={{ boxShadow: disabled ? undefined : '2px 2px 0 0 var(--color-ink)' }}
       aria-label={label}
     >
       {generating ? (

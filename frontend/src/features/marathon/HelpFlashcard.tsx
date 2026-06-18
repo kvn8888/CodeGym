@@ -27,8 +27,8 @@ export function HelpFlashcard({ concept, explanation, onClose }: HelpFlashcardPr
     >
       {/* Flashcard */}
       <div
-        className="w-full max-w-md mx-4 rounded-2xl bg-shell overflow-hidden"
-        style={{ border: '1.5px solid var(--color-ink)', boxShadow: '5px 5px 0 0 var(--color-ink)' }}
+        className="w-full max-w-md mx-4 rounded-2xl border border-chalk bg-white overflow-hidden"
+        style={{ boxShadow: 'var(--cg-card-shadow)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

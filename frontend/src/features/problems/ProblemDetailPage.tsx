@@ -248,7 +248,7 @@ export function ProblemDetailPage() {
           {problem.framework && (
             <span className="rounded-md bg-grain px-2 py-1 text-graphite">{problem.framework.toUpperCase()}</span>
           )}
-          <span className="rounded-md px-2 py-1" style={{ color: 'var(--color-tangerine-deep)', backgroundColor: 'var(--color-tangerine-tint)' }}>
+          <span className="rounded-md px-2 py-1" style={{ color: 'var(--color-amber)', backgroundColor: 'var(--color-amber-tint)' }}>
             {problem.estimated_minutes} MIN
           </span>
         </div>
@@ -259,25 +259,21 @@ export function ProblemDetailPage() {
         {/* Hints */}
         {problem.hints && problem.hints.length > 0 && (
           <div className="mt-6 pt-4 border-t border-chalk">
-            <h3 className="text-[10px] font-bold tracking-[0.15em] text-tangerine-deep mb-3 uppercase">
+            <h3 className="text-[10px] font-bold tracking-[0.15em] text-ash mb-3 uppercase">
               Hints
             </h3>
             {problem.hints.map((hint, i) => (
               <div key={i} className="mb-2">
                 {i < hintsRevealed ? (
                   <p
-                    className="text-xs text-graphite rounded-xl px-4 py-3 leading-5"
-                    style={{
-                      backgroundColor: 'var(--color-honey-tint)',
-                      border: '1.5px solid var(--color-honey)',
-                    }}
+                    className="text-xs text-graphite rounded-xl px-4 py-3 leading-5 bg-grain border border-chalk"
                   >
                     {hint.text}
                   </p>
                 ) : (
                   <button
                     onClick={() => setHintsRevealed(i + 1)}
-                    className="text-xs font-bold text-tangerine-deep hover:text-tangerine transition-colors"
+                    className="text-xs font-bold text-blue hover:text-blue-hover transition-colors"
                   >
                     {'\u2192'} Reveal hint {i + 1}{' '}
                     {hint.cost > 0 ? `(${hint.cost} credit)` : ''}
@@ -329,7 +325,7 @@ export function ProblemDetailPage() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="px-4 py-1.5 m-1.5 rounded-lg bg-tangerine text-shell text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-tangerine-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bone disabled:opacity-40 transition-colors"
+            className="px-4 py-1.5 m-1.5 rounded-lg bg-ink text-bone text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bone disabled:opacity-40 transition-colors"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
           >
             {submitting ? 'RUNNING' : 'RUN'}

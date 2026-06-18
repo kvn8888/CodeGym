@@ -1,70 +1,61 @@
 @import "tailwindcss";
 
 /*
- * ── CodeGym "Ink & Tangerine" ─────────────────────────────────────────────
- * Warm editorial neo-brutalism. Cream paper ground, confident ink borders,
- * hard offset "pop" shadows, one loud accent (tangerine) with a small
- * supporting cast (honey, moss, violet, cobalt) for difficulty + status.
- * The core tension: Fraunces display serif against a monospace body.
- *
- * Token names from earlier design generations (shell/soft/faint/blue/cg-*)
- * are kept alive and remapped into this palette so every component renders
- * coherently while pages are migrated.
+ * CodeGym v2 palette + expressive typography.
+ * Cool zinc surfaces, soft elevation, blue accent.
+ * Fraunces display serif against a monospace body.
+ * Chip tint tokens support dashboard stat cards and difficulty badges.
  */
 @theme {
-  /* Type — mono body is the brand; Fraunces for display moments */
+  /* Type — mono body; Fraunces for display moments */
   --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   --font-sans: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 
-  /* Ground — café au lait beige, tone on tone */
-  --color-bone: #E8DFCB;        /* page background */
-  --color-shell: #F7F1E2;       /* raised card surface */
-  --color-parchment: #E0D5BD;   /* secondary surfaces */
-  --color-grain: #DBCFB2;       /* hover fills, subtle sections */
-  --color-soft: #EFE7D3;
-  --color-chalk: #C6B795;       /* hairline borders, disabled */
+  /* Ground */
+  --color-bone: #ececee;
+  --color-shell: #fcfcfd;
+  --color-parchment: #f7f7f8;
+  --color-grain: #f4f4f5;
+  --color-soft: #fafafa;
+  --color-chalk: #d4d4d8;
 
-  /* Ink — espresso */
-  --color-ink: #2B2317;
-  --color-ink-soft: #4A3D2B;
-  --color-graphite: #70604A;
-  --color-ash: #9D8E72;
-  --color-faint: #B4A687;
+  /* Ink */
+  --color-ink: #18181b;
+  --color-ink-soft: #3f3f46;
+  --color-graphite: #52525b;
+  --color-ash: #a1a1aa;
+  --color-faint: #b4b4ba;
 
-  /* Accent — caramel (token keeps its v1 name) */
-  --color-tangerine: #A2622B;
-  --color-tangerine-deep: #7F4A1D;
-  --color-tangerine-tint: #EBD8B9;
+  /* Accent */
+  --color-blue: #2563eb;
+  --color-blue-hover: #1d4ed8;
+  --color-moss: #3f9b6e;
+  --color-rust: #b8607a;
 
-  /* Supporting cast — muted, sun-faded */
-  --color-honey: #8F741F;
-  --color-honey-tint: #E9DEB6;
-  --color-moss: #5C6B38;
-  --color-moss-tint: #DCDFC0;
-  --color-violet: #7B5870;
-  --color-violet-tint: #E3D6E0;
-  --color-cobalt: #4A5C7A;
-  --color-cobalt-tint: #D6DCE4;
-  --color-rust: #8C3A1E;
-  --color-rust-tint: #E6CFBE;
-
-  /* Legacy aliases — keep older components on-palette */
-  --color-blue: #A2622B;        /* CTAs follow the caramel accent */
-  --color-blue-hover: #7F4A1D;
-
-  /* Hard offset shadows — the signature card treatment */
-  --shadow-pop: 3px 3px 0 0 var(--color-ink);
-  --shadow-pop-sm: 2px 2px 0 0 var(--color-ink);
-  --shadow-pop-lg: 5px 5px 0 0 var(--color-ink);
-  --shadow-pop-tangerine: 4px 4px 0 0 var(--color-tangerine);
+  /* Chip / stat-card tints (semantic, v2-aligned) */
+  --color-moss-tint: rgba(63, 155, 110, 0.09);
+  --color-blue-tint: rgba(37, 99, 235, 0.09);
+  --color-cobalt: #3f7bb8;
+  --color-cobalt-tint: rgba(63, 123, 184, 0.09);
+  --color-violet: #8a6fc0;
+  --color-violet-tint: rgba(138, 111, 192, 0.09);
+  --color-amber: #b45309;
+  --color-amber-tint: rgba(180, 83, 9, 0.09);
+  --color-rose: #be123c;
+  --color-rose-tint: rgba(190, 18, 60, 0.09);
+  --color-rust-tint: rgba(184, 96, 122, 0.09);
+  /* Aliases used by marathon / memory badges */
+  --color-honey: var(--color-amber);
+  --color-honey-tint: var(--color-amber-tint);
 }
 
 :root {
-  --cg-border-subtle: rgba(28, 25, 23, 0.16);
-  --cg-border-strong: rgba(28, 25, 23, 0.9);
-  --cg-shadow: 3px 3px 0 0 var(--color-ink);
-  --cg-focus-ring: 0 0 0 3px rgba(162, 98, 43, 0.35);
+  --cg-border-subtle: rgba(16, 17, 26, 0.06);
+  --cg-border-strong: rgba(16, 17, 26, 0.11);
+  --cg-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 26px 60px -30px rgba(0, 0, 0, 0.12);
+  --cg-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+  --cg-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.13);
 }
 
 html {
@@ -81,8 +72,8 @@ body {
 }
 
 ::selection {
-  background-color: var(--color-tangerine);
-  color: var(--color-shell);
+  background-color: var(--color-ink);
+  color: var(--color-bone);
 }
 
 code,
@@ -92,10 +83,9 @@ pre,
   font-family: var(--font-mono);
 }
 
-/* Raised card: solid ink hairline + hard offset shadow */
 .cg-surface {
-  border: 1.5px solid var(--color-ink);
-  box-shadow: var(--cg-shadow);
+  border: 1px solid var(--cg-border-subtle);
+  box-shadow: var(--cg-card-shadow);
 }
 
 .cg-border-subtle {
@@ -130,32 +120,22 @@ pre,
   animation: cgfade 180ms ease both;
 }
 
-/* Marker-pen highlight for headline emphasis */
-.marker-tangerine {
+/* Headline emphasis — subtle blue wash */
+.marker-accent {
   background-image: linear-gradient(
     transparent 56%,
-    var(--color-tangerine-tint) 56%,
-    var(--color-tangerine-tint) 94%,
+    var(--color-blue-tint) 56%,
+    var(--color-blue-tint) 94%,
     transparent 94%
   );
 }
 
-/* Dotted paper texture for hero sections */
+/* Dotted texture for hero sections */
 .bg-dots {
   background-image: radial-gradient(var(--color-chalk) 1px, transparent 1px);
   background-size: 18px 18px;
 }
 
-/*
- * Continuous corners (squircle) — Apple-style smooth corner curvature.
- * Uses CSS corner-shape (Chrome 139+, Edge 139+). Browsers that don't
- * support it (Safari, Firefox) simply ignore the property and fall back
- * to standard circular border-radius — no layout or rendering breakage.
- *
- * Applied globally: any element with a border-radius automatically gets
- * smoother, more organic corners. Pill-shaped elements (rounded-full /
- * border-radius: 9999px) are excluded — they stay perfectly circular.
- */
 *,
 *::before,
 *::after {
@@ -168,14 +148,12 @@ pre,
   corner-shape: round;
 }
 
-/* Grid spinner animation — fast snap on, slow fade off for trail effect */
 @keyframes grid-blink {
   0%, 100% { background-color: var(--color-grain); }
-  3% { background-color: var(--color-tangerine); }
+  3% { background-color: var(--color-ink); }
   25% { background-color: var(--color-grain); }
 }
 
-/* Markdown prose styling — editorial */
 .prose-brutalist h1,
 .prose-brutalist h2,
 .prose-brutalist h3 {
@@ -228,28 +206,26 @@ pre,
 }
 
 .prose-brutalist li::marker {
-  color: var(--color-tangerine);
+  color: var(--color-ash);
 }
 
 .prose-brutalist a {
-  color: var(--color-tangerine-deep);
+  color: var(--color-ink);
   text-decoration: underline;
 }
 
 .prose-brutalist blockquote {
-  border-left: 3px solid var(--color-tangerine);
+  border-left: 2px solid var(--color-chalk);
   padding-left: 1em;
   color: var(--color-graphite);
   margin: 1em 0;
 }
 
-/* Monaco editor overrides */
 .monaco-editor .margin,
 .monaco-editor .monaco-editor-background {
   background-color: #1e1e1e !important;
 }
 
-/* Floating chat resize handles (react-rnd) */
 .chat-motion-shell {
   opacity: 1 !important;
 }
@@ -258,7 +234,6 @@ pre,
   background: transparent;
 }
 
-/* Floating chat corner snap */
 .chat-snap-transition {
   transition:
     transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -273,7 +248,6 @@ pre,
   }
 }
 
-/* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-chalk); border-radius: 3px; }

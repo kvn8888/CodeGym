@@ -73,7 +73,7 @@ export function ChatPanel() {
                 }`}
                 style={
                   msg.role === 'assistant'
-                    ? { border: '1.5px solid var(--color-ink)', boxShadow: '2px 2px 0 0 var(--color-ink)' }
+                    ? { boxShadow: 'var(--cg-card-shadow)' }
                     : undefined
                 }
               >
@@ -117,7 +117,7 @@ export function ChatPanel() {
           <button
             onClick={handleSend}
             disabled={sending || !input.trim()}
-            className="w-8 h-8 bg-tangerine text-shell rounded-xl flex items-center justify-center shrink-0 ml-2 hover:bg-tangerine-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
+            className="w-8 h-8 bg-ink text-bone rounded-xl flex items-center justify-center shrink-0 ml-2 hover:bg-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
             aria-label="Send"
           >
             <svg

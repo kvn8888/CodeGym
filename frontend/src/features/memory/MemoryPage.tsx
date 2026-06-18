@@ -66,11 +66,11 @@ export function MemoryPage() {
     <div className="max-w-5xl mx-auto px-6 py-8">
       <div className="mb-8 flex items-start justify-between gap-6">
         <div>
-          <h1 className="font-display text-4xl font-semibold text-ink tracking-tight">Memory<span className="text-tangerine">.</span></h1>
+          <h1 className="font-display text-4xl font-semibold text-ink tracking-tight">Memory<span className="text-blue">.</span></h1>
           <p className="mt-2 max-w-3xl text-xs text-graphite leading-7">{profile.summary}</p>
         </div>
         <div className="shrink-0 rounded-2xl bg-shell px-4 py-3 text-right cg-surface">
-          <div className="text-[10px] font-bold tracking-[0.15em] text-tangerine-deep uppercase">Next review</div>
+          <div className="text-[10px] font-bold tracking-[0.15em] text-ash uppercase">Next review</div>
           <div className="mt-1 text-xs text-ink">{formatDate(profile.next_review_at)}</div>
         </div>
       </div>
@@ -79,7 +79,7 @@ export function MemoryPage() {
         <section
           className="rounded-2xl bg-shell p-5 cg-surface"
         >
-          <h2 className="text-[10px] font-bold tracking-[0.15em] text-tangerine-deep uppercase">Strengths</h2>
+          <h2 className="text-[10px] font-bold tracking-[0.15em] text-ash uppercase">Strengths</h2>
           <div className="mt-4 flex flex-col gap-3">
             {profile.strengths.map((strength) => (
               <div key={strength} className="flex gap-3 text-xs text-graphite leading-6">
@@ -93,7 +93,7 @@ export function MemoryPage() {
         <section
           className="rounded-2xl bg-shell p-5 cg-surface"
         >
-          <h2 className="text-[10px] font-bold tracking-[0.15em] text-tangerine-deep uppercase">Growth edges</h2>
+          <h2 className="text-[10px] font-bold tracking-[0.15em] text-ash uppercase">Growth edges</h2>
           <div className="mt-4 flex flex-col gap-3">
             {profile.growth_edges.map((edge) => (
               <div key={edge} className="flex gap-3 text-xs text-graphite leading-6">
@@ -107,7 +107,7 @@ export function MemoryPage() {
 
       <section className="mt-6">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[10px] font-bold tracking-[0.15em] text-tangerine-deep uppercase">Skill profile</h2>
+          <h2 className="text-[10px] font-bold tracking-[0.15em] text-ash uppercase">Skill profile</h2>
           <span className="text-[10px] text-ash">Updated {formatDate(profile.updated_at)}</span>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -128,7 +128,7 @@ export function MemoryPage() {
               </div>
               <div className="mt-4 h-1.5 rounded-full bg-grain">
                 <div
-                  className="h-1.5 rounded-full bg-tangerine"
+                  className="h-1.5 rounded-full bg-blue"
                   style={{ width: `${skill.confidence}%` }}
                 />
               </div>
@@ -138,7 +138,7 @@ export function MemoryPage() {
       </section>
 
       <section className="mt-6">
-        <h2 className="mb-3 text-[10px] font-bold tracking-[0.15em] text-tangerine-deep uppercase">Problem notes</h2>
+        <h2 className="mb-3 text-[10px] font-bold tracking-[0.15em] text-ash uppercase">Problem notes</h2>
         <div className="flex flex-col gap-3">
           {profile.notes.map((note) => (
             <article

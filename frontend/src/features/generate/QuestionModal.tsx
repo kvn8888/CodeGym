@@ -121,14 +121,14 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
         initial={{ opacity: 0, scale: 0.92, y: 18 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-        className="w-full max-w-lg mx-4 rounded-2xl bg-shell overflow-hidden"
-        style={{ border: '1.5px solid var(--color-ink)', boxShadow: '5px 5px 0 0 var(--color-ink)' }}
+        className="w-full max-w-lg mx-4 rounded-2xl border border-chalk bg-white overflow-hidden"
+        style={{ boxShadow: 'var(--cg-card-shadow)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3">
           <h2 className="font-display text-lg font-semibold tracking-tight text-ink">
-            Let's tailor your problem<span className="text-tangerine">.</span>
+            Let's tailor your problem<span className="text-blue">.</span>
           </h2>
           {/* Close button */}
           <button
@@ -148,7 +148,7 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
             <div
               key={i}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i <= currentIndex ? 'bg-tangerine flex-[2]' : 'bg-chalk flex-1'
+                i <= currentIndex ? 'bg-blue flex-[2]' : 'bg-chalk flex-1'
               }`}
             />
           ))}
@@ -170,16 +170,16 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
                 onClick={() => handleSelect(option)}
                 className={`w-full text-left text-sm px-4 py-3 rounded-xl border-2 transition-all duration-150 ${
                   selected
-                    ? 'border-tangerine bg-tangerine-tint text-ink font-medium'
+                    ? 'border-blue bg-blue-tint text-ink font-medium'
                     : 'border-chalk bg-shell text-graphite hover:border-ash hover:bg-bone'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   {/* Radio-style circle indicator */}
                   <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
-                    selected ? 'border-tangerine' : 'border-chalk'
+                    selected ? 'border-blue' : 'border-chalk'
                   }`}>
-                    {selected && <div className="w-2 h-2 rounded-full bg-tangerine" />}
+                    {selected && <div className="w-2 h-2 rounded-full bg-blue" />}
                   </div>
                   {option}
                 </div>
@@ -218,8 +218,7 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
           <button
             onClick={handleNext}
             disabled={!canAdvance}
-            className="px-5 py-2.5 bg-tangerine text-shell text-xs font-bold rounded-xl hover:bg-tangerine-deep disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
-            style={canAdvance ? { boxShadow: '2px 2px 0 0 var(--color-ink)' } : undefined}
+            className="px-5 py-2.5 bg-ink text-bone text-xs font-bold rounded-xl hover:bg-ink-soft disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
           >
             {isLast ? 'Generate' : 'Next'}
           </button>

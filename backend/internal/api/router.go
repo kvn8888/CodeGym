@@ -5,12 +5,14 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/tenant"
 )
 
 type Dependencies struct {
 	Authenticator auth.Authenticator
+	Identity      *identity.Service
 	Memory        *memory.Service
 }
 
@@ -27,6 +29,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	protectedChain := chain(
 		protected,
 		auth.Middleware(deps.Authenticator),
+		identity.Middleware(deps.Identity),
 		tenant.Middleware(),
 	)
 	mux.Handle("/api/v1/", protectedChain)

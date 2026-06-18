@@ -115,7 +115,7 @@ export function Layout() {
       <aside
         className={`${
           collapsed ? 'w-12' : 'w-56'
-        } relative z-40 shrink-0 flex flex-col h-screen sticky top-0 bg-ink transition-[width] duration-300 ease-in-out`}
+        } relative z-40 shrink-0 flex flex-col h-screen sticky top-0 bg-shell border-r border-chalk transition-[width] duration-300 ease-in-out`}
       >
         <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         {/* ── Header: logo + toggle ──────────────────────────────────────── */}
@@ -129,7 +129,7 @@ export function Layout() {
               collapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100 flex-1'
             }`}
           >
-            <Link to="/" className="font-display text-lg font-semibold tracking-tight text-bone no-underline">
+            <Link to="/" className="font-display text-lg font-semibold tracking-tight text-ink no-underline">
               CodeGym<span className="text-tangerine">.</span>
             </Link>
           </div>
@@ -137,7 +137,7 @@ export function Layout() {
           <button
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-bone/40 hover:text-bone hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink transition-colors"
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-shell transition-colors"
           >
             <PanelIcon />
           </button>
@@ -156,24 +156,24 @@ export function Layout() {
                 key={item.path}
                 to={item.path}
                 title={collapsed ? item.label : undefined}
-                className={`relative flex items-center py-2.5 rounded-xl text-sm no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink transition-colors duration-200 ${
+                className={`relative flex items-center py-2.5 rounded-xl text-sm no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-shell transition-colors duration-200 ${
                   collapsed ? 'justify-center px-0 gap-0' : 'px-3 gap-3'
                 } ${
                   active
-                    ? 'text-ink font-medium'
-                    : 'text-bone/55 hover:bg-white/8 hover:text-bone'
+                    ? 'text-bone font-medium'
+                    : 'text-graphite hover:bg-grain hover:text-ink'
                 }`}
               >
                 {active && (
                   <motion.span
                     layoutId="nav-active-pill"
                     transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-                    className="absolute inset-0 rounded-xl bg-bone"
+                    className="absolute inset-0 rounded-xl bg-ink"
                     style={{ boxShadow: '2px 2px 0 0 var(--color-tangerine)' }}
                     aria-hidden="true"
                   />
                 )}
-                <span className={`relative z-10 shrink-0 ${active ? 'text-tangerine' : ''}`}>
+                <span className={`relative z-10 shrink-0 ${active ? 'text-tangerine-tint' : ''}`}>
                   {item.icon}
                 </span>
                 {!collapsed && (
@@ -188,10 +188,10 @@ export function Layout() {
         </div>
 
         {/* ── Profile (outside overflow-hidden shell so popup can escape) ─ */}
-        <div ref={profileRef} className="relative shrink-0 border-t border-white/10">
+        <div ref={profileRef} className="relative shrink-0 border-t border-chalk">
           <button
             onClick={() => setProfileOpen((o) => !o)}
-            className={`flex items-center w-full py-3 hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink transition-all duration-300 ${
+            className={`flex items-center w-full py-3 hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-shell transition-all duration-300 ${
               collapsed ? 'justify-center px-0' : 'gap-3 px-3'
             }`}
           >
@@ -199,7 +199,7 @@ export function Layout() {
               KC
             </div>
             {!collapsed && (
-              <span className="text-xs text-bone/60 truncate">kvn.c8888</span>
+              <span className="text-xs text-graphite truncate">kvn.c8888</span>
             )}
           </button>
 

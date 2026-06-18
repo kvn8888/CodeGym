@@ -38,6 +38,34 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			updated_at timestamptz NOT NULL DEFAULT now(),
 			PRIMARY KEY (tenant_id, user_id)
 		)`,
+		`ALTER TABLE tenants ALTER COLUMN tenant_type SET DEFAULT 'personal'`,
+		`ALTER TABLE tenant_memberships ALTER COLUMN role SET DEFAULT 'owner'`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1
+				FROM pg_constraint
+				WHERE conname = 'chk_tenants_tenant_type'
+					AND conrelid = 'tenants'::regclass
+			) THEN
+				ALTER TABLE tenants
+				ADD CONSTRAINT chk_tenants_tenant_type
+				CHECK (tenant_type IN ('personal', 'team'));
+			END IF;
+		END $$`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1
+				FROM pg_constraint
+				WHERE conname = 'chk_tenant_memberships_role'
+					AND conrelid = 'tenant_memberships'::regclass
+			) THEN
+				ALTER TABLE tenant_memberships
+				ADD CONSTRAINT chk_tenant_memberships_role
+				CHECK (role IN ('owner', 'admin', 'member'));
+			END IF;
+		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_tenant_memberships_user_id ON tenant_memberships (user_id)`,
 	}
 

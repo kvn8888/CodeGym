@@ -178,6 +178,18 @@ tenant_memberships
   primary key (tenant_id, user_id)
 ```
 
+The current bootstrap also enforces:
+
+- `tenants.tenant_type` is `personal` or `team`.
+- `tenant_memberships.role` is `owner`, `admin`, or `member`.
+- `user_memory_profiles(tenant_id, user_id)` references
+  `tenant_memberships(tenant_id, user_id)`.
+- `memory_events(tenant_id, user_id)` references
+  `tenant_memberships(tenant_id, user_id)`.
+
+Those memory foreign keys mean a memory row cannot be written for a user/tenant
+pair unless the identity bootstrap has created a membership first.
+
 ## How Memory Uses This
 
 Memory services require both:
@@ -193,6 +205,15 @@ tenant_id + user_id
 
 The memory store never guesses identity from the token directly. It only uses
 the normalized context created by the auth and tenant middleware.
+
+With Postgres enabled, memory rows are tied back to durable tenant membership:
+
+```text
+auth principal -> app_users
+tenant scope -> tenants
+principal + scope -> tenant_memberships
+memory row -> tenant_memberships
+```
 
 ## Current Limitations
 

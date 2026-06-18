@@ -42,6 +42,38 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_created_at ON memory_events (tenant_id, user_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_occurred_at ON memory_events (tenant_id, user_id, occurred_at DESC)`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1
+				FROM pg_constraint
+				WHERE conname = 'fk_user_memory_profiles_membership'
+					AND conrelid = 'user_memory_profiles'::regclass
+			) THEN
+				ALTER TABLE user_memory_profiles
+				ADD CONSTRAINT fk_user_memory_profiles_membership
+				FOREIGN KEY (tenant_id, user_id)
+				REFERENCES tenant_memberships (tenant_id, user_id)
+				ON DELETE CASCADE
+				NOT VALID;
+			END IF;
+		END $$`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1
+				FROM pg_constraint
+				WHERE conname = 'fk_memory_events_membership'
+					AND conrelid = 'memory_events'::regclass
+			) THEN
+				ALTER TABLE memory_events
+				ADD CONSTRAINT fk_memory_events_membership
+				FOREIGN KEY (tenant_id, user_id)
+				REFERENCES tenant_memberships (tenant_id, user_id)
+				ON DELETE CASCADE
+				NOT VALID;
+			END IF;
+		END $$`,
 	}
 
 	for _, statement := range statements {

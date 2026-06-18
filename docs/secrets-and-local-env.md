@@ -27,6 +27,18 @@ cd backend
 doppler run -p codegym -c dev -- go run ./cmd/server
 ```
 
+To run the Neon-backed schema integration test:
+
+```bash
+cd backend
+doppler run -p codegym -c dev -- go test ./internal/integration -run TestNeonIdentityAndMemoryBootstrap -count=1
+```
+
+That test bootstraps the user, tenant, membership, memory profile, and memory
+event tables against Neon, verifies the membership foreign keys, and cleans up
+its temporary rows. Normal `go test ./...` skips the Neon check when no database
+URL is present.
+
 Required development secrets:
 
 | Name | Required | Purpose |

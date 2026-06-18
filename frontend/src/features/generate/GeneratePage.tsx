@@ -65,9 +65,9 @@ const DIFFICULTY_STYLES: Record<Difficulty, React.CSSProperties> = {
     borderColor: 'var(--color-moss)',
   },
   medium: {
-    color: 'var(--color-amber)',
-    background: 'var(--color-amber-tint)',
-    borderColor: 'var(--color-amber)',
+    color: 'var(--color-blue)',
+    background: 'var(--color-blue-tint)',
+    borderColor: 'var(--color-blue)',
   },
   hard: {
     color: 'var(--color-rust)',

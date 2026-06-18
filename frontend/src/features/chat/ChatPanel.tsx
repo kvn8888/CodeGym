@@ -68,12 +68,12 @@ export function ChatPanel() {
               <div
                 className={`max-w-[85%] px-3.5 py-2.5 text-xs leading-relaxed rounded-2xl ${
                   msg.role === 'user'
-                    ? 'bg-ink text-bone'
-                    : 'bg-shell text-graphite'
+                    ? 'bg-parchment text-ink'
+                    : 'bg-white border border-chalk text-graphite'
                 }`}
                 style={
                   msg.role === 'assistant'
-                    ? { boxShadow: 'var(--cg-card-shadow)' }
+                    ? { boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }
                     : undefined
                 }
               >

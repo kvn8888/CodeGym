@@ -15,7 +15,7 @@ type Story = StoryObj<typeof ChatPanel>;
 export const Default: Story = {
   decorators: [
     (Story) => (
-      <div className="h-[480px] max-w-sm mx-auto mt-8 border border-chalk rounded-2xl overflow-hidden bg-bone">
+      <div className="mx-auto mt-8 h-[480px] max-w-sm overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100">
         <Story />
       </div>
     ),

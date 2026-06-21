@@ -8,11 +8,11 @@ import { GridSpinner } from '../../shared/components/GridSpinner';
 const CARD_SHADOW = 'var(--cg-card-shadow)';
 
 const difficultyChips: Record<number, { label: string; color: string; tint: string }> = {
-  1: { label: 'EASY', color: 'var(--color-moss)', tint: 'var(--color-moss-tint)' },
-  2: { label: 'EASY', color: 'var(--color-moss)', tint: 'var(--color-moss-tint)' },
-  3: { label: 'MED', color: 'var(--color-amber)', tint: 'var(--color-amber-tint)' },
-  4: { label: 'HARD', color: 'var(--color-rose)', tint: 'var(--color-rose-tint)' },
-  5: { label: 'EXPERT', color: 'var(--color-violet)', tint: 'var(--color-violet-tint)' },
+  1: { label: 'Easy', color: 'var(--color-green-900)', tint: 'var(--color-green-100)' },
+  2: { label: 'Easy', color: 'var(--color-green-900)', tint: 'var(--color-green-100)' },
+  3: { label: 'Medium', color: 'var(--color-amber-900)', tint: 'var(--color-amber-100)' },
+  4: { label: 'Hard', color: 'var(--color-red-900)', tint: 'var(--color-red-100)' },
+  5: { label: 'Expert', color: 'var(--color-purple-700)', tint: 'var(--color-purple-100)' },
 };
 
 const listVariants = {
@@ -44,15 +44,15 @@ export function ProblemListPage() {
   const languages = [...new Set(problems.map((p) => p.language))];
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-12">
+    <div className="mx-auto max-w-4xl px-6 py-12">
       <div className="flex items-end justify-between mb-10">
         <div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink">
-            Problems<span className="text-blue">.</span>
+          <h1 className="text-[40px] font-semibold leading-[48px] tracking-[-2.4px] text-gray-1000">
+            Problems
           </h1>
           {!loading && (
-            <p className="mt-2 text-xs text-graphite">
-              <span className="font-bold text-ink">{filteredProblems.length}</span> on the rack
+            <p className="mt-2 text-sm text-gray-900">
+              <span className="font-semibold text-gray-1000">{filteredProblems.length}</span> available
               {languageFilter ? ` — ${languageFilter}` : ''}
             </p>
           )}
@@ -60,7 +60,7 @@ export function ProblemListPage() {
         <select
           value={languageFilter}
           onChange={(e) => setLanguageFilter(e.target.value)}
-          className="rounded-xl border border-chalk bg-white px-3 py-2 text-xs text-ink cursor-pointer cg-focus"
+          className="cg-focus h-10 cursor-pointer rounded-md border border-gray-alpha-200 bg-background-100 px-3 text-sm text-gray-1000"
           style={{ boxShadow: CARD_SHADOW }}
         >
           <option value="">All Languages</option>
@@ -77,8 +77,8 @@ export function ProblemListPage() {
           <GridSpinner size="md" />
         </div>
       ) : filteredProblems.length === 0 ? (
-        <div className="text-xs text-ash text-center py-16 tracking-[0.1em]">
-          No problems found
+        <div className="py-16 text-center text-sm text-gray-700">
+          No problems found.
         </div>
       ) : (
         <motion.div
@@ -93,28 +93,28 @@ export function ProblemListPage() {
               <motion.div key={problem.id} variants={itemVariants}>
                 <Link
                   to={`/problems/${problem.id}`}
-                  className="group flex items-center justify-between gap-4 rounded-2xl border border-chalk bg-white px-5 py-4 no-underline cg-focus hover:border-ash transition-colors"
+                  className="group cg-focus flex items-center justify-between gap-4 rounded-xl border border-gray-alpha-200 bg-background-100 px-5 py-4 no-underline transition-colors hover:border-gray-alpha-400"
                   style={{ boxShadow: CARD_SHADOW }}
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="truncate text-sm font-bold text-ink group-hover:text-blue transition-colors">
+                    <span className="truncate text-sm font-semibold text-gray-1000 transition-colors group-hover:text-blue-700">
                       {problem.title}
                     </span>
                     {chip && (
                       <span
-                        className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-[0.1em]"
-                        style={{ color: chip.color, backgroundColor: chip.tint, border: `1px solid ${chip.color}` }}
+                        className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                        style={{ color: chip.color, backgroundColor: chip.tint }}
                       >
                         {chip.label}
                       </span>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2 text-[10px] tracking-[0.08em] text-graphite">
-                    <span className="rounded-md bg-grain px-2 py-1 font-bold">{problem.language.toUpperCase()}</span>
+                  <div className="flex shrink-0 items-center gap-2 font-mono text-xs text-gray-900">
+                    <span className="rounded-md bg-gray-100 px-2 py-1">{problem.language.toUpperCase()}</span>
                     {problem.framework && (
-                      <span className="rounded-md bg-grain px-2 py-1 font-bold">{problem.framework.toUpperCase()}</span>
+                      <span className="rounded-md bg-gray-100 px-2 py-1">{problem.framework.toUpperCase()}</span>
                     )}
-                    <span className="text-ash">{problem.estimated_minutes} min</span>
+                    <span className="text-gray-700">{problem.estimated_minutes} min</span>
                   </div>
                 </Link>
               </motion.div>

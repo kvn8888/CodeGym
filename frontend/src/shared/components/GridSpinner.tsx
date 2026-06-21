@@ -87,7 +87,7 @@ export function GridSpinner({ size = 'md' }: GridSpinnerProps) {
           style={{
             width: cell,
             height: cell,
-            backgroundColor: 'var(--color-grain)',
+            backgroundColor: 'var(--color-gray-200)',
             animation: `grid-blink ${TOTAL_DURATION}s ${delay}s infinite`,
           }}
         />

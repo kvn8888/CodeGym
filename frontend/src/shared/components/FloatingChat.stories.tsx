@@ -15,7 +15,7 @@ type Story = StoryObj<typeof FloatingChat>;
 export const Default: Story = {
   decorators: [
     (Story) => (
-      <div className="min-h-screen bg-bone">
+      <div className="min-h-screen bg-background-200">
         <Story />
       </div>
     ),

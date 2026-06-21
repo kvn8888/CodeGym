@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   ArrowRight,
   ChevronDown,
@@ -31,10 +31,10 @@ const RECENT_PROMPTS = [
 ];
 
 const SPOTLIGHT_TOPICS = [
-  { label: 'DSA', count: 128, color: 'var(--color-moss)' },
-  { label: 'API Patterns', count: 64, color: 'var(--color-cobalt)' },
-  { label: 'System Design', count: 52, color: 'var(--color-violet)' },
-  { label: 'Concurrency', count: 37, color: 'var(--color-rust)' },
+  { label: 'DSA', count: 128, color: 'var(--color-green-700)' },
+  { label: 'API Patterns', count: 64, color: 'var(--color-blue-700)' },
+  { label: 'System Design', count: 52, color: 'var(--color-purple-700)' },
+  { label: 'Concurrency', count: 37, color: 'var(--color-pink-700)' },
 ];
 
 const EXAMPLES = [
@@ -60,19 +60,19 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
 
 const DIFFICULTY_STYLES: Record<Difficulty, React.CSSProperties> = {
   easy: {
-    color: 'var(--color-moss)',
-    background: 'var(--color-moss-tint)',
-    borderColor: 'var(--color-moss)',
+    color: 'var(--color-green-900)',
+    background: 'var(--color-green-100)',
+    borderColor: 'var(--color-green-400)',
   },
   medium: {
-    color: 'var(--color-blue)',
-    background: 'var(--color-blue-tint)',
-    borderColor: 'var(--color-blue)',
+    color: 'var(--color-amber-900)',
+    background: 'var(--color-amber-100)',
+    borderColor: 'var(--color-amber-400)',
   },
   hard: {
-    color: 'var(--color-rust)',
-    background: 'var(--color-rust-tint)',
-    borderColor: 'var(--color-rust)',
+    color: 'var(--color-red-900)',
+    background: 'var(--color-red-100)',
+    borderColor: 'var(--color-red-400)',
   },
 };
 
@@ -104,6 +104,7 @@ function chooseSessionPhrase() {
 }
 
 export function GeneratePage() {
+  const shouldReduceMotion = useReducedMotion();
   const [sessionPhrase] = useState(chooseSessionPhrase);
   const [view, setView] = useState<GenerateView>('command');
   const [format, setFormat] = useState<GenerateFormat>('problem');
@@ -176,59 +177,78 @@ export function GeneratePage() {
   };
 
   return (
-    <div className="min-h-screen bg-shell px-6 py-8">
-      <div className="mx-auto flex w-full max-w-5xl justify-end">
+    <div className="min-h-screen bg-background-100 px-6 py-8">
+      <div className="mx-auto flex w-full max-w-[1200px] justify-end">
         <div className="flex items-center gap-3">
-          <span className="cg-mono hidden text-[10px] font-medium tracking-[0.2em] text-faint uppercase sm:inline">
-            Generate style
+          <span className="hidden text-xs text-gray-700 sm:inline">
+            Generate Style
           </span>
-          <div className="flex items-center rounded-xl border bg-grain p-1 cg-border-subtle">
+          <div className="flex items-center rounded-md border border-gray-alpha-200 bg-gray-100 p-0.5">
             {(['command', 'spotlight'] as GenerateView[]).map((mode) => (
-              <button
+              <motion.button
                 key={mode}
                 type="button"
                 onClick={() => setView(mode)}
-                className={`cg-focus cg-transition rounded-lg px-3 py-1.5 text-xs font-medium capitalize ${
+                whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+                className={`cg-focus rounded-[5px] px-3 py-1.5 text-sm font-medium capitalize transition-colors ${
                   view === mode
-                    ? 'bg-shell text-ink shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
-                    : 'text-ash hover:text-ink'
+                    ? 'bg-background-100 text-gray-1000 shadow-[0_1px_1px_rgba(0,0,0,0.04)]'
+                    : 'text-gray-700 hover:text-gray-1000'
                 }`}
               >
                 {mode}
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
       </div>
 
-      {view === 'command' ? (
-        <CommandGenerateView
-          difficulty={difficulty}
-          format={format}
-          generating={generating}
-          language={language}
-          prompt={prompt}
-          status={status}
-          onDifficultyChange={setDifficulty}
-          onFormatChange={setFormat}
-          onGenerate={handleGenerate}
-          onKeyDown={handleKeyDown}
-          onLanguageChange={setLanguage}
-          onPromptChange={setPrompt}
-          onUsePrompt={usePrompt}
-        />
-      ) : (
-        <SpotlightGenerateView
-          generating={generating}
-          prompt={prompt}
-          sessionPhrase={sessionPhrase}
-          status={status}
-          onGenerate={handleGenerate}
-          onKeyDown={handleKeyDown}
-          onPromptChange={setPrompt}
-          onUsePrompt={usePrompt}
-        />
-      )}
+      <AnimatePresence mode="wait" initial={false}>
+        {view === 'command' ? (
+          <motion.div
+            key="command"
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -6 }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.18, ease: [0.175, 0.885, 0.32, 1.1] }}
+          >
+            <CommandGenerateView
+              difficulty={difficulty}
+              format={format}
+              generating={generating}
+              language={language}
+              prompt={prompt}
+              status={status}
+              onDifficultyChange={setDifficulty}
+              onFormatChange={setFormat}
+              onGenerate={handleGenerate}
+              onKeyDown={handleKeyDown}
+              onLanguageChange={setLanguage}
+              onPromptChange={setPrompt}
+              onUsePrompt={usePrompt}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="spotlight"
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -6 }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.18, ease: [0.175, 0.885, 0.32, 1.1] }}
+          >
+            <SpotlightGenerateView
+              generating={generating}
+              prompt={prompt}
+              sessionPhrase={sessionPhrase}
+              status={status}
+              onGenerate={handleGenerate}
+              onKeyDown={handleKeyDown}
+              onPromptChange={setPrompt}
+              onUsePrompt={usePrompt}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {showQuestions && agentQuestions.length > 0 && (
         <QuestionModal
@@ -274,43 +294,44 @@ function CommandGenerateView({
     <main className="flex flex-col items-center px-0 pb-12 pt-14">
       <div className="w-full max-w-3xl">
         <div className="mb-8">
-          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink">
-            What do you want to <span className="marker-accent">practice</span>?
+          <h1 className="text-[40px] font-semibold leading-[48px] tracking-[-2.4px] text-gray-1000">
+            What do you want to practice?
           </h1>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 md:flex-nowrap">
-            <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-graphite">
-              <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-grain">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue" />
+            <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-gray-900">
+              <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-blue-100">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-700" />
               </span>
               <span>
                 Tuned to your history - lately you worked on{' '}
-                <strong className="font-semibold text-ink">Graphs</strong> and{' '}
-                <strong className="font-semibold text-ink">Concurrency</strong>.
+                <strong className="font-semibold text-gray-1000">Graphs</strong> and{' '}
+                <strong className="font-semibold text-gray-1000">Concurrency</strong>.
               </span>
             </div>
             <Link
               to="/memory"
-              className="cg-focus rounded-md px-1 text-xs font-medium text-blue underline-offset-4 hover:text-blue-hover hover:underline"
+              className="cg-focus rounded-md px-1 text-sm font-medium text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline"
             >
-              View memory
+              View Memory
             </Link>
           </div>
         </div>
 
         <section
-          className="overflow-hidden rounded-2xl bg-shell cg-surface"
+          className="overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100"
+          style={{ boxShadow: 'var(--cg-card-shadow)' }}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-grain px-4 py-3 cg-border-subtle">
-            <div className="flex rounded-xl bg-grain p-1">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-alpha-200 bg-background-200 px-4 py-3">
+            <div className="flex rounded-md bg-gray-100 p-0.5">
               {(['problem', 'mcq', 'interview'] as GenerateFormat[]).map((item) => (
                 <button
                   key={item}
                   type="button"
                   onClick={() => onFormatChange(item)}
-                  className={`cg-focus cg-mono cg-transition rounded-lg px-4 py-2 text-xs font-medium ${
+                  className={`cg-focus rounded-[5px] px-4 py-2 text-sm font-medium transition-colors ${
                     format === item
-                      ? 'bg-shell text-ink shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
-                      : 'text-ash hover:text-ink'
+                      ? 'bg-background-100 text-gray-1000 shadow-[0_1px_1px_rgba(0,0,0,0.04)]'
+                      : 'text-gray-700 hover:text-gray-1000'
                   }`}
                 >
                   {FORMAT_LABELS[item]}
@@ -318,12 +339,12 @@ function CommandGenerateView({
               ))}
             </div>
 
-            <label className="flex items-center gap-2 rounded-xl border bg-shell px-3 py-2 text-xs text-graphite cg-border-subtle">
-              <span className="h-2 w-2 rounded-sm bg-blue" aria-hidden="true" />
+            <label className="flex h-10 items-center gap-2 rounded-md border border-gray-alpha-200 bg-background-100 px-3 text-sm text-gray-900">
+              <span className="h-2 w-2 rounded-sm bg-blue-700" aria-hidden="true" />
               <select
                 value={language}
                 onChange={(event) => onLanguageChange(event.target.value)}
-                className="cg-mono appearance-none bg-transparent text-xs text-graphite focus-visible:outline-none"
+                className="appearance-none bg-transparent text-sm text-gray-900 focus-visible:outline-none"
                 aria-label="Language"
               >
                 <option value="python">Python</option>
@@ -341,12 +362,12 @@ function CommandGenerateView({
             onKeyDown={onKeyDown}
             placeholder="Describe a challenge - e.g. a hard problem on topological sort with cycle detection, with tricky edge cases..."
             rows={5}
-            className="cg-scroll block min-h-36 w-full resize-none bg-shell px-4 py-5 text-sm leading-7 text-ink placeholder-ash focus-visible:outline-none"
+            className="cg-scroll block min-h-36 w-full resize-none bg-background-100 px-4 py-5 text-sm leading-6 text-gray-1000 placeholder-gray-700 focus-visible:outline-none"
           />
 
-          <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-grain px-4 py-3 cg-border-subtle">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-gray-alpha-200 bg-background-200 px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="cg-mono mr-2 text-[10px] font-medium tracking-[0.18em] text-faint uppercase">
+              <span className="mr-2 text-xs text-gray-700">
                 Level
               </span>
               {(['easy', 'medium', 'hard'] as Difficulty[]).map((item) => (
@@ -354,10 +375,10 @@ function CommandGenerateView({
                   key={item}
                   type="button"
                   onClick={() => onDifficultyChange(item)}
-                  className={`cg-focus cg-transition rounded-xl border px-4 py-2 text-xs font-medium ${
+                  className={`cg-focus h-10 rounded-md border px-4 text-sm font-medium transition-colors ${
                     difficulty === item
                       ? 'border-transparent'
-                      : 'bg-shell text-graphite hover:text-ink cg-border-subtle'
+                      : 'border-gray-alpha-200 bg-background-100 text-gray-900 hover:border-gray-alpha-400 hover:text-gray-1000'
                   }`}
                   style={difficulty === item ? DIFFICULTY_STYLES[item] : undefined}
                 >
@@ -377,7 +398,7 @@ function CommandGenerateView({
         </section>
 
         <div className="mt-6 flex flex-wrap items-center gap-2">
-          <span className="cg-mono mr-2 text-[10px] font-medium tracking-[0.18em] text-faint uppercase">
+          <span className="mr-2 text-xs text-gray-700">
             Recent
           </span>
           {RECENT_PROMPTS.map((item) => (
@@ -385,7 +406,7 @@ function CommandGenerateView({
               key={item}
               type="button"
               onClick={() => onUsePrompt(item)}
-              className="cg-focus cg-transition rounded-xl border bg-shell px-4 py-2 text-xs text-graphite hover:text-ink cg-border-subtle"
+              className="cg-focus h-10 rounded-md border border-gray-alpha-200 bg-background-100 px-4 text-sm text-gray-900 transition-colors hover:border-gray-alpha-400 hover:text-gray-1000"
             >
               {item}
             </button>
@@ -421,20 +442,21 @@ function SpotlightGenerateView({
     <main className="flex items-start justify-center px-0 pt-16">
       <div className="w-full max-w-4xl text-center">
         <div className="mb-10">
-          <div className="mb-5 text-[10px] font-bold tracking-[0.32em] text-blue uppercase">
+          <div className="mb-5 font-mono text-xs tracking-[0.2em] text-gray-700 uppercase">
             AI Problem Engine
           </div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink sm:whitespace-nowrap md:text-5xl xl:text-6xl">
-            <em className="marker-accent not-italic">{sessionPhrase}</em>
+          <h1 className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px] text-gray-1000 sm:whitespace-nowrap xl:text-[64px] xl:leading-[64px] xl:tracking-[-3.84px]">
+            {sessionPhrase}
           </h1>
-          <p className="mx-auto mt-8 max-w-2xl text-lg leading-8 text-graphite">
+          <p className="mx-auto mt-8 max-w-2xl text-xl leading-9 text-gray-900">
             One prompt becomes a unique problem, a test suite, and a sandbox to prove your
             solution in.
           </p>
         </div>
 
         <div
-          className="mx-auto flex max-w-3xl items-center rounded-2xl bg-shell p-2 cg-surface"
+          className="mx-auto flex max-w-3xl items-center rounded-xl border border-gray-alpha-200 bg-background-100 p-2"
+          style={{ boxShadow: 'var(--cg-card-shadow)' }}
         >
           <input
             type="text"
@@ -442,7 +464,7 @@ function SpotlightGenerateView({
             onChange={(event) => onPromptChange(event.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Describe what you want to practice..."
-            className="min-w-0 flex-1 bg-transparent px-4 text-sm text-ink placeholder-ash focus-visible:outline-none"
+            className="min-w-0 flex-1 bg-transparent px-4 text-base text-gray-1000 placeholder-gray-700 focus-visible:outline-none"
           />
           <GenerateButton
             disabled={generating || !prompt.trim()}
@@ -455,11 +477,13 @@ function SpotlightGenerateView({
 
         <div className="mt-10 flex flex-wrap justify-center gap-3">
           {SPOTLIGHT_TOPICS.map((topic) => (
-            <button
+            <motion.button
               key={topic.label}
               type="button"
               onClick={() => onUsePrompt(topic.label)}
-              className="cg-focus cg-transition flex min-w-56 items-center justify-center gap-3 rounded-2xl border bg-shell px-5 py-4 text-sm text-ink hover:-translate-y-px cg-border-subtle"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              className="cg-focus flex min-w-56 items-center justify-center gap-3 rounded-xl border border-gray-alpha-200 bg-background-100 px-5 py-4 text-sm text-gray-1000"
               style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}
             >
               <span
@@ -468,14 +492,14 @@ function SpotlightGenerateView({
                 aria-hidden="true"
               />
               <span className="font-semibold">{topic.label}</span>
-              <span className="text-ash">.{topic.count}</span>
-            </button>
+              <span className="text-gray-700">.{topic.count}</span>
+            </motion.button>
           ))}
         </div>
 
-        <div className="mt-8 flex items-center justify-center gap-2 text-xs text-ash">
-          <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-grain">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue" />
+        <div className="mt-8 flex items-center justify-center gap-2 text-sm text-gray-700">
+          <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-blue-100">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-700" />
           </span>
           <span>Personalized from your recent activity - 3 skills tracked</span>
         </div>
@@ -486,7 +510,7 @@ function SpotlightGenerateView({
               key={example}
               type="button"
               onClick={() => onUsePrompt(example)}
-              className="cg-focus cg-transition rounded-full border bg-shell px-4 py-2 text-xs text-graphite hover:text-ink cg-border-subtle"
+              className="cg-focus h-9 rounded-full border border-gray-alpha-200 bg-background-100 px-4 text-sm text-gray-900 transition-colors hover:border-gray-alpha-400 hover:text-gray-1000"
             >
               {example}
             </button>
@@ -513,18 +537,20 @@ function GenerateButton({
   variant: 'ink' | 'blueprint';
 }) {
   const isBlueprint = variant === 'blueprint';
+  const shouldReduceMotion = useReducedMotion();
 
   return (
     <motion.button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      whileTap={disabled ? undefined : { scale: 0.96 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-      className={`cg-focus cg-transition flex h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:bg-chalk disabled:text-ash ${
+      whileHover={disabled || shouldReduceMotion ? undefined : { y: -1 }}
+      whileTap={disabled || shouldReduceMotion ? undefined : { scale: 0.97 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 34 }}
+      className={`cg-focus flex h-10 shrink-0 items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-700 ${
         isBlueprint
-          ? 'bg-blue text-white hover:bg-blue-hover'
-          : 'bg-ink text-bone hover:bg-ink-soft'
+          ? 'bg-blue-700 text-white hover:bg-blue-800'
+          : 'bg-gray-1000 text-background-100 hover:bg-gray-900'
       }`}
       aria-label={label}
     >
@@ -535,7 +561,7 @@ function GenerateButton({
       ) : (
         <>
           <span>{label}</span>
-          <kbd className="cg-mono rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] text-white/80">
+          <kbd className="font-mono rounded-[5px] bg-white/15 px-1.5 py-0.5 text-[11px] text-white/80">
             <Command size={10} strokeWidth={2} className="inline" /> Enter
           </kbd>
         </>
@@ -555,7 +581,7 @@ function GenerationState({
     return (
       <div className="cg-fade-in mt-12 flex flex-col items-center gap-4">
         <GridSpinner size="md" />
-        <span className="cg-mono text-[10px] font-medium tracking-[0.18em] text-ash uppercase">
+        <span className="font-mono text-xs tracking-[0.16em] text-gray-700 uppercase">
           Generating
         </span>
       </div>
@@ -565,8 +591,8 @@ function GenerationState({
   if (!status) return null;
 
   return (
-    <div className="cg-fade-in mx-auto mt-6 max-w-xl rounded-xl border bg-shell px-4 py-3 text-xs text-graphite cg-border-subtle">
-      <Sparkles size={14} strokeWidth={1.8} className="mr-2 inline text-ash" />
+    <div className="cg-fade-in mx-auto mt-6 max-w-xl rounded-xl border border-gray-alpha-200 bg-background-100 px-4 py-3 text-sm text-gray-900">
+      <Sparkles size={14} strokeWidth={1.8} className="mr-2 inline text-gray-700" />
       {status}
     </div>
   );

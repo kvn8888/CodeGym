@@ -214,7 +214,7 @@ export function ProblemDetailPage() {
     return (
       <div className="max-w-xl mx-auto px-6 py-16">
         <div
-          className="rounded-2xl border border-chalk bg-white px-5 py-4 text-xs text-rust"
+          className="rounded-xl border border-red-400 bg-red-100 px-5 py-4 text-sm text-red-900"
           style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }}
         >
           {error}
@@ -239,41 +239,41 @@ export function ProblemDetailPage() {
     <div ref={pageRef} className="h-screen flex">
       {/* Left: Problem Description */}
       <div
-        className="shrink-0 min-w-0 overflow-y-auto p-6 bg-bone"
+        className="shrink-0 min-w-0 overflow-y-auto bg-background-100 p-6"
         style={{ width: `${descriptionWidth}%` }}
       >
-        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink mb-3">{problem.title}</h1>
-        <div className="flex gap-2 mb-5 text-[10px] tracking-[0.08em] font-bold">
-          <span className="rounded-md bg-grain px-2 py-1 text-graphite">{problem.language.toUpperCase()}</span>
+        <h1 className="mb-3 text-2xl font-semibold leading-8 tracking-[-0.96px] text-gray-1000">{problem.title}</h1>
+        <div className="mb-5 flex gap-2 font-mono text-xs">
+          <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.language.toUpperCase()}</span>
           {problem.framework && (
-            <span className="rounded-md bg-grain px-2 py-1 text-graphite">{problem.framework.toUpperCase()}</span>
+            <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.framework.toUpperCase()}</span>
           )}
-          <span className="rounded-md px-2 py-1" style={{ color: 'var(--color-amber)', backgroundColor: 'var(--color-amber-tint)' }}>
+          <span className="rounded-md bg-amber-100 px-2 py-1 text-amber-900">
             {problem.estimated_minutes} MIN
           </span>
         </div>
-        <div className="prose-brutalist text-xs text-graphite">
+        <div className="prose-geist text-sm text-gray-900">
           <ReactMarkdown>{problem.description}</ReactMarkdown>
         </div>
 
         {/* Hints */}
         {problem.hints && problem.hints.length > 0 && (
-          <div className="mt-6 pt-4 border-t border-chalk">
-            <h3 className="text-[10px] font-bold tracking-[0.15em] text-ash mb-3 uppercase">
+          <div className="mt-6 border-t border-gray-alpha-200 pt-4">
+            <h3 className="mb-3 text-sm font-semibold text-gray-1000">
               Hints
             </h3>
             {problem.hints.map((hint, i) => (
               <div key={i} className="mb-2">
                 {i < hintsRevealed ? (
                   <p
-                    className="text-xs text-graphite rounded-xl px-4 py-3 leading-5 bg-grain border border-chalk"
+                    className="rounded-xl border border-gray-alpha-200 bg-gray-100 px-4 py-3 text-sm leading-6 text-gray-900"
                   >
                     {hint.text}
                   </p>
                 ) : (
                   <button
                     onClick={() => setHintsRevealed(i + 1)}
-                    className="text-xs font-bold text-blue hover:text-blue-hover transition-colors"
+                    className="text-sm font-medium text-blue-700 transition-colors hover:text-blue-800"
                   >
                     {'\u2192'} Reveal hint {i + 1}{' '}
                     {hint.cost > 0 ? `(${hint.cost} credit)` : ''}
@@ -287,7 +287,7 @@ export function ProblemDetailPage() {
 
       <button
         type="button"
-        className="group relative z-10 w-2 shrink-0 cursor-col-resize border-x border-chalk bg-grain/40 hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink"
+        className="group relative z-10 w-2 shrink-0 cursor-col-resize border-x border-gray-alpha-200 bg-gray-100/80 hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-700"
         aria-label="Resize editor pane"
         aria-orientation="vertical"
         aria-valuemin={100 - MAX_DESCRIPTION_WIDTH}
@@ -300,7 +300,7 @@ export function ProblemDetailPage() {
       >
         <span
           aria-hidden="true"
-          className="absolute inset-y-6 left-1/2 w-px -translate-x-1/2 bg-chalk transition-colors group-hover:bg-ash group-focus-visible:bg-ink"
+          className="absolute inset-y-6 left-1/2 w-px -translate-x-1/2 bg-gray-alpha-400 transition-colors group-hover:bg-gray-alpha-600 group-focus-visible:bg-blue-700"
         />
       </button>
 
@@ -325,7 +325,7 @@ export function ProblemDetailPage() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="px-4 py-1.5 m-1.5 rounded-lg bg-ink text-bone text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bone disabled:opacity-40 transition-colors"
+            className="m-1.5 rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
           >
             {submitting ? 'RUNNING' : 'RUN'}
@@ -344,7 +344,7 @@ export function ProblemDetailPage() {
               options={{
                 fontSize: 13,
                 fontFamily:
-                  "'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
+                  "'Geist Mono', 'SF Mono', 'Cascadia Code', ui-monospace, monospace",
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
@@ -360,7 +360,7 @@ export function ProblemDetailPage() {
           <>
             <button
               type="button"
-              className="group relative h-2 shrink-0 cursor-row-resize border-y border-[#333] bg-[#252526] hover:bg-[#2d2d2d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bone"
+              className="group relative h-2 shrink-0 cursor-row-resize border-y border-[#333] bg-[#252526] hover:bg-[#2d2d2d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-background-100"
               aria-label="Resize test results panel"
               aria-orientation="horizontal"
               aria-valuemin={MIN_RESULTS_HEIGHT}

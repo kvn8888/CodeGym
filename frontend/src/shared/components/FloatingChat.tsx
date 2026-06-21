@@ -21,10 +21,10 @@ import {
   type ChatBounds,
 } from './floatingChatGeometry';
 
-const CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)';
-const WINDOW_SHADOW = '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)';
+const CARD_SHADOW = 'var(--cg-card-shadow)';
+const WINDOW_SHADOW = 'var(--cg-modal-shadow)';
 const RADIUS_CLOSED = BUBBLE_SIZE / 2;
-const RADIUS_OPEN = 16;
+const RADIUS_OPEN = 12;
 const CHAT_LAYOUT_ID = 'codegym-floating-chat-shell';
 const OPEN_CONTENT_DELAY = 0.18;
 const CONTENT_EASE = [0.16, 1, 0.3, 1] as [number, number, number, number];
@@ -49,7 +49,7 @@ function ChatChrome({
   return (
     <>
       <div
-        className={`flex shrink-0 select-none items-center justify-between border-b border-chalk px-4 py-3 bg-bone ${
+        className={`flex shrink-0 select-none items-center justify-between border-b border-gray-alpha-200 bg-background-100 px-4 py-3 ${
           draggable ? 'chat-drag-handle cursor-grab active:cursor-grabbing' : ''
         }`}
       >
@@ -60,12 +60,12 @@ function ChatChrome({
               : 'flex-1 min-w-0'
           }
         >
-          <div className="text-sm font-medium text-ink">Assistant</div>
-          <div className="text-[10px] text-ash">Goals, skills, and memory</div>
+          <div className="text-sm font-medium text-gray-1000">Assistant</div>
+          <div className="text-xs text-gray-700">Goals, skills, and memory</div>
         </div>
         <button
           onClick={onClose}
-          className="chat-drag-cancel w-7 h-7 flex items-center justify-center rounded-lg text-ash hover:text-ink hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-bone transition-colors"
+          className="chat-drag-cancel cg-focus flex h-7 w-7 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-alpha-100 hover:text-gray-1000"
           aria-label="Close chat"
           title="Close"
         >
@@ -74,7 +74,7 @@ function ChatChrome({
           </svg>
         </button>
       </div>
-      <div className="flex-1 min-h-0 bg-bone">
+      <div className="min-h-0 flex-1 bg-background-100">
         <ChatPanel />
       </div>
     </>
@@ -243,7 +243,7 @@ export function FloatingChat() {
             onClick={beginOpenMorph}
             whileHover={shouldReduceMotion ? undefined : { scale: 1.04 }}
             whileTap={shouldReduceMotion ? undefined : { scale: 0.96 }}
-            className="chat-motion-shell fixed z-50 overflow-hidden rounded-full bg-transparent text-bone focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-bone"
+            className="chat-motion-shell cg-focus fixed z-50 overflow-hidden rounded-full bg-transparent text-background-100"
             style={{
               right: CHAT_MARGIN,
               bottom: CHAT_MARGIN,
@@ -255,7 +255,7 @@ export function FloatingChat() {
             aria-label="Open chat"
           >
             <motion.span
-              className="absolute inset-0 flex items-center justify-center rounded-full bg-ink hover:bg-ink-soft"
+              className="absolute inset-0 flex items-center justify-center rounded-full bg-gray-1000 transition-colors hover:bg-gray-900"
               initial={false}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.72 }}
@@ -272,7 +272,7 @@ export function FloatingChat() {
             layoutId={CHAT_LAYOUT_ID}
             transition={layoutTransition}
             onLayoutAnimationComplete={stage === 'opening' ? finishOpening : undefined}
-            className="chat-motion-shell fixed z-50 overflow-hidden rounded-2xl bg-transparent"
+            className="chat-motion-shell fixed z-50 overflow-hidden rounded-xl bg-transparent"
             style={{
               left: bounds.x,
               top: bounds.y,
@@ -284,7 +284,7 @@ export function FloatingChat() {
             aria-label="Chat assistant"
           >
             <motion.div
-              className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-chalk bg-white"
+              className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100"
               style={{ boxShadow: WINDOW_SHADOW }}
               initial={false}
               animate={{
@@ -348,7 +348,7 @@ export function FloatingChat() {
             zIndex: 50,
             boxShadow: WINDOW_SHADOW,
           }}
-          className={`react-rnd overflow-hidden rounded-2xl border border-chalk bg-white ${
+          className={`react-rnd overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100 ${
             snapTransitioning ? 'chat-snap-transition' : ''
           }`}
         >

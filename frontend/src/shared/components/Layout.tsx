@@ -1,92 +1,58 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import {
+  Brain,
+  CircleHelp,
+  Grid2X2,
+  LayoutDashboard,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Rows3,
+  Settings,
+  type LucideIcon,
+} from 'lucide-react';
 import { FloatingChat } from './FloatingChat';
 
-// ── Sidebar widths ─────────────────────────────────────────────────────────────
-// Expanded  → w-56   (14rem / 224px)
-// Collapsed → w-12   (3rem  /  48px) — thin icon-only strip
-const navItems = [
-  {
-    path: '/dashboard',
-    label: 'Dashboard',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-      </svg>
-    ),
-  },
-  {
-    path: '/generate',
-    label: 'Generate',
-    icon: (
-      <div className="flex items-center justify-center rounded-full w-[22px] h-[22px] bg-ash/15">
-        <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M10 3C10.4142 3 10.75 3.33579 10.75 3.75V9.25H16.25C16.6642 9.25 17 9.58579 17 10C17 10.3882 16.7051 10.7075 16.3271 10.7461L16.25 10.75H10.75V16.25C10.75 16.6642 10.4142 17 10 17C9.58579 17 9.25 16.6642 9.25 16.25V10.75H3.75C3.33579 10.75 3 10.4142 3 10C3 9.58579 3.33579 9.25 3.75 9.25H9.25V3.75C9.25 3.33579 9.58579 3 10 3Z" />
-        </svg>
-      </div>
-    ),
-  },
+type NavItem = {
+  path: string;
+  label: string;
+  icon: LucideIcon;
+  match?: (pathname: string) => boolean;
+};
+
+const navItems: NavItem[] = [
+  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/generate', label: 'Generate', icon: Plus },
   {
     path: '/',
     label: 'Problems',
+    icon: Grid2X2,
     match: (pathname: string) => pathname === '/' || pathname.startsWith('/problems'),
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
-      </svg>
-    ),
   },
-  {
-    path: '/marathon',
-    label: 'Marathon',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M8 6h13" />
-        <path d="M8 12h13" />
-        <path d="M8 18h13" />
-        <path d="M3 6h.01" />
-        <path d="M3 12h.01" />
-        <path d="M3 18h.01" />
-      </svg>
-    ),
-  },
-  {
-    path: '/memory',
-    label: 'Memory',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 4v16" />
-        <path d="M8 7a4 4 0 0 0 0 8" />
-        <path d="M16 7a4 4 0 0 1 0 8" />
-        <path d="M7 11h10" />
-        <path d="M7 15h10" />
-      </svg>
-    ),
-  },
+  { path: '/marathon', label: 'Marathon', icon: Rows3 },
+  { path: '/memory', label: 'Memory', icon: Brain },
 ];
 
-// Panel / sidebar-layout icon provided by the design.
-// Looks like a split-panel rectangle — left strip + right body.
-const PanelIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-    <path d="M16.5 4C17.3284 4 18 4.67157 18 5.5V14.5C18 15.3284 17.3284 16 16.5 16H3.5C2.67157 16 2 15.3284 2 14.5V5.5C2 4.67157 2.67157 4 3.5 4H16.5ZM7 15H16.5C16.7761 15 17 14.7761 17 14.5V5.5C17 5.22386 16.7761 5 16.5 5H7V15ZM3.5 5C3.22386 5 3 5.22386 3 5.5V14.5C3 14.7761 3.22386 15 3.5 15H6V5H3.5Z" />
-  </svg>
-);
+const sidebarTransition = {
+  type: 'spring' as const,
+  stiffness: 420,
+  damping: 38,
+  mass: 0.9,
+};
 
 export function Layout() {
   const location = useLocation();
+  const shouldReduceMotion = useReducedMotion();
   const [collapsed, setCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  // Close profile popup on outside click
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+    const handleClick = (event: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setProfileOpen(false);
       }
     };
@@ -94,155 +60,143 @@ export function Layout() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  // Cmd+/ (Mac) or Ctrl+/ (Windows/Linux) toggles the sidebar
   useEffect(() => {
-    const handleKeyboard = (e: KeyboardEvent) => {
-      if (e.key === '/' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setCollapsed((c) => !c);
+    const handleKeyboard = (event: KeyboardEvent) => {
+      if (event.key === '/' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setCollapsed((current) => !current);
       }
     };
     document.addEventListener('keydown', handleKeyboard);
     return () => document.removeEventListener('keydown', handleKeyboard);
   }, []);
 
+  const motionTransition = shouldReduceMotion ? { duration: 0 } : sidebarTransition;
+
   return (
-    <div className="min-h-screen flex bg-bone">
-      {/* ── Sidebar ──────────────────────────────────────────────────────────
-          Width transitions between w-56 (14rem) and w-12 (3rem).
-          overflow-hidden on the inner shell clips nav/logo during collapse;
-          the profile block sits outside that shell so its popup isn't clipped. */}
-      <aside
-        className={`${
-          collapsed ? 'w-12' : 'w-56'
-        } relative z-40 shrink-0 flex flex-col h-screen sticky top-0 bg-parchment border-r border-grain transition-[width] duration-300 ease-in-out`}
+    <div className="flex min-h-screen bg-background-200 text-gray-1000">
+      <motion.aside
+        animate={{ width: collapsed ? 52 : 232 }}
+        transition={motionTransition}
+        className="sticky top-0 z-40 flex h-screen shrink-0 flex-col border-r border-gray-alpha-200 bg-background-100"
       >
-        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-        {/* ── Header: logo + toggle ──────────────────────────────────────── */}
-        <div className={`flex items-center pt-5 pb-3 transition-all duration-300 ${
-          collapsed ? 'justify-center px-0' : 'gap-2 px-3'
-        }`}>
-          {/* Logo wrapper — transitions to max-w-0 when collapsed so
-              the toggle button auto-centers in the thin strip. */}
-          <div
-            className={`min-w-0 overflow-hidden whitespace-nowrap transition-all duration-200 ${
-              collapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100 flex-1'
-            }`}
-          >
-            <Link to="/" className="font-display text-lg font-semibold tracking-tight text-ink no-underline">
-              CodeGym<span className="text-blue">.</span>
-            </Link>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className={`flex h-16 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`}>
+            <motion.div
+              animate={{
+                opacity: collapsed ? 0 : 1,
+                width: collapsed ? 0 : 132,
+              }}
+              transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.15 }}
+              className="min-w-0 overflow-hidden whitespace-nowrap"
+            >
+              <Link to="/" className="font-mono text-[13px] font-semibold tracking-[0.08em] text-gray-1000 no-underline">
+                CODEGYM
+              </Link>
+            </motion.div>
+
+            <motion.button
+              type="button"
+              onClick={() => setCollapsed((current) => !current)}
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.96 }}
+              aria-label={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+              className="cg-focus flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000"
+            >
+              {collapsed ? <PanelLeftOpen size={16} strokeWidth={1.8} /> : <PanelLeftClose size={16} strokeWidth={1.8} />}
+            </motion.button>
           </div>
 
-          <button
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-colors"
-          >
-            <PanelIcon />
-          </button>
+          <nav className={`flex flex-1 flex-col gap-1 px-2 py-2 ${collapsed ? 'items-center' : ''}`}>
+            {navItems.map((item) => {
+              const active = item.match ? item.match(location.pathname) : location.pathname.startsWith(item.path);
+              const Icon = item.icon;
+
+              return (
+                <motion.div
+                  key={item.path}
+                  whileHover={shouldReduceMotion ? undefined : { y: -1 }}
+                  whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+                  className="w-full"
+                >
+                  <Link
+                    to={item.path}
+                    title={collapsed ? item.label : undefined}
+                    className={`cg-focus relative flex h-10 items-center rounded-md text-sm no-underline ${
+                      collapsed ? 'w-9 justify-center px-0' : 'w-full gap-3 px-3'
+                    } ${active ? 'text-gray-1000' : 'text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000'}`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="geist-nav-active"
+                        transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 40 }}
+                        className="absolute inset-0 rounded-md border border-gray-alpha-200 bg-gray-100"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <Icon className="relative z-10 shrink-0" size={17} strokeWidth={1.8} />
+                    {!collapsed && (
+                      <span className="relative z-10 truncate font-medium">
+                        {item.label}
+                      </span>
+                    )}
+                  </Link>
+                </motion.div>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* ── Navigation items ──────────────────────────────────────────── */}
-        <nav className={`flex-1 py-2 flex flex-col gap-0.5 transition-all duration-300 ${
-          collapsed ? 'px-1' : 'px-2'
-        }`}>
-          {navItems.map((item) => {
-            const active = item.match
-              ? item.match(location.pathname)
-              : location.pathname.startsWith(item.path);
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                title={collapsed ? item.label : undefined}
-                className={`relative flex items-center py-2.5 rounded-xl text-sm no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-colors duration-200 ${
-                  collapsed ? 'justify-center px-0 gap-0' : 'px-3 gap-3'
-                } ${
-                  active
-                    ? 'text-ink font-medium'
-                    : 'text-graphite hover:bg-grain hover:text-ink'
-                }`}
-                style={active ? { boxShadow: 'var(--cg-card-shadow)' } : undefined}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="nav-active-pill"
-                    transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-                    className="absolute inset-0 rounded-xl bg-white"
-                    aria-hidden="true"
-                  />
-                )}
-                <span className={`relative z-10 shrink-0 ${active ? 'text-ink' : 'text-ash'}`}>
-                  {item.icon}
-                </span>
-                {!collapsed && (
-                  <span className="relative z-10 whitespace-nowrap overflow-hidden">
-                    {item.label}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-        </div>
-
-        {/* ── Profile (outside overflow-hidden shell so popup can escape) ─ */}
-        <div ref={profileRef} className="relative shrink-0 border-t border-grain">
-          <button
-            onClick={() => setProfileOpen((o) => !o)}
-            className={`flex items-center w-full py-3 hover:bg-grain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-offset-2 focus-visible:ring-offset-parchment transition-all duration-300 ${
-              collapsed ? 'justify-center px-0' : 'gap-3 px-3'
+        <div ref={profileRef} className="relative shrink-0 border-t border-gray-alpha-200 p-2">
+          <motion.button
+            type="button"
+            onClick={() => setProfileOpen((open) => !open)}
+            whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+            className={`cg-focus flex h-11 w-full items-center rounded-md hover:bg-gray-alpha-100 ${
+              collapsed ? 'justify-center px-0' : 'gap-3 px-2'
             }`}
           >
-            <div className="w-7 h-7 rounded-full bg-ink text-bone flex items-center justify-center text-[10px] font-bold shrink-0">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-1000 font-mono text-[11px] font-semibold text-background-100">
               KC
             </div>
             {!collapsed && (
-              <span className="text-xs text-graphite truncate">kvn.c8888</span>
+              <span className="truncate text-left text-[13px] text-gray-900">
+                kvn.c8888
+              </span>
             )}
-          </button>
+          </motion.button>
 
-          {/* Profile popup — above avatar when expanded, to the right when collapsed */}
-          {profileOpen && (
-            <div
-              className={`absolute rounded-2xl border border-chalk bg-white overflow-hidden z-50 ${
-                collapsed
-                  ? 'left-full bottom-0 ml-2 w-56'
-                  : 'bottom-full left-2 right-2 mb-2'
-              }`}
-              style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
-            >
-              <div className="px-4 py-3 border-b border-chalk">
-                <span className="text-xs text-ink font-medium">kvn.c8888@gmail.com</span>
-              </div>
-              <div className="py-1">
-                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-inset px-4 py-2.5 transition-colors">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /></svg>
-                  Settings
-                </button>
-                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-inset px-4 py-2.5 transition-colors">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                  Get help
-                </button>
-              </div>
-              <div className="border-t border-chalk py-1">
-                <button className="flex items-center gap-3 w-full text-left text-xs text-graphite hover:text-ink hover:bg-parchment focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-inset px-4 py-2.5 transition-colors">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-                  Log out
-                </button>
-              </div>
-            </div>
-          )}
+          <AnimatePresence>
+            {profileOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2, ease: [0.175, 0.885, 0.32, 1.1] }}
+                className={`absolute z-50 overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100 ${
+                  collapsed ? 'bottom-2 left-full ml-2 w-60' : 'bottom-full left-2 right-2 mb-2'
+                }`}
+                style={{ boxShadow: 'var(--cg-popover-shadow)' }}
+              >
+                <div className="border-b border-gray-alpha-200 px-4 py-3">
+                  <div className="truncate text-[13px] font-medium text-gray-1000">
+                    kvn.c8888@gmail.com
+                  </div>
+                  <div className="mt-0.5 text-xs text-gray-700">Personal workspace</div>
+                </div>
+                <div className="py-1">
+                  <ProfileAction icon={Settings} label="Settings" />
+                  <ProfileAction icon={CircleHelp} label="Get Help" />
+                </div>
+                <div className="border-t border-gray-alpha-200 py-1">
+                  <ProfileAction icon={LogOut} label="Log Out" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
+      </motion.aside>
 
-      </aside>
-
-      {/* ── Main content ──────────────────────────────────────────────────────
-          flex-1 fills whatever width the sidebar doesn't claim, so the
-          expansion/contraction is automatically synchronized — no extra
-          animation code needed here.                                        */}
-      <main className="flex-1 min-w-0">
+      <main className="min-w-0 flex-1">
         <Outlet />
       </main>
 
@@ -251,3 +205,14 @@ export function Layout() {
   );
 }
 
+function ProfileAction({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+  return (
+    <button
+      type="button"
+      className="cg-focus flex w-full items-center gap-3 px-4 py-2.5 text-left text-[13px] text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000"
+    >
+      <Icon size={16} strokeWidth={1.8} />
+      {label}
+    </button>
+  );
+}

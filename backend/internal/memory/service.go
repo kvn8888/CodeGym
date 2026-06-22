@@ -73,7 +73,50 @@ func (s *Service) RecordEvent(ctx context.Context, input RecordEventInput) (Even
 	if err := s.store.AppendEvent(ctx, event); err != nil {
 		return Event{}, err
 	}
+	// NOTE: we intentionally do NOT summarize here — the request path stays fast.
+	// Turning these append-only events into the derived Profile happens behind a
+	// separate boundary: Service.RefreshProfile (synchronous) or memory.Worker
+	// (async). See US-2/US-3 in docs/backend-m1-user-stories.md.
 	return event, nil
+}
+
+// RefreshProfile re-derives this user's memory Profile from their event log and
+// persists it. This is the isolated boundary where raw events become the summary
+// that generation / chat / marathon read (issue #2, build step 4).
+//
+//	ListEvents (read evidence) -> Summarize (derive) -> UpsertProfile (save)
+//
+// It is safe to call repeatedly: Summarize is pure and idempotent, so calling
+// this after a RecordEvent, on a timer (memory.Worker), or by hand all converge
+// to the same profile for a given event log.
+//
+// The plumbing below is complete — the work left for you lives inside Summarize
+// (summarizer.go). Once Summarize derives real signal, this method needs no edits.
+func (s *Service) RefreshProfile(ctx context.Context) (Profile, error) {
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+
+	events, err := s.store.ListEvents(ctx, id.tenantID, id.userID)
+	if err != nil {
+		return Profile{}, err
+	}
+
+	// Load the current profile so Summarize can preserve fields it doesn't
+	// recompute. A missing profile is fine — start from the default.
+	current, err := s.store.GetProfile(ctx, id.tenantID, id.userID)
+	if errors.Is(err, ErrProfileNotFound) {
+		current = s.defaultProfile()
+	} else if err != nil {
+		return Profile{}, err
+	}
+
+	next := Summarize(current, events, s.now())
+	if err := s.store.UpsertProfile(ctx, id.tenantID, id.userID, next); err != nil {
+		return Profile{}, err
+	}
+	return next, nil
 }
 
 func (s *Service) ListEvents(ctx context.Context) ([]Event, error) {

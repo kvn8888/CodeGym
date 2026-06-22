@@ -17,6 +17,11 @@ func main() {
 	ctx := context.Background()
 	cfg := config.Load()
 
+	// Auth is pluggable: anything implementing auth.Authenticator works here.
+	// DevAuthenticator is the M1 local stand-in. To move to real signed tokens,
+	// implement internal/auth/jwt_authenticator.go and swap this for
+	// auth.NewJWTAuthenticator(cfg.JWTSecret). See US-1 in
+	// docs/backend-m1-user-stories.md.
 	authenticator := auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{
 		StaticToken:     cfg.DevAuthToken,
 		DefaultUserID:   cfg.DevUserID,

@@ -81,9 +81,9 @@ Storybook 10 runs at http://localhost:6006. Stories live next to their component
 
 Key conventions:
 - The global decorator in `.storybook/preview.tsx` wraps every story in a `MemoryRouter` + `Routes` + `Route`. Stories that need `useParams` must set `parameters.initialPath` and `parameters.routePath` so the router populates params correctly.
-- Mock `globalThis.fetch` inside story-level decorators (not `beforeEach` — `@storybook/test`'s lifecycle hooks depend on vitest, which is not installed).
+- Mock `globalThis.fetch` inside story-level decorators (not `beforeEach` — vitest is not installed in this project).
 - Tailwind styles work automatically — the `@tailwindcss/vite` plugin is inherited from `vite.config.ts` by the `react-vite` Storybook framework. No extra config needed.
-- `@storybook/test` is installed but do NOT use `beforeEach` from it — use decorators instead.
+- Use decorators for per-story setup; do not rely on vitest lifecycle hooks in stories.
 
 Example story with fetch mock and route params:
 ```tsx

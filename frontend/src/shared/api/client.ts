@@ -1,4 +1,5 @@
-const API_BASE = '/api/v1';
+const apiBaseEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
+const API_BASE = (apiBaseEnv?.trim() || '/api/v1').replace(/\/$/, '');
 
 interface APIResponse<T> {
   data: T;

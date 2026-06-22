@@ -23,8 +23,9 @@ func main() {
 	memoryService := memory.NewService(memoryStore, nil)
 
 	router := api.NewRouter(api.Dependencies{
-		Authenticator: authenticator,
-		Memory:        memoryService,
+		Authenticator:      authenticator,
+		Memory:             memoryService,
+		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 	})
 
 	log.Printf("CodeGym API listening on %s", cfg.Addr())

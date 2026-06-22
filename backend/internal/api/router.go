@@ -10,8 +10,9 @@ import (
 )
 
 type Dependencies struct {
-	Authenticator auth.Authenticator
-	Memory        *memory.Service
+	Authenticator      auth.Authenticator
+	Memory             *memory.Service
+	CORSAllowedOrigins []string
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -31,7 +32,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	)
 	mux.Handle("/api/v1/", protectedChain)
 
-	return mux
+	return chain(mux, CORSMiddleware(deps.CORSAllowedOrigins))
 }
 
 func chain(handler http.Handler, middleware ...func(http.Handler) http.Handler) http.Handler {

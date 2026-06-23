@@ -43,15 +43,47 @@ This branch is intentionally frontend-focused. Backend services, Docker executio
 
 ## Task Workflows
 
+### Manage the GitHub Project Board
+
+Use `scripts/github_project_board.py` when an agent needs to inspect or update
+the CodeGym GitHub Projects v2 kanban board. This script exists because some
+Codex GitHub connectors can create/read issues but do not expose Project column
+mutation.
+
+Requirements:
+- Set `GH_TOKEN` or `GITHUB_TOKEN` with repository and Projects v2 permissions.
+- Default owner/repo: `kvn8888/CodeGym`.
+- Default project title lookup: `CodeGym`.
+- If the owner has multiple matching projects, pass `--project-number`.
+
+Common commands:
+```bash
+python .agents/skills/codegym-project/scripts/github_project_board.py projects
+python .agents/skills/codegym-project/scripts/github_project_board.py columns --project-number <number>
+python .agents/skills/codegym-project/scripts/github_project_board.py list --project-number <number>
+python .agents/skills/codegym-project/scripts/github_project_board.py list --project-number <number> --status Ready
+python .agents/skills/codegym-project/scripts/github_project_board.py show --project-number <number> 5
+python .agents/skills/codegym-project/scripts/github_project_board.py add-issue --project-number <number> 5 --status Ready
+python .agents/skills/codegym-project/scripts/github_project_board.py add-draft --project-number <number> "Task title" --status Ready --body "Task details"
+python .agents/skills/codegym-project/scripts/github_project_board.py move --project-number <number> 5 "In Progress"
+python .agents/skills/codegym-project/scripts/github_project_board.py set-field --project-number <number> 5 Priority High
+python .agents/skills/codegym-project/scripts/github_project_board.py rename --project-number <number> 5 "Better issue title"
+python .agents/skills/codegym-project/scripts/github_project_board.py delete --project-number <number> 5
+```
+
+The script prints issue/project views as Markdown so agents can paste or
+summarize board state directly in responses. It can resolve items by project
+item ID, issue number, URL, or exact title.
+
 ### Add or Update a Story (Storybook)
 
 Storybook 10 runs at http://localhost:6006. Stories live next to their component files as `ComponentName.stories.tsx`.
 
 Key conventions:
 - The global decorator in `.storybook/preview.tsx` wraps every story in a `MemoryRouter` + `Routes` + `Route`. Stories that need `useParams` must set `parameters.initialPath` and `parameters.routePath` so the router populates params correctly.
-- Mock `globalThis.fetch` inside story-level decorators (not `beforeEach` — `@storybook/test`'s lifecycle hooks depend on vitest, which is not installed).
+- Mock `globalThis.fetch` inside story-level decorators (not `beforeEach` — vitest is not installed in this project).
 - Tailwind styles work automatically — the `@tailwindcss/vite` plugin is inherited from `vite.config.ts` by the `react-vite` Storybook framework. No extra config needed.
-- `@storybook/test` is installed but do NOT use `beforeEach` from it — use decorators instead.
+- Use decorators for per-story setup; do not rely on vitest lifecycle hooks in stories.
 
 Example story with fetch mock and route params:
 ```tsx

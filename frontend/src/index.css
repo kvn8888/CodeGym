@@ -1,31 +1,142 @@
-@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap');
 @import "tailwindcss";
 
+/*
+ * Vercel Geist light theme.
+ * Source: https://vercel.com/design.md
+ * The old CodeGym bone/parchment/ink names remain as compatibility aliases
+ * while the branch migrates components to the Vercel token names.
+ */
 @theme {
-  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
-  --color-bone: #ececee;
-  --color-shell: #fcfcfd;
-  --color-parchment: #f7f7f8;
-  --color-grain: #f4f4f5;
+  --font-display: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', ui-monospace, monospace;
+
+  --color-primary: #171717;
+  --color-secondary: #4d4d4d;
+  --color-tertiary: #006bff;
+  --color-neutral: #f2f2f2;
+  --color-background-100: #ffffff;
+  --color-background-200: #fafafa;
+
+  --color-gray-100: #f2f2f2;
+  --color-gray-200: #ebebeb;
+  --color-gray-300: #e6e6e6;
+  --color-gray-400: #eaeaea;
+  --color-gray-500: #c9c9c9;
+  --color-gray-600: #a8a8a8;
+  --color-gray-700: #8f8f8f;
+  --color-gray-800: #7d7d7d;
+  --color-gray-900: #4d4d4d;
+  --color-gray-1000: #171717;
+  --color-gray-alpha-100: #0000000d;
+  --color-gray-alpha-200: #00000015;
+  --color-gray-alpha-300: #0000001a;
+  --color-gray-alpha-400: #00000014;
+  --color-gray-alpha-500: #00000036;
+  --color-gray-alpha-600: #0000003d;
+  --color-gray-alpha-700: #00000070;
+  --color-gray-alpha-800: #00000082;
+  --color-gray-alpha-900: #000000b3;
+  --color-gray-alpha-1000: #000000e8;
+
+  --color-blue-100: #f0f7ff;
+  --color-blue-200: #e9f4ff;
+  --color-blue-300: #dfefff;
+  --color-blue-400: #cae7ff;
+  --color-blue-500: #94ccff;
+  --color-blue-600: #48aeff;
+  --color-blue-700: #006bff;
+  --color-blue-800: #0059ec;
+  --color-blue-900: #005ff2;
+  --color-blue-1000: #002359;
+
+  --color-red-100: #ffeeef;
+  --color-red-200: #ffe8ea;
+  --color-red-300: #ffe3e4;
+  --color-red-400: #ffd7d6;
+  --color-red-500: #ffb1b3;
+  --color-red-600: #ff676d;
+  --color-red-700: #fc0035;
+  --color-red-800: #ea001d;
+  --color-red-900: #d8001b;
+  --color-red-1000: #47000c;
+
+  --color-amber-100: #fff6de;
+  --color-amber-200: #fff4cf;
+  --color-amber-300: #fff1c1;
+  --color-amber-400: #ffdc73;
+  --color-amber-500: #ffc543;
+  --color-amber-600: #ffa600;
+  --color-amber-700: #ffae00;
+  --color-amber-800: #ff9300;
+  --color-amber-900: #aa4d00;
+  --color-amber-1000: #561900;
+
+  --color-green-100: #ecfdec;
+  --color-green-200: #e5fce7;
+  --color-green-300: #d3fad1;
+  --color-green-400: #b9f5bc;
+  --color-green-500: #82eb8d;
+  --color-green-600: #4ce15e;
+  --color-green-700: #28a948;
+  --color-green-800: #279141;
+  --color-green-900: #107d32;
+  --color-green-1000: #003a00;
+
+  --color-teal-100: #defffb;
+  --color-teal-700: #00ac96;
+  --color-purple-100: #faf0ff;
+  --color-purple-700: #a000f8;
+  --color-pink-100: #ffe8f6;
+  --color-pink-700: #f22782;
+
+  /* Compatibility aliases for existing components during the branch refactor. */
+  --color-bone: #fafafa;
+  --color-shell: #ffffff;
+  --color-parchment: #fafafa;
+  --color-grain: #f2f2f2;
   --color-soft: #fafafa;
-  --color-ink: #18181b;
-  --color-ink-soft: #3f3f46;
-  --color-graphite: #52525b;
-  --color-ash: #a1a1aa;
-  --color-faint: #b4b4ba;
-  --color-chalk: #d4d4d8;
-  --color-blue: #2563eb;
-  --color-blue-hover: #1d4ed8;
-  --color-moss: #3f9b6e;
-  --color-rust: #b8607a;
+  --color-chalk: #eaeaea;
+  --color-ink: #171717;
+  --color-ink-soft: #4d4d4d;
+  --color-graphite: #4d4d4d;
+  --color-ash: #8f8f8f;
+  --color-faint: #a8a8a8;
+  --color-blue: #006bff;
+  --color-blue-hover: #0059ec;
+  --color-moss: #28a948;
+  --color-rust: #ea001d;
+  --color-cobalt: #005ff2;
+  --color-violet: #a000f8;
+  --color-amber: #ff9300;
+  --color-rose: #ea001d;
+  --color-honey: #ff9300;
+  --color-moss-tint: #ecfdec;
+  --color-blue-tint: #f0f7ff;
+  --color-cobalt-tint: #f0f7ff;
+  --color-violet-tint: #faf0ff;
+  --color-amber-tint: #fff6de;
+  --color-rose-tint: #ffeeef;
+  --color-rust-tint: #ffeeef;
+  --color-honey-tint: #fff6de;
 }
 
 :root {
-  --cg-border-subtle: rgba(16, 17, 26, 0.06);
-  --cg-border-strong: rgba(16, 17, 26, 0.11);
-  --cg-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 26px 60px -30px rgba(0,0,0,0.12);
-  --cg-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.13);
+  --geist-ease: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+  --cg-border-subtle: var(--color-gray-alpha-200);
+  --cg-border-strong: var(--color-gray-alpha-400);
+  --cg-shadow: 0 2px 2px rgba(0, 0, 0, 0.04);
+  --cg-card-shadow: 0 2px 2px rgba(0, 0, 0, 0.04);
+  --cg-popover-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.02),
+    0 4px 8px -4px rgba(0, 0, 0, 0.04),
+    0 16px 24px -8px rgba(0, 0, 0, 0.06);
+  --cg-modal-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.02),
+    0 8px 16px -4px rgba(0, 0, 0, 0.04),
+    0 24px 32px -8px rgba(0, 0, 0, 0.06);
+  --cg-focus-ring: 0 0 0 2px var(--color-background-100), 0 0 0 4px var(--color-blue-700);
 }
 
 html {
@@ -35,15 +146,15 @@ html {
 
 body {
   margin: 0;
-  background-color: var(--color-bone);
-  color: var(--color-ink);
+  background-color: var(--color-background-200);
+  color: var(--color-gray-1000);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background-color: var(--color-ink);
-  color: var(--color-bone);
+  background-color: var(--color-gray-1000);
+  color: var(--color-background-100);
 }
 
 code,
@@ -55,7 +166,8 @@ pre,
 
 .cg-surface {
   border: 1px solid var(--cg-border-subtle);
-  box-shadow: var(--cg-shadow);
+  border-radius: 12px;
+  box-shadow: var(--cg-card-shadow);
 }
 
 .cg-border-subtle {
@@ -63,7 +175,7 @@ pre,
 }
 
 .cg-transition {
-  transition: all 180ms ease;
+  transition: all 150ms var(--geist-ease);
 }
 
 .cg-focus:focus-visible {
@@ -78,7 +190,7 @@ pre,
 @keyframes cgfade {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -87,110 +199,100 @@ pre,
 }
 
 .cg-fade-in {
-  animation: cgfade 180ms ease both;
+  animation: cgfade 180ms var(--geist-ease) both;
 }
 
-/*
- * Continuous corners (squircle) — Apple-style smooth corner curvature.
- * Uses CSS corner-shape (Chrome 139+, Edge 139+). Browsers that don't
- * support it (Safari, Firefox) simply ignore the property and fall back
- * to standard circular border-radius — no layout or rendering breakage.
- *
- * Applied globally: any element with a border-radius automatically gets
- * smoother, more organic corners. Pill-shaped elements (rounded-full /
- * border-radius: 9999px) are excluded — they stay perfectly circular.
- */
-*,
-*::before,
-*::after {
-  corner-shape: squircle;
+.marker-accent {
+  color: var(--color-blue-700);
 }
 
-.rounded-full,
-.rounded-full::before,
-.rounded-full::after {
-  corner-shape: round;
+.bg-dots {
+  background-image: none;
 }
 
-/* Grid spinner animation — fast snap on, slow fade off for trail effect */
 @keyframes grid-blink {
-  0%, 100% { background-color: var(--color-grain); }
-  3% { background-color: var(--color-ink); }
-  25% { background-color: var(--color-grain); }
+  0%, 100% { background-color: var(--color-gray-200); }
+  4% { background-color: var(--color-gray-1000); }
+  24% { background-color: var(--color-gray-200); }
 }
 
-/* Markdown prose styling — brutalist */
-.prose-brutalist h1,
-.prose-brutalist h2,
-.prose-brutalist h3 {
-  font-weight: 700;
+:where(.prose-brutalist, .prose-geist) h1,
+:where(.prose-brutalist, .prose-geist) h2,
+:where(.prose-brutalist, .prose-geist) h3 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.02em;
   margin-top: 1.5em;
   margin-bottom: 0.5em;
-  color: var(--color-ink);
+  color: var(--color-gray-1000);
 }
 
-.prose-brutalist h1 { font-size: 1.1em; }
-.prose-brutalist h2 { font-size: 1em; }
-.prose-brutalist h3 { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.1em; }
+:where(.prose-brutalist, .prose-geist) h1 { font-size: 1.35em; line-height: 1.35; }
+:where(.prose-brutalist, .prose-geist) h2 { font-size: 1.15em; line-height: 1.4; }
+:where(.prose-brutalist, .prose-geist) h3 { font-size: 1em; line-height: 1.5; }
 
-.prose-brutalist p {
+:where(.prose-brutalist, .prose-geist) p {
   margin-bottom: 0.75em;
-  line-height: 1.8;
+  line-height: 1.7;
 }
 
-.prose-brutalist code {
-  background: var(--color-grain);
+:where(.prose-brutalist, .prose-geist) code {
+  background: var(--color-gray-100);
+  border: 1px solid var(--color-gray-alpha-200);
   padding: 0.1em 0.35em;
-  font-size: 0.85em;
+  font-size: 0.9em;
+  border-radius: 6px;
 }
 
-.prose-brutalist pre {
-  background: #1e1e1e;
-  color: #ccc;
+:where(.prose-brutalist, .prose-geist) pre {
+  background: #171717;
+  color: #fafafa;
   padding: 1em;
   overflow-x: auto;
   margin: 1em 0;
   font-size: 0.85em;
+  border-radius: 12px;
 }
 
-.prose-brutalist pre code {
+:where(.prose-brutalist, .prose-geist) pre code {
   background: none;
+  border: 0;
   padding: 0;
 }
 
-.prose-brutalist ul, .prose-brutalist ol {
+:where(.prose-brutalist, .prose-geist) ul,
+:where(.prose-brutalist, .prose-geist) ol {
   padding-left: 1.5em;
   margin-bottom: 0.75em;
 }
 
-.prose-brutalist li {
+:where(.prose-brutalist, .prose-geist) li {
   margin-bottom: 0.25em;
   line-height: 1.7;
 }
 
-.prose-brutalist li::marker {
-  color: var(--color-ash);
+:where(.prose-brutalist, .prose-geist) li::marker {
+  color: var(--color-gray-700);
 }
 
-.prose-brutalist a {
-  color: var(--color-ink);
+:where(.prose-brutalist, .prose-geist) a {
+  color: var(--color-blue-700);
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-.prose-brutalist blockquote {
-  border-left: 2px solid var(--color-chalk);
+:where(.prose-brutalist, .prose-geist) blockquote {
+  border-left: 2px solid var(--color-gray-alpha-400);
   padding-left: 1em;
-  color: var(--color-graphite);
+  color: var(--color-gray-900);
   margin: 1em 0;
 }
 
-/* Monaco editor overrides */
 .monaco-editor .margin,
 .monaco-editor .monaco-editor-background {
-  background-color: #1e1e1e !important;
+  background-color: #171717 !important;
 }
 
-/* Floating chat resize handles (react-rnd) */
 .chat-motion-shell {
   opacity: 1 !important;
 }
@@ -199,31 +301,38 @@ pre,
   background: transparent;
 }
 
-/* Floating chat corner snap */
 .chat-snap-transition {
   transition:
-    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
-    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
-    height 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 280ms var(--geist-ease),
+    width 280ms var(--geist-ease),
+    height 280ms var(--geist-ease);
   will-change: transform, width, height;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .chat-snap-transition {
     transition: none;
   }
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-chalk); }
-::-webkit-scrollbar-thumb:hover { background: var(--color-ash); }
+::-webkit-scrollbar-thumb { background: var(--color-gray-alpha-300); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-gray-alpha-500); }
 
-.cg-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.cg-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .cg-scroll::-webkit-scrollbar-track { background: transparent; }
 .cg-scroll::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
+  background: var(--color-gray-alpha-300);
   border-radius: 999px;
 }
-.cg-scroll::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+.cg-scroll::-webkit-scrollbar-thumb:hover { background: var(--color-gray-alpha-500); }

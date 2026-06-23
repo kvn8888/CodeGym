@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'motion/react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -112,24 +113,27 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
   return (
     /* ── Backdrop overlay ───────────────────────────────────────────── */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-alpha-700 backdrop-blur-sm"
       onClick={onClose}
     >
       {/* ── Modal card ────────────────────────────────────────────── */}
-      <div
-        className="w-full max-w-lg mx-4 rounded-2xl border border-chalk bg-white overflow-hidden"
-        style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92, y: 18 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+        className="mx-4 w-full max-w-lg overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100"
+        style={{ boxShadow: 'var(--cg-modal-shadow)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3">
-          <h2 className="text-sm font-bold tracking-wide text-ink">
-            Let's tailor your problem
+          <h2 className="text-xl font-semibold leading-7 tracking-[-0.4px] text-gray-1000">
+            Tailor Your Problem
           </h2>
           {/* Close button */}
           <button
             onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded-md text-ash hover:text-ink hover:bg-grain transition-colors"
+            className="cg-focus flex h-7 w-7 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-alpha-100 hover:text-gray-1000"
             aria-label="Close"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -143,8 +147,8 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
           {questions.map((_, i) => (
             <div
               key={i}
-              className={`h-1 rounded-full transition-all duration-300 ${
-                i <= currentIndex ? 'bg-ink flex-[2]' : 'bg-chalk flex-1'
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i <= currentIndex ? 'flex-[2] bg-blue-700' : 'flex-1 bg-gray-200'
               }`}
             />
           ))}
@@ -152,7 +156,7 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
 
         {/* ── Question text ──────────────────────────────────────── */}
         <div className="px-6 pb-4">
-          <p className="text-sm text-graphite leading-relaxed">{question.text}</p>
+          <p className="text-sm leading-6 text-gray-900">{question.text}</p>
         </div>
 
         {/* ── Options ────────────────────────────────────────────── */}
@@ -164,18 +168,18 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
               <button
                 key={option}
                 onClick={() => handleSelect(option)}
-                className={`w-full text-left text-sm px-4 py-3 rounded-xl border transition-all duration-150 ${
+                className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition-all duration-150 ${
                   selected
-                    ? 'border-ink bg-parchment text-ink font-medium'
-                    : 'border-chalk bg-white text-graphite hover:border-ash hover:bg-bone'
+                    ? 'border-blue-400 bg-blue-100 font-medium text-gray-1000'
+                    : 'border-gray-alpha-200 bg-background-100 text-gray-900 hover:border-gray-alpha-400 hover:bg-gray-100'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   {/* Radio-style circle indicator */}
-                  <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${
-                    selected ? 'border-ink' : 'border-chalk'
+                  <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                    selected ? 'border-blue-700' : 'border-gray-alpha-400'
                   }`}>
-                    {selected && <div className="w-2 h-2 rounded-full bg-ink" />}
+                    {selected && <div className="h-2 w-2 rounded-full bg-blue-700" />}
                   </div>
                   {option}
                 </div>
@@ -191,18 +195,18 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
               onChange={(e) => handleFreeText(e.target.value)}
               placeholder="Type your answer…"
               autoFocus
-              className="w-full px-4 py-3 rounded-xl border border-chalk bg-parchment text-sm text-ink placeholder-ash focus:outline-none focus:border-ash transition-colors"
+              className="cg-focus w-full rounded-md border border-gray-alpha-200 bg-background-100 px-4 py-3 text-sm text-gray-1000 placeholder-gray-700 transition-colors"
             />
           )}
         </div>
 
         {/* ── Footer: Back + Next/Generate ───────────────────────── */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-chalk">
+        <div className="flex items-center justify-between border-t border-gray-alpha-200 px-6 py-4">
           {/* Back button (hidden on first question) */}
           {currentIndex > 0 ? (
             <button
               onClick={handleBack}
-              className="text-xs text-graphite hover:text-ink transition-colors"
+              className="text-sm text-gray-900 transition-colors hover:text-gray-1000"
             >
               ← Back
             </button>
@@ -214,12 +218,12 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
           <button
             onClick={handleNext}
             disabled={!canAdvance}
-            className="px-5 py-2.5 bg-ink text-bone text-xs font-medium rounded-xl hover:bg-ink-soft disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
+            className="cg-focus h-10 rounded-md bg-gray-1000 px-5 text-sm font-medium text-background-100 transition-colors hover:bg-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-700"
           >
             {isLast ? 'Generate' : 'Next'}
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

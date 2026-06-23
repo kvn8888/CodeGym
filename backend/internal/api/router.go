@@ -5,22 +5,24 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/tenant"
 )
 
 type Dependencies struct {
 	Authenticator      auth.Authenticator
+	Identity           *identity.Service
 	Memory             *memory.Service
 	CORSAllowedOrigins []string
-	ReadinessDBDSN     string
+	DatabaseURL        string
 }
 
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handlers.Health)
 
-	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.ReadinessDBDSN))
+	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.DatabaseURL))
 
 	protected := http.NewServeMux()
 	memoryHandler := handlers.NewMemoryHandler(deps.Memory)
@@ -31,6 +33,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	protectedChain := chain(
 		protected,
 		auth.Middleware(deps.Authenticator),
+		identity.Middleware(deps.Identity),
 		tenant.Middleware(),
 	)
 	mux.Handle("/api/v1/", protectedChain)

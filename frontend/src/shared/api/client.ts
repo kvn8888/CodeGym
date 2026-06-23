@@ -1,5 +1,8 @@
-const apiBaseEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
-const API_BASE = (apiBaseEnv?.trim() || '/api/v1').replace(/\/$/, '');
+import { mockApiFetch } from '../../mocks/apiProxy';
+
+const API_BASE = '/api/v1';
+const USE_MOCK_API = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API !== 'false';
+
 
 interface APIResponse<T> {
   data: T;
@@ -13,10 +16,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const url = `${API_BASE}${path}`;
+  const requestOptions = {
     ...options,
     headers: { ...headers, ...options?.headers },
-  });
+  };
+
+  const res =
+    (USE_MOCK_API ? await mockApiFetch(url, requestOptions) : null) ??
+    (await fetch(url, requestOptions));
 
   const body: APIResponse<T> = await res.json();
 

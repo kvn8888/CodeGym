@@ -1,27 +1,41 @@
+import { motion } from 'motion/react';
+
+const CARD_SHADOW = 'var(--cg-card-shadow)';
+
+const stats = [
+  { value: 0, label: 'Solved', helper: 'Completed problems' },
+  { value: 0, label: 'Streak', helper: 'Active practice days' },
+  { value: 0, label: 'Submissions', helper: 'Attempts recorded' },
+];
+
 export function DashboardPage() {
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
-      <h1 className="text-xs font-bold tracking-[0.2em] text-ink mb-8 uppercase">Dashboard</h1>
+    <div className="mx-auto max-w-5xl px-6 py-12">
+      <h1 className="mb-10 text-[40px] font-semibold leading-[48px] tracking-[-2.4px] text-gray-1000">
+        Dashboard
+      </h1>
 
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { value: 0, label: 'Solved' },
-          { value: 0, label: 'Streak' },
-          { value: 0, label: 'Submissions' },
-        ].map(({ value, label }) => (
-          <div
+      <div className="flex flex-col gap-4 md:flex-row">
+        {stats.map(({ value, label, helper }, i) => (
+          <motion.div
             key={label}
-            className="rounded-2xl border border-chalk bg-white px-6 py-5"
-            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 26, delay: i * 0.07 }}
+            className="min-w-0 flex-1 rounded-xl border border-gray-alpha-200 bg-background-100 px-6 py-5"
+            style={{ boxShadow: CARD_SHADOW }}
           >
-            <div className="text-3xl font-bold text-ink">{value}</div>
-            <div className="text-[10px] tracking-[0.15em] text-ash mt-2 uppercase">{label}</div>
-          </div>
+            <div className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px] text-gray-1000">{value}</div>
+            <div className="mt-3 text-sm font-medium text-gray-1000">{label}</div>
+            <div className="mt-1 text-sm text-gray-700">{helper}</div>
+          </motion.div>
         ))}
       </div>
 
-      <div className="mt-8 p-6 text-xs text-ash text-center">
-        Dashboard features available after auth and submission tracking are implemented.
+      <div className="mt-10 rounded-xl border border-dashed border-gray-alpha-400 bg-background-100 p-8 text-center text-sm leading-6 text-gray-900">
+        Your training history lands here once auth and submission tracking ship.
+        <br />
+        Until then, start a focused session from Problems.
       </div>
     </div>
   );

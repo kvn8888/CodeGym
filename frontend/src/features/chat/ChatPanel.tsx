@@ -66,10 +66,10 @@ export function ChatPanel() {
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[85%] px-3.5 py-2.5 text-xs leading-relaxed rounded-2xl ${
+                className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
                   msg.role === 'user'
-                    ? 'bg-parchment text-ink'
-                    : 'bg-white border border-chalk text-graphite'
+                    ? 'bg-gray-100 text-gray-1000'
+                    : 'border border-gray-alpha-200 bg-background-100 text-gray-900'
                 }`}
                 style={
                   msg.role === 'assistant'
@@ -85,13 +85,13 @@ export function ChatPanel() {
           {sending && (
             <div className="flex justify-start">
               <div
-                className="px-3.5 py-2.5 bg-white border border-chalk rounded-2xl"
+                className="rounded-xl border border-gray-alpha-200 bg-background-100 px-3.5 py-2.5"
                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }}
               >
                 <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-ash rounded-full animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 bg-ash rounded-full animate-bounce [animation-delay:150ms]" />
-                  <span className="w-1.5 h-1.5 bg-ash rounded-full animate-bounce [animation-delay:300ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-700 [animation-delay:0ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-700 [animation-delay:150ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-700 [animation-delay:300ms]" />
                 </div>
               </div>
             </div>
@@ -101,9 +101,9 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-chalk bg-bone px-4 py-3">
+      <div className="shrink-0 border-t border-gray-alpha-200 bg-background-100 px-4 py-3">
         <div
-          className="flex items-end rounded-2xl border border-chalk bg-white px-3 py-2.5"
+          className="flex items-end rounded-xl border border-gray-alpha-200 bg-background-100 px-3 py-2.5"
           style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)' }}
         >
           <textarea
@@ -112,12 +112,12 @@ export function ChatPanel() {
             onKeyDown={handleKeyDown}
             placeholder="Tell me about your goals..."
             rows={1}
-            className="flex-1 bg-transparent text-xs text-ink placeholder-ash focus-visible:outline-none resize-none max-h-24"
+            className="max-h-24 flex-1 resize-none bg-transparent text-sm text-gray-1000 placeholder-gray-700 focus-visible:outline-none"
           />
           <button
             onClick={handleSend}
             disabled={sending || !input.trim()}
-            className="w-8 h-8 bg-ink text-bone rounded-xl flex items-center justify-center shrink-0 ml-2 hover:bg-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:bg-chalk disabled:text-ash disabled:cursor-not-allowed transition-colors"
+            className="cg-focus ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-1000 text-background-100 transition-colors hover:bg-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-700"
             aria-label="Send"
           >
             <svg
@@ -135,8 +135,8 @@ export function ChatPanel() {
           </button>
         </div>
         <div className="mt-2 flex items-center gap-1.5 px-0.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-moss" />
-          <span className="text-[10px] text-ash">Memory synced</span>
+          <div className="h-1.5 w-1.5 rounded-full bg-green-700" />
+          <span className="text-xs text-gray-700">Memory synced</span>
         </div>
       </div>
     </div>

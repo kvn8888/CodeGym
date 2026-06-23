@@ -1,0 +1,68 @@
+name: CI
+
+# First CI workflow for CodeGym (issue #5).
+#   Frontend job: install, lint, build.
+#   Backend job:  go test.
+# No production secrets are required. The Neon integration test skips itself
+# when CODEGYM_TEST_DATABASE_URL / NEON_CONNECTION_STRING are unset, so
+# `go test ./...` stays green without a database.
+
+on:
+  push:
+    branches: [codegym-v2]
+  pull_request:
+    branches: [codegym-v2]
+
+# Least privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  backend:
+    name: Backend (go test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Pins the toolchain to the version declared in backend/go.mod.
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Test
+        run: go test ./...

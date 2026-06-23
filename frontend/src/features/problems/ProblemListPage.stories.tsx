@@ -81,13 +81,15 @@ const sampleProblems: ProblemSummary[] = [
 ];
 
 function makeFetchMock(problems: ProblemSummary[]) {
-  return () =>
-    Promise.resolve(
+  return (url: string) => {
+    void url;
+    return Promise.resolve(
       new Response(
         JSON.stringify({ data: { problems, total: problems.length }, error: null }),
         { headers: { 'Content-Type': 'application/json' } },
       ),
     );
+  };
 }
 
 export const ManyProblems: Story = {

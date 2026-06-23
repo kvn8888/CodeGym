@@ -1,7 +1,8 @@
 # CodeGym Backend
 
 This is the first backend skeleton for the auth, tenant, and memory substrate.
-It is intentionally small and dependency-free while the product contracts settle.
+It stays runnable without external services, but switches to Neon/Postgres when
+`NEON_CONNECTION_STRING` or `DATABASE_URL` is present.
 
 ## Run
 
@@ -51,6 +52,15 @@ VITE_API_BASE_URL=http://localhost:8080/api/v1
 When using cross-origin mode, ensure `CODEGYM_CORS_ALLOWED_ORIGINS` includes your
 frontend origin.
 
+For durable memory using Doppler:
+
+```bash
+doppler run -p codegym -c dev -- go run ./cmd/server
+```
+
+See [../docs/secrets-and-local-env.md](../docs/secrets-and-local-env.md) for
+the shared secret contract.
+
 ## Dev Auth
 
 Protected routes require a bearer token.
@@ -70,15 +80,20 @@ Authorization: Bearer dev:kevin:personal-dev
 If `CODEGYM_DEV_AUTH_TOKEN` is set, the backend accepts only that exact bearer
 token and maps it to `CODEGYM_DEV_USER_ID` / `CODEGYM_DEV_TENANT_ID`.
 
+See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
+full auth -> identity -> tenant request flow.
+
 ## Current Routes
 
 ```text
 GET  /health
 GET  /ready
+
 GET  /api/v1/memory/profile
 GET  /api/v1/memory/events
 POST /api/v1/memory/events
 ```
+
 
 ## Health vs Readiness
 
@@ -93,3 +108,21 @@ reachable.
 Memory events are append-only. The in-memory store is a temporary adapter behind
 the `memory.Store` interface; the Neon/Postgres implementation should replace it
 without changing handlers or middleware.
+
+The server uses the in-memory store when no
+database URL is configured and the Postgres store when Doppler provides the Neon
+connection string.
+
+On startup with Postgres enabled, the backend idempotently bootstraps the M1
+tables with `CREATE TABLE IF NOT EXISTS`:
+
+- `app_users`
+- `tenants`
+- `tenant_memberships`
+- `user_memory_profiles`
+- `memory_events`
+
+This is intentionally not a migration framework yet. Since CodeGym has not used
+the old Turso path in production, the first Neon schema can start as a simple
+bootstrap and move to versioned migrations when the schema hardens.
+

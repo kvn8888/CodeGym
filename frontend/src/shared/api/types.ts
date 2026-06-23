@@ -77,3 +77,33 @@ export interface Submission {
   passed_tests?: number;
   result?: TestResult;
 }
+
+export interface UserMemoryProfile {
+  summary: string;
+  updated_at: string;
+  next_review_at: string;
+  strengths: string[];
+  growth_edges: string[];
+  skills: SkillProficiency[];
+  notes: MemoryNote[];
+}
+
+export interface SkillProficiency {
+  id: string;
+  label: string;
+  area: string;
+  level: number;
+  confidence: number;
+  trend: 'up' | 'flat' | 'down';
+  last_practiced: string;
+}
+
+export interface MemoryNote {
+  id: string;
+  problem_id: string;
+  title: string;
+  summary: string;
+  created_at: string;
+  tags: string[];
+  action: 'keep' | 'review' | 'prune';
+}

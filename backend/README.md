@@ -74,10 +74,21 @@ token and maps it to `CODEGYM_DEV_USER_ID` / `CODEGYM_DEV_TENANT_ID`.
 
 ```text
 GET  /health
+GET  /ready
 GET  /api/v1/memory/profile
 GET  /api/v1/memory/events
 POST /api/v1/memory/events
 ```
+
+## Health vs Readiness
+
+`GET /health` is a lightweight liveness check and always returns success when the
+process is running.
+
+`GET /ready` is a readiness check. In in-memory mode it returns success without
+touching a database. When `NEON_CONNECTION_STRING` or `DATABASE_URL` is set, it
+attempts a Postgres ping and returns a generic `503` if the database is not
+reachable.
 
 Memory events are append-only. The in-memory store is a temporary adapter behind
 the `memory.Store` interface; the Neon/Postgres implementation should replace it

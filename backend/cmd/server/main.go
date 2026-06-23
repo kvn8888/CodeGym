@@ -26,6 +26,7 @@ func main() {
 		Authenticator:      authenticator,
 		Memory:             memoryService,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
+		ReadinessDBDSN:     cfg.ReadinessDBDSN(),
 	})
 
 	log.Printf("CodeGym API listening on %s", cfg.Addr())

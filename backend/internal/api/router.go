@@ -13,11 +13,14 @@ type Dependencies struct {
 	Authenticator      auth.Authenticator
 	Memory             *memory.Service
 	CORSAllowedOrigins []string
+	ReadinessDBDSN     string
 }
 
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handlers.Health)
+
+	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.ReadinessDBDSN))
 
 	protected := http.NewServeMux()
 	memoryHandler := handlers.NewMemoryHandler(deps.Memory)

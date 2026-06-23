@@ -1,30 +1,48 @@
 ---
 name: codegym-project
-description: Repository-specific workflow and product scope guidance for CodeGym v2, a frontend-first Generative AI Problem Generator branch. Use when implementing frontend pages, user flows, design system work, problem-generation UX, memory UX, MCQ/conversation practice UX, or updating project scope in this repository.
+description: Living project knowledge for CodeGym v2, a React/Vite frontend plus Go backend for generative coding practice. Consult this skill first when starting CodeGym work. Contains branch defaults, architecture decisions, validation paths, GitHub Projects workflow, current project scope, and conventions. Update this skill whenever architecture, requirements, project-board workflow, or durable implementation details change so agents inherit accurate context across sessions.
 ---
 
 # CodeGym Project
 
-Use this skill to execute CodeGym tasks without re-discovering project conventions.
+This is the single source of truth for recurring CodeGym agent work. Read this
+before changing code, issues, or the project board. Update it when product scope,
+architecture, workflow, validation, or durable gotchas change.
 
 ## Branch Default
 
 `codegym-v2` is the default working branch for now.
 
-This branch is intentionally frontend-focused. Backend services, Docker execution infrastructure, database code, problem-pack fixtures, deploy files, and legacy automation are excluded from this branch until explicitly reintroduced.
+This branch now contains the React/Vite frontend and the Go backend foundation.
+Backend auth, tenant bootstrap, Neon/Postgres memory storage, and memory service
+plumbing are in scope. Legacy execution infrastructure, Docker runners,
+problem-pack fixtures, and deploy automation should still stay out unless the
+user explicitly asks to reintroduce them.
+
+## Current State (Last Updated: 2026-06-22)
+
+- Branch: `codegym-v2`.
+- Frontend: React 19 + Vite 8, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes.
+- Backend: Go service with `auth -> identity -> tenant -> handler` request path, dev-token auth, tenant bootstrap, memory profile/event APIs, and Postgres store support via Neon.
+- Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`.
+- CI: `.github/workflows/ci.yml` runs frontend `npm ci`, lint, build, and backend `go test ./...` on PRs/pushes to `codegym-v2`.
+- Project board: GitHub Projects v2 project `#2` (`CodeGym v2`) is the active kanban unless the user says otherwise.
 
 ## Workflow Decision Tree
 
 1. Identify the task surface area.
 - Frontend route/page/API consumption: inspect `frontend/src/App.tsx`, `frontend/src/features/`, and `frontend/src/shared/api/`.
+- Backend API/auth/tenant/memory work: inspect `backend/README.md`, `docs/auth-identity-tenant.md`, and `backend/internal/`.
 - Project scope or product intent: read the "Scope Specification" section in this skill first.
 
 2. Select the shortest local validation path.
 - Frontend-only change: run `cd frontend && npm run lint` and `cd frontend && npm run build` when type-level confidence is needed.
+- Backend-only change: run `cd backend && go test ./...`.
+- CI parity check: run `cd frontend && CI=true npm ci --no-audit --progress=false`, then lint/build, plus backend tests.
 
 3. Keep implementation aligned with the frontend-first branch.
 - Stub backend-dependent flows behind clear interfaces or mock data when needed.
-- Do not re-add backend, Docker, database, deploy, or problem-pack files unless the user explicitly asks.
+- Do not re-add legacy Docker execution, deploy automation, or problem-pack files unless the user explicitly asks.
 
 4. Prefer minimal, task-focused edits.
 - Avoid broad refactors unless required by the task.
@@ -41,32 +59,84 @@ This branch is intentionally frontend-focused. Backend services, Docker executio
 - Keep generated-problem, MCQ, conversational-practice, and memory/profile flows visible in the frontend UX.
 - For new page components, add a `.stories.tsx` file next to the component file.
 
+### Backend
+
+- Start backend work in `backend/internal/` and keep HTTP routing thin.
+- Preserve the request path: auth middleware establishes `auth.Principal`,
+  identity middleware bootstraps/persists the user and personal tenant, tenant
+  middleware establishes `tenant.Scope`, and handlers read scoped services.
+- Memory writes should append events quickly. Profile summarization should stay
+  behind `Service.RefreshProfile` or a worker boundary so request paths do not
+  block on derived-memory work.
+- Prefer explicit docs in `docs/` for durable backend contracts and decisions,
+  then link them from `backend/README.md` when they become canonical.
+
+### Static Analysis
+
+Keep correctness CI and static-analysis CI separate. The default `CI` workflow is
+the required compile/test gate. Add advisory static analysis first, then tighten
+once the baseline is understood.
+
+Recommended frontend path:
+- Keep `npm run lint` in the main CI workflow.
+- For React-specific review, start with React Doctor locally:
+  `cd frontend && npx react-doctor@latest --verbose --diff --blocking none`.
+- If adding React Doctor CI, use a separate workflow and point it at
+  `directory: frontend`; start with `blocking: none` and promote to blocking
+  only after noisy findings are triaged.
+
+Recommended backend path:
+- Keep `go test ./...` in the main CI workflow.
+- Add `go vet ./...` as the first low-cost static check.
+- Add `golangci-lint` in a separate job/workflow once the config is pinned.
+- Add `govulncheck ./...` as an advisory dependency/security check; treat it as
+  vulnerability reachability analysis, not a style linter.
+
 ## Task Workflows
 
 ### Manage the GitHub Project Board
 
 Use `scripts/github_project_board.py` when an agent needs to inspect or update
 the CodeGym GitHub Projects v2 kanban board. This script exists because some
-Codex GitHub connectors can create/read issues but do not expose Project column
-mutation.
+Codex GitHub connectors can create/read issues but do not expose every Projects
+v2 field mutation. Treat the board as live planning state.
+
+**Script maintenance**: Treat the repo-local path above as the stable command
+entrypoint, but do not assume it is the canonical source file forever. This
+helper may later become a symlink to a shared GitHub Projects utility used by
+CodeGym and OpenFoodJournal. Before changing the script, resolve the real file
+with `realpath .agents/skills/codegym-project/scripts/github_project_board.py`
+or `readlink`, then modify the resolved canonical file and update this skill if
+the shared location changes. Do not patch a stale copied script while another
+project points at the shared target. If this is centralized, prefer a neutral
+shared-tools location near the sibling repos instead of making one app repo own
+the other app repo's utility.
 
 Requirements:
 - Set `GH_TOKEN` or `GITHUB_TOKEN` with repository and Projects v2 permissions.
 - Default owner/repo: `kvn8888/CodeGym`.
 - Default project title lookup: `CodeGym`.
-- If the owner has multiple matching projects, pass `--project-number`.
+- Active project: pass `--project-number 2` or set `CODEGYM_GITHUB_PROJECT_NUMBER=2`.
+- After each work session, update relevant GitHub issues and board fields so
+  the board reflects reality. Move actively worked issues to `In Progress`,
+  verified completed issues to `Done`, and add issue comments/details for
+  blockers, validation, or deferred follow-up.
 
 Common commands:
 ```bash
 python .agents/skills/codegym-project/scripts/github_project_board.py projects
 python .agents/skills/codegym-project/scripts/github_project_board.py columns --project-number <number>
+python .agents/skills/codegym-project/scripts/github_project_board.py fields --project-number <number>
 python .agents/skills/codegym-project/scripts/github_project_board.py list --project-number <number>
 python .agents/skills/codegym-project/scripts/github_project_board.py list --project-number <number> --status Ready
 python .agents/skills/codegym-project/scripts/github_project_board.py show --project-number <number> 5
-python .agents/skills/codegym-project/scripts/github_project_board.py add-issue --project-number <number> 5 --status Ready
-python .agents/skills/codegym-project/scripts/github_project_board.py add-draft --project-number <number> "Task title" --status Ready --body "Task details"
+python .agents/skills/codegym-project/scripts/github_project_board.py add-issue --project-number <number> 5 --status Ready --priority P1 --size M
+python .agents/skills/codegym-project/scripts/github_project_board.py add-draft --project-number <number> "Task title" --status Ready --priority P2 --size S --body "Task details"
+python .agents/skills/codegym-project/scripts/github_project_board.py create-issue --project-number <number> --title "Task title" --body-file /tmp/body.md --label area:ci,type:task --status Ready --priority P1 --size M
+python .agents/skills/codegym-project/scripts/github_project_board.py edit-issue --project-number <number> 10 --body-file /tmp/body.md --add-label area:backend --status "In Progress" --priority P0
 python .agents/skills/codegym-project/scripts/github_project_board.py move --project-number <number> 5 "In Progress"
-python .agents/skills/codegym-project/scripts/github_project_board.py set-field --project-number <number> 5 Priority High
+python .agents/skills/codegym-project/scripts/github_project_board.py set-field --project-number <number> 5 Priority P1
+python .agents/skills/codegym-project/scripts/github_project_board.py set-fields --project-number <number> 5 --status Done --priority P1 --size M
 python .agents/skills/codegym-project/scripts/github_project_board.py rename --project-number <number> 5 "Better issue title"
 python .agents/skills/codegym-project/scripts/github_project_board.py delete --project-number <number> 5
 ```

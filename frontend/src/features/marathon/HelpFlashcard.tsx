@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useState } from 'react';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface HelpFlashcardProps {
@@ -9,6 +11,13 @@ interface HelpFlashcardProps {
   onClose: () => void;
 }
 
+/** Read the modal close duration from the shared motion token (fallback 150ms). */
+function modalCloseMs() {
+  if (typeof window === 'undefined') return 150;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--modal-close-dur');
+  return parseFloat(raw) || 150;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -17,17 +26,52 @@ interface HelpFlashcardProps {
  * during a marathon.
  *
  * Design matches the QuestionModal: neutral overlay with centered card.
+ * Open/close motion uses the transitions-dev modal transition (06): the card
+ * scales up from --modal-scale on mount and dips back down on close before the
+ * parent unmounts it.
  */
 export function HelpFlashcard({ concept, explanation, onClose }: HelpFlashcardProps) {
+  // Drives the .t-modal state classes. Starts closed so the first paint sits at
+  // the pre-open scale, then a rAF flips it to open so the transition plays.
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setOpen(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  // Play the close transition, then hand control back to the parent to unmount.
+  const requestClose = useCallback(() => {
+    setOpen(false);
+    setClosing(true);
+    const timer = window.setTimeout(onClose, modalCloseMs());
+    return () => window.clearTimeout(timer);
+  }, [onClose]);
+
+  // Close on Escape, matching standard modal behavior.
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') requestClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [requestClose]);
+
+  const stateClass = closing ? 'is-closing' : open ? 'is-open' : '';
+
   return (
     /* Backdrop overlay — click outside to close */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-alpha-700 backdrop-blur-sm"
-      onClick={onClose}
+      className={`t-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-gray-alpha-700 backdrop-blur-sm ${stateClass}`}
+      onClick={requestClose}
     >
       {/* Flashcard */}
       <div
-        className="mx-4 w-full max-w-md overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100"
+        role="dialog"
+        aria-modal="true"
+        aria-label={concept}
+        className={`t-modal mx-4 w-full max-w-md overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100 ${stateClass}`}
         style={{ boxShadow: 'var(--cg-modal-shadow)' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -42,7 +86,7 @@ export function HelpFlashcard({ concept, explanation, onClose }: HelpFlashcardPr
           </div>
           {/* Close button */}
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="cg-focus flex h-7 w-7 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-alpha-100 hover:text-gray-1000"
             aria-label="Close"
           >

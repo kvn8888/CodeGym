@@ -80,7 +80,7 @@ export function Layout() {
         transition={motionTransition}
         className="sticky top-0 z-40 flex h-screen shrink-0 flex-col border-r border-gray-alpha-200 bg-background-100"
       >
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className={`flex h-16 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`}>
             <motion.div
               animate={{
@@ -116,12 +116,11 @@ export function Layout() {
                   key={item.path}
                   whileHover={shouldReduceMotion ? undefined : { y: -1 }}
                   whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
-                  className="w-full"
+                  className="t-tt-wrap w-full"
                 >
                   <Link
                     to={item.path}
-                    title={collapsed ? item.label : undefined}
-                    className={`cg-focus relative flex h-10 items-center rounded-md text-sm no-underline ${
+                    className={`t-tt-trigger cg-focus relative flex h-10 items-center rounded-md text-sm no-underline ${
                       collapsed ? 'w-9 justify-center px-0' : 'w-full gap-3 px-3'
                     } ${active ? 'text-gray-1000' : 'text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000'}`}
                   >
@@ -135,11 +134,18 @@ export function Layout() {
                     )}
                     <Icon className="relative z-10 shrink-0" size={17} strokeWidth={1.8} />
                     {!collapsed && (
-                      <span className="relative z-10 truncate font-medium">
+                      <span className="relative z-10 min-w-0 truncate font-medium">
                         {item.label}
                       </span>
                     )}
                   </Link>
+                  {/* transitions-dev tooltip (17): only when collapsed, since the
+                      label is hidden. Pure CSS — shows on hover/focus of the row. */}
+                  {collapsed && (
+                    <span className="t-tt" role="tooltip">
+                      {item.label}
+                    </span>
+                  )}
                 </motion.div>
               );
             })}

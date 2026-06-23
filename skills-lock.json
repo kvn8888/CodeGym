@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": ".claude/skills/motion-framer/SKILL.md",
       "computedHash": "16d7c6f24f1d1208500635331e0cf6e06555a44df461e6b1069e4ddb203fd737"
+    },
+    "transitions-dev": {
+      "source": "Jakubantalik/transitions.dev",
+      "sourceType": "github",
+      "skillPath": "skills/transitions-dev/SKILL.md",
+      "computedHash": "5de3160b2b2a7cc2b56f3626b542e91860c1cd65607e11f4224403bbf0105bc8"
     }
   }
 }

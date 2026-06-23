@@ -41,6 +41,30 @@ class GitHubClient:
     def __init__(self, token: str) -> None:
         self.token = token
 
+    def rest(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        body = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(
+            f"https://api.github.com{path}",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "codegym-project-board-script",
+            },
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as res:
+                raw = res.read().decode()
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode(errors="replace")
+            raise GitHubError(f"GitHub REST API HTTP {err.code}: {detail}") from err
+        except urllib.error.URLError as err:
+            raise GitHubError(f"GitHub REST API request failed: {err}") from err
+
+        return json.loads(raw) if raw else {}
+
     def graphql(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
         body = json.dumps({"query": query, "variables": variables or {}}).encode()
         req = urllib.request.Request(
@@ -465,6 +489,15 @@ def print_columns(project: ProjectRef) -> None:
         print(f"- {option['name']} (`{option['id']}`)")
 
 
+def print_fields(project: ProjectRef) -> None:
+    print(f"# {project.title} Fields")
+    print()
+    for field in project.fields:
+        print(f"- {field.get('name')} (`{field.get('dataType')}`)")
+        for option in field.get("options") or []:
+            print(f"  - {option['name']} (`{option['id']}`)")
+
+
 def print_items_markdown(items: list[dict[str, Any]], group: bool = True) -> None:
     if group:
         grouped: dict[str, list[dict[str, Any]]] = {}
@@ -555,6 +588,72 @@ def issue_content_id(client: GitHubClient, owner: str, repo: str, number: int) -
     return issue["id"]
 
 
+def repo_slug(args: argparse.Namespace) -> str:
+    return f"{args.repo_owner}/{args.repo}"
+
+
+def issue_url(args: argparse.Namespace, number: int) -> str:
+    return f"https://github.com/{repo_slug(args)}/issues/{number}"
+
+
+def issue_number_from_url(url: str) -> int:
+    try:
+        return int(url.rstrip("/").split("/")[-1])
+    except ValueError as err:
+        raise GitHubError(f"Could not parse issue number from {url!r}.") from err
+
+
+def split_labels(labels: list[str] | None) -> list[str]:
+    if not labels:
+        return []
+    values: list[str] = []
+    for label in labels:
+        values.extend(part.strip() for part in label.split(",") if part.strip())
+    return values
+
+
+def project_item_for_issue(client: GitHubClient, project: ProjectRef, number: int) -> dict[str, Any] | None:
+    for item in list_items(client, project.id):
+        content = item.get("content") or {}
+        if str(content.get("number", "")) == str(number):
+            return item
+    return None
+
+
+def ensure_issue_on_project(args: argparse.Namespace, client: GitHubClient, project: ProjectRef, number: int) -> str:
+    existing = project_item_for_issue(client, project, number)
+    if existing:
+        return existing["id"]
+
+    content_id = issue_content_id(client, args.repo_owner, args.repo, number)
+    data = client.graphql(ADD_ITEM_MUTATION, {"projectId": project.id, "contentId": content_id})
+    return data["addProjectV2ItemById"]["item"]["id"]
+
+
+def set_project_field(client: GitHubClient, project: ProjectRef, item_id: str, field_name: str, value: str) -> None:
+    field = field_by_name(project, field_name)
+    client.graphql(
+        UPDATE_FIELD_MUTATION,
+        {
+            "projectId": project.id,
+            "itemId": item_id,
+            "fieldId": field["id"],
+            "value": mutation_value(field, value),
+        },
+    )
+
+
+def apply_project_fields(args: argparse.Namespace, client: GitHubClient, project: ProjectRef, item_id: str) -> None:
+    field_values = {
+        "Status": getattr(args, "status", None),
+        "Priority": getattr(args, "priority", None),
+        "Size": getattr(args, "size", None),
+    }
+    for field_name, value in field_values.items():
+        if value:
+            set_project_field(client, project, item_id, field_name, value)
+
+
 def mutation_value(field: dict[str, Any], value: str) -> dict[str, Any]:
     data_type = field.get("dataType")
     if data_type == "SINGLE_SELECT":
@@ -573,6 +672,10 @@ def cmd_projects(args: argparse.Namespace, client: GitHubClient) -> None:
 
 def cmd_columns(args: argparse.Namespace, client: GitHubClient) -> None:
     print_columns(resolve_project(args, client))
+
+
+def cmd_fields(args: argparse.Namespace, client: GitHubClient) -> None:
+    print_fields(resolve_project(args, client))
 
 
 def cmd_list(args: argparse.Namespace, client: GitHubClient) -> None:
@@ -595,13 +698,9 @@ def cmd_show(args: argparse.Namespace, client: GitHubClient) -> None:
 
 def cmd_add_issue(args: argparse.Namespace, client: GitHubClient) -> None:
     project = resolve_project(args, client)
-    content_id = issue_content_id(client, args.repo_owner, args.repo, args.number)
-    data = client.graphql(ADD_ITEM_MUTATION, {"projectId": project.id, "contentId": content_id})
-    item_id = data["addProjectV2ItemById"]["item"]["id"]
-    print(f"Added issue #{args.number} to {project.title}: `{item_id}`")
-    if args.status:
-        set_status(client, project, item_id, args.status)
-        print(f"Moved `{item_id}` to {args.status}.")
+    item_id = ensure_issue_on_project(args, client, project, args.number)
+    apply_project_fields(args, client, project, item_id)
+    print(f"Added/updated issue #{args.number} on {project.title}: `{item_id}`")
 
 
 def cmd_add_draft(args: argparse.Namespace, client: GitHubClient) -> None:
@@ -610,9 +709,7 @@ def cmd_add_draft(args: argparse.Namespace, client: GitHubClient) -> None:
     data = client.graphql(ADD_DRAFT_MUTATION, {"projectId": project.id, "title": args.title, "body": body})
     item_id = data["addProjectV2DraftIssue"]["projectItem"]["id"]
     print(f"Added draft to {project.title}: `{item_id}`")
-    if args.status:
-        set_status(client, project, item_id, args.status)
-        print(f"Moved `{item_id}` to {args.status}.")
+    apply_project_fields(args, client, project, item_id)
 
 
 def cmd_delete(args: argparse.Namespace, client: GitHubClient) -> None:
@@ -646,17 +743,60 @@ def set_status(client: GitHubClient, project: ProjectRef, item_id: str, status: 
 def cmd_set_field(args: argparse.Namespace, client: GitHubClient) -> None:
     project = resolve_project(args, client)
     item = resolve_item(list_items(client, project.id), args.item)
-    field = field_by_name(project, args.field)
-    client.graphql(
-        UPDATE_FIELD_MUTATION,
-        {
-            "projectId": project.id,
-            "itemId": item["id"],
-            "fieldId": field["id"],
-            "value": mutation_value(field, args.value),
-        },
-    )
-    print(f"Set {field['name']} on `{item['id']}` to {args.value!r}.")
+    set_project_field(client, project, item["id"], args.field, args.value)
+    print(f"Set {args.field} on `{item['id']}` to {args.value!r}.")
+
+
+def cmd_set_fields(args: argparse.Namespace, client: GitHubClient) -> None:
+    project = resolve_project(args, client)
+    item = resolve_item(list_items(client, project.id), args.item)
+    apply_project_fields(args, client, project, item["id"])
+    print(f"Updated project item: `{item['id']}`")
+
+
+def cmd_create_issue(args: argparse.Namespace, client: GitHubClient) -> None:
+    payload: dict[str, Any] = {
+        "title": args.title,
+        "body": read_body_arg(args.body, args.body_file) or "",
+    }
+    labels = split_labels(args.label)
+    if labels:
+        payload["labels"] = labels
+
+    issue = client.rest("POST", f"/repos/{repo_slug(args)}/issues", payload)
+    number = int(issue["number"])
+    print(f"Created issue #{number}: {issue.get('html_url', issue_url(args, number))}")
+
+    if not args.no_project:
+        project = resolve_project(args, client)
+        item_id = ensure_issue_on_project(args, client, project, number)
+        apply_project_fields(args, client, project, item_id)
+        print(f"Added/updated project item: `{item_id}`")
+
+
+def cmd_edit_issue(args: argparse.Namespace, client: GitHubClient) -> None:
+    payload: dict[str, Any] = {}
+    body = read_body_arg(args.body, args.body_file)
+    if args.title is not None:
+        payload["title"] = args.title
+    if body is not None:
+        payload["body"] = body
+    if args.state is not None:
+        payload["state"] = args.state
+    if payload:
+        client.rest("PATCH", f"/repos/{repo_slug(args)}/issues/{args.number}", payload)
+
+    labels = split_labels(args.add_label)
+    if labels:
+        client.rest("POST", f"/repos/{repo_slug(args)}/issues/{args.number}/labels", {"labels": labels})
+
+    print(f"Edited issue #{args.number}: {issue_url(args, args.number)}")
+
+    if args.status or args.priority or args.size:
+        project = resolve_project(args, client)
+        item_id = ensure_issue_on_project(args, client, project, args.number)
+        apply_project_fields(args, client, project, item_id)
+        print(f"Updated project item: `{item_id}`")
 
 
 def cmd_rename(args: argparse.Namespace, client: GitHubClient) -> None:
@@ -685,8 +825,12 @@ def cmd_rename(args: argparse.Namespace, client: GitHubClient) -> None:
 
 def read_body_arg(body: str | None, path: str | None) -> str | None:
     if path:
+        if path == "-":
+            return sys.stdin.read()
         with open(path, "r", encoding="utf-8") as handle:
             return handle.read()
+    if body == "-":
+        return sys.stdin.read()
     return body
 
 
@@ -729,11 +873,15 @@ def build_parser() -> argparse.ArgumentParser:
             Examples:
               python .agents/skills/codegym-project/scripts/github_project_board.py projects
               python .agents/skills/codegym-project/scripts/github_project_board.py columns --project-number 1
+              python .agents/skills/codegym-project/scripts/github_project_board.py fields --project-number 2
               python .agents/skills/codegym-project/scripts/github_project_board.py list --status Ready
-              python .agents/skills/codegym-project/scripts/github_project_board.py add-issue 5 --status Ready
-              python .agents/skills/codegym-project/scripts/github_project_board.py add-draft "Write CI workflow" --status Ready --body "..."
+              python .agents/skills/codegym-project/scripts/github_project_board.py add-issue 5 --status Ready --priority P1 --size M
+              python .agents/skills/codegym-project/scripts/github_project_board.py add-draft "Write CI workflow" --status Ready --priority P2 --size S --body "..."
+              python .agents/skills/codegym-project/scripts/github_project_board.py create-issue --title "Write CI workflow" --body-file /tmp/body.md --label area:ci,type:task --status Ready --priority P1 --size M
+              python .agents/skills/codegym-project/scripts/github_project_board.py edit-issue 5 --body-file /tmp/body.md --add-label area:backend --status "In Progress"
               python .agents/skills/codegym-project/scripts/github_project_board.py move 5 "In Progress"
-              python .agents/skills/codegym-project/scripts/github_project_board.py set-field 5 Priority High
+              python .agents/skills/codegym-project/scripts/github_project_board.py set-field 5 Priority P1
+              python .agents/skills/codegym-project/scripts/github_project_board.py set-fields 5 --status Done --priority P1 --size M
               python .agents/skills/codegym-project/scripts/github_project_board.py rename 5 "M1: CI workflow"
             """
         ),
@@ -750,6 +898,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(columns, suppress_defaults=True)
     columns.set_defaults(func=cmd_columns)
 
+    fields = sub.add_parser("fields", help="List project fields and single-select options.")
+    add_common_args(fields, suppress_defaults=True)
+    fields.set_defaults(func=cmd_fields)
+
     list_parser = sub.add_parser("list", help="Render project items as Markdown.")
     add_common_args(list_parser, suppress_defaults=True)
     list_parser.add_argument("--status", help="Only show items in this Status column.")
@@ -765,6 +917,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(add_issue, suppress_defaults=True)
     add_issue.add_argument("number", type=int, help="Issue number in --repo.")
     add_issue.add_argument("--status", help="Optional Status column to move into after adding.")
+    add_issue.add_argument("--priority", help="Optional Priority field value.")
+    add_issue.add_argument("--size", help="Optional Size field value.")
     add_issue.set_defaults(func=cmd_add_issue)
 
     add_draft = sub.add_parser("add-draft", help="Add a draft issue to the project.")
@@ -773,7 +927,34 @@ def build_parser() -> argparse.ArgumentParser:
     add_draft.add_argument("--body")
     add_draft.add_argument("--body-file")
     add_draft.add_argument("--status", help="Optional Status column to move into after adding.")
+    add_draft.add_argument("--priority", help="Optional Priority field value.")
+    add_draft.add_argument("--size", help="Optional Size field value.")
     add_draft.set_defaults(func=cmd_add_draft)
+
+    create_issue = sub.add_parser("create-issue", help="Create a GitHub issue and optionally add it to the project.")
+    add_common_args(create_issue, suppress_defaults=True)
+    create_issue.add_argument("--title", required=True)
+    create_issue.add_argument("--body", default="")
+    create_issue.add_argument("--body-file")
+    create_issue.add_argument("--label", action="append", help="Comma-separated label list. May be repeated.")
+    create_issue.add_argument("--status", help="Optional Status field value.")
+    create_issue.add_argument("--priority", help="Optional Priority field value.")
+    create_issue.add_argument("--size", help="Optional Size field value.")
+    create_issue.add_argument("--no-project", action="store_true", help="Create the issue without adding it to the project.")
+    create_issue.set_defaults(func=cmd_create_issue)
+
+    edit_issue = sub.add_parser("edit-issue", help="Edit a GitHub issue and optionally update project fields.")
+    add_common_args(edit_issue, suppress_defaults=True)
+    edit_issue.add_argument("number", type=int)
+    edit_issue.add_argument("--title")
+    edit_issue.add_argument("--body")
+    edit_issue.add_argument("--body-file")
+    edit_issue.add_argument("--add-label", action="append", help="Comma-separated label list. May be repeated.")
+    edit_issue.add_argument("--state", choices=["open", "closed"])
+    edit_issue.add_argument("--status", help="Optional Status field value.")
+    edit_issue.add_argument("--priority", help="Optional Priority field value.")
+    edit_issue.add_argument("--size", help="Optional Size field value.")
+    edit_issue.set_defaults(func=cmd_edit_issue)
 
     delete = sub.add_parser("delete", help="Delete an item from the project board.")
     add_common_args(delete, suppress_defaults=True)
@@ -792,6 +973,14 @@ def build_parser() -> argparse.ArgumentParser:
     set_field.add_argument("field", help="Project field name.")
     set_field.add_argument("value", help="Field value. Single-select fields accept option names.")
     set_field.set_defaults(func=cmd_set_field)
+
+    set_fields = sub.add_parser("set-fields", help="Set common project fields on an item.")
+    add_common_args(set_fields, suppress_defaults=True)
+    set_fields.add_argument("item", help="Project item ID, issue number, URL, or exact title.")
+    set_fields.add_argument("--status", help="Optional Status field value.")
+    set_fields.add_argument("--priority", help="Optional Priority field value.")
+    set_fields.add_argument("--size", help="Optional Size field value.")
+    set_fields.set_defaults(func=cmd_set_fields)
 
     rename = sub.add_parser("rename", help="Rename an issue or draft issue, optionally replacing body.")
     add_common_args(rename, suppress_defaults=True)

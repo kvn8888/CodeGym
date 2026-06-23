@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "api:lint": "npx @redocly/cli@latest lint ../api/openapi.yaml",
+    "api:types": "npx openapi-typescript@latest ../api/openapi.yaml -o src/shared/api/openapi.d.ts",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"

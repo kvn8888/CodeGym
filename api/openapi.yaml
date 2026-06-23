@@ -1,0 +1,356 @@
+openapi: 3.1.0
+info:
+  title: CodeGym API
+  version: 0.1.0
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+  description: >
+    Initial contract for the CodeGym v2 frontend and Go backend integration.
+    The backend currently wraps every JSON response in a `{ data, error }`
+    envelope.
+servers:
+  - url: /
+    description: Same-origin frontend proxy
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check backend liveness.
+      security: []
+      responses:
+        "200":
+          description: Backend is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthEnvelope"
+
+  /api/v1/memory/profile:
+    get:
+      operationId: getMemoryProfile
+      summary: Get the authenticated user's memory profile for the selected tenant.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Memory profile loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryProfileEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/memory/events:
+    get:
+      operationId: listMemoryEvents
+      summary: List append-only memory events for the authenticated user and tenant.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Memory events loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryEventsEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: recordMemoryEvent
+      summary: Append a memory event for the authenticated user and tenant.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordMemoryEventInput"
+      responses:
+        "201":
+          description: Memory event recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryEventEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: dev-token-or-jwt
+
+  parameters:
+    TenantHeader:
+      name: X-CodeGym-Tenant-ID
+      in: header
+      required: false
+      description: >
+        Optional tenant override. If omitted, the backend uses the authenticated
+        principal's default tenant.
+      schema:
+        type: string
+        example: personal-kevin
+
+  responses:
+    BadRequest:
+      description: Request body is invalid or failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unauthorized:
+      description: Missing, malformed, or rejected bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    TenantForbidden:
+      description: Authenticated user does not have access to the requested tenant.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    InternalError:
+      description: Backend failed while processing the request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+
+  schemas:
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: unauthenticated
+        message:
+          type: string
+          example: Missing bearer token.
+
+    ErrorEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: "null"
+        error:
+          $ref: "#/components/schemas/ApiError"
+
+    HealthEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/HealthStatus"
+        error:
+          type: "null"
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    MemoryProfileEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/MemoryProfile"
+        error:
+          type: "null"
+
+    MemoryEventsEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryEvent"
+        error:
+          type: "null"
+
+    MemoryEventEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/MemoryEvent"
+        error:
+          type: "null"
+
+    MemoryProfile:
+      type: object
+      required:
+        - summary
+        - updated_at
+        - next_review_at
+        - strengths
+        - growth_edges
+        - skills
+        - notes
+      properties:
+        summary:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        next_review_at:
+          type: string
+          format: date-time
+        strengths:
+          type: array
+          items:
+            type: string
+        growth_edges:
+          type: array
+          items:
+            type: string
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillProficiency"
+        notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryNote"
+
+    SkillProficiency:
+      type: object
+      required: [id, label, area, level, confidence, trend, last_practiced]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        area:
+          type: string
+        level:
+          type: integer
+        confidence:
+          type: integer
+        trend:
+          type: string
+          enum: [up, flat, down]
+        last_practiced:
+          type: string
+          format: date-time
+
+    MemoryNote:
+      type: object
+      required: [id, problem_id, title, summary, created_at, tags, action]
+      properties:
+        id:
+          type: string
+        problem_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+        action:
+          type: string
+          enum: [keep, review, prune]
+
+    MemoryEvent:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - user_id
+        - source
+        - type
+        - summary
+        - occurred_at
+        - created_at
+      properties:
+        id:
+          type: string
+          example: mem_evt_0123456789abcdef
+        tenant_id:
+          type: string
+        user_id:
+          type: string
+        source:
+          type: string
+          example: chat
+        type:
+          type: string
+          example: memory_note_created
+        summary:
+          type: string
+        payload:
+          $ref: "#/components/schemas/JsonValue"
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    RecordMemoryEventInput:
+      type: object
+      required: [source, type, summary]
+      properties:
+        source:
+          type: string
+          minLength: 1
+          example: generate
+        type:
+          type: string
+          minLength: 1
+          example: problem_generated
+        summary:
+          type: string
+        payload:
+          $ref: "#/components/schemas/JsonValue"
+        occurred_at:
+          type: string
+          format: date-time
+          description: Defaults to server time when omitted or zero.
+
+    JsonValue:
+      oneOf:
+        - type: object
+          additionalProperties:
+            $ref: "#/components/schemas/JsonValue"
+        - type: array
+          items:
+            $ref: "#/components/schemas/JsonValue"
+        - type: string
+        - type: number
+        - type: integer
+        - type: boolean
+        - type: "null"

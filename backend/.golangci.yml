@@ -1,0 +1,17 @@
+# Advisory golangci-lint baseline for CodeGym backend.
+# Promote the workflow to blocking after noisy findings are triaged.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+issues:
+  exclude-use-default: false

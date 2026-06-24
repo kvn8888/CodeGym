@@ -11,9 +11,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import ssl
 import sys
 import textwrap
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +25,26 @@ API_URL = "https://api.github.com/graphql"
 DEFAULT_OWNER = "kvn8888"
 DEFAULT_REPO = "CodeGym"
 DEFAULT_PROJECT_TITLE = "CodeGym"
+PROJECT_FIELD_ARGS = ("status", "category", "priority", "size", "source")
+PROJECT_FIELD_NAMES = {
+    "status": "Status",
+    "category": "Category",
+    "priority": "Priority",
+    "size": "Size",
+    "source": "Source",
+}
+
+
+def default_ssl_context() -> ssl.SSLContext | None:
+    """Use certifi when the host Python lacks a usable macOS CA store."""
+    try:
+        import certifi  # type: ignore
+    except ImportError:
+        return None
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+SSL_CONTEXT = default_ssl_context()
 
 
 class GitHubError(RuntimeError):
@@ -55,7 +78,7 @@ class GitHubClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as res:
+            with urllib.request.urlopen(req, timeout=30, context=SSL_CONTEXT) as res:
                 raw = res.read().decode()
         except urllib.error.HTTPError as err:
             detail = err.read().decode(errors="replace")
@@ -79,7 +102,7 @@ class GitHubClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as res:
+            with urllib.request.urlopen(req, timeout=30, context=SSL_CONTEXT) as res:
                 payload = json.loads(res.read().decode())
         except urllib.error.HTTPError as err:
             detail = err.read().decode(errors="replace")
@@ -470,6 +493,26 @@ def item_content_id(item: dict[str, Any]) -> str:
     return content.get("id") or ""
 
 
+def item_issue_number_value(item: dict[str, Any]) -> int | None:
+    number = (item.get("content") or {}).get("number")
+    return int(number) if number is not None else None
+
+
+def find_repo_issue_by_title(client: GitHubClient, args: argparse.Namespace, title: str) -> dict[str, Any] | None:
+    """Find an exact-title issue even when it is not already on the Project board."""
+    query = f'repo:{repo_slug(args)} is:issue in:title "{title}"'
+    payload = client.rest("GET", f"/search/issues?q={urllib.parse.quote(query)}&per_page=20")
+    matches = [
+        item for item in payload.get("items", [])
+        if item.get("title") == title and "pull_request" not in item
+    ]
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: (item.get("state") != "open", item.get("number", 0)))
+    return matches[0]
+
+
 def markdown_escape(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
@@ -580,6 +623,21 @@ def resolve_item(items: list[dict[str, Any]], ref: str) -> dict[str, Any]:
     raise GitHubError(f"No project item matched {ref!r}. Use list to find the item ID.")
 
 
+def find_item_by_id(items: list[dict[str, Any]], item_id: str) -> dict[str, Any] | None:
+    for item in items:
+        if item["id"] == item_id:
+            return item
+    return None
+
+
+def find_item_by_title(items: list[dict[str, Any]], title: str) -> dict[str, Any] | None:
+    normalized = title.strip().lower()
+    for item in items:
+        if item_title(item).strip().lower() == normalized:
+            return item
+    return None
+
+
 def issue_content_id(client: GitHubClient, owner: str, repo: str, number: int) -> str:
     data = client.graphql(REPOSITORY_ISSUE_QUERY, {"owner": owner, "repo": repo, "number": number})
     issue = data["repository"]["issue"] if data.get("repository") else None
@@ -610,6 +668,26 @@ def split_labels(labels: list[str] | None) -> list[str]:
     for label in labels:
         values.extend(part.strip() for part in label.split(",") if part.strip())
     return values
+
+
+def labels_from_value(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return split_labels([value])
+    if isinstance(value, list):
+        labels: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                raise GitHubError(f"Labels must be strings, got {item!r}.")
+            labels.extend(split_labels([item]))
+        return labels
+    raise GitHubError(f"Labels must be a comma-separated string or list of strings, got {value!r}.")
+
+
+def add_labels_to_issue(client: GitHubClient, args: argparse.Namespace, number: int, labels: list[str]) -> None:
+    if labels:
+        client.rest("POST", f"/repos/{repo_slug(args)}/issues/{number}/labels", {"labels": labels})
 
 
 def project_item_for_issue(client: GitHubClient, project: ProjectRef, number: int) -> dict[str, Any] | None:
@@ -643,15 +721,78 @@ def set_project_field(client: GitHubClient, project: ProjectRef, item_id: str, f
     )
 
 
-def apply_project_fields(args: argparse.Namespace, client: GitHubClient, project: ProjectRef, item_id: str) -> None:
-    field_values = {
-        "Status": getattr(args, "status", None),
-        "Priority": getattr(args, "priority", None),
-        "Size": getattr(args, "size", None),
-    }
-    for field_name, value in field_values.items():
+def project_field_values_from_args(args: argparse.Namespace) -> dict[str, str]:
+    field_values: dict[str, str] = {}
+    for attr in PROJECT_FIELD_ARGS:
+        value = getattr(args, attr, None)
         if value:
-            set_project_field(client, project, item_id, field_name, value)
+            field_values[PROJECT_FIELD_NAMES[attr]] = value
+    return field_values
+
+
+def has_project_field_args(args: argparse.Namespace) -> bool:
+    return bool(project_field_values_from_args(args))
+
+
+def apply_project_fields(
+    args: argparse.Namespace,
+    client: GitHubClient,
+    project: ProjectRef,
+    item_id: str,
+) -> dict[str, str]:
+    field_values = project_field_values_from_args(args)
+    for field_name, value in field_values.items():
+        set_project_field(client, project, item_id, field_name, value)
+    return field_values
+
+
+def verify_project_fields(
+    client: GitHubClient,
+    project: ProjectRef,
+    item_id: str,
+    expected: dict[str, str],
+    attempts: int = 8,
+) -> None:
+    if not expected:
+        return
+
+    missing: dict[str, tuple[str, str]] = {}
+    for attempt in range(1, attempts + 1):
+        item = find_item_by_id(list_items(client, project.id), item_id)
+        if not item:
+            if attempt < attempts:
+                time.sleep(1)
+                continue
+            raise GitHubError(f"Project item {item_id!r} was not visible during verification.")
+
+        values = item_field_values(item)
+        missing = {
+            field_name: (expected_value, values.get(field_name, ""))
+            for field_name, expected_value in expected.items()
+            if values.get(field_name, "") != expected_value
+        }
+        if not missing:
+            print(f"Verified project fields for `{item_id}`.")
+            return
+        if attempt < attempts:
+            time.sleep(1)
+
+    details = ", ".join(
+        f"{field}: expected {expected!r}, saw {actual!r}"
+        for field, (expected, actual) in missing.items()
+    )
+    raise GitHubError(f"Project field readback mismatch for {item_id}: {details}")
+
+
+def apply_and_maybe_verify_project_fields(
+    args: argparse.Namespace,
+    client: GitHubClient,
+    project: ProjectRef,
+    item_id: str,
+) -> None:
+    expected = apply_project_fields(args, client, project, item_id)
+    if getattr(args, "verify", False):
+        verify_project_fields(client, project, item_id, expected)
 
 
 def mutation_value(field: dict[str, Any], value: str) -> dict[str, Any]:
@@ -699,7 +840,7 @@ def cmd_show(args: argparse.Namespace, client: GitHubClient) -> None:
 def cmd_add_issue(args: argparse.Namespace, client: GitHubClient) -> None:
     project = resolve_project(args, client)
     item_id = ensure_issue_on_project(args, client, project, args.number)
-    apply_project_fields(args, client, project, item_id)
+    apply_and_maybe_verify_project_fields(args, client, project, item_id)
     print(f"Added/updated issue #{args.number} on {project.title}: `{item_id}`")
 
 
@@ -709,7 +850,7 @@ def cmd_add_draft(args: argparse.Namespace, client: GitHubClient) -> None:
     data = client.graphql(ADD_DRAFT_MUTATION, {"projectId": project.id, "title": args.title, "body": body})
     item_id = data["addProjectV2DraftIssue"]["projectItem"]["id"]
     print(f"Added draft to {project.title}: `{item_id}`")
-    apply_project_fields(args, client, project, item_id)
+    apply_and_maybe_verify_project_fields(args, client, project, item_id)
 
 
 def cmd_delete(args: argparse.Namespace, client: GitHubClient) -> None:
@@ -750,7 +891,7 @@ def cmd_set_field(args: argparse.Namespace, client: GitHubClient) -> None:
 def cmd_set_fields(args: argparse.Namespace, client: GitHubClient) -> None:
     project = resolve_project(args, client)
     item = resolve_item(list_items(client, project.id), args.item)
-    apply_project_fields(args, client, project, item["id"])
+    apply_and_maybe_verify_project_fields(args, client, project, item["id"])
     print(f"Updated project item: `{item['id']}`")
 
 
@@ -770,7 +911,7 @@ def cmd_create_issue(args: argparse.Namespace, client: GitHubClient) -> None:
     if not args.no_project:
         project = resolve_project(args, client)
         item_id = ensure_issue_on_project(args, client, project, number)
-        apply_project_fields(args, client, project, item_id)
+        apply_and_maybe_verify_project_fields(args, client, project, item_id)
         print(f"Added/updated project item: `{item_id}`")
 
 
@@ -786,17 +927,214 @@ def cmd_edit_issue(args: argparse.Namespace, client: GitHubClient) -> None:
     if payload:
         client.rest("PATCH", f"/repos/{repo_slug(args)}/issues/{args.number}", payload)
 
-    labels = split_labels(args.add_label)
-    if labels:
-        client.rest("POST", f"/repos/{repo_slug(args)}/issues/{args.number}/labels", {"labels": labels})
+    add_labels_to_issue(client, args, args.number, split_labels(args.add_label))
 
     print(f"Edited issue #{args.number}: {issue_url(args, args.number)}")
 
-    if args.status or args.priority or args.size:
+    if has_project_field_args(args):
         project = resolve_project(args, client)
         item_id = ensure_issue_on_project(args, client, project, args.number)
-        apply_project_fields(args, client, project, item_id)
+        apply_and_maybe_verify_project_fields(args, client, project, item_id)
         print(f"Updated project item: `{item_id}`")
+
+
+def upsert_issue_by_title(
+    args: argparse.Namespace,
+    client: GitHubClient,
+    *,
+    title: str,
+    body: str | None,
+    labels: list[str],
+    state: str | None,
+    close: bool,
+    dry_run: bool = False,
+) -> tuple[str, int | None, str | None]:
+    project = resolve_project(args, client)
+    existing = find_item_by_title(list_items(client, project.id), title)
+    issue_number: int | None = None
+    item_id: str | None = None
+    action = "create"
+
+    if existing:
+        content = existing.get("content") or {}
+        typename = content.get("__typename")
+        if typename != "Issue":
+            raise GitHubError(
+                f"Existing project item titled {title!r} is a {typename}; "
+                "delete/rename it or use a GitHub Issue before upserting."
+            )
+        issue_number = item_issue_number_value(existing)
+        if issue_number is None:
+            raise GitHubError(f"Existing issue titled {title!r} has no issue number.")
+        item_id = existing["id"]
+        action = "update"
+    else:
+        repo_issue = find_repo_issue_by_title(client, args, title)
+        if repo_issue:
+            issue_number = int(repo_issue["number"])
+            action = "update"
+
+    target_state = "closed" if close else state
+    field_args = argparse.Namespace(**vars(args))
+    if close and not getattr(field_args, "status", None):
+        field_args.status = "Done"
+
+    if dry_run:
+        print(f"Would {action} issue: {title}")
+        return action, issue_number, item_id
+
+    if issue_number is None:
+        payload: dict[str, Any] = {"title": title, "body": body or ""}
+        if labels:
+            payload["labels"] = labels
+        issue = client.rest("POST", f"/repos/{repo_slug(args)}/issues", payload)
+        issue_number = int(issue["number"])
+        print(f"Created issue #{issue_number}: {issue.get('html_url', issue_url(args, issue_number))}")
+    else:
+        payload = {}
+        if body is not None:
+            payload["body"] = body
+        if target_state is not None:
+            payload["state"] = target_state
+        if payload:
+            client.rest("PATCH", f"/repos/{repo_slug(args)}/issues/{issue_number}", payload)
+        add_labels_to_issue(client, args, issue_number, labels)
+        print(f"Updated issue #{issue_number}: {issue_url(args, issue_number)}")
+
+    if target_state is not None and action == "create":
+        client.rest("PATCH", f"/repos/{repo_slug(args)}/issues/{issue_number}", {"state": target_state})
+
+    item_id = ensure_issue_on_project(args, client, project, issue_number)
+    apply_and_maybe_verify_project_fields(field_args, client, project, item_id)
+    print(f"Added/updated project item: `{item_id}`")
+    return action, issue_number, item_id
+
+
+def cmd_upsert_issue(args: argparse.Namespace, client: GitHubClient) -> None:
+    body = read_body_arg(args.body, args.body_file)
+    action, number, _ = upsert_issue_by_title(
+        args,
+        client,
+        title=args.title,
+        body=body,
+        labels=split_labels(args.label),
+        state=args.state,
+        close=args.close,
+        dry_run=args.dry_run,
+    )
+    if args.dry_run:
+        print("Dry run complete; no GitHub issue or project fields were changed.")
+        return
+    if number is not None:
+        print(f"{action.title()}d issue #{number}.")
+
+
+def cmd_import_issues(args: argparse.Namespace, client: GitHubClient) -> None:
+    sources = [bool(args.file), bool(args.json), bool(args.stdin)]
+    if sum(sources) > 1:
+        raise GitHubError("Provide only one of --file, --json, or --stdin.")
+
+    if args.json:
+        raw = args.json
+        base_dir = os.getcwd()
+    elif args.stdin or args.file in (None, "-"):
+        raw = sys.stdin.read()
+        base_dir = os.getcwd()
+    else:
+        with open(args.file, "r", encoding="utf-8") as handle:
+            raw = handle.read()
+        base_dir = os.path.dirname(os.path.abspath(args.file))
+
+    if not raw.strip():
+        raise GitHubError(
+            "No issue JSON provided. Pass --json '<json>', pipe JSON via stdin, or use --file <path>."
+        )
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise GitHubError(f"Could not parse issue JSON: {err}") from err
+
+    entries = payload.get("issues") if isinstance(payload, dict) else payload
+    if not isinstance(entries, list):
+        raise GitHubError("Import JSON must be a JSON list or an object with an `issues` list.")
+    created: list[str] = []
+    updated: list[str] = []
+    closed: list[str] = []
+
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            raise GitHubError(f"Import entry {index} must be an object.")
+        title = entry.get("title")
+        if not isinstance(title, str) or not title.strip():
+            raise GitHubError(f"Import entry {index} is missing a non-empty title.")
+
+        body = entry.get("body")
+        body_file = entry.get("bodyFile") or entry.get("body_file")
+        if body_file:
+            body_path = body_file if os.path.isabs(body_file) else os.path.join(base_dir, body_file)
+            body = read_body_arg(None, body_path)
+        elif body is not None and not isinstance(body, str):
+            raise GitHubError(f"Import entry {index} body must be a string.")
+
+        entry_args = argparse.Namespace(**vars(args))
+        entry_args.status = entry.get("status", args.status)
+        entry_args.category = entry.get("category", args.category)
+        entry_args.priority = entry.get("priority", args.priority)
+        entry_args.size = entry.get("size", args.size)
+        entry_args.source = entry.get("source", args.source)
+        entry_args.verify = args.verify
+
+        close = bool(entry.get("close", False))
+        state = entry.get("state")
+        if state not in {None, "open", "closed"}:
+            raise GitHubError(f"Import entry {index} has invalid state {state!r}.")
+        labels = labels_from_value(entry.get("labels", args.label))
+
+        action, number, _ = upsert_issue_by_title(
+            entry_args,
+            client,
+            title=title,
+            body=body,
+            labels=labels,
+            state=state,
+            close=close,
+            dry_run=args.dry_run,
+        )
+        label = f"#{number} {title}" if number is not None else title
+        if close or state == "closed":
+            closed.append(label)
+        elif action == "create":
+            created.append(label)
+        else:
+            updated.append(label)
+
+    print("CREATED")
+    for item in created:
+        print(item)
+    print("UPDATED")
+    for item in updated:
+        print(item)
+    print("CLOSED")
+    for item in closed:
+        print(item)
+
+
+def cmd_complete(args: argparse.Namespace, client: GitHubClient) -> None:
+    project = resolve_project(args, client)
+    item = resolve_item(list_items(client, project.id), args.item)
+    content = item.get("content") or {}
+    number = content.get("number")
+    if number:
+        client.rest("PATCH", f"/repos/{repo_slug(args)}/issues/{number}", {"state": "closed"})
+        print(f"Closed issue #{number}: {issue_url(args, int(number))}")
+    else:
+        print(f"Project item `{item['id']}` has no GitHub issue to close; moving project status only.")
+
+    field_args = argparse.Namespace(**vars(args))
+    field_args.status = args.status or "Done"
+    apply_and_maybe_verify_project_fields(field_args, client, project, item["id"])
+    print(f"Moved `{item['id']}` to {field_args.status}.")
 
 
 def cmd_rename(args: argparse.Namespace, client: GitHubClient) -> None:
@@ -866,23 +1204,26 @@ def env_int(name: str) -> int | None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="View and manage the CodeGym GitHub Projects v2 kanban board.",
+        description="View and manage the Polymarket EV Bot GitHub Projects v2 kanban board.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """\
             Examples:
-              python .agents/skills/codegym-project/scripts/github_project_board.py projects
-              python .agents/skills/codegym-project/scripts/github_project_board.py columns --project-number 1
-              python .agents/skills/codegym-project/scripts/github_project_board.py fields --project-number 2
-              python .agents/skills/codegym-project/scripts/github_project_board.py list --status Ready
-              python .agents/skills/codegym-project/scripts/github_project_board.py add-issue 5 --status Ready --priority P1 --size M
-              python .agents/skills/codegym-project/scripts/github_project_board.py add-draft "Write CI workflow" --status Ready --priority P2 --size S --body "..."
-              python .agents/skills/codegym-project/scripts/github_project_board.py create-issue --title "Write CI workflow" --body-file /tmp/body.md --label area:ci,type:task --status Ready --priority P1 --size M
-              python .agents/skills/codegym-project/scripts/github_project_board.py edit-issue 5 --body-file /tmp/body.md --add-label area:backend --status "In Progress"
-              python .agents/skills/codegym-project/scripts/github_project_board.py move 5 "In Progress"
-              python .agents/skills/codegym-project/scripts/github_project_board.py set-field 5 Priority P1
-              python .agents/skills/codegym-project/scripts/github_project_board.py set-fields 5 --status Done --priority P1 --size M
-              python .agents/skills/codegym-project/scripts/github_project_board.py rename 5 "M1: CI workflow"
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py projects
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py columns --project-number 4
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py fields --project-number 4
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py list --project-number 4
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py add-issue 5 --project-number 4 --status Todo --category Performance --priority P1 --size M
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py add-draft "Write CI workflow" --project-number 4 --status Todo --category "Project / Process" --priority P2 --size S --body "..."
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py create-issue --project-number 4 --title "Write CI workflow" --body-file /tmp/body.md --label area:ci,type:task --status Todo --category "Project / Process" --priority P1 --size M --source "planning import"
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py upsert-issue --project-number 4 --title "Write CI workflow" --body-file /tmp/body.md --status Todo --category "Project / Process" --priority P1 --size M --source "planning import" --verify
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py import-issues --project-number 4 --file /tmp/issues.json --source "conversation import"
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py complete 5 --project-number 4 --source "validated in PR 12"
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py edit-issue 5 --project-number 4 --body-file /tmp/body.md --add-label area:backend --status "In Progress" --category "Provider API Integration"
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py move 5 "In Progress" --project-number 4
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py set-field 5 Priority P1 --project-number 4
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py set-fields 5 --status Done --priority P1 --size M --source "validated" --project-number 4
+              python .agents/skills/repo-knowledge/scripts/github_project_board.py rename 5 "M1: CI workflow" --project-number 4
             """
         ),
     )
@@ -917,8 +1258,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(add_issue, suppress_defaults=True)
     add_issue.add_argument("number", type=int, help="Issue number in --repo.")
     add_issue.add_argument("--status", help="Optional Status column to move into after adding.")
+    add_issue.add_argument("--category", help="Optional Category field value.")
     add_issue.add_argument("--priority", help="Optional Priority field value.")
     add_issue.add_argument("--size", help="Optional Size field value.")
+    add_issue.add_argument("--source", help="Optional Source field value.")
+    add_issue.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
     add_issue.set_defaults(func=cmd_add_issue)
 
     add_draft = sub.add_parser("add-draft", help="Add a draft issue to the project.")
@@ -927,8 +1271,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_draft.add_argument("--body")
     add_draft.add_argument("--body-file")
     add_draft.add_argument("--status", help="Optional Status column to move into after adding.")
+    add_draft.add_argument("--category", help="Optional Category field value.")
     add_draft.add_argument("--priority", help="Optional Priority field value.")
     add_draft.add_argument("--size", help="Optional Size field value.")
+    add_draft.add_argument("--source", help="Optional Source field value.")
+    add_draft.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
     add_draft.set_defaults(func=cmd_add_draft)
 
     create_issue = sub.add_parser("create-issue", help="Create a GitHub issue and optionally add it to the project.")
@@ -938,10 +1285,58 @@ def build_parser() -> argparse.ArgumentParser:
     create_issue.add_argument("--body-file")
     create_issue.add_argument("--label", action="append", help="Comma-separated label list. May be repeated.")
     create_issue.add_argument("--status", help="Optional Status field value.")
+    create_issue.add_argument("--category", help="Optional Category field value.")
     create_issue.add_argument("--priority", help="Optional Priority field value.")
     create_issue.add_argument("--size", help="Optional Size field value.")
+    create_issue.add_argument("--source", help="Optional Source field value.")
+    create_issue.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
     create_issue.add_argument("--no-project", action="store_true", help="Create the issue without adding it to the project.")
     create_issue.set_defaults(func=cmd_create_issue)
+
+    upsert_issue = sub.add_parser("upsert-issue", help="Create or update a GitHub issue by exact project title.")
+    add_common_args(upsert_issue, suppress_defaults=True)
+    upsert_issue.add_argument("--title", required=True)
+    upsert_issue.add_argument("--body")
+    upsert_issue.add_argument("--body-file")
+    upsert_issue.add_argument("--label", action="append", help="Comma-separated label list. May be repeated.")
+    upsert_issue.add_argument("--state", choices=["open", "closed"])
+    upsert_issue.add_argument("--close", action="store_true", help="Close the issue and default project Status to Done.")
+    upsert_issue.add_argument("--status", help="Optional Status field value.")
+    upsert_issue.add_argument("--category", help="Optional Category field value.")
+    upsert_issue.add_argument("--priority", help="Optional Priority field value.")
+    upsert_issue.add_argument("--size", help="Optional Size field value.")
+    upsert_issue.add_argument("--source", help="Optional Source field value.")
+    upsert_issue.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
+    upsert_issue.add_argument("--dry-run", action="store_true", help="Print intended creates/updates without writing.")
+    upsert_issue.set_defaults(func=cmd_upsert_issue)
+
+    import_issues = sub.add_parser(
+        "import-issues",
+        help="Upsert many GitHub issues from inline JSON, stdin, or a JSON file.",
+    )
+    add_common_args(import_issues, suppress_defaults=True)
+    import_issues.add_argument(
+        "--file",
+        help="JSON list or object with an `issues` list. Use '-' to read stdin. Omit to read stdin.",
+    )
+    import_issues.add_argument(
+        "--json",
+        help="Inline JSON string (list or object with an `issues` list). Avoids creating a temp file.",
+    )
+    import_issues.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read JSON from stdin (e.g. via a heredoc).",
+    )
+    import_issues.add_argument("--label", action="append", help="Default comma-separated labels. Entry `labels` override this.")
+    import_issues.add_argument("--status", help="Default Status field value.")
+    import_issues.add_argument("--category", help="Default Category field value.")
+    import_issues.add_argument("--priority", help="Default Priority field value.")
+    import_issues.add_argument("--size", help="Default Size field value.")
+    import_issues.add_argument("--source", help="Default Source field value.")
+    import_issues.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
+    import_issues.add_argument("--dry-run", action="store_true", help="Print intended creates/updates without writing.")
+    import_issues.set_defaults(func=cmd_import_issues)
 
     edit_issue = sub.add_parser("edit-issue", help="Edit a GitHub issue and optionally update project fields.")
     add_common_args(edit_issue, suppress_defaults=True)
@@ -952,9 +1347,23 @@ def build_parser() -> argparse.ArgumentParser:
     edit_issue.add_argument("--add-label", action="append", help="Comma-separated label list. May be repeated.")
     edit_issue.add_argument("--state", choices=["open", "closed"])
     edit_issue.add_argument("--status", help="Optional Status field value.")
+    edit_issue.add_argument("--category", help="Optional Category field value.")
     edit_issue.add_argument("--priority", help="Optional Priority field value.")
     edit_issue.add_argument("--size", help="Optional Size field value.")
+    edit_issue.add_argument("--source", help="Optional Source field value.")
+    edit_issue.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
     edit_issue.set_defaults(func=cmd_edit_issue)
+
+    complete = sub.add_parser("complete", help="Close a GitHub issue and move its project item to Done.")
+    add_common_args(complete, suppress_defaults=True)
+    complete.add_argument("item", help="Project item ID, issue number, URL, or exact title.")
+    complete.add_argument("--status", default="Done", help="Status value to set; defaults to Done.")
+    complete.add_argument("--category", help="Optional Category field value.")
+    complete.add_argument("--priority", help="Optional Priority field value.")
+    complete.add_argument("--size", help="Optional Size field value.")
+    complete.add_argument("--source", help="Optional Source field value.")
+    complete.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
+    complete.set_defaults(func=cmd_complete)
 
     delete = sub.add_parser("delete", help="Delete an item from the project board.")
     add_common_args(delete, suppress_defaults=True)
@@ -978,8 +1387,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(set_fields, suppress_defaults=True)
     set_fields.add_argument("item", help="Project item ID, issue number, URL, or exact title.")
     set_fields.add_argument("--status", help="Optional Status field value.")
+    set_fields.add_argument("--category", help="Optional Category field value.")
     set_fields.add_argument("--priority", help="Optional Priority field value.")
     set_fields.add_argument("--size", help="Optional Size field value.")
+    set_fields.add_argument("--source", help="Optional Source field value.")
+    set_fields.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
     set_fields.set_defaults(func=cmd_set_fields)
 
     rename = sub.add_parser("rename", help="Rename an issue or draft issue, optionally replacing body.")

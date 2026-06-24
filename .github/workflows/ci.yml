@@ -10,8 +10,20 @@ name: CI
 on:
   push:
     branches: [codegym-v2]
+    paths-ignore:
+      - '.agents/**'
+      - '.claude/**'
+      - 'README.md'
+      - '.gitignore'
+      - 'docs/**'
   pull_request:
     branches: [codegym-v2]
+    paths-ignore:
+      - '.agents/**'
+      - '.claude/**'
+      - 'README.md'
+      - '.gitignore'
+      - 'docs/**'
 
 # Least privilege: CI only needs to read the repository.
 permissions:

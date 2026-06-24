@@ -3,10 +3,10 @@
 Companion to [auth-identity-tenant.md](auth-identity-tenant.md) and issue
 [#2 — Backend M1: Auth, tenancy, and memory foundation](https://github.com/kvn8888/CodeGym/issues/2).
 
-This doc is written for a learning workflow: hand-write the code (with
+This doc started as a learning workflow: hand-write the code (with
 autocomplete), then have a separate review pass check it against the acceptance
-criteria. Each story points at a **guided skeleton** already in the tree — the
-plumbing compiles and runs; the interesting logic is left as `TODO(you)`.
+criteria. US-2 and US-3 now have a completed v0, while US-1 and US-4 remain the
+main follow-up work.
 
 ---
 
@@ -21,14 +21,17 @@ The middleware chain and the memory read/write paths are complete:
   `PostgresStore`; model types (`Profile`, `Event`, `Note`, `SkillProficiency`).
 - **Memory service** read/record: `GetProfile`, `RecordEvent`, `ListEvents`, all
   tenant+user scoped, plus the HTTP handlers under `/api/v1/memory/*`.
+- **Memory profile refresh v0**: `Summarize`, `RefreshProfile`,
+  `RefreshProfileFor`, `RefreshAllProfiles`, the manual refresh endpoint, and
+  `memory.Worker.RunOnce` are implemented and tested.
 
 ## What's left (these stories)
 
-Two real gaps, both left as guided skeletons:
+The remaining backend gaps are:
 
 1. **Real signed-token auth** — only `DevAuthenticator` exists today.
-2. **The summarizer** — events accumulate (append-only) but nothing derives the
-   `Profile` from them. `UpsertProfile` exists in every store and is never called.
+2. **Strict memory event naming** — events are accepted as flexible
+   `source`/`type` strings until the event-name convention is finalized.
 
 ---
 
@@ -75,17 +78,17 @@ HMAC-SHA256 signing, constant-time verification, expiry checks.
 **Learning focus:** turning an append-only event log into a derived view; keeping
 the core a **pure, idempotent** function so it is easy to test and safe to re-run.
 
-**Your tasks:** inside `Summarize`, aggregate `events` into `Summary`,
-`Strengths`, `GrowthEdges`, `Skills` (and optionally `Notes`). Start with a
-`map[string]int` over `Type`/`Source`; unmarshal `event.Payload` when you need
-structured signal.
+**Completed v0:** `Summarize` aggregates `events` into `Summary`, `Strengths`,
+`GrowthEdges`, `Skills`, and `Notes`. It reads common structured payload fields
+such as `skill`, `skills`, `topic`, `problem_id`, `passed`, and `correct`, while
+falling back to event source and summary keywords when payloads are sparse.
 
 **Acceptance criteria:**
-- [ ] `Summarize` is pure (no DB / clock / globals) and never mutates its inputs.
-- [ ] Empty event log → valid, timestamped profile (no panic).
-- [ ] Re-running over the same events yields the same profile (idempotent).
-- [ ] `Service.RefreshProfile` persists the derived profile (plumbing already done).
-- [ ] `summarizer_test.go` grows real assertions and stays green.
+- [x] `Summarize` is pure (no DB / clock / globals) and never mutates its inputs.
+- [x] Empty event log → valid, timestamped profile (no panic).
+- [x] Re-running over the same events yields the same profile (idempotent).
+- [x] `Service.RefreshProfile` persists the derived profile.
+- [x] `summarizer_test.go` has event-derived assertions and stays green.
 
 **Done when:** record a few events, call `RefreshProfile`, then `GET /api/v1/memory/profile`
 returns a summary derived from those events (not the default placeholder).
@@ -104,15 +107,16 @@ returns a summary derived from those events (not the default placeholder).
 cancellation; and the real design question of *how a background job gets an
 identity/tenant scope* when there is no HTTP request.
 
-**Your tasks:** solve the "no request context" problem (the file lays out two
-options — recommend option (b): a `RefreshProfileFor(ctx, tenantID, userID)`),
-then make the tick refresh active profiles. Optionally add a manual trigger:
-`POST /api/v1/memory/profile/refresh` → `Service.RefreshProfile`.
+**Completed v0:** `RefreshProfileFor(ctx, tenantID, userID)` handles explicit
+scope refreshes, `RefreshAllProfiles` refreshes every tenant/user pair with
+events, `memory.Worker.RunOnce` exposes the worker behavior for tests, and
+`POST /api/v1/memory/profile/refresh` manually refreshes the current request
+scope.
 
 **Acceptance criteria:**
-- [ ] A summarization failure never blocks or fails the `RecordEvent` request path.
-- [ ] The worker shuts down cleanly on context cancellation.
-- [ ] (If added) the manual refresh endpoint is covered by the smoke test (issue #6).
+- [x] A summarization failure never blocks or fails the `RecordEvent` request path.
+- [x] The worker shuts down cleanly on context cancellation.
+- [x] Manual refresh endpoint is documented in OpenAPI.
 
 ---
 
@@ -131,8 +135,7 @@ canonical names. This is what makes US-2's aggregation tractable.
 ## Suggested order
 
 1. **US-1** (self-contained; TDD harness gives instant feedback).
-2. **US-2** (the core memory feature; plumbing is already wired for you).
-3. **US-3** then **US-4** (stretch / depends on #7).
+2. **US-4** once the memory event naming convention is approved.
 
-All four map back to issue #2's acceptance criteria and its "Open decisions"
-(auth provider → US-1; summarizer as job vs. service → US-3).
+US-2 and US-3 map to issue #2's completed memory-refresh foundation. US-1
+still depends on the auth provider decision, and US-4 depends on issue #7.

@@ -56,6 +56,94 @@ func TestServiceRecordsEventForScopedUser(t *testing.T) {
 	}
 }
 
+func TestServiceRefreshProfilePersistsDerivedMemory(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := NewInMemoryStore()
+	service := NewService(store, func() time.Time { return now })
+	ctx := scopedContext()
+
+	_, err := service.RecordEvent(ctx, RecordEventInput{
+		Source:  "workspace",
+		Type:    "attempt_passed",
+		Summary: "Solved graph traversal.",
+		Payload: json.RawMessage(`{"skill":"Graphs","problem_id":"graph-traversal","passed":true}`),
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent returned error: %v", err)
+	}
+
+	profile, err := service.RefreshProfile(ctx)
+	if err != nil {
+		t.Fatalf("RefreshProfile returned error: %v", err)
+	}
+	if !contains(profile.Strengths, "Graphs") {
+		t.Fatalf("expected Graphs strength, got %#v", profile.Strengths)
+	}
+
+	persisted, err := service.GetProfile(ctx)
+	if err != nil {
+		t.Fatalf("GetProfile returned error: %v", err)
+	}
+	if persisted.Summary != profile.Summary {
+		t.Fatal("expected refreshed profile to be persisted")
+	}
+}
+
+func TestServiceRefreshAllProfilesUsesEventScopes(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := NewInMemoryStore()
+	service := NewService(store, func() time.Time { return now })
+
+	if _, err := service.RecordEvent(scopedContext(), RecordEventInput{
+		Source:  "mcq",
+		Type:    "answer_wrong",
+		Summary: "Missed SQL join.",
+		Payload: json.RawMessage(`{"skill":"SQL","problem_id":"sql-join","correct":false}`),
+	}); err != nil {
+		t.Fatalf("RecordEvent returned error: %v", err)
+	}
+
+	count, err := service.RefreshAllProfiles(context.Background())
+	if err != nil {
+		t.Fatalf("RefreshAllProfiles returned error: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 refreshed profile, got %d", count)
+	}
+
+	profile, err := store.GetProfile(context.Background(), "tenant-1", "user-1")
+	if err != nil {
+		t.Fatalf("GetProfile returned error: %v", err)
+	}
+	if !contains(profile.GrowthEdges, "SQL") {
+		t.Fatalf("expected SQL growth edge, got %#v", profile.GrowthEdges)
+	}
+}
+
+func TestWorkerRunOnceRefreshesActiveProfiles(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := NewInMemoryStore()
+	service := NewService(store, func() time.Time { return now })
+	worker := NewWorker(service, time.Minute)
+
+	if _, err := service.RecordEvent(scopedContext(), RecordEventInput{
+		Source:  "chat",
+		Type:    "memory_note_created",
+		Summary: "Asked for concurrency practice.",
+		Payload: json.RawMessage(`{"skill":"Concurrency","problem_id":"goroutine-worker"}`),
+	}); err != nil {
+		t.Fatalf("RecordEvent returned error: %v", err)
+	}
+
+	count, err := worker.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce returned error: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 refreshed profile, got %d", count)
+	}
+}
+
 func scopedContext() context.Context {
 	ctx := context.Background()
 	ctx = auth.WithPrincipal(ctx, auth.Principal{

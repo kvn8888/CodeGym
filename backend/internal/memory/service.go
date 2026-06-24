@@ -90,22 +90,33 @@ func (s *Service) RecordEvent(ctx context.Context, input RecordEventInput) (Even
 // this after a RecordEvent, on a timer (memory.Worker), or by hand all converge
 // to the same profile for a given event log.
 //
-// The plumbing below is complete — the work left for you lives inside Summarize
-// (summarizer.go). Once Summarize derives real signal, this method needs no edits.
+// Summarize owns the derivation rules. Keep this service focused on orchestration:
+// read the event log, derive the next profile, then persist it.
 func (s *Service) RefreshProfile(ctx context.Context) (Profile, error) {
 	id, err := identityFromContext(ctx)
 	if err != nil {
 		return Profile{}, err
 	}
+	return s.RefreshProfileFor(ctx, id.tenantID, id.userID)
+}
 
-	events, err := s.store.ListEvents(ctx, id.tenantID, id.userID)
+// RefreshProfileFor is the explicit-scope version of RefreshProfile. Use this
+// outside HTTP request handling — workers, smoke tests, or GenAI orchestration
+// code should not have to fabricate auth/tenant middleware context just to
+// refresh memory.
+func (s *Service) RefreshProfileFor(ctx context.Context, tenantID, userID string) (Profile, error) {
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(userID) == "" {
+		return Profile{}, errors.New("memory refresh requires tenant id and user id")
+	}
+
+	events, err := s.store.ListEvents(ctx, tenantID, userID)
 	if err != nil {
 		return Profile{}, err
 	}
 
 	// Load the current profile so Summarize can preserve fields it doesn't
 	// recompute. A missing profile is fine — start from the default.
-	current, err := s.store.GetProfile(ctx, id.tenantID, id.userID)
+	current, err := s.store.GetProfile(ctx, tenantID, userID)
 	if errors.Is(err, ErrProfileNotFound) {
 		current = s.defaultProfile()
 	} else if err != nil {
@@ -113,10 +124,26 @@ func (s *Service) RefreshProfile(ctx context.Context) (Profile, error) {
 	}
 
 	next := Summarize(current, events, s.now())
-	if err := s.store.UpsertProfile(ctx, id.tenantID, id.userID, next); err != nil {
+	if err := s.store.UpsertProfile(ctx, tenantID, userID, next); err != nil {
 		return Profile{}, err
 	}
 	return next, nil
+}
+
+// RefreshAllProfiles re-derives profiles for every tenant/user pair that has
+// memory events. It is intentionally small: the worker owns scheduling, while
+// this service owns the memory semantics.
+func (s *Service) RefreshAllProfiles(ctx context.Context) (int, error) {
+	scopes, err := s.store.ListEventScopes(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, scope := range scopes {
+		if _, err := s.RefreshProfileFor(ctx, scope.TenantID, scope.UserID); err != nil {
+			return 0, err
+		}
+	}
+	return len(scopes), nil
 }
 
 func (s *Service) ListEvents(ctx context.Context) ([]Event, error) {

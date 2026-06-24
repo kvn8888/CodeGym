@@ -1,0 +1,42 @@
+name: React Doctor
+
+# Advisory React-specific static analysis for the frontend. Starts with
+# blocking: none and scope: full to map existing debt before enforcement.
+
+on:
+  pull_request:
+    branches: [codegym-v2]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/react-doctor.yml'
+  push:
+    branches: [codegym-v2]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/react-doctor.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: millionco/react-doctor@v2
+        with:
+          directory: frontend
+          blocking: none
+          scope: full
+          comment: false
+          review-comments: false

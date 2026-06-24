@@ -90,6 +90,7 @@ GET  /health
 GET  /ready
 
 GET  /api/v1/memory/profile
+POST /api/v1/memory/profile/refresh
 GET  /api/v1/memory/events
 POST /api/v1/memory/events
 ```
@@ -105,9 +106,9 @@ touching a database. When `NEON_CONNECTION_STRING` or `DATABASE_URL` is set, it
 attempts a Postgres ping and returns a generic `503` if the database is not
 reachable.
 
-Memory events are append-only. The in-memory store is a temporary adapter behind
-the `memory.Store` interface; the Neon/Postgres implementation should replace it
-without changing handlers or middleware.
+Memory events are append-only. Both the local in-memory store and the
+Neon/Postgres store sit behind the `memory.Store` interface, so handlers and
+middleware do not care which adapter is active.
 
 The server uses the in-memory store when no
 database URL is configured and the Postgres store when Doppler provides the Neon
@@ -122,7 +123,6 @@ tables with `CREATE TABLE IF NOT EXISTS`:
 - `user_memory_profiles`
 - `memory_events`
 
-This is intentionally not a migration framework yet. Since CodeGym has not used
-the old Turso path in production, the first Neon schema can start as a simple
-bootstrap and move to versioned migrations when the schema hardens.
-
+This is intentionally not a migration framework yet. The first Neon/Postgres
+schema starts as a simple bootstrap and can move to versioned migrations when
+the schema hardens.

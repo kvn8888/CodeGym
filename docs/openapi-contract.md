@@ -19,6 +19,7 @@ The first contract covers the existing backend:
 
 - `GET /health`
 - `GET /api/v1/memory/profile`
+- `POST /api/v1/memory/profile/refresh`
 - `GET /api/v1/memory/events`
 - `POST /api/v1/memory/events`
 

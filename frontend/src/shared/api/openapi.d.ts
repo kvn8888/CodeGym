@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/memory/profile/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebuild and persist the authenticated user's memory profile from events. */
+        post: operations["refreshMemoryProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/events": {
         parameters: {
             query?: never;
@@ -237,6 +254,32 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Memory profile loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryProfileEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["TenantForbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    refreshMemoryProfile: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional tenant override. If omitted, the backend uses the authenticated principal's default tenant. */
+                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Memory profile refreshed. */
             200: {
                 headers: {
                     [name: string]: unknown;

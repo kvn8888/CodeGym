@@ -27,6 +27,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected := http.NewServeMux()
 	memoryHandler := handlers.NewMemoryHandler(deps.Memory)
 	protected.HandleFunc("GET /api/v1/memory/profile", memoryHandler.Profile)
+	protected.HandleFunc("POST /api/v1/memory/profile/refresh", memoryHandler.RefreshProfile)
 	protected.HandleFunc("GET /api/v1/memory/events", memoryHandler.ListEvents)
 	protected.HandleFunc("POST /api/v1/memory/events", memoryHandler.RecordEvent)
 

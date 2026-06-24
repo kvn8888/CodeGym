@@ -26,6 +26,16 @@ func (h *MemoryHandler) Profile(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, profile)
 }
 
+func (h *MemoryHandler) RefreshProfile(w http.ResponseWriter, r *http.Request) {
+	profile, err := h.service.RefreshProfile(r.Context())
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "memory_refresh_failed", "Could not refresh memory profile.")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, profile)
+}
+
 func (h *MemoryHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	events, err := h.service.ListEvents(r.Context())
 	if err != nil {

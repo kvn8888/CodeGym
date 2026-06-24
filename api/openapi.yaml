@@ -48,6 +48,26 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/memory/profile/refresh:
+    post:
+      operationId: refreshMemoryProfile
+      summary: Rebuild and persist the authenticated user's memory profile from events.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Memory profile refreshed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryProfileEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/v1/memory/events:
     get:
       operationId: listMemoryEvents

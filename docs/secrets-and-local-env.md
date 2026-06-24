@@ -50,6 +50,20 @@ Required development secrets:
 | `CODEGYM_HOST` | Optional | Backend listen host. |
 | `CODEGYM_PORT` | Optional | Backend listen port. |
 
+### Memory API smoke test
+
+With the backend running under Doppler, validate the Postgres memory store over
+HTTP:
+
+```bash
+cd backend
+doppler run -p codegym -c dev -- ./scripts/memory_smoke_test.sh
+```
+
+The script uses `CODEGYM_DEV_AUTH_TOKEN` from Doppler when present. Without a
+static token, it falls back to `dev:smoke-test:personal-smoke`. Override with
+`CODEGYM_SMOKE_AUTH_TOKEN` or `CODEGYM_BASE_URL` when needed.
+
 ## Frontend
 
 The frontend currently does not require private secrets to run. Keep any future

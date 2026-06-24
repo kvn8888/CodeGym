@@ -95,6 +95,22 @@ GET  /api/v1/memory/events
 POST /api/v1/memory/events
 ```
 
+## Memory Smoke Test
+
+Validate the live memory HTTP routes against a running backend with Neon:
+
+```bash
+# Terminal 1
+doppler run -p codegym -c dev -- go run ./cmd/server
+
+# Terminal 2
+doppler run -p codegym -c dev -- ./scripts/memory_smoke_test.sh
+```
+
+The script checks `/ready`, records one memory event, verifies it via
+`GET /api/v1/memory/events`, and fetches `GET /api/v1/memory/profile`. It exits
+non-zero when any step fails. See `scripts/memory_smoke_test.sh` for auth token
+and override options.
 
 ## Health vs Readiness
 

@@ -83,6 +83,9 @@ token and maps it to `CODEGYM_DEV_USER_ID` / `CODEGYM_DEV_TENANT_ID`.
 See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
 full auth -> identity -> tenant request flow.
 
+Memory event `source` and `type` naming for emitters lives in
+[../docs/memory-event-naming-guide-v0.md](../docs/memory-event-naming-guide-v0.md).
+
 ## Current Routes
 
 ```text

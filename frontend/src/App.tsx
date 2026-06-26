@@ -1,4 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ThemeProvider } from './components/theme-provider';
+import { TooltipProvider } from './components/ui/tooltip';
 import { Layout } from './shared/components/Layout';
 import { ProblemListPage } from './features/problems/ProblemListPage';
 import { ProblemDetailPage } from './features/problems/ProblemDetailPage';
@@ -9,18 +11,22 @@ import { MemoryPage } from './features/memory/MemoryPage';
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<ProblemListPage />} />
-          <Route path="/problems/:id" element={<ProblemDetailPage />} />
-          <Route path="/generate" element={<GeneratePage />} />
-          <Route path="/marathon" element={<MarathonPage />} />
-          <Route path="/memory" element={<MemoryPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider defaultTheme="light">
+      <TooltipProvider delayDuration={200}>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<ProblemListPage />} />
+              <Route path="/problems/:id" element={<ProblemDetailPage />} />
+              <Route path="/generate" element={<GeneratePage />} />
+              <Route path="/marathon" element={<MarathonPage />} />
+              <Route path="/memory" element={<MemoryPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   );
 }
 

@@ -1,45 +1,85 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap');
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
 
 /*
- * Vercel Geist light theme.
- * Source: https://vercel.com/design.md
- * The old CodeGym bone/parchment/ink names remain as compatibility aliases
- * while the branch migrates components to the Vercel token names.
+ * shadcn/ui — default "neutral" theme (new visual identity).
+ * Migrated from the previous Vercel Geist token system. Legacy `gray-*` /
+ * `background-*` utilities are bridged onto these semantic tokens in the
+ * `@theme inline` block below, so components that haven't been converted to
+ * native shadcn classes yet still pick up the neutral palette + dark mode.
+ */
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.269 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.371 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.922 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+/*
+ * Fixed semantic accent scales (difficulty chips, status pills, prose links).
+ * These stay as explicit values — they read identically in light + dark.
  */
 @theme {
-  --font-display: 'Geist', ui-sans-serif, system-ui, sans-serif;
-  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', ui-monospace, monospace;
-
-  --color-primary: #171717;
-  --color-secondary: #4d4d4d;
-  --color-tertiary: #006bff;
-  --color-neutral: #f2f2f2;
-  --color-background-100: #ffffff;
-  --color-background-200: #fafafa;
-
-  --color-gray-100: #f2f2f2;
-  --color-gray-200: #ebebeb;
-  --color-gray-300: #e6e6e6;
-  --color-gray-400: #eaeaea;
-  --color-gray-500: #c9c9c9;
-  --color-gray-600: #a8a8a8;
-  --color-gray-700: #8f8f8f;
-  --color-gray-800: #7d7d7d;
-  --color-gray-900: #4d4d4d;
-  --color-gray-1000: #171717;
-  --color-gray-alpha-100: #0000000d;
-  --color-gray-alpha-200: #00000015;
-  --color-gray-alpha-300: #0000001a;
-  --color-gray-alpha-400: #00000014;
-  --color-gray-alpha-500: #00000036;
-  --color-gray-alpha-600: #0000003d;
-  --color-gray-alpha-700: #00000070;
-  --color-gray-alpha-800: #00000082;
-  --color-gray-alpha-900: #000000b3;
-  --color-gray-alpha-1000: #000000e8;
-
   --color-blue-100: #f0f7ff;
   --color-blue-200: #e9f4ff;
   --color-blue-300: #dfefff;
@@ -90,19 +130,92 @@
   --color-purple-700: #a000f8;
   --color-pink-100: #ffe8f6;
   --color-pink-700: #f22782;
+}
 
-  /* Compatibility aliases for existing components during the branch refactor. */
-  --color-bone: #fafafa;
-  --color-shell: #ffffff;
-  --color-parchment: #fafafa;
-  --color-grain: #f2f2f2;
-  --color-soft: #fafafa;
-  --color-chalk: #eaeaea;
-  --color-ink: #171717;
-  --color-ink-soft: #4d4d4d;
-  --color-graphite: #4d4d4d;
-  --color-ash: #8f8f8f;
-  --color-faint: #a8a8a8;
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  --font-display: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'SF Mono', 'Cascadia Code', ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ── Geist → shadcn neutral bridge ──────────────────────────────────────
+   * Legacy utilities map onto semantic tokens so un-migrated components adopt
+   * the neutral identity and respond to dark mode. Migrate components to the
+   * native shadcn classes (bg-card, text-foreground, border-border, …) to
+   * retire these. */
+  --color-background-100: var(--card);
+  --color-background-200: var(--background);
+  --color-gray-1000: var(--foreground);
+  --color-gray-900: var(--muted-foreground);
+  --color-gray-800: var(--muted-foreground);
+  --color-gray-700: var(--muted-foreground);
+  --color-gray-600: color-mix(in oklab, var(--foreground) 35%, var(--background));
+  --color-gray-500: color-mix(in oklab, var(--foreground) 25%, var(--background));
+  --color-gray-400: var(--border);
+  --color-gray-300: var(--border);
+  --color-gray-200: var(--border);
+  --color-gray-100: var(--muted);
+  --color-gray-alpha-100: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --color-gray-alpha-200: color-mix(in oklab, var(--foreground) 8%, transparent);
+  --color-gray-alpha-300: color-mix(in oklab, var(--foreground) 10%, transparent);
+  --color-gray-alpha-400: color-mix(in oklab, var(--foreground) 14%, transparent);
+  --color-gray-alpha-500: color-mix(in oklab, var(--foreground) 21%, transparent);
+  --color-gray-alpha-600: color-mix(in oklab, var(--foreground) 24%, transparent);
+  --color-gray-alpha-700: color-mix(in oklab, var(--foreground) 44%, transparent);
+  --color-gray-alpha-800: color-mix(in oklab, var(--foreground) 51%, transparent);
+  --color-gray-alpha-900: color-mix(in oklab, var(--foreground) 70%, transparent);
+  --color-gray-alpha-1000: color-mix(in oklab, var(--foreground) 91%, transparent);
+
+  /* Neutral compatibility aliases from the old palette. */
+  --color-bone: var(--background);
+  --color-shell: var(--card);
+  --color-parchment: var(--background);
+  --color-grain: var(--muted);
+  --color-soft: var(--background);
+  --color-chalk: var(--border);
+  --color-ink: var(--foreground);
+  --color-ink-soft: var(--muted-foreground);
+  --color-graphite: var(--muted-foreground);
+  --color-ash: var(--muted-foreground);
+  --color-faint: color-mix(in oklab, var(--foreground) 35%, var(--background));
+
+  /* Colored compatibility aliases. */
   --color-blue: #006bff;
   --color-blue-hover: #0059ec;
   --color-moss: #28a948;
@@ -122,10 +235,19 @@
   --color-honey-tint: #fff6de;
 }
 
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
 :root {
   --geist-ease: cubic-bezier(0.175, 0.885, 0.32, 1.1);
-  --cg-border-subtle: var(--color-gray-alpha-200);
-  --cg-border-strong: var(--color-gray-alpha-400);
+  --cg-border-subtle: var(--border);
+  --cg-border-strong: color-mix(in oklab, var(--foreground) 16%, transparent);
   --cg-shadow: 0 2px 2px rgba(0, 0, 0, 0.04);
   --cg-card-shadow: 0 2px 2px rgba(0, 0, 0, 0.04);
   --cg-popover-shadow:
@@ -136,35 +258,28 @@
     0 1px 1px rgba(0, 0, 0, 0.02),
     0 8px 16px -4px rgba(0, 0, 0, 0.04),
     0 24px 32px -8px rgba(0, 0, 0, 0.06);
-  --cg-focus-ring: 0 0 0 2px var(--color-background-100), 0 0 0 4px var(--color-blue-700);
+  --cg-focus-ring: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
 
-  /*
-   * transitions-dev motion tokens (per-snippet install).
-   * Semantic names from the skill; color/radius values mapped to the
-   * Vercel Geist design system. Timing + easing are kept verbatim.
-   */
-  /* Modal open / close (06) */
+  /* Motion tokens — themed where it matters so transitions follow dark mode. */
   --modal-open-dur: 250ms;
   --modal-close-dur: 150ms;
   --modal-scale: 0.96;
   --modal-scale-close: 0.96;
   --modal-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  /* Tabs sliding (16) — colors mapped to Geist tokens */
   --tabs-dur: 250ms;
   --tabs-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --tabs-text-muted: var(--color-gray-700);
-  --tabs-text-active: var(--color-gray-1000);
-  --tabs-bar-bg: var(--color-gray-100);
-  --tabs-pill-bg: var(--color-background-100);
-  /* Tooltip open / close (17) — dark label over the light sidebar */
+  --tabs-text-muted: var(--muted-foreground);
+  --tabs-text-active: var(--foreground);
+  --tabs-bar-bg: var(--muted);
+  --tabs-pill-bg: var(--background);
   --tt-in-dur: 150ms;
   --tt-out-dur: 50ms;
   --tt-scale: 0.98;
   --tt-delay: 80ms;
   --tt-in-ease: ease-out;
   --tt-out-ease: ease-out;
-  --tt-bg: var(--color-gray-1000);
-  --tt-fg: var(--color-background-100);
+  --tt-bg: var(--primary);
+  --tt-fg: var(--primary-foreground);
 }
 
 html {
@@ -174,15 +289,13 @@ html {
 
 body {
   margin: 0;
-  background-color: var(--color-background-200);
-  color: var(--color-gray-1000);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background-color: var(--color-gray-1000);
-  color: var(--color-background-100);
+  background-color: var(--foreground);
+  color: var(--background);
 }
 
 code,
@@ -215,6 +328,16 @@ pre,
   to { transform: rotate(360deg); }
 }
 
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+
 @keyframes cgfade {
   from {
     opacity: 0;
@@ -232,9 +355,9 @@ pre,
 
 /* ─────────────────────────────────────────────────────────────────────────
  * transitions-dev snippets (modal 06, tabs 16, tooltip 17).
- * Pasted from the skill reference files. Timing/easing/transform and
- * will-change are verbatim; only positioning + design-system radius are
- * adapted to this app (documented inline). Each ships a reduced-motion guard.
+ * Timing/easing/transform and will-change are verbatim; positioning + the
+ * theme colors are mapped to the shadcn tokens above. Each ships a
+ * reduced-motion guard.
  * ───────────────────────────────────────────────────────────────────────── */
 
 /* Modal open / close (06) */
@@ -261,7 +384,6 @@ pre,
     transform var(--modal-close-dur) var(--modal-ease),
     opacity   var(--modal-close-dur) var(--modal-ease);
 }
-/* Backdrop fade paired with the modal scale (app addition, same timing). */
 .t-modal-backdrop {
   opacity: 0;
   transition: opacity var(--modal-open-dur) var(--modal-ease);
@@ -274,8 +396,7 @@ pre,
   transition: opacity var(--modal-close-dur) var(--modal-ease);
 }
 
-/* Tabs sliding (16) — radius/padding/height mapped to the Geist segmented
- * controls (rounded-md bar, ~5px pill); the slide transition is verbatim. */
+/* Tabs sliding (16) */
 .t-tabs {
   position: relative;
   display: inline-flex;
@@ -322,8 +443,7 @@ pre,
   pointer-events: none;
 }
 
-/* Tooltip open / close (17) — positioning adapted to the LEFT sidebar
- * (tooltip sits to the RIGHT of the trigger); transition mechanics verbatim. */
+/* Tooltip open / close (17) — adapted for the left sidebar (opens to the right). */
 .t-tt-wrap {
   position: relative;
 }
@@ -348,14 +468,10 @@ pre,
   opacity: 0;
   pointer-events: none;
   z-index: 50;
-  /* Default rule controls the LEAVE state. transition-delay
-     stays unset so leaving plays without delay. */
   transition:
     opacity   var(--tt-out-dur) var(--tt-out-ease),
     transform var(--tt-out-dur) var(--tt-out-ease);
 }
-/* The delay belongs ONLY to the hover/focus rule so leaving the trigger
-   snaps the delay back to 0 and the disappear plays immediately. */
 .t-tt-wrap:hover .t-tt,
 .t-tt-trigger:focus-visible + .t-tt {
   opacity: 1;
@@ -365,12 +481,32 @@ pre,
   transition-delay: var(--tt-delay);
 }
 
+/* Success check (10) — celebratory stroke-draw for a correct answer. */
+@keyframes t-check-badge {
+  0% { opacity: 0; transform: translateY(30px) rotate(80deg) scale(0.8); filter: blur(8px); }
+  60% { opacity: 1; filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); filter: blur(0); }
+}
+@keyframes t-check-draw {
+  to { stroke-dashoffset: 0; }
+}
+.t-check {
+  animation: t-check-badge 500ms cubic-bezier(0.34, 1.35, 0.64, 1) both;
+}
+.t-check path {
+  stroke-dasharray: var(--t-check-len, 22);
+  stroke-dashoffset: var(--t-check-len, 22);
+  animation: t-check-draw 400ms cubic-bezier(0.22, 1, 0.36, 1) 120ms forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .t-modal,
   .t-modal-backdrop { transition: none !important; }
   .t-tabs-pill,
   .t-tab { transition: none !important; }
   .t-tt { transition: none !important; }
+  .t-check,
+  .t-check path { animation: none !important; }
 }
 
 .marker-accent {
@@ -382,9 +518,9 @@ pre,
 }
 
 @keyframes grid-blink {
-  0%, 100% { background-color: var(--color-gray-200); }
-  4% { background-color: var(--color-gray-1000); }
-  24% { background-color: var(--color-gray-200); }
+  0%, 100% { background-color: var(--muted); }
+  4% { background-color: var(--foreground); }
+  24% { background-color: var(--muted); }
 }
 
 :where(.prose-brutalist, .prose-geist) h1,
@@ -395,7 +531,7 @@ pre,
   letter-spacing: -0.02em;
   margin-top: 1.5em;
   margin-bottom: 0.5em;
-  color: var(--color-gray-1000);
+  color: var(--foreground);
 }
 
 :where(.prose-brutalist, .prose-geist) h1 { font-size: 1.35em; line-height: 1.35; }
@@ -408,16 +544,16 @@ pre,
 }
 
 :where(.prose-brutalist, .prose-geist) code {
-  background: var(--color-gray-100);
-  border: 1px solid var(--color-gray-alpha-200);
+  background: var(--muted);
+  border: 1px solid var(--border);
   padding: 0.1em 0.35em;
   font-size: 0.9em;
   border-radius: 6px;
 }
 
 :where(.prose-brutalist, .prose-geist) pre {
-  background: #171717;
-  color: #fafafa;
+  background: oklch(0.205 0 0);
+  color: oklch(0.985 0 0);
   padding: 1em;
   overflow-x: auto;
   margin: 1em 0;
@@ -443,7 +579,7 @@ pre,
 }
 
 :where(.prose-brutalist, .prose-geist) li::marker {
-  color: var(--color-gray-700);
+  color: var(--muted-foreground);
 }
 
 :where(.prose-brutalist, .prose-geist) a {
@@ -453,15 +589,15 @@ pre,
 }
 
 :where(.prose-brutalist, .prose-geist) blockquote {
-  border-left: 2px solid var(--color-gray-alpha-400);
+  border-left: 2px solid var(--border);
   padding-left: 1em;
-  color: var(--color-gray-900);
+  color: var(--muted-foreground);
   margin: 1em 0;
 }
 
 .monaco-editor .margin,
 .monaco-editor .monaco-editor-background {
-  background-color: #171717 !important;
+  background-color: #1e1e1e !important;
 }
 
 .chat-motion-shell {
@@ -497,13 +633,13 @@ pre,
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-gray-alpha-300); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-gray-alpha-500); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
 
 .cg-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .cg-scroll::-webkit-scrollbar-track { background: transparent; }
 .cg-scroll::-webkit-scrollbar-thumb {
-  background: var(--color-gray-alpha-300);
+  background: var(--border);
   border-radius: 999px;
 }
-.cg-scroll::-webkit-scrollbar-thumb:hover { background: var(--color-gray-alpha-500); }
+.cg-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }

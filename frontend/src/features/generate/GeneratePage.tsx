@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import {
-  ArrowRight,
-  ChevronDown,
-  Command,
-  Sparkles,
-} from 'lucide-react';
+import { ArrowRight, Command, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 import { SlidingTabs } from '../../shared/components/SlidingTabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { QuestionModal, type Question, type Answer } from './QuestionModal';
 
 type GenerateView = 'command' | 'spotlight';
@@ -181,26 +183,16 @@ export function GeneratePage() {
     <div className="min-h-screen bg-background-100 px-6 py-8">
       <div className="mx-auto flex w-full max-w-[1200px] justify-end">
         <div className="flex items-center gap-3">
-          <span className="hidden text-xs text-gray-700 sm:inline">
-            Generate Style
-          </span>
-          <div className="flex items-center rounded-md border border-gray-alpha-200 bg-gray-100 p-0.5">
-            {(['command', 'spotlight'] as GenerateView[]).map((mode) => (
-              <motion.button
-                key={mode}
-                type="button"
-                onClick={() => setView(mode)}
-                whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
-                className={`cg-focus rounded-[5px] px-3 py-1.5 text-sm font-medium capitalize transition-colors ${
-                  view === mode
-                    ? 'bg-background-100 text-gray-1000 shadow-[0_1px_1px_rgba(0,0,0,0.04)]'
-                    : 'text-gray-700 hover:text-gray-1000'
-                }`}
-              >
-                {mode}
-              </motion.button>
-            ))}
-          </div>
+          <span className="text-muted-foreground hidden text-xs sm:inline">Generate Style</span>
+          <SlidingTabs
+            ariaLabel="Generate style"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'command', label: 'Command' },
+              { value: 'spotlight', label: 'Spotlight' },
+            ]}
+          />
         </div>
       </div>
 
@@ -333,21 +325,18 @@ function CommandGenerateView({
               }))}
             />
 
-            <label className="flex h-10 items-center gap-2 rounded-md border border-gray-alpha-200 bg-background-100 px-3 text-sm text-gray-900">
-              <span className="h-2 w-2 rounded-sm bg-blue-700" aria-hidden="true" />
-              <select
-                value={language}
-                onChange={(event) => onLanguageChange(event.target.value)}
-                className="appearance-none bg-transparent text-sm text-gray-900 focus-visible:outline-none"
-                aria-label="Language"
-              >
-                <option value="python">Python</option>
-                <option value="typescript">TypeScript</option>
-                <option value="go">Go</option>
-                <option value="java">Java</option>
-              </select>
-              <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />
-            </label>
+            <Select value={language} onValueChange={onLanguageChange}>
+              <SelectTrigger className="h-10" aria-label="Language">
+                <span className="h-2 w-2 rounded-sm bg-blue-700" aria-hidden="true" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="python">Python</SelectItem>
+                <SelectItem value="typescript">TypeScript</SelectItem>
+                <SelectItem value="go">Go</SelectItem>
+                <SelectItem value="java">Java</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <textarea

@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
+import { CircleHelpIcon } from 'lucide-react';
 import { motion } from 'motion/react';
+
 import { HelpFlashcard } from './HelpFlashcard';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,15 +91,31 @@ const MOCK_QUESTIONS: MarathonQuestion[] = [
   },
 ];
 
+// ── Success check (transitions-dev 10) ───────────────────────────────────────
+
+/** Animated checkmark that draws itself in when a correct answer is confirmed. */
+function SuccessCheck() {
+  return (
+    <svg
+      className="t-check size-4 text-green-700"
+      style={{ ['--t-check-len' as string]: 23 } as React.CSSProperties}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 /**
  * MarathonPage — timed multiple-choice question marathon.
- *
- * The LLM generates a set of 5–10 questions based on the user's memory file.
- * Each question is timed. The results (right/wrong, time, help usage) feed
- * back into the user's memory to reinforce known concepts and expand into
- * new territory.
  *
  * Three states:
  * - idle: start screen (select topic, see previous scores)
@@ -176,7 +198,9 @@ export function MarathonPage() {
     // Block option clicks until the next frame to prevent the mouseup
     // from the disappearing Next button from selecting an option.
     advancingRef.current = true;
-    requestAnimationFrame(() => { advancingRef.current = false; });
+    requestAnimationFrame(() => {
+      advancingRef.current = false;
+    });
 
     if (questionIndex < questions.length - 1) {
       setQuestionIndex((i) => i + 1);
@@ -199,24 +223,21 @@ export function MarathonPage() {
   // ── Idle state: start screen ─────────────────────────────────────────────
   if (phase === 'idle') {
     return (
-      <div className="mx-auto mt-12 max-w-lg rounded-xl border border-gray-alpha-200 bg-background-100 px-6 py-16 text-center" style={{ boxShadow: 'var(--cg-card-shadow)' }}>
-        <h1 className="mb-4 text-[48px] font-semibold leading-[56px] tracking-[-2.88px] text-gray-1000">
-          MCQ Marathon
-        </h1>
-        <p className="mx-auto mb-10 max-w-sm text-sm leading-6 text-gray-900">
-          Timed multiple-choice reps. The AI adapts by reinforcing what you know,
-          stretching where you don't.
-        </p>
-        <motion.button
-          onClick={handleStart}
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.96 }}
-          transition={{ type: 'spring', stiffness: 460, damping: 26 }}
-          className="cg-focus h-12 rounded-md bg-gray-1000 px-7 text-base font-medium text-background-100 transition-colors hover:bg-gray-900"
-          style={{ boxShadow: 'var(--cg-card-shadow)' }}
-        >
-          Start Marathon ({questions.length} questions)
-        </motion.button>
+      <div className="mx-auto mt-12 max-w-lg">
+        <Card className="gap-0 px-6 py-16 text-center">
+          <h1 className="mb-4 text-[48px] font-semibold leading-[56px] tracking-[-2.88px]">
+            MCQ Marathon
+          </h1>
+          <p className="text-muted-foreground mx-auto mb-10 max-w-sm text-sm leading-6">
+            Timed multiple-choice reps. The AI adapts by reinforcing what you know, stretching where
+            you don't.
+          </p>
+          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="inline-block">
+            <Button size="lg" onClick={handleStart}>
+              Start Marathon ({questions.length} questions)
+            </Button>
+          </motion.div>
+        </Card>
       </div>
     );
   }
@@ -229,75 +250,65 @@ export function MarathonPage() {
 
     return (
       <div className="mx-auto max-w-lg px-6 py-24">
-        <h1 className="mb-8 text-center text-[40px] font-semibold leading-[48px] tracking-[-2.4px] text-gray-1000">
+        <h1 className="mb-8 text-center text-[40px] font-semibold leading-[48px] tracking-[-2.4px]">
           Results
         </h1>
 
-        {/* Score card */}
         <motion.div
           initial={{ opacity: 0, y: 20, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-          className="mb-6 rounded-xl border border-gray-alpha-200 bg-background-100 p-6"
-          style={{ boxShadow: 'var(--cg-card-shadow)' }}
+          className="mb-6"
         >
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px] text-gray-1000">
-                {correct}<span className="text-3xl text-gray-700">/{results.length}</span>
+          <Card className="gap-0 p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px]">
+                  {correct}
+                  <span className="text-muted-foreground text-3xl">/{results.length}</span>
+                </div>
+                <div className="text-muted-foreground mt-2 text-sm">correct answers</div>
               </div>
-              <div className="mt-2 text-sm text-gray-900">correct answers</div>
+              <div className="text-right">
+                <div className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px] text-blue-700">
+                  {avgTime}s
+                </div>
+                <div className="text-muted-foreground mt-2 text-sm">avg per question</div>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px] text-blue-700">{avgTime}s</div>
-              <div className="mt-2 text-sm text-gray-900">avg per question</div>
-            </div>
-          </div>
 
-          {/* Per-question breakdown */}
-          <div className="mt-4 flex flex-col gap-2 border-t border-gray-alpha-200 pt-4">
-            {results.map((r, i) => (
-              <div key={r.questionId} className="flex items-center gap-3 text-xs">
-                <span className="w-4 text-gray-700">{i + 1}.</span>
-                <span
-                  className="flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold"
-                  style={{
-                    color: 'var(--color-background-100)',
-                    backgroundColor: r.correct ? 'var(--color-green-700)' : 'var(--color-red-800)',
-                  }}
-                >
-                  {r.correct ? '✓' : '✗'}
-                </span>
-                <span className="flex-1 truncate text-gray-900">
-                  {questions.find((q) => q.id === r.questionId)?.concept}
-                </span>
-                <span className="text-gray-700">{Math.round(r.timeMs / 1000)}s</span>
-                {r.usedHelp && (
+            <div className="mt-4 flex flex-col gap-2 border-t pt-4">
+              {results.map((r, i) => (
+                <div key={r.questionId} className="flex items-center gap-3 text-xs">
+                  <span className="text-muted-foreground w-4">{i + 1}.</span>
                   <span
-                    className="rounded-full px-2 py-0.5 text-[10px] font-bold"
-                    style={{ color: 'var(--color-amber-900)', backgroundColor: 'var(--color-amber-100)' }}
+                    className={cn(
+                      'flex size-4 items-center justify-center rounded-full text-[10px] font-bold text-white',
+                      r.correct ? 'bg-green-700' : 'bg-red-800',
+                    )}
                   >
-                    help
+                    {r.correct ? '✓' : '✗'}
                   </span>
-                )}
-              </div>
-            ))}
-          </div>
+                  <span className="text-muted-foreground flex-1 truncate">
+                    {questions.find((q) => q.id === r.questionId)?.concept}
+                  </span>
+                  <span className="text-muted-foreground">{Math.round(r.timeMs / 1000)}s</span>
+                  {r.usedHelp && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                      help
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
         </motion.div>
 
-        <div className="flex gap-3 justify-center">
-          <button
-            onClick={handleStart}
-            className="cg-focus h-10 rounded-md bg-gray-1000 px-5 text-sm font-medium text-background-100 transition-colors hover:bg-gray-900"
-          >
-            Try Again
-          </button>
-          <button
-            onClick={() => setPhase('idle')}
-            className="cg-focus h-10 rounded-md border border-gray-alpha-200 bg-background-100 px-5 text-sm font-medium text-gray-900 transition-colors hover:border-gray-alpha-400 hover:text-gray-1000"
-          >
+        <div className="flex justify-center gap-3">
+          <Button onClick={handleStart}>Try Again</Button>
+          <Button variant="outline" onClick={() => setPhase('idle')}>
             Back
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -306,68 +317,36 @@ export function MarathonPage() {
   // ── Active state: question display ───────────────────────────────────────
   return (
     <div className="mx-auto max-w-lg px-6 py-12">
-      {/* Header: question counter + timer + score */}
-      <div className="flex items-center justify-between mb-8">
-        <span className="text-sm font-medium text-gray-700">
+      <div className="mb-8 flex items-center justify-between">
+        <span className="text-muted-foreground text-sm font-medium">
           {questionIndex + 1} of {questions.length}
         </span>
         <div className="flex items-center gap-4">
-          {/* Timer display */}
-          <span className="font-mono text-sm tabular-nums text-gray-900">{elapsed}s</span>
-          {/* Score tally */}
-          <span className="text-sm text-gray-700">
+          <span className="text-muted-foreground font-mono text-sm tabular-nums">{elapsed}s</span>
+          <span className="text-muted-foreground text-sm">
             {results.filter((r) => r.correct).length}✓ {results.filter((r) => !r.correct).length}✗
           </span>
         </div>
       </div>
 
-      {/* Progress bar */}
-      <div className="mb-8 h-2 rounded-full border border-gray-alpha-200 bg-gray-100">
-        <motion.div
-          className="h-full rounded-full bg-gray-1000"
-          animate={{ width: `${((questionIndex + 1) / questions.length) * 100}%` }}
-          transition={{ type: 'spring', stiffness: 200, damping: 26 }}
-        />
-      </div>
+      <Progress value={((questionIndex + 1) / questions.length) * 100} className="mb-8" />
 
-      {/* Question text */}
-      <h2 className="mb-6 text-2xl font-semibold leading-8 tracking-[-0.96px] text-gray-1000">{currentQ.text}</h2>
+      <h2 className="mb-6 text-2xl font-semibold leading-8 tracking-[-0.96px]">{currentQ.text}</h2>
 
-      {/* Option buttons — radio-style selection (same behavior as QuestionModal) */}
-      <div className="flex flex-col gap-3 mb-8">
+      {/* Option buttons — radio-style selection */}
+      <div className="mb-8 flex flex-col gap-3">
         {currentQ.options.map((option, i) => {
           const isSelected = selectedIndex === i;
           const isCorrect = i === currentQ.correctIndex;
 
-          // Before confirm: radio highlight on the selected option only.
-          // After confirm: moss (correct) and rust (wrong) feedback states.
-          const baseStyle = 'border-gray-alpha-200 bg-background-100 text-gray-900 hover:border-gray-alpha-400 hover:bg-gray-100';
-          const selectedStyle = 'border-blue-400 bg-blue-100 text-gray-1000 font-medium';
-          const mutedStyle = 'border-gray-alpha-200 bg-background-100 text-gray-700';
-
-          let feedbackStyle: React.CSSProperties = {};
-          let classes = baseStyle;
-
+          let stateClasses =
+            'border bg-background text-muted-foreground hover:bg-accent/50';
           if (confirmed) {
-            if (isCorrect) {
-              classes = mutedStyle; // base, override with inline
-              feedbackStyle = {
-                borderColor: 'var(--color-green-400)',
-                backgroundColor: 'var(--color-green-100)',
-                color: 'var(--color-green-900)',
-              };
-            } else if (isSelected) {
-              classes = mutedStyle;
-              feedbackStyle = {
-                borderColor: 'var(--color-red-400)',
-                backgroundColor: 'var(--color-red-100)',
-                color: 'var(--color-red-900)',
-              };
-            } else {
-              classes = mutedStyle;
-            }
+            if (isCorrect) stateClasses = 'border-green-400 bg-green-100 text-green-900';
+            else if (isSelected) stateClasses = 'border-red-400 bg-red-100 text-red-900';
+            else stateClasses = 'border bg-background text-muted-foreground';
           } else if (isSelected) {
-            classes = selectedStyle;
+            stateClasses = 'border-primary bg-accent text-foreground font-medium';
           }
 
           return (
@@ -375,43 +354,47 @@ export function MarathonPage() {
               key={i}
               onClick={() => handleSelect(i)}
               disabled={confirmed}
-              style={feedbackStyle}
-              className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition-all duration-150 ${classes}`}
+              className={cn(
+                'w-full rounded-lg border px-4 py-3 text-left text-sm transition-all duration-150',
+                stateClasses,
+              )}
             >
               <div className="flex items-center gap-3">
-                {/* Radio circle — filled for selected option and correct answer after confirm */}
                 <div
-                  className="w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors"
-                  style={
+                  className={cn(
+                    'flex size-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
                     confirmed
-                      ? {
-                          borderColor: isCorrect
-                            ? 'var(--color-green-700)'
-                            : isSelected
-                              ? 'var(--color-red-800)'
-                              : undefined,
-                        }
-                      : { borderColor: isSelected ? 'var(--color-blue-700)' : undefined }
-                  }
+                      ? isCorrect
+                        ? 'border-green-700'
+                        : isSelected
+                          ? 'border-red-800'
+                          : 'border-input'
+                      : isSelected
+                        ? 'border-primary'
+                        : 'border-input',
+                  )}
                 >
                   {(isSelected || (confirmed && isCorrect)) && (
                     <div
-                      className="w-2 h-2 rounded-full"
-                      style={{
-                        backgroundColor: confirmed
-                          ? (isCorrect ? 'var(--color-green-700)' : 'var(--color-red-800)')
-                          : 'var(--color-blue-700)',
-                      }}
+                      className={cn(
+                        'size-2 rounded-full',
+                        confirmed
+                          ? isCorrect
+                            ? 'bg-green-700'
+                            : 'bg-red-800'
+                          : 'bg-primary',
+                      )}
                     />
                   )}
                 </div>
                 {option}
-                {/* Small label after confirming */}
                 {confirmed && isCorrect && (
-                  <span className="ml-auto text-xs font-semibold" style={{ color: 'var(--color-green-900)' }}>✓ Correct</span>
+                  <span className="ml-auto flex items-center gap-1 text-xs font-semibold text-green-700">
+                    <SuccessCheck /> Correct
+                  </span>
                 )}
                 {confirmed && isSelected && !isCorrect && (
-                  <span className="ml-auto text-xs font-semibold" style={{ color: 'var(--color-red-900)' }}>✗ Wrong</span>
+                  <span className="ml-auto text-xs font-semibold text-red-900">✗ Wrong</span>
                 )}
               </div>
             </button>
@@ -421,41 +404,28 @@ export function MarathonPage() {
 
       {/* Footer: Help + Confirm/Next */}
       <div className="flex items-center justify-between">
-        {/* Help button (only enabled before confirming) */}
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={handleHelp}
           disabled={confirmed}
-          className="flex items-center gap-1.5 text-sm text-gray-900 transition-colors hover:text-gray-1000 disabled:cursor-not-allowed disabled:text-gray-700"
+          className="text-muted-foreground hover:text-foreground"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01" />
-          </svg>
+          <CircleHelpIcon />
           Help
-        </button>
+        </Button>
 
-        {/* Confirm button (before confirming) or Next button (after confirming) */}
         {!confirmed && selectedIndex !== null && (
-          <motion.button
-            onClick={handleConfirm}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileTap={{ scale: 0.95 }}
-            className="cg-focus h-10 rounded-md bg-gray-1000 px-5 text-sm font-medium text-background-100 transition-colors hover:bg-gray-900"
-          >
-            Confirm
-          </motion.button>
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+            <Button onClick={handleConfirm}>Confirm</Button>
+          </motion.div>
         )}
         {confirmed && (
-          <motion.button
-            onClick={handleNext}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileTap={{ scale: 0.95 }}
-            className="cg-focus h-10 rounded-md bg-blue-700 px-5 text-sm font-medium text-white transition-colors hover:bg-blue-800"
-          >
-            {questionIndex < questions.length - 1 ? 'Next' : 'See Results'}
-          </motion.button>
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+            <Button onClick={handleNext} className="bg-blue-700 text-white hover:bg-blue-800">
+              {questionIndex < questions.length - 1 ? 'Next' : 'See Results'}
+            </Button>
+          </motion.div>
         )}
       </div>
 

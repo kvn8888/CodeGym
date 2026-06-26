@@ -1,10 +1,18 @@
-# Auth, Identity, and Tenant Scope
+# Auth, Identity, and Workspace Scope
 
-This document explains the current M1 backend auth flow. The important split is:
+This document explains the current backend auth flow. The product model is
+**multi-user personal workspaces with data isolation**, not business SaaS
+organization tenancy.
+
+Important split:
 
 - `auth` identifies the caller for this request.
 - `identity` ensures the caller has durable app identity rows.
-- `tenant` chooses and enforces the active tenant scope.
+- workspace scope chooses the caller's personal workspace for scoped data.
+
+Implementation note: current package, header, and database names still use
+`tenant` / `tenant_id`. Treat those as internal scope names for now. Do not
+expand them into organization/team tenancy unless product scope changes.
 
 ## Request Pipeline
 
@@ -14,7 +22,7 @@ Protected routes under `/api/v1/` run through middleware in this order:
 Authorization header
   -> auth.Middleware
   -> identity.Middleware
-  -> tenant.Middleware
+  -> tenant.Middleware   # internal name for personal workspace scope
   -> API handler
 ```
 
@@ -30,10 +38,11 @@ Current implementation:
 
 - Reads `Authorization: Bearer <token>`.
 - Uses the `Authenticator` interface.
-- Uses `DevAuthenticator` for M1 local/backend work.
+- Uses `Auth0Authenticator` when Auth0 is configured.
+- Uses `DevAuthenticator` for local fallback.
 - Stores an `auth.Principal` in request context.
 
-The principal shape is:
+The principal shape still uses tenant field names internally:
 
 ```go
 type Principal struct {
@@ -43,10 +52,18 @@ type Principal struct {
 }
 ```
 
+For product reasoning, read those fields as:
+
+```text
+UserID          -> authenticated CodeGym user
+DefaultTenantID -> default personal workspace ID
+TenantIDs       -> allowed workspace IDs, currently only the personal workspace
+```
+
 For local development without a static token, use:
 
 ```http
-Authorization: Bearer dev:<user-id>:<tenant-id>
+Authorization: Bearer dev:<user-id>:<workspace-id>
 ```
 
 Example:
@@ -64,7 +81,31 @@ TenantIDs: [personal-kevin]
 ```
 
 If `CODEGYM_DEV_AUTH_TOKEN` is set, the backend accepts only that exact bearer
-token and maps it to `CODEGYM_DEV_USER_ID` and `CODEGYM_DEV_TENANT_ID`.
+token and maps it to `CODEGYM_DEV_USER_ID` and `CODEGYM_DEV_TENANT_ID`. The env
+var name is internal legacy naming; the value is the local personal workspace
+ID.
+
+For Auth0-backed development or production, configure:
+
+```bash
+CODEGYM_AUTH_MODE=auth0
+AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
+AUTH0_AUDIENCE=https://api.codegym.example
+```
+
+`CODEGYM_AUTH0_DOMAIN` / `CODEGYM_AUTH0_AUDIENCE` can be used instead of the
+plain Auth0 names if a more explicit prefix is preferred. Auth0's own dashboard
+uses the word "tenant" for its hosted identity domain; that is separate from
+CodeGym's app data model.
+
+The backend validates Auth0 access tokens with RS256 JWKS, issuer, audience,
+expiry, and not-before checks before mapping claims into `auth.Principal`.
+Auth0 `sub` becomes `Principal.UserID`, and CodeGym derives a deterministic
+personal workspace ID from `sub`, such as `personal-auth0-user-123`.
+
+Do not add Auth0 app tenant/workspace claims, organization claims, tenant
+switching, or team roles unless there is a real product requirement. Today,
+every Auth0 user maps to one personal workspace scope.
 
 ### `backend/internal/identity`
 
@@ -78,13 +119,14 @@ context and calls:
 EnsurePersonalTenant(ctx, principal)
 ```
 
-For M1, this bootstraps a personal tenant for the authenticated user. With
-Postgres enabled, it creates or updates:
+The function name is internal legacy naming. Product behavior is: bootstrap a
+personal workspace for the authenticated user. With Postgres enabled, it creates
+or updates:
 
 ```text
 app_users
-tenants
-tenant_memberships
+tenants              # internal table name for workspace records
+tenant_memberships   # internal table name for user/workspace links
 ```
 
 Using the dev example above, identity ensures:
@@ -95,23 +137,29 @@ tenants.id = personal-kevin
 tenant_memberships = kevin owner of personal-kevin
 ```
 
-The operation is idempotent. Repeated requests for the same user/tenant should
-not create duplicate rows.
+The operation is idempotent. Repeated requests for the same user/workspace
+should not create duplicate rows.
 
 When no database URL is configured, the backend uses an in-memory identity store
 so local development still works.
 
 ### `backend/internal/tenant`
 
-Tenant answers: which tenant is this request allowed to operate on?
+This package currently answers: which personal workspace scope is this request
+allowed to operate on?
 
-The tenant middleware runs after identity. It chooses the tenant scope from:
+The middleware runs after identity. It chooses the workspace scope from:
 
 1. `X-CodeGym-Tenant-ID`, if present.
 2. `principal.DefaultTenantID`, if the header is absent.
 
-It then checks the selected tenant against `principal.TenantIDs`. If the tenant
-is not allowed, the request fails with `403 tenant_forbidden`.
+The header name is internal legacy naming. Product flows should omit it and use
+the authenticated user's default personal workspace. Keep the header for
+low-level tests and future migration flexibility, not as a user-facing tenant
+switcher.
+
+It checks the selected scope against `principal.TenantIDs`. If the scope is not
+allowed, the request fails with `403 tenant_forbidden`.
 
 On success, it stores:
 
@@ -120,12 +168,12 @@ tenant.Scope{TenantID: "..."}
 ```
 
 in request context. Handlers and services use this scope to read and write
-tenant-scoped data.
+workspace-scoped data.
 
 ## Why Identity Is Separate From Auth
 
-Auth should be replaceable. Today it is a dev bearer token. Later it might be
-Clerk, Auth0, WorkOS, Google OAuth, or another provider.
+Auth should be replaceable. Today it can be Auth0 or a dev bearer token. Later
+it might be another provider.
 
 The rest of CodeGym should not need to know provider details. It should depend
 on CodeGym's own durable identity model:
@@ -136,9 +184,9 @@ tenants
 tenant_memberships
 ```
 
-Keeping `identity` separate means a future auth provider only needs to produce
-an `auth.Principal`. The identity layer can still bootstrap or reconcile the
-CodeGym app user and tenant records.
+Keeping `identity` separate means an auth provider only needs to produce an
+`auth.Principal`. The identity layer can still bootstrap or reconcile the
+CodeGym app user and personal workspace records.
 
 ## Database Behavior
 
@@ -180,63 +228,73 @@ tenant_memberships
 
 The current bootstrap also enforces:
 
-- `tenants.tenant_type` is `personal` or `team`.
-- `tenant_memberships.role` is `owner`, `admin`, or `member`.
 - `user_memory_profiles(tenant_id, user_id)` references
   `tenant_memberships(tenant_id, user_id)`.
 - `memory_events(tenant_id, user_id)` references
   `tenant_memberships(tenant_id, user_id)`.
 
-Those memory foreign keys mean a memory row cannot be written for a user/tenant
-pair unless the identity bootstrap has created a membership first.
+Those memory foreign keys mean a memory row cannot be written for a
+user/workspace pair unless the identity bootstrap has created the membership
+first.
+
+The tables currently have `tenant_type` and `role` fields from an earlier
+generalized design. Do not build organization/team behavior on top of them
+without an explicit product decision.
 
 ## How Memory Uses This
 
 Memory services require both:
 
 - `auth.Principal.UserID`
-- `tenant.Scope.TenantID`
+- `tenant.Scope.TenantID` as the internal workspace scope ID
 
 That means memory reads and writes are scoped to:
+
+```text
+workspace_id + user_id
+```
+
+Internally, current tables still spell that as:
 
 ```text
 tenant_id + user_id
 ```
 
 The memory store never guesses identity from the token directly. It only uses
-the normalized context created by the auth and tenant middleware.
+the normalized context created by the auth and workspace-scope middleware.
 
-With Postgres enabled, memory rows are tied back to durable tenant membership:
+With Postgres enabled, memory rows are tied back to durable user/workspace
+membership:
 
 ```text
 auth principal -> app_users
-tenant scope -> tenants
+workspace scope -> tenants
 principal + scope -> tenant_memberships
 memory row -> tenant_memberships
 ```
 
 ## Current Limitations
 
-- `DevAuthenticator` is only for local/M1 development.
-- Tenant membership is currently represented in the principal, not loaded from
-Postgres on each request.
-- Personal tenant bootstrap always assigns the `owner` role.
-- There is no organization/team tenant model yet.
+- `DevAuthenticator` is only for local development.
+- Workspace membership is currently represented in the principal, not loaded
+  from Postgres on each request.
+- Personal workspace bootstrap always assigns the internal `owner` role.
+- Organization/team workspaces are not in product scope.
 - Schema bootstrap is idempotent but not versioned migrations.
+- Internal package/table/field names still say tenant; rename only in a focused
+  schema/code cleanup task.
 
-## Expected Real Auth Upgrade Path
+## Auth Upgrade Path
 
-When replacing dev auth:
+Auth0 is now the selected production auth boundary. Remaining follow-up work:
 
-1. Add a new implementation of `auth.Authenticator`.
-2. Verify the provider token or session.
-3. Map provider identity into `auth.Principal`.
-4. Keep `identity.Middleware` in the pipeline.
-5. Load allowed tenant IDs from durable memberships when multi-tenant orgs are
-   introduced.
+1. Keep `identity.Middleware` in the pipeline.
+2. Reconcile Auth0 users into the durable CodeGym identity model.
+3. Keep every authenticated user mapped to one personal workspace until product
+   scope explicitly requires shared/team workspaces.
 
-The middleware order should stay:
+The middleware order should stay conceptually:
 
 ```text
-auth -> identity -> tenant -> handler
+auth -> identity -> personal workspace scope -> handler
 ```

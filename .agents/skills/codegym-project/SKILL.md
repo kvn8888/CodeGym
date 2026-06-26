@@ -14,16 +14,16 @@ architecture, workflow, validation, or durable gotchas change.
 `codegym-v2` is the default working branch for now.
 
 This branch now contains the React/Vite frontend and the Go backend foundation.
-Backend auth, tenant bootstrap, Neon/Postgres memory storage, and the memory
-service v0 are in scope. Legacy execution infrastructure, Docker runners,
-problem-pack fixtures, and deploy automation should still stay out unless the
-user explicitly asks to reintroduce them.
+Backend auth, personal workspace bootstrap, Neon/Postgres memory storage, and
+the memory service v0 are in scope. Legacy execution infrastructure, Docker
+runners, problem-pack fixtures, organization/team tenancy, and deploy automation
+should still stay out unless the user explicitly asks to reintroduce them.
 
-## Current State (Last Updated: 2026-06-23)
+## Current State (Last Updated: 2026-06-26)
 
 - Branch: `codegym-v2`.
 - Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes.
-- Backend: Go service with `auth -> identity -> tenant -> handler` request path, dev-token auth, Auth0 selected for production auth, tenant bootstrap, memory profile/event APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
+- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, personal workspace bootstrap, memory profile/event APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
 - Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`.
 - CI: `.github/workflows/ci.yml` runs frontend `npm ci`, lint, build, and backend `go test ./...` on PRs/pushes to `codegym-v2`. `.github/workflows/openapi-lint.yml` runs `npm run api:lint` (Redocly) when `api/**` changes.
 - Project board: GitHub Projects v2 project `#2` (`CodeGym v2`) is the active kanban unless the user says otherwise.
@@ -32,7 +32,7 @@ user explicitly asks to reintroduce them.
 
 1. Identify the task surface area.
 - Frontend route/page/API consumption: inspect `frontend/src/App.tsx`, `frontend/src/features/`, and `frontend/src/shared/api/`.
-- Backend API/auth/tenant/memory work: inspect `backend/README.md`, `docs/auth-identity-tenant.md`, and `backend/internal/`.
+- Backend API/auth/workspace/memory work: inspect `backend/README.md`, `docs/auth-identity-tenant.md`, and `backend/internal/`.
 - Project scope or product intent: read the "Scope Specification" section in this skill first.
 
 2. Select the shortest local validation path.
@@ -62,14 +62,17 @@ user explicitly asks to reintroduce them.
 ### Backend
 
 - Start backend work in `backend/internal/` and keep HTTP routing thin.
-- Preserve the request path: auth middleware establishes `auth.Principal`,
-  identity middleware bootstraps/persists the user and personal tenant, tenant
-  middleware establishes `tenant.Scope`, and handlers read scoped services.
+- Preserve the request path conceptually: auth middleware establishes
+  `auth.Principal`, identity middleware bootstraps/persists the user and a
+  personal workspace, workspace-scope middleware establishes the active scope,
+  and handlers read scoped services. The current implementation still uses
+  `tenant` package/table/field names as internal scope names; do not expand that
+  into organization/team SaaS tenancy unless product scope changes.
 - Memory writes should append events quickly. Profile summarization should stay
   behind `Service.RefreshProfile` or a worker boundary so request paths do not
   block on derived-memory work.
-- Auth0 is the selected production auth provider. Keep Auth0 JWT validation
-  behind the existing `auth.Authenticator` boundary, and preserve the
+- Auth0 is the selected production auth provider. Auth0 JWT validation now
+  lives behind the existing `auth.Authenticator` boundary; preserve the
   `DevAuthenticator` path for local fallback and tests.
 - GenAI provider code should live behind a provider client/adapter, but that
   client should not fetch memory directly. Generation/chat orchestration should
@@ -122,7 +125,7 @@ Requirements:
   - `agency:needs-architecture-decision` — system shape must be decided before code should move.
   - `agency:external-blocked` — action depends on GitHub/Vercel/Doppler/Neon/vendor/access/settings outside the repo; this can be combined with another agency label when both apply.
   - `agent:standard` — suitable for cheaper/medium coding agents: scoped UI, docs, tests, scripts, small backend changes.
-  - `agent:strong` — use a strong coding agent for cross-layer frontend/backend work, auth/tenant/memory behavior, generation orchestration, or tricky tests.
+  - `agent:strong` — use a strong coding agent for cross-layer frontend/backend work, auth/workspace/memory behavior, generation orchestration, or tricky tests.
   - `agent:frontier` — reserve for ambiguous architecture/product/security decisions where a frontier model is worth the cost.
   - `output:plan-only` — expected output is a decision memo, issue comment, or implementation plan before code.
 - Routing rule of thumb: queue `agency:ready` and `agency:investigate` work for autonomous overnight agents; save `agency:needs-owner-decision` and `agency:needs-architecture-decision` for interactive planning sessions. Do not mark work `agency:ready` if a product, academic, vendor, or architecture decision is still missing.
@@ -136,6 +139,8 @@ Requirements:
 - Repopulate the board during normal work. If an agent discovers real follow-up work outside the current scope, create a new GitHub Issue instead of expanding the task: production bugs, missing tests, product ambiguity, architecture decisions, external setup, retrospective "what remains" items, AI/generation incidents, or refactors too large for the current change. Do not create issues for tiny fixes that can be safely included in the active task.
 - New agent-created issues should include context/source, acceptance criteria, likely starting files, risk or user impact, `Status`, `Category`, `Priority`, `Size`, `Source`, one primary `agency:*` label, one `agent:*` label, and `output:plan-only` when the expected next step is a memo rather than code.
 - Draft Project cards are inbox items. Convert durable work to real GitHub Issues when it needs labels, comments, links, or agent routing; leave rough brainstorms as drafts until they are actionable.
+- Model large capabilities as **epics with sub-issues** (GitHub-native parent/child, with a `subIssuesSummary` rollup). An epic is a parent issue (title prefix `Epic:`) that opens with a gating **spike** wherever uncertainty is real, then **stories**. Spikes carry `agency:investigate` or `agency:needs-architecture-decision` + `output:plan-only`, and their Definition of Done is *"the implementation stories now exist, each with acceptance criteria"* — progressive elaboration: do not pre-write story acceptance criteria a spike will change. Stories carry `agency:ready`. Link children with `create-issue --parent <#>` or `add-sub-issue <parent> <child>`; `list`/`show` surface the rollup and parent/child. The M2 scope features are tracked as epics #35 (generation), #36 (execution sandbox), #38 (verification), #40 (personalization & memory), and #42 (MCQ).
+- Do not use `M1:` as an active kanban bucket. M1 is historical/foundation scope; active work should be named as `Week N: ...` issues under the relevant epic, while the academic M1/M2/M3/M4 milestone language stays in scope docs and presentation planning.
 
 Common commands:
 ```bash
@@ -148,6 +153,9 @@ GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github
 GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py add-issue --project-number 2 5 --status Ready --category "Project / Process" --priority P1 --size M --source "manual triage"
 GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py add-draft --project-number 2 "Task title" --status Backlog --category "AI / Generation" --priority P2 --size S --body "Task details"
 GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py create-issue --project-number 2 --title "Task title" --body-file /tmp/body.md --label agency:ready,agent:standard --status Ready --category "Frontend / UX" --priority P1 --size M --source "conversation import"
+GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py create-issue --project-number 2 --title "Story under an epic" --body-file /tmp/body.md --label agency:ready,agent:standard --status Backlog --category "AI / Generation" --priority P1 --size M --source "epic breakdown" --parent 35
+GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py add-sub-issue --project-number 2 35 12
+GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py add-sub-issue --project-number 2 35 12 --remove
 GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py upsert-issue --project-number 2 --title "Task title" --body-file /tmp/body.md --status Ready --category "Frontend / UX" --priority P1 --size M --source "conversation import" --verify
 GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py import-issues --project-number 2 --json '[{"title":"Task title","body":"Details","labels":["agency:ready","agent:standard"],"status":"Ready","category":"Frontend / UX","priority":"P1","size":"M"}]' --source "conversation import" --verify
 GH_TOKEN="$(gh auth token)" python .agents/skills/codegym-project/scripts/github_project_board.py import-issues --project-number 2 --source "conversation import" --verify <<'EOF'
@@ -204,7 +212,7 @@ This is the live product scope for the project.
 
 ### 1. System Concept
 
-The single- or multi-tenant system automates creation of LeetCode/HackerRank-style coding problems and their corresponding test cases using generative AI.
+The multi-user system automates creation of LeetCode/HackerRank-style coding problems and their corresponding test cases using generative AI. Each authenticated user has a personal workspace for data isolation and memory; business SaaS organization tenancy is not in scope unless explicitly added later.
 
 The primary goal is to help software engineers at any level prepare for job interviews by generating unique challenges where generated test cases are executed against user attempts inside a secure, isolated Docker container or microVM.
 

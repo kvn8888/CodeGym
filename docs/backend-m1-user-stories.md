@@ -1,7 +1,7 @@
 # Backend M1 — Middleware & Memory: User Stories & Learning Path
 
 Companion to [auth-identity-tenant.md](auth-identity-tenant.md) and issue
-[#2 — Backend M1: Auth, tenancy, and memory foundation](https://github.com/kvn8888/CodeGym/issues/2).
+[#2 — Week 5: Finish auth, personal workspace, and memory foundation](https://github.com/kvn8888/CodeGym/issues/2).
 
 This doc started as a learning workflow: hand-write the code (with
 autocomplete), then have a separate review pass check it against the acceptance
@@ -14,13 +14,14 @@ main follow-up work.
 
 The middleware chain and the memory read/write paths are complete:
 
-- **Auth → identity → tenant** middleware (`internal/auth`, `internal/identity`,
-  `internal/tenant`), chained in `internal/api/router.go`. A request resolves to
-  an `auth.Principal` and a `tenant.Scope` in context.
+- **Auth → identity → personal workspace scope** middleware (`internal/auth`,
+  `internal/identity`, `internal/tenant`), chained in `internal/api/router.go`.
+  A request resolves to an `auth.Principal` and an internal `tenant.Scope` in
+  context.
 - **Memory storage**: `memory.Store` interface with both `InMemoryStore` and
   `PostgresStore`; model types (`Profile`, `Event`, `Note`, `SkillProficiency`).
 - **Memory service** read/record: `GetProfile`, `RecordEvent`, `ListEvents`, all
-  tenant+user scoped, plus the HTTP handlers under `/api/v1/memory/*`.
+  workspace+user scoped, plus the HTTP handlers under `/api/v1/memory/*`.
 - **Memory profile refresh v0**: `Summarize`, `RefreshProfile`,
   `RefreshProfileFor`, `RefreshAllProfiles`, the manual refresh endpoint, and
   `memory.Worker.RunOnce` are implemented and tested.
@@ -29,7 +30,8 @@ The middleware chain and the memory read/write paths are complete:
 
 The remaining backend gaps are:
 
-1. **Real signed-token auth** — only `DevAuthenticator` exists today.
+1. **Auth0 identity reconciliation** — Auth0 token validation exists, but
+   durable user/workspace reconciliation still needs to mature.
 2. **Strict memory event naming** — events are accepted as flexible
    `source`/`type` strings until the event-name convention is finalized.
 
@@ -41,28 +43,31 @@ The remaining backend gaps are:
 > signed token, **so that** my memory rows are tied to a real identity instead of
 > a shared dev token.
 
-**Skeleton:** [`backend/internal/auth/jwt_authenticator.go`](../backend/internal/auth/jwt_authenticator.go)
-· **TDD harness:** `backend/internal/auth/jwt_authenticator_test.go`
+**Implementation:** [`backend/internal/auth/jwt_authenticator.go`](../backend/internal/auth/jwt_authenticator.go)
+· **Test harness:** `backend/internal/auth/jwt_authenticator_test.go`
 
-**Learning focus:** how a stateless JWT proves identity — base64url segments,
-HMAC-SHA256 signing, constant-time verification, expiry checks.
+**Learning focus:** how a stateless Auth0 access token proves identity with
+issuer, audience, RS256 signature, expiry, and not-before validation.
 
-**Your tasks (the 5 `TODO(you)` steps in the file):**
-1. Split `header.payload.signature`.
-2. Recompute the HMAC and constant-time compare (`hmac.Equal`) — reject tampered
-   tokens and tokens signed with the wrong secret.
-3. base64url-decode + `json.Unmarshal` the claims.
-4. Reject expired / not-yet-valid tokens (`exp`, `nbf`).
-5. Map claims → `auth.Principal`.
+**Implemented path:**
+1. Configure Auth0 issuer/audience from env.
+2. Fetch and cache Auth0 JWKS for RS256 verification.
+3. Let Auth0's Go validator reject malformed, tampered, wrong-issuer,
+   wrong-audience, expired, and not-yet-valid tokens.
+4. Map validated claims into `auth.Principal`.
+5. Map each Auth0 user to one deterministic personal workspace.
+6. Preserve `DevAuthenticator` as the local fallback.
 
 **Acceptance criteria:**
-- [ ] Implements `auth.Authenticator` (so it drops into `auth.Middleware`).
-- [ ] Valid token → `Principal{UserID, DefaultTenantID, TenantIDs}`.
-- [ ] Missing / malformed / wrong-secret / tampered / expired → `ErrUnauthenticated`.
-- [ ] `jwt_authenticator_test.go` passes with its `t.Skip` removed.
-- [ ] Wirable from `main.go` behind config without breaking the dev-token flow.
+- [x] Implements `auth.Authenticator` (so it drops into `auth.Middleware`).
+- [x] Valid token → `Principal{UserID, DefaultTenantID, TenantIDs}` for the
+  user's personal workspace.
+- [x] Missing / malformed / wrong-audience / wrong-issuer / tampered / expired
+  -> `ErrUnauthenticated`.
+- [x] `jwt_authenticator_test.go` passes.
+- [x] Wired from `main.go` behind config without breaking the dev-token flow.
 
-**Done when:** `go test ./internal/auth/ -run TestJWTAuthenticator -v` is green.
+**Done when:** `go test ./internal/auth/ -run TestAuth0Authenticator -v` is green.
 
 ---
 
@@ -105,13 +110,13 @@ returns a summary derived from those events (not the default placeholder).
 
 **Learning focus:** background work in Go — goroutine + `time.Ticker` + context
 cancellation; and the real design question of *how a background job gets an
-identity/tenant scope* when there is no HTTP request.
+identity/workspace scope* when there is no HTTP request.
 
 **Completed v0:** `RefreshProfileFor(ctx, tenantID, userID)` handles explicit
-scope refreshes, `RefreshAllProfiles` refreshes every tenant/user pair with
-events, `memory.Worker.RunOnce` exposes the worker behavior for tests, and
-`POST /api/v1/memory/profile/refresh` manually refreshes the current request
-scope.
+internal workspace-scope refreshes, `RefreshAllProfiles` refreshes every
+workspace/user pair with events, `memory.Worker.RunOnce` exposes the worker
+behavior for tests, and `POST /api/v1/memory/profile/refresh` manually refreshes
+the current request scope.
 
 **Acceptance criteria:**
 - [x] A summarization failure never blocks or fails the `RecordEvent` request path.
@@ -134,8 +139,7 @@ canonical names. This is what makes US-2's aggregation tractable.
 
 ## Suggested order
 
-1. **US-1** (self-contained; TDD harness gives instant feedback).
-2. **US-4** once the memory event naming convention is approved.
+1. **US-4** once the memory event naming convention is approved.
+2. Auth0 identity/workspace reconciliation in issue #19.
 
-US-2 and US-3 map to issue #2's completed memory-refresh foundation. US-1
-still depends on the auth provider decision, and US-4 depends on issue #7.
+US-1, US-2, and US-3 map to issue #2's foundation. US-4 depends on issue #7.

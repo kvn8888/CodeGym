@@ -26,7 +26,9 @@ The first contract covers the existing backend:
 The spec also documents:
 
 - `Authorization: Bearer ...`
-- optional `X-CodeGym-Tenant-ID`
+- optional `X-CodeGym-Tenant-ID` for the current internal workspace scope ID
+  (legacy name; product flows should normally omit it and use the authenticated
+  user's personal workspace)
 - the backend response envelope: `{ data, error }`
 
 ## Local Workflow

@@ -199,6 +199,8 @@ query ProjectItems($projectId: ID!, $first: Int!, $after: String) {
               repository { nameWithOwner }
               assignees(first: 10) { nodes { login } }
               labels(first: 10) { nodes { name } }
+              subIssuesSummary { total completed percentCompleted }
+              parent { number title url state }
             }
             ... on PullRequest {
               id
@@ -332,6 +334,38 @@ mutation UpdateIssue($issueId: ID!, $title: String, $body: String) {
     body: $body
   }) {
     issue { id number title url }
+  }
+}
+"""
+
+ADD_SUB_ISSUE_MUTATION = """
+mutation AddSubIssue($issueId: ID!, $subIssueId: ID!) {
+  addSubIssue(input: {issueId: $issueId, subIssueId: $subIssueId}) {
+    subIssue { number title url }
+  }
+}
+"""
+
+REMOVE_SUB_ISSUE_MUTATION = """
+mutation RemoveSubIssue($issueId: ID!, $subIssueId: ID!) {
+  removeSubIssue(input: {issueId: $issueId, subIssueId: $subIssueId}) {
+    subIssue { number title url }
+  }
+}
+"""
+
+ISSUE_HIERARCHY_QUERY = """
+query IssueHierarchy($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      id
+      number
+      title
+      url
+      parent { number title url state }
+      subIssuesSummary { total completed percentCompleted }
+      subIssues(first: 50) { nodes { number title url state } }
+    }
   }
 }
 """
@@ -498,6 +532,24 @@ def item_issue_number_value(item: dict[str, Any]) -> int | None:
     return int(number) if number is not None else None
 
 
+def item_sub_summary(item: dict[str, Any]) -> tuple[int, int] | None:
+    """Return (completed, total) for an epic with sub-issues, else None."""
+    summary = (item.get("content") or {}).get("subIssuesSummary")
+    if not summary:
+        return None
+    total = summary.get("total") or 0
+    if total <= 0:
+        return None
+    return summary.get("completed") or 0, total
+
+
+def item_parent_number(item: dict[str, Any]) -> int | None:
+    parent = (item.get("content") or {}).get("parent")
+    if not parent:
+        return None
+    return parent.get("number")
+
+
 def find_repo_issue_by_title(client: GitHubClient, args: argparse.Namespace, title: str) -> dict[str, Any] | None:
     """Find an exact-title issue even when it is not already on the Project board."""
     query = f'repo:{repo_slug(args)} is:issue in:title "{title}"'
@@ -568,9 +620,17 @@ def item_row(item: dict[str, Any]) -> str:
     content = item.get("content") or {}
     assignees = ", ".join(user["login"] for user in content.get("assignees", {}).get("nodes", []))
     labels = ", ".join(label["name"] for label in content.get("labels", {}).get("nodes", []))
+    title = markdown_escape(item_title(item))
+    parent_number = item_parent_number(item)
+    if parent_number:
+        title = f"↳ {title} (parent #{parent_number})"
+    summary = item_sub_summary(item)
+    if summary:
+        completed, total = summary
+        title = f"{title} · sub-issues {completed}/{total}"
     return (
         f"| {item_number(item)} "
-        f"| {markdown_escape(item_title(item))} "
+        f"| {title} "
         f"| {content.get('__typename', item.get('type', ''))} "
         f"| {markdown_escape(assignees)} "
         f"| {markdown_escape(labels)} "
@@ -597,6 +657,34 @@ def print_item_detail(item: dict[str, Any]) -> None:
         print("## Body")
         print()
         print(body)
+
+
+def print_issue_hierarchy(client: GitHubClient, args: argparse.Namespace, number: int) -> None:
+    data = client.graphql(
+        ISSUE_HIERARCHY_QUERY,
+        {"owner": args.repo_owner, "repo": args.repo, "number": number},
+    )
+    issue = (data.get("repository") or {}).get("issue")
+    if not issue:
+        return
+    parent = issue.get("parent")
+    summary = issue.get("subIssuesSummary") or {}
+    children = (issue.get("subIssues") or {}).get("nodes") or []
+    total = summary.get("total") or 0
+    if not parent and total <= 0:
+        return
+    print()
+    print("## Hierarchy")
+    print()
+    if parent:
+        print(f"- Parent epic: #{parent['number']} {parent['title']} ({parent.get('url', '')})")
+    if total > 0:
+        completed = summary.get("completed") or 0
+        pct = summary.get("percentCompleted") or 0
+        print(f"- Sub-issues: {completed}/{total} complete ({pct}%)")
+        for child in children:
+            mark = "x" if (child.get("state") or "").lower() == "closed" else " "
+            print(f"  - [{mark}] #{child['number']} {child['title']} ({child.get('url', '')})")
 
 
 def resolve_item(items: list[dict[str, Any]], ref: str) -> dict[str, Any]:
@@ -659,6 +747,20 @@ def issue_number_from_url(url: str) -> int:
         return int(url.rstrip("/").split("/")[-1])
     except ValueError as err:
         raise GitHubError(f"Could not parse issue number from {url!r}.") from err
+
+
+def coerce_issue_number(ref: str | int) -> int:
+    """Accept an int, '12', '#12', or an issue URL and return the issue number."""
+    if isinstance(ref, int):
+        return ref
+    clean = ref.strip()
+    if clean.startswith("#"):
+        clean = clean[1:]
+    if clean.isdigit():
+        return int(clean)
+    if "/" in clean:
+        return issue_number_from_url(clean)
+    raise GitHubError(f"Could not parse an issue number from {ref!r}.")
 
 
 def split_labels(labels: list[str] | None) -> list[str]:
@@ -835,6 +937,9 @@ def cmd_show(args: argparse.Namespace, client: GitHubClient) -> None:
     project = resolve_project(args, client)
     item = resolve_item(list_items(client, project.id), args.item)
     print_item_detail(item)
+    number = item_issue_number_value(item)
+    if number is not None:
+        print_issue_hierarchy(client, args, number)
 
 
 def cmd_add_issue(args: argparse.Namespace, client: GitHubClient) -> None:
@@ -913,6 +1018,27 @@ def cmd_create_issue(args: argparse.Namespace, client: GitHubClient) -> None:
         item_id = ensure_issue_on_project(args, client, project, number)
         apply_and_maybe_verify_project_fields(args, client, project, item_id)
         print(f"Added/updated project item: `{item_id}`")
+
+    parent_ref = getattr(args, "parent", None)
+    if parent_ref:
+        parent_number = coerce_issue_number(parent_ref)
+        parent_id = issue_content_id(client, args.repo_owner, args.repo, parent_number)
+        child_id = issue.get("node_id") or issue_content_id(client, args.repo_owner, args.repo, number)
+        client.graphql(ADD_SUB_ISSUE_MUTATION, {"issueId": parent_id, "subIssueId": child_id})
+        print(f"Linked #{number} as a sub-issue of #{parent_number}.")
+
+
+def cmd_add_sub_issue(args: argparse.Namespace, client: GitHubClient) -> None:
+    parent_number = coerce_issue_number(args.parent)
+    child_number = coerce_issue_number(args.child)
+    parent_id = issue_content_id(client, args.repo_owner, args.repo, parent_number)
+    child_id = issue_content_id(client, args.repo_owner, args.repo, child_number)
+    mutation = REMOVE_SUB_ISSUE_MUTATION if args.remove else ADD_SUB_ISSUE_MUTATION
+    client.graphql(mutation, {"issueId": parent_id, "subIssueId": child_id})
+    if args.remove:
+        print(f"Unlinked #{child_number} from parent #{parent_number}.")
+    else:
+        print(f"Linked #{child_number} as a sub-issue of #{parent_number}.")
 
 
 def cmd_edit_issue(args: argparse.Namespace, client: GitHubClient) -> None:
@@ -1291,6 +1417,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_issue.add_argument("--source", help="Optional Source field value.")
     create_issue.add_argument("--verify", action="store_true", help="Read back project fields after updating them.")
     create_issue.add_argument("--no-project", action="store_true", help="Create the issue without adding it to the project.")
+    create_issue.add_argument("--parent", help="Link the new issue as a sub-issue of this parent issue number/#num/URL (e.g. an epic).")
     create_issue.set_defaults(func=cmd_create_issue)
 
     upsert_issue = sub.add_parser("upsert-issue", help="Create or update a GitHub issue by exact project title.")
@@ -1401,6 +1528,13 @@ def build_parser() -> argparse.ArgumentParser:
     rename.add_argument("--body")
     rename.add_argument("--body-file")
     rename.set_defaults(func=cmd_rename)
+
+    add_sub_issue = sub.add_parser("add-sub-issue", help="Link or unlink an existing issue as a sub-issue (child) of a parent epic.")
+    add_common_args(add_sub_issue, suppress_defaults=True)
+    add_sub_issue.add_argument("parent", help="Parent issue number, #num, or URL (the epic).")
+    add_sub_issue.add_argument("child", help="Child issue number, #num, or URL.")
+    add_sub_issue.add_argument("--remove", action="store_true", help="Unlink the child from the parent instead of linking.")
+    add_sub_issue.set_defaults(func=cmd_add_sub_issue)
 
     return parser
 

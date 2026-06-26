@@ -17,16 +17,10 @@ func main() {
 	ctx := context.Background()
 	cfg := config.Load()
 
-	// Auth is pluggable: anything implementing auth.Authenticator works here.
-	// DevAuthenticator is the M1 local stand-in. To move to real signed tokens,
-	// implement internal/auth/jwt_authenticator.go and swap this for
-	// auth.NewJWTAuthenticator(cfg.JWTSecret). See US-1 in
-	// docs/backend-m1-user-stories.md.
-	authenticator := auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{
-		StaticToken:     cfg.DevAuthToken,
-		DefaultUserID:   cfg.DevUserID,
-		DefaultTenantID: cfg.DevTenantID,
-	})
+	authenticator, err := buildAuthenticator(cfg)
+	if err != nil {
+		log.Fatalf("could not configure auth: %v", err)
+	}
 
 	var memoryStore memory.Store = memory.NewInMemoryStore()
 	var identityStore identity.Store = identity.NewInMemoryStore()
@@ -73,4 +67,23 @@ func main() {
 	if err := http.ListenAndServe(cfg.Addr(), router); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func buildAuthenticator(cfg config.Config) (auth.Authenticator, error) {
+	if cfg.UseAuth0() {
+		log.Print("CodeGym API using Auth0 bearer token authentication")
+		return auth.NewAuth0Authenticator(auth.Auth0AuthenticatorConfig{
+			Domain:           cfg.Auth0Domain,
+			IssuerURL:        cfg.Auth0IssuerURL,
+			Audience:         cfg.Auth0Audience,
+			AllowedClockSkew: cfg.Auth0ClockSkew,
+		})
+	}
+
+	log.Print("CodeGym API using dev bearer token authentication")
+	return auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{
+		StaticToken:     cfg.DevAuthToken,
+		DefaultUserID:   cfg.DevUserID,
+		DefaultTenantID: cfg.DevTenantID,
+	}), nil
 }

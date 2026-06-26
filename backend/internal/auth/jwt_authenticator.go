@@ -2,109 +2,152 @@ package auth
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/auth0/go-jwt-middleware/v3/jwks"
+	auth0validator "github.com/auth0/go-jwt-middleware/v3/validator"
 )
 
-// JWTAuthenticator validates a signed bearer token (a JWT) and maps its claims
-// to a Principal. It implements the Authenticator interface, so it drops into
-// auth.Middleware in place of DevAuthenticator (see cmd/server/main.go and
-// docs/auth-identity-tenant.md → "Expected Real Auth Upgrade Path").
-//
-// ─────────────────────────────────────────────────────────────────────────────
-// LEARNING GOAL
-// ─────────────────────────────────────────────────────────────────────────────
-// Understand how a *stateless* token proves identity with no database lookup.
-//
-// A JWT is three base64url segments joined by dots:
-//
-//	header . payload . signature
-//
-//	header    -> {"alg":"HS256","typ":"JWT"}
-//	payload   -> claims, e.g. {"sub":"user_123","tenants":["t_1"],"exp":1750000000}
-//	signature -> HMAC_SHA256( base64url(header) + "." + base64url(payload), secret )
-//
-// Verifying a token = recompute the signature with *your* secret and compare it
-// to the token's signature with a constant-time comparison (hmac.Equal). If they
-// match, the payload was issued by someone holding the secret and was not
-// altered in transit. Then you still must check the token has not expired.
-//
-// NOTE: We hand-roll HS256 here so you can *see* the mechanics. In production you
-// would use a vetted library (github.com/golang-jwt/jwt/v5) and usually an
-// asymmetric algorithm (RS256/ES256) so verifiers never hold the signing key.
-// Do not ship hand-rolled token crypto to real users.
-
-// jwtClaims is the subset of standard + CodeGym claims we read.
-// Registered claim names: https://www.rfc-editor.org/rfc/rfc7519#section-4.1
-type jwtClaims struct {
-	Subject         string   `json:"sub"`            // -> Principal.UserID
-	DefaultTenantID string   `json:"default_tenant"` // -> Principal.DefaultTenantID
-	TenantIDs       []string `json:"tenants"`        // -> Principal.TenantIDs
-	ExpiresAt       int64    `json:"exp"`            // unix seconds; reject if past
-	NotBefore       int64    `json:"nbf"`            // unix seconds; reject if in the future
+type Auth0AuthenticatorConfig struct {
+	Domain           string
+	IssuerURL        string
+	Audience         string
+	AllowedClockSkew time.Duration
 }
 
-type JWTAuthenticator struct {
-	secret []byte
-	now    func() time.Time
+type tokenValidator interface {
+	ValidateToken(ctx context.Context, tokenString string) (any, error)
 }
 
-func NewJWTAuthenticator(secret string) *JWTAuthenticator {
-	return &JWTAuthenticator{
-		secret: []byte(secret),
-		now:    time.Now,
+type Auth0Authenticator struct {
+	validator tokenValidator
+}
+
+func NewAuth0Authenticator(config Auth0AuthenticatorConfig) (*Auth0Authenticator, error) {
+	if strings.TrimSpace(config.Audience) == "" {
+		return nil, fmt.Errorf("auth0 audience is required")
+	}
+
+	issuerURL, err := auth0IssuerURL(config)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := jwks.NewCachingProvider(jwks.WithIssuerURL(issuerURL))
+	if err != nil {
+		return nil, fmt.Errorf("create auth0 jwks provider: %w", err)
+	}
+
+	options := []auth0validator.Option{
+		auth0validator.WithKeyFunc(provider.KeyFunc),
+		auth0validator.WithAlgorithm(auth0validator.RS256),
+		auth0validator.WithIssuer(issuerURL.String()),
+		auth0validator.WithAudience(strings.TrimSpace(config.Audience)),
+	}
+	if config.AllowedClockSkew > 0 {
+		options = append(options, auth0validator.WithAllowedClockSkew(config.AllowedClockSkew))
+	}
+
+	validator, err := auth0validator.New(options...)
+	if err != nil {
+		return nil, fmt.Errorf("create auth0 jwt validator: %w", err)
+	}
+
+	return newAuth0Authenticator(validator, config), nil
+}
+
+func newAuth0Authenticator(validator tokenValidator, config Auth0AuthenticatorConfig) *Auth0Authenticator {
+	return &Auth0Authenticator{
+		validator: validator,
 	}
 }
 
-// Authenticate verifies the signature, checks expiry, and maps claims to a
-// Principal. Return ErrUnauthenticated for any token that is missing, malformed,
-// not signed by us, or expired. (Wrap it: fmt.Errorf("%w: ...", ErrUnauthenticated)
-// so the middleware still renders a 401 — see auth/middleware.go.)
-func (a *JWTAuthenticator) Authenticate(_ context.Context, bearerToken string) (Principal, error) {
+func (a *Auth0Authenticator) Authenticate(ctx context.Context, bearerToken string) (Principal, error) {
 	token := strings.TrimSpace(bearerToken)
 	if token == "" {
 		return Principal{}, ErrUnauthenticated
 	}
 
-	// ── STEP 1: split "header.payload.signature" ────────────────────────────
-	// TODO(you): strings.SplitN(token, ".", 3) — there must be exactly 3 parts,
-	// else return ErrUnauthenticated. Keep each segment; you need the exact bytes
-	// of "header.payload" (parts[0]+"."+parts[1]) to re-sign in step 2.
+	claims, err := a.validator.ValidateToken(ctx, token)
+	if err != nil {
+		return Principal{}, fmt.Errorf("%w: invalid auth0 token: %v", ErrUnauthenticated, err)
+	}
 
-	// ── STEP 2: verify the signature ────────────────────────────────────────
-	// TODO(you): add `import "encoding/base64"`, then:
-	//   expected := a.sign(parts[0] + "." + parts[1])
-	//   got, err := base64.RawURLEncoding.DecodeString(parts[2])
-	//   if err != nil || !hmac.Equal(expected, got) { return ErrUnauthenticated }
-	// Why RawURLEncoding? JWT uses base64url WITHOUT '=' padding.
+	validatedClaims, ok := claims.(*auth0validator.ValidatedClaims)
+	if !ok || validatedClaims == nil {
+		return Principal{}, fmt.Errorf("%w: unexpected auth0 claims", ErrUnauthenticated)
+	}
 
-	// ── STEP 3: decode the claims ───────────────────────────────────────────
-	// TODO(you): add `import "encoding/json"`, base64url-decode parts[1], then
-	// json.Unmarshal into a jwtClaims. Malformed JSON -> ErrUnauthenticated.
+	userID := strings.TrimSpace(validatedClaims.RegisteredClaims.Subject)
+	if userID == "" {
+		return Principal{}, fmt.Errorf("%w: missing subject", ErrUnauthenticated)
+	}
 
-	// ── STEP 4: check time-based validity ───────────────────────────────────
-	// TODO(you): now := a.now().UTC().Unix()
-	//   reject if claims.ExpiresAt != 0 && now >= claims.ExpiresAt
-	//   reject if claims.NotBefore != 0 && now <  claims.NotBefore
-	// An unexpired-but-tampered token never reaches here — step 2 caught it.
+	defaultTenantID := personalTenantIDForSubject(userID)
 
-	// ── STEP 5: map claims -> Principal ─────────────────────────────────────
-	// TODO(you): claims.Subject is required (empty -> ErrUnauthenticated).
-	// If TenantIDs is empty but DefaultTenantID is set, seed TenantIDs with it
-	// so tenant.Middleware can authorize the default tenant. Then return:
-	//   Principal{UserID: ..., DefaultTenantID: ..., TenantIDs: ...}, nil
-
-	return Principal{}, fmt.Errorf("%w: JWTAuthenticator.Authenticate not implemented yet", ErrUnauthenticated)
+	return Principal{
+		UserID:          userID,
+		DefaultTenantID: defaultTenantID,
+		TenantIDs:       []string{defaultTenantID},
+	}, nil
 }
 
-// sign computes the HS256 signature over the "header.payload" signing input.
-// Provided so step 2 is a one-liner — read it to see exactly what bytes you are
-// comparing the token's signature against.
-func (a *JWTAuthenticator) sign(signingInput string) []byte {
-	mac := hmac.New(sha256.New, a.secret)
-	mac.Write([]byte(signingInput))
-	return mac.Sum(nil)
+func auth0IssuerURL(config Auth0AuthenticatorConfig) (*url.URL, error) {
+	rawIssuer := strings.TrimSpace(config.IssuerURL)
+	if rawIssuer == "" {
+		domain := strings.TrimSpace(config.Domain)
+		if domain == "" {
+			return nil, fmt.Errorf("auth0 domain or issuer url is required")
+		}
+		if strings.Contains(domain, "://") {
+			rawIssuer = domain
+		} else {
+			rawIssuer = "https://" + domain
+		}
+	}
+
+	if !strings.HasSuffix(rawIssuer, "/") {
+		rawIssuer += "/"
+	}
+
+	issuerURL, err := url.Parse(rawIssuer)
+	if err != nil {
+		return nil, fmt.Errorf("parse auth0 issuer url: %w", err)
+	}
+	if issuerURL.Scheme != "https" || issuerURL.Host == "" {
+		return nil, fmt.Errorf("auth0 issuer url must be an https url")
+	}
+	return issuerURL, nil
+}
+
+func personalTenantIDForSubject(subject string) string {
+	var builder strings.Builder
+	builder.Grow(len(subject))
+	lastDash := false
+
+	for _, r := range strings.ToLower(subject) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			builder.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			builder.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	slug := strings.Trim(builder.String(), "-")
+	if slug == "" {
+		slug = "auth0-user"
+	}
+	if len(slug) > 80 {
+		slug = slug[:80]
+		slug = strings.TrimRight(slug, "-")
+	}
+
+	return "personal-" + slug
 }

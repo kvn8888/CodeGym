@@ -28,7 +28,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get the authenticated user's memory profile for the selected tenant. */
+        /** Get the authenticated user's memory profile for the selected workspace scope. */
         get: operations["getMemoryProfile"];
         put?: never;
         post?: never;
@@ -62,10 +62,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List append-only memory events for the authenticated user and tenant. */
+        /** List append-only memory events for the authenticated user and workspace scope. */
         get: operations["listMemoryEvents"];
         put?: never;
-        /** Append a memory event for the authenticated user and tenant. */
+        /** Append a memory event for the authenticated user and workspace scope. */
         post: operations["recordMemoryEvent"];
         delete?: never;
         options?: never;
@@ -143,6 +143,7 @@ export interface components {
         MemoryEvent: {
             /** @example mem_evt_0123456789abcdef */
             id: string;
+            /** @description Internal workspace-scope ID. Legacy field name. */
             tenant_id: string;
             user_id: string;
             /** @example chat */
@@ -192,7 +193,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorEnvelope"];
             };
         };
-        /** @description Authenticated user does not have access to the requested tenant. */
+        /** @description Authenticated user does not have access to the requested workspace scope. */
         TenantForbidden: {
             headers: {
                 [name: string]: unknown;
@@ -212,7 +213,7 @@ export interface components {
         };
     };
     parameters: {
-        /** @description Optional tenant override. If omitted, the backend uses the authenticated principal's default tenant. */
+        /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
         TenantHeader: string;
     };
     requestBodies: never;
@@ -245,7 +246,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional tenant override. If omitted, the backend uses the authenticated principal's default tenant. */
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
                 "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
             };
             path?: never;
@@ -271,7 +272,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional tenant override. If omitted, the backend uses the authenticated principal's default tenant. */
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
                 "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
             };
             path?: never;
@@ -297,7 +298,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional tenant override. If omitted, the backend uses the authenticated principal's default tenant. */
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
                 "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
             };
             path?: never;
@@ -323,7 +324,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional tenant override. If omitted, the backend uses the authenticated principal's default tenant. */
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
                 "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
             };
             path?: never;

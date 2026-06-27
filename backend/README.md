@@ -61,6 +61,22 @@ doppler run -p codegym -c dev -- go run ./cmd/server
 See [../docs/secrets-and-local-env.md](../docs/secrets-and-local-env.md) for
 the shared secret contract.
 
+To validate the Neon-backed memory flow against a running local backend:
+
+```bash
+./scripts/memory_smoke.sh
+```
+
+If the backend is configured with `CODEGYM_DEV_AUTH_TOKEN`, run the script
+through Doppler too:
+
+```bash
+doppler run -p codegym -c dev -- ./scripts/memory_smoke.sh
+```
+
+The backend API contract, response envelopes, and curl examples are documented
+in [../docs/openapi-contract.md](../docs/openapi-contract.md).
+
 ## Auth
 
 Protected routes require a bearer token.

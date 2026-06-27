@@ -102,53 +102,31 @@ scope middleware.
 See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
 full auth -> identity -> personal workspace scope request flow.
 
-## Architecture: Principal, Tenant, Workspace
+## Architecture: Principal and Personal Workspace Scope
 
-**Principal** = Authenticated user + list of accessible workspaces.
+**Principal** = the authenticated user plus the internal workspace IDs the
+backend may use for scoping.
 
-When a request is authenticated (bearer token validated), the auth middleware injects
-a Principal into the request context. The Principal contains:
+When a request is authenticated, the auth middleware injects a `Principal` into
+the request context:
 
-- `UserID`: The user's unique identifier
-- `DefaultTenantID`: The default workspace for this user (usually personal)
-- `TenantIDs`: List of all workspaces the user is a member of
+- `UserID`: the durable CodeGym user identifier. With Auth0, this is `sub`.
+- `DefaultTenantID`: the user's default personal workspace ID.
+- `TenantIDs`: allowed internal workspace scope IDs. Today this is only the
+  user's personal workspace.
 
-**Tenant** = A persistent, isolated data partition (workspace).
+The current package and table names still use `tenant` / `tenant_id`, but
+product behavior is personal workspace scoping. Do not build organization/team
+workspace behavior, tenant switching, or Auth0 tenant claims without a new
+product decision.
 
-Each tenant holds:
+Product flows should omit `X-CodeGym-Tenant-ID` and use the authenticated
+user's default personal workspace. The header remains only as a low-level
+internal override; if the requested scope is not in `Principal.TenantIDs`, the
+request is rejected with `403`.
 
-- User's memory profile (skills, strengths, growth edges, notes)
-- Event log (problem attempts, reviews, milestones)
-- Shared context (if multi-user tenant, e.g., team workspace)
-
-Most users have one tenant (personal workspace, auto-created on first auth).
-The architecture supports multiple tenants to enable team/org workspaces (future):
-a user can be a member of both personal-workspace AND team-data-science, switching
-context via `X-CodeGym-Tenant-ID` header to operate in different workspaces with
-different memory and collaborators.
-
-**Workspace** = Application-level term for a tenant.
-
-Alias: a persistent account/collaboration scope (not a browser session).
-Contrast: a session is ephemeral (one conversation); a workspace is durable
-(all interactions, memory, events accumulate there).
-
-**Request Scope** = Every request operates in exactly one tenant.
-
-Middleware resolves which tenant by reading `X-CodeGym-Tenant-ID` header (if present)
-or falling back to the principal's default. All data operations are scoped to that tenant:
-
-```
-user=kevin, principal.TenantIDs=[personal-dev, team-science]
-
-Request 1: GET /api/v1/memory/profile (no header)
-  → operates in personal-dev → returns kevin's personal memory
-
-Request 2: GET /api/v1/memory/profile (header: X-CodeGym-Tenant-ID=team-science)
-  → operates in team-science → returns kevin's team memory
-```
-
-If the requested tenant is not in the principal's TenantIDs, the request is rejected (403).
+Memory event `source` and `type` names for emitters are documented in
+[../docs/memory-event-naming-guide-v0.md](../docs/memory-event-naming-guide-v0.md).
 
 ## Current Routes
 
@@ -221,6 +199,11 @@ tables with `CREATE TABLE IF NOT EXISTS`:
 - `tenant_memberships`
 - `user_memory_profiles`
 - `memory_events`
+
+`app_users.id` is the durable CodeGym user key. With Auth0, it is the Auth0
+`sub` claim. Auth0 `email` and `name` are stored as optional profile metadata
+(`email` and `display_name`) when present, but neither field is used for
+authorization or workspace selection.
 
 The `tenants` and `tenant_memberships` table names are current internal schema
 names for personal workspace scope. They are not a product commitment to

@@ -146,9 +146,9 @@ export interface components {
             /** @description Internal workspace-scope ID. Legacy field name. */
             tenant_id: string;
             user_id: string;
-            /** @example chat */
+            /** @example memory */
             source: string;
-            /** @example memory_note_created */
+            /** @example note_created */
             type: string;
             summary: string;
             payload?: components["schemas"]["JsonValue"];

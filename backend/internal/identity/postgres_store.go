@@ -22,10 +22,12 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS app_users (
 			id text PRIMARY KEY,
+			email text NOT NULL DEFAULT '',
 			display_name text NOT NULL DEFAULT '',
 			created_at timestamptz NOT NULL DEFAULT now(),
 			updated_at timestamptz NOT NULL DEFAULT now()
 		)`,
+		`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email text NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS tenants (
 			id text PRIMARY KEY,
 			name text NOT NULL,
@@ -92,12 +94,26 @@ func (s *PostgresStore) EnsurePersonalTenant(ctx context.Context, tenant Persona
 	}
 	defer tx.Rollback(ctx)
 
+	metadataDisplayName := strings.TrimSpace(tenant.DisplayName)
+	displayName := metadataDisplayName
+	if displayName == "" {
+		displayName = tenant.UserID
+	}
+
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO app_users (id, display_name)
-		VALUES ($1, $2)
+		INSERT INTO app_users (id, email, display_name)
+		VALUES ($1, $2, $3)
 		ON CONFLICT (id) DO UPDATE
-		SET updated_at = now()
-	`, tenant.UserID, tenant.UserID); err != nil {
+		SET email = CASE
+				WHEN EXCLUDED.email <> '' THEN EXCLUDED.email
+				ELSE app_users.email
+			END,
+			display_name = CASE
+				WHEN $4 THEN EXCLUDED.display_name
+				ELSE app_users.display_name
+			END,
+			updated_at = now()
+	`, tenant.UserID, strings.TrimSpace(tenant.Email), displayName, metadataDisplayName != ""); err != nil {
 		return err
 	}
 

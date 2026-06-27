@@ -34,19 +34,24 @@ cd backend
 doppler run -p codegym -c dev -- go test ./internal/integration -run TestNeonIdentityAndMemoryBootstrap -count=1
 ```
 
-That test bootstraps the user, tenant, membership, memory profile, and memory
-event tables against Neon, verifies the membership foreign keys, and cleans up
-its temporary rows. Normal `go test ./...` skips the Neon check when no database
-URL is present.
+That test bootstraps the user, personal workspace membership, memory profile,
+and memory event tables against Neon, verifies the membership foreign keys, and
+cleans up its temporary rows. Normal `go test ./...` skips the Neon check when
+no database URL is present.
 
 Required development secrets:
 
 | Name | Required | Purpose |
 | --- | --- | --- |
 | `NEON_CONNECTION_STRING` | Yes for durable memory | Neon/Postgres connection string. |
+| `CODEGYM_AUTH_MODE` | Optional | Set to `auth0` to require Auth0 configuration. Defaults to dev auth unless Auth0 issuer/audience are present. |
+| `AUTH0_DOMAIN` / `CODEGYM_AUTH0_DOMAIN` | Yes for Auth0 | Auth0 domain, e.g. `your-auth0-domain.us.auth0.com`. |
+| `AUTH0_AUDIENCE` / `CODEGYM_AUTH0_AUDIENCE` | Yes for Auth0 | API audience expected in Auth0 access tokens. |
+| `CODEGYM_AUTH0_ISSUER_URL` | Optional | Explicit issuer URL override when domain is not enough. |
+| `CODEGYM_AUTH0_CLOCK_SKEW` | Optional | Go duration for token time skew, e.g. `30s`. Defaults to no skew. |
 | `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for local protected routes. |
 | `CODEGYM_DEV_USER_ID` | Optional | Default dev user for static-token auth. |
-| `CODEGYM_DEV_TENANT_ID` | Optional | Default personal tenant for static-token auth. |
+| `CODEGYM_DEV_TENANT_ID` | Optional | Default personal workspace ID for static-token auth. Legacy env name. |
 | `CODEGYM_HOST` | Optional | Backend listen host. |
 | `CODEGYM_PORT` | Optional | Backend listen port. |
 

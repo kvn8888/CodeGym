@@ -137,6 +137,34 @@
     0 8px 16px -4px rgba(0, 0, 0, 0.04),
     0 24px 32px -8px rgba(0, 0, 0, 0.06);
   --cg-focus-ring: 0 0 0 2px var(--color-background-100), 0 0 0 4px var(--color-blue-700);
+
+  /*
+   * transitions-dev motion tokens (per-snippet install).
+   * Semantic names from the skill; color/radius values mapped to the
+   * Vercel Geist design system. Timing + easing are kept verbatim.
+   */
+  /* Modal open / close (06) */
+  --modal-open-dur: 250ms;
+  --modal-close-dur: 150ms;
+  --modal-scale: 0.96;
+  --modal-scale-close: 0.96;
+  --modal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Tabs sliding (16) — colors mapped to Geist tokens */
+  --tabs-dur: 250ms;
+  --tabs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --tabs-text-muted: var(--color-gray-700);
+  --tabs-text-active: var(--color-gray-1000);
+  --tabs-bar-bg: var(--color-gray-100);
+  --tabs-pill-bg: var(--color-background-100);
+  /* Tooltip open / close (17) — dark label over the light sidebar */
+  --tt-in-dur: 150ms;
+  --tt-out-dur: 50ms;
+  --tt-scale: 0.98;
+  --tt-delay: 80ms;
+  --tt-in-ease: ease-out;
+  --tt-out-ease: ease-out;
+  --tt-bg: var(--color-gray-1000);
+  --tt-fg: var(--color-background-100);
 }
 
 html {
@@ -200,6 +228,149 @@ pre,
 
 .cg-fade-in {
   animation: cgfade 180ms var(--geist-ease) both;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * transitions-dev snippets (modal 06, tabs 16, tooltip 17).
+ * Pasted from the skill reference files. Timing/easing/transform and
+ * will-change are verbatim; only positioning + design-system radius are
+ * adapted to this app (documented inline). Each ships a reduced-motion guard.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* Modal open / close (06) */
+.t-modal {
+  transform-origin: center;
+  transform: scale(var(--modal-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-open-dur) var(--modal-ease),
+    opacity   var(--modal-open-dur) var(--modal-ease);
+  will-change: transform, opacity;
+}
+.t-modal.is-open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.t-modal.is-closing {
+  transform: scale(var(--modal-scale-close));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-close-dur) var(--modal-ease),
+    opacity   var(--modal-close-dur) var(--modal-ease);
+}
+/* Backdrop fade paired with the modal scale (app addition, same timing). */
+.t-modal-backdrop {
+  opacity: 0;
+  transition: opacity var(--modal-open-dur) var(--modal-ease);
+}
+.t-modal-backdrop.is-open {
+  opacity: 1;
+}
+.t-modal-backdrop.is-closing {
+  opacity: 0;
+  transition: opacity var(--modal-close-dur) var(--modal-ease);
+}
+
+/* Tabs sliding (16) — radius/padding/height mapped to the Geist segmented
+ * controls (rounded-md bar, ~5px pill); the slide transition is verbatim. */
+.t-tabs {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--tabs-bar-bg);
+}
+.t-tab {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  height: 32px;
+  padding: 4px 16px;
+  font: inherit;
+  font-weight: 500;
+  color: var(--tabs-text-muted);
+  cursor: pointer;
+  border-radius: 5px;
+  z-index: 1;
+  transition: color var(--tabs-dur) var(--tabs-ease);
+}
+.t-tab:not([aria-selected="true"]):hover,
+.t-tab[aria-selected="true"] {
+  color: var(--tabs-text-active);
+}
+.t-tabs-pill {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  height: 32px;
+  width: 0;
+  background: var(--tabs-pill-bg);
+  border-radius: 5px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+  transform: translateX(0);
+  transition:
+    transform var(--tabs-dur) var(--tabs-ease),
+    width     var(--tabs-dur) var(--tabs-ease);
+  will-change: transform, width;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Tooltip open / close (17) — positioning adapted to the LEFT sidebar
+ * (tooltip sits to the RIGHT of the trigger); transition mechanics verbatim. */
+.t-tt-wrap {
+  position: relative;
+}
+.t-tt {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) scale(var(--tt-scale));
+  transform-origin: 0% 50%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  background: var(--tt-bg);
+  color: var(--tt-fg);
+  white-space: nowrap;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 2px 6px 0 rgba(0, 0, 0, 0.05),
+    0 4px 42px 0 rgba(0, 0, 0, 0.06);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 50;
+  /* Default rule controls the LEAVE state. transition-delay
+     stays unset so leaving plays without delay. */
+  transition:
+    opacity   var(--tt-out-dur) var(--tt-out-ease),
+    transform var(--tt-out-dur) var(--tt-out-ease);
+}
+/* The delay belongs ONLY to the hover/focus rule so leaving the trigger
+   snaps the delay back to 0 and the disappear plays immediately. */
+.t-tt-wrap:hover .t-tt,
+.t-tt-trigger:focus-visible + .t-tt {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+  transition-duration: var(--tt-in-dur);
+  transition-timing-function: var(--tt-in-ease);
+  transition-delay: var(--tt-delay);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-modal,
+  .t-modal-backdrop { transition: none !important; }
+  .t-tabs-pill,
+  .t-tab { transition: none !important; }
+  .t-tt { transition: none !important; }
 }
 
 .marker-accent {

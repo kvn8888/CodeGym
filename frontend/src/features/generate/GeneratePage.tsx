@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GridSpinner } from '../../shared/components/GridSpinner';
+import { SlidingTabs } from '../../shared/components/SlidingTabs';
 import { QuestionModal, type Question, type Answer } from './QuestionModal';
 
 type GenerateView = 'command' | 'spotlight';
@@ -322,22 +323,15 @@ function CommandGenerateView({
           style={{ boxShadow: 'var(--cg-card-shadow)' }}
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-alpha-200 bg-background-200 px-4 py-3">
-            <div className="flex rounded-md bg-gray-100 p-0.5">
-              {(['problem', 'mcq', 'interview'] as GenerateFormat[]).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => onFormatChange(item)}
-                  className={`cg-focus rounded-[5px] px-4 py-2 text-sm font-medium transition-colors ${
-                    format === item
-                      ? 'bg-background-100 text-gray-1000 shadow-[0_1px_1px_rgba(0,0,0,0.04)]'
-                      : 'text-gray-700 hover:text-gray-1000'
-                  }`}
-                >
-                  {FORMAT_LABELS[item]}
-                </button>
-              ))}
-            </div>
+            <SlidingTabs
+              ariaLabel="Problem format"
+              value={format}
+              onChange={onFormatChange}
+              options={(['problem', 'mcq', 'interview'] as GenerateFormat[]).map((item) => ({
+                value: item,
+                label: FORMAT_LABELS[item],
+              }))}
+            />
 
             <label className="flex h-10 items-center gap-2 rounded-md border border-gray-alpha-200 bg-background-100 px-3 text-sm text-gray-900">
               <span className="h-2 w-2 rounded-sm bg-blue-700" aria-hidden="true" />

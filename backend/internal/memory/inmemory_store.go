@@ -2,6 +2,8 @@ package memory
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -58,6 +60,38 @@ func (s *InMemoryStore) ListEvents(_ context.Context, tenantID, userID string) (
 	return copied, nil
 }
 
+func (s *InMemoryStore) ListEventScopes(_ context.Context) ([]Scope, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	scopes := make([]Scope, 0, len(s.events))
+	for k, events := range s.events {
+		if len(events) == 0 {
+			continue
+		}
+		tenantID, userID, ok := splitKey(k)
+		if !ok {
+			continue
+		}
+		scopes = append(scopes, Scope{TenantID: tenantID, UserID: userID})
+	}
+	sort.Slice(scopes, func(i, j int) bool {
+		if scopes[i].TenantID == scopes[j].TenantID {
+			return scopes[i].UserID < scopes[j].UserID
+		}
+		return scopes[i].TenantID < scopes[j].TenantID
+	})
+	return scopes, nil
+}
+
 func key(tenantID, userID string) string {
 	return tenantID + "\x00" + userID
+}
+
+func splitKey(value string) (string, string, bool) {
+	parts := strings.SplitN(value, "\x00", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }

@@ -203,3 +203,29 @@ func (s *PostgresStore) ListEvents(ctx context.Context, tenantID, userID string)
 	}
 	return events, nil
 }
+
+func (s *PostgresStore) ListEventScopes(ctx context.Context) ([]Scope, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT tenant_id, user_id
+		FROM memory_events
+		GROUP BY tenant_id, user_id
+		ORDER BY tenant_id ASC, user_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	scopes := []Scope{}
+	for rows.Next() {
+		var scope Scope
+		if err := rows.Scan(&scope.TenantID, &scope.UserID); err != nil {
+			return nil, err
+		}
+		scopes = append(scopes, scope)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return scopes, nil
+}

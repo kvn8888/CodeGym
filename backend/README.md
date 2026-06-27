@@ -83,6 +83,54 @@ token and maps it to `CODEGYM_DEV_USER_ID` / `CODEGYM_DEV_TENANT_ID`.
 See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
 full auth -> identity -> tenant request flow.
 
+## Architecture: Principal, Tenant, Workspace
+
+**Principal** = Authenticated user + list of accessible workspaces.
+
+When a request is authenticated (bearer token validated), the auth middleware injects
+a Principal into the request context. The Principal contains:
+
+- `UserID`: The user's unique identifier
+- `DefaultTenantID`: The default workspace for this user (usually personal)
+- `TenantIDs`: List of all workspaces the user is a member of
+
+**Tenant** = A persistent, isolated data partition (workspace).
+
+Each tenant holds:
+
+- User's memory profile (skills, strengths, growth edges, notes)
+- Event log (problem attempts, reviews, milestones)
+- Shared context (if multi-user tenant, e.g., team workspace)
+
+Most users have one tenant (personal workspace, auto-created on first auth).
+The architecture supports multiple tenants to enable team/org workspaces (future):
+a user can be a member of both personal-workspace AND team-data-science, switching
+context via `X-CodeGym-Tenant-ID` header to operate in different workspaces with
+different memory and collaborators.
+
+**Workspace** = Application-level term for a tenant.
+
+Alias: a persistent account/collaboration scope (not a browser session).
+Contrast: a session is ephemeral (one conversation); a workspace is durable
+(all interactions, memory, events accumulate there).
+
+**Request Scope** = Every request operates in exactly one tenant.
+
+Middleware resolves which tenant by reading `X-CodeGym-Tenant-ID` header (if present)
+or falling back to the principal's default. All data operations are scoped to that tenant:
+
+```
+user=kevin, principal.TenantIDs=[personal-dev, team-science]
+
+Request 1: GET /api/v1/memory/profile (no header)
+  → operates in personal-dev → returns kevin's personal memory
+
+Request 2: GET /api/v1/memory/profile (header: X-CodeGym-Tenant-ID=team-science)
+  → operates in team-science → returns kevin's team memory
+```
+
+If the requested tenant is not in the principal's TenantIDs, the request is rejected (403).
+
 ## Current Routes
 
 ```text
@@ -93,6 +141,38 @@ GET  /api/v1/memory/profile
 GET  /api/v1/memory/events
 POST /api/v1/memory/events
 ```
+
+## Memory Profile Fields
+
+`GET /api/v1/memory/profile` returns a profile object with:
+
+- `summary`: high-level memory summary for the user in the current tenant
+- `updated_at`: timestamp for last profile update
+- `next_review_at`: timestamp for next scheduled review/refresh
+- `strengths`: list of observed strengths
+- `growth_edges`: list of growth opportunities
+- `skills`: list of skill proficiency objects
+- `notes`: list of problem-specific note objects
+
+Each `skills` item includes:
+
+- `id`
+- `label`
+- `area`
+- `level`
+- `confidence`
+- `trend`
+- `last_practiced`
+
+Each `notes` item includes:
+
+- `id`
+- `problem_id`
+- `title`
+- `summary`
+- `created_at`
+- `tags`
+- `action`
 
 
 ## Health vs Readiness

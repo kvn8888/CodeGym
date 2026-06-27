@@ -5,12 +5,14 @@ import (
 	"sync"
 )
 
+// InMemoryStore is a process-local memory store used for local development.
 type InMemoryStore struct {
 	mu       sync.RWMutex
 	profiles map[string]Profile
 	events   map[string][]Event
 }
 
+// NewInMemoryStore creates an empty in-memory memory store.
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
 		profiles: map[string]Profile{},

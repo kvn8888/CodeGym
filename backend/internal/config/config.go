@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// Config contains process configuration loaded from environment variables.
 type Config struct {
 	Host               string
 	Port               string
@@ -15,6 +16,9 @@ type Config struct {
 	CORSAllowedOrigins []string
 }
 
+// Load reads environment variables and returns the effective runtime config.
+//
+// If both NEON_CONNECTION_STRING and DATABASE_URL are set, Neon is preferred.
 func Load() Config {
 	databaseURL := os.Getenv("NEON_CONNECTION_STRING")
 	if databaseURL == "" {
@@ -37,6 +41,7 @@ func Load() Config {
 	}
 }
 
+// Addr returns the listen address in host:port form.
 func (c Config) Addr() string {
 	return c.Host + ":" + c.Port
 }
@@ -49,6 +54,7 @@ func env(key, fallback string) string {
 	return value
 }
 
+// csvEnv parses a comma-separated env var into a trimmed string slice.
 func csvEnv(key string, fallback []string) []string {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {

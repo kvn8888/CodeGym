@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Profile is the long-lived memory summary for a user within a tenant.
 type Profile struct {
 	Summary      string             `json:"summary"`
 	UpdatedAt    time.Time          `json:"updated_at"`
@@ -15,6 +16,7 @@ type Profile struct {
 	Notes        []Note             `json:"notes"`
 }
 
+// SkillProficiency captures skill-level observations in the user profile.
 type SkillProficiency struct {
 	ID            string    `json:"id"`
 	Label         string    `json:"label"`
@@ -25,6 +27,7 @@ type SkillProficiency struct {
 	LastPracticed time.Time `json:"last_practiced"`
 }
 
+// Note stores problem-specific learning notes linked to user activity.
 type Note struct {
 	ID        string    `json:"id"`
 	ProblemID string    `json:"problem_id"`
@@ -35,6 +38,7 @@ type Note struct {
 	Action    string    `json:"action"`
 }
 
+// Event is an append-only memory event emitted from product surfaces.
 type Event struct {
 	ID         string          `json:"id"`
 	TenantID   string          `json:"tenant_id"`
@@ -47,6 +51,7 @@ type Event struct {
 	CreatedAt  time.Time       `json:"created_at"`
 }
 
+// RecordEventInput is the HTTP/service input payload for appending events.
 type RecordEventInput struct {
 	Source     string          `json:"source"`
 	Type       string          `json:"type"`

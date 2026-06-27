@@ -7,14 +7,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// PostgresStore persists identity and tenant membership bootstrap data.
 type PostgresStore struct {
 	pool *pgxpool.Pool
 }
 
+// NewPostgresStore creates a Postgres-backed identity store.
 func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 	return &PostgresStore{pool: pool}
 }
 
+// EnsureSchema idempotently creates identity and tenancy tables.
 func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS app_users (

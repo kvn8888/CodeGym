@@ -13,6 +13,8 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/memory"
 )
 
+// main wires configuration, persistence adapters, services, and the HTTP router,
+// then starts the API server.
 func main() {
 	ctx := context.Background()
 	cfg := config.Load()

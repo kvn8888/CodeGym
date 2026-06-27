@@ -5,7 +5,7 @@ Companion to [auth-identity-tenant.md](auth-identity-tenant.md) and issue
 
 This doc started as a learning workflow: hand-write the code (with
 autocomplete), then have a separate review pass check it against the acceptance
-criteria. US-2 and US-3 now have a completed v0, while US-1 and US-4 remain the
+criteria. US-1, US-2, and US-3 now have a completed v0, while US-4 remains the
 main follow-up work.
 
 ---
@@ -18,6 +18,9 @@ The middleware chain and the memory read/write paths are complete:
   `internal/identity`, `internal/tenant`), chained in `internal/api/router.go`.
   A request resolves to an `auth.Principal` and an internal `tenant.Scope` in
   context.
+- **Auth0 identity reconciliation**: Auth0 `sub` maps to the durable CodeGym
+  user id, each user gets a deterministic personal workspace, and optional
+  Auth0 `email`/`name` claims are reconciled into `app_users` metadata.
 - **Memory storage**: `memory.Store` interface with both `InMemoryStore` and
   `PostgresStore`; model types (`Profile`, `Event`, `Note`, `SkillProficiency`).
 - **Memory service** read/record: `GetProfile`, `RecordEvent`, `ListEvents`, all
@@ -28,12 +31,11 @@ The middleware chain and the memory read/write paths are complete:
 
 ## What's left (these stories)
 
-The remaining backend gaps are:
+The remaining backend implementation gap is:
 
-1. **Auth0 identity reconciliation** — Auth0 token validation exists, but
-   durable user/workspace reconciliation still needs to mature.
-2. **Strict memory event naming** — events are accepted as flexible
-   `source`/`type` strings until the event-name convention is finalized.
+1. **Strict memory event validation** — the naming guide exists, but events are
+   still accepted as flexible `source`/`type` strings until the service adds a
+   strict validation hook.
 
 ---
 
@@ -56,12 +58,15 @@ issuer, audience, RS256 signature, expiry, and not-before validation.
    wrong-audience, expired, and not-yet-valid tokens.
 4. Map validated claims into `auth.Principal`.
 5. Map each Auth0 user to one deterministic personal workspace.
-6. Preserve `DevAuthenticator` as the local fallback.
+6. Reconcile Auth0 `email` and `name` as optional app-user metadata.
+7. Preserve `DevAuthenticator` as the local fallback.
 
 **Acceptance criteria:**
 - [x] Implements `auth.Authenticator` (so it drops into `auth.Middleware`).
 - [x] Valid token → `Principal{UserID, DefaultTenantID, TenantIDs}` for the
   user's personal workspace.
+- [x] Optional Auth0 `email` and `name` metadata flows through identity
+  middleware into the durable app-user bootstrap.
 - [x] Missing / malformed / wrong-audience / wrong-issuer / tampered / expired
   -> `ErrUnauthenticated`.
 - [x] `jwt_authenticator_test.go` passes.
@@ -130,16 +135,17 @@ the current request scope.
 > **As a** maintainer, **I want** memory event `source`/`type` validated against a
 > canonical list, **so that** events stay queryable as more surfaces emit them.
 
-Depends on [#7 — memory event naming guide v0](https://github.com/kvn8888/CodeGym/issues/7).
-Add a validation hook in `Service.RecordEvent` that rejects unknown
-`source`/`type` (at least in a strict mode), and make `Summarize` rely on those
-canonical names. This is what makes US-2's aggregation tractable.
+Depends on the [memory event naming guide v0](memory-event-naming-guide-v0.md),
+created for [#7](https://github.com/kvn8888/CodeGym/issues/7). Add a validation
+hook in `Service.RecordEvent` that rejects unknown `source`/`type` (at least in
+a strict mode), and make `Summarize` rely on those canonical names. This is what
+makes US-2's aggregation tractable.
 
 ---
 
 ## Suggested order
 
-1. **US-4** once the memory event naming convention is approved.
-2. Auth0 identity/workspace reconciliation in issue #19.
+1. **US-4** strict validation now that the memory event naming guide exists.
 
-US-1, US-2, and US-3 map to issue #2's foundation. US-4 depends on issue #7.
+US-1, US-2, and US-3 map to issue #2's foundation. US-4 depends on the naming
+guide from issue #7.

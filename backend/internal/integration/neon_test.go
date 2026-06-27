@@ -57,11 +57,22 @@ func TestNeonIdentityAndMemoryBootstrap(t *testing.T) {
 		UserID:          userID,
 		DefaultTenantID: tenantID,
 		TenantIDs:       []string{tenantID},
+		UserMetadata: auth.UserMetadata{
+			Email:       userID + "@example.com",
+			DisplayName: "Test User " + suffix,
+		},
 	}
 	if err := identityService.EnsurePersonalTenant(ctx, principal); err != nil {
 		t.Fatalf("ensure personal tenant: %v", err)
 	}
-	assertIdentityRows(t, ctx, pool, tenantID, userID)
+	assertIdentityRows(t, ctx, pool, tenantID, userID, principal.UserMetadata.Email, principal.UserMetadata.DisplayName)
+
+	repeatedPrincipal := principal
+	repeatedPrincipal.UserMetadata = auth.UserMetadata{}
+	if err := identityService.EnsurePersonalTenant(ctx, repeatedPrincipal); err != nil {
+		t.Fatalf("ensure personal tenant without metadata: %v", err)
+	}
+	assertIdentityRows(t, ctx, pool, tenantID, userID, principal.UserMetadata.Email, principal.UserMetadata.DisplayName)
 
 	requestCtx := auth.WithPrincipal(ctx, principal)
 	requestCtx = tenant.WithScope(requestCtx, tenant.Scope{TenantID: tenantID})
@@ -71,8 +82,8 @@ func TestNeonIdentityAndMemoryBootstrap(t *testing.T) {
 	})
 	payload := json.RawMessage(`{"check":"neon-bootstrap"}`)
 	event, err := memoryService.RecordEvent(requestCtx, memory.RecordEventInput{
-		Source:  "integration",
-		Type:    "neon_bootstrap_checked",
+		Source:  "system",
+		Type:    "memory_api_checked",
 		Summary: "Verified Neon identity and memory schema bootstrap.",
 		Payload: payload,
 	})
@@ -129,7 +140,7 @@ func assertConstraints(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	}
 }
 
-func assertIdentityRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID, userID string) {
+func assertIdentityRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID, userID, email, displayName string) {
 	t.Helper()
 
 	var count int
@@ -140,9 +151,11 @@ func assertIdentityRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, t
 		JOIN tenants t ON t.id = m.tenant_id
 		WHERE u.id = $1
 			AND t.id = $2
+			AND u.email = $3
+			AND u.display_name = $4
 			AND t.tenant_type = 'personal'
 			AND m.role = 'owner'
-	`, userID, tenantID).Scan(&count)
+	`, userID, tenantID, email, displayName).Scan(&count)
 	if err != nil {
 		t.Fatalf("query identity rows: %v", err)
 	}
@@ -166,7 +179,7 @@ func assertMembershipConstraint(t *testing.T, ctx context.Context, pool *pgxpool
 			occurred_at,
 			created_at
 		)
-		VALUES ($1, $2, $3, 'integration', 'orphan_rejected', '', '{}'::jsonb, now(), now())
+		VALUES ($1, $2, $3, 'system', 'memory_api_checked', '', '{}'::jsonb, now(), now())
 	`, "mem_evt_orphan_"+fmt.Sprint(time.Now().UnixNano()), "missing-tenant", "missing-user")
 	if err == nil {
 		t.Fatal("expected orphan memory event insert to fail")

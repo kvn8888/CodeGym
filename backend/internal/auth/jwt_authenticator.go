@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ type Auth0AuthenticatorConfig struct {
 	IssuerURL        string
 	Audience         string
 	AllowedClockSkew time.Duration
+	HTTPClient       *http.Client
 }
 
 type tokenValidator interface {
@@ -36,7 +38,12 @@ func NewAuth0Authenticator(config Auth0AuthenticatorConfig) (*Auth0Authenticator
 		return nil, err
 	}
 
-	provider, err := jwks.NewCachingProvider(jwks.WithIssuerURL(issuerURL))
+	providerOptions := []any{jwks.WithIssuerURL(issuerURL)}
+	if config.HTTPClient != nil {
+		providerOptions = append(providerOptions, jwks.WithCustomClient(config.HTTPClient))
+	}
+
+	provider, err := jwks.NewCachingProvider(providerOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("create auth0 jwks provider: %w", err)
 	}
@@ -46,6 +53,9 @@ func NewAuth0Authenticator(config Auth0AuthenticatorConfig) (*Auth0Authenticator
 		auth0validator.WithAlgorithm(auth0validator.RS256),
 		auth0validator.WithIssuer(issuerURL.String()),
 		auth0validator.WithAudience(strings.TrimSpace(config.Audience)),
+		auth0validator.WithCustomClaims(func() *auth0ProfileClaims {
+			return &auth0ProfileClaims{}
+		}),
 	}
 	if config.AllowedClockSkew > 0 {
 		options = append(options, auth0validator.WithAllowedClockSkew(config.AllowedClockSkew))
@@ -92,7 +102,29 @@ func (a *Auth0Authenticator) Authenticate(ctx context.Context, bearerToken strin
 		UserID:          userID,
 		DefaultTenantID: defaultTenantID,
 		TenantIDs:       []string{defaultTenantID},
+		UserMetadata:    userMetadataFromAuth0Claims(validatedClaims),
 	}, nil
+}
+
+type auth0ProfileClaims struct {
+	Email string `json:"email,omitempty"`
+	Name  string `json:"name,omitempty"`
+}
+
+func (c *auth0ProfileClaims) Validate(context.Context) error {
+	return nil
+}
+
+func userMetadataFromAuth0Claims(claims *auth0validator.ValidatedClaims) UserMetadata {
+	profile, ok := claims.CustomClaims.(*auth0ProfileClaims)
+	if !ok || profile == nil {
+		return UserMetadata{}
+	}
+
+	return UserMetadata{
+		Email:       strings.TrimSpace(profile.Email),
+		DisplayName: strings.TrimSpace(profile.Name),
+	}
 }
 
 func auth0IssuerURL(config Auth0AuthenticatorConfig) (*url.URL, error) {

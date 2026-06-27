@@ -23,7 +23,7 @@ should still stay out unless the user explicitly asks to reintroduce them.
 
 - Branch: `codegym-v2`.
 - Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes.
-- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, personal workspace bootstrap, memory profile/event APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
+- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, memory profile/event APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
 - Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`.
 - CI: `.github/workflows/ci.yml` runs frontend `npm ci`, lint, build, and backend `go test ./...` on PRs/pushes to `codegym-v2`. `.github/workflows/openapi-lint.yml` runs `npm run api:lint` (Redocly) when `api/**` changes.
 - Project board: GitHub Projects v2 project `#2` (`CodeGym v2`) is the active kanban unless the user says otherwise.
@@ -71,9 +71,14 @@ should still stay out unless the user explicitly asks to reintroduce them.
 - Memory writes should append events quickly. Profile summarization should stay
   behind `Service.RefreshProfile` or a worker boundary so request paths do not
   block on derived-memory work.
+- Memory event emitters should use the canonical `source` and `type` names in
+  `docs/memory-event-naming-guide-v0.md`. Add new names there before frontend,
+  backend, or script emitters start writing a new event shape.
 - Auth0 is the selected production auth provider. Auth0 JWT validation now
   lives behind the existing `auth.Authenticator` boundary; preserve the
-  `DevAuthenticator` path for local fallback and tests.
+  `DevAuthenticator` path for local fallback and tests. Auth0 `sub` is the
+  durable CodeGym user ID. Auth0 `email` and `name` are optional app-user
+  metadata only; never use them for authorization or workspace selection.
 - GenAI provider code should live behind a provider client/adapter, but that
   client should not fetch memory directly. Generation/chat orchestration should
   compose `memory.Service` with the GenAI client, build the prompt/context, then

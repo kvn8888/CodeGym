@@ -37,10 +37,12 @@ func TestAuth0Authenticator(t *testing.T) {
 
 	t.Run("valid token maps auth0 subject to personal workspace principal", func(t *testing.T) {
 		token := mintRS256(t, privateKey, map[string]any{
-			"iss": testIssuer,
-			"aud": testAudience,
-			"sub": "auth0|user_123",
-			"exp": future,
+			"iss":   testIssuer,
+			"aud":   testAudience,
+			"sub":   "auth0|user_123",
+			"exp":   future,
+			"email": "kevin@example.com",
+			"name":  "Kevin Chen",
 		})
 
 		principal, err := authn.Authenticate(context.Background(), token)
@@ -55,6 +57,12 @@ func TestAuth0Authenticator(t *testing.T) {
 		}
 		if !principal.HasTenant("personal-auth0-user-123") || principal.HasTenant("shared-claimed") {
 			t.Fatalf("expected only personal-auth0-user-123 in TenantIDs: %#v", principal.TenantIDs)
+		}
+		if principal.UserMetadata.Email != "kevin@example.com" {
+			t.Fatalf("Email = %q, want kevin@example.com", principal.UserMetadata.Email)
+		}
+		if principal.UserMetadata.DisplayName != "Kevin Chen" {
+			t.Fatalf("DisplayName = %q, want Kevin Chen", principal.UserMetadata.DisplayName)
 		}
 	})
 
@@ -187,6 +195,9 @@ func newTestAuth0Authenticator(t *testing.T, publicKey *rsa.PublicKey) *Auth0Aut
 		auth0validator.WithAlgorithm(auth0validator.RS256),
 		auth0validator.WithIssuer(testIssuer),
 		auth0validator.WithAudience(testAudience),
+		auth0validator.WithCustomClaims(func() *auth0ProfileClaims {
+			return &auth0ProfileClaims{}
+		}),
 	)
 	if err != nil {
 		t.Fatalf("create validator: %v", err)

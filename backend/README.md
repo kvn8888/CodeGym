@@ -102,6 +102,9 @@ scope middleware.
 See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
 full auth -> identity -> personal workspace scope request flow.
 
+Memory event `source` and `type` names for emitters are documented in
+[../docs/memory-event-naming-guide-v0.md](../docs/memory-event-naming-guide-v0.md).
+
 ## Current Routes
 
 ```text
@@ -141,6 +144,11 @@ tables with `CREATE TABLE IF NOT EXISTS`:
 - `tenant_memberships`
 - `user_memory_profiles`
 - `memory_events`
+
+`app_users.id` is the durable CodeGym user key. With Auth0, it is the Auth0
+`sub` claim. Auth0 `email` and `name` are stored as optional profile metadata
+(`email` and `display_name`) when present, but neither field is used for
+authorization or workspace selection.
 
 The `tenants` and `tenant_memberships` table names are current internal schema
 names for personal workspace scope. They are not a product commitment to

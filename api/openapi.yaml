@@ -328,10 +328,10 @@ components:
           type: string
         source:
           type: string
-          example: chat
+          example: memory
         type:
           type: string
-          example: memory_note_created
+          example: note_created
         summary:
           type: string
         payload:

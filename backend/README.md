@@ -105,15 +105,16 @@ For Auth0, set the mode plus issuer/audience config:
 
 ```bash
 CODEGYM_AUTH_MODE=auth0
-AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
-AUTH0_AUDIENCE=https://api.codegym.example
+CODEGYM_AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
+CODEGYM_AUTH0_AUDIENCE=https://api.codegym.example
 ```
 
-The server also accepts `CODEGYM_AUTH0_DOMAIN`,
-`CODEGYM_AUTH0_ISSUER_URL`, and `CODEGYM_AUTH0_AUDIENCE`. When Auth0 is
-configured, access tokens are validated with Auth0 JWKS, RS256, issuer,
-audience, expiry, and not-before checks before they reach identity/workspace
-scope middleware.
+The server also accepts `AUTH0_DOMAIN` / `AUTH0_AUDIENCE` aliases and
+`CODEGYM_AUTH0_ISSUER_URL` for explicit issuer overrides. When Auth0 is
+configured, backend **access tokens** are validated with Auth0 JWKS, RS256,
+issuer, audience, expiry, and not-before checks before they reach
+identity/workspace scope middleware. The backend does not use Auth0 client IDs
+or client secrets; those belong to the frontend SPA login setup.
 
 See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
 full auth -> identity -> personal workspace scope request flow.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { api } from '../../shared/api/client';
+import { memoryApi } from '../../shared/api/client';
 import type { UserMemoryProfile } from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 
@@ -31,8 +31,8 @@ export function MemoryPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .get<UserMemoryProfile>('/memory/profile')
+    memoryApi
+      .getProfile()
       .then((data) => {
         setProfile(data);
         setError(null);

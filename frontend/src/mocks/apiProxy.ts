@@ -1,5 +1,6 @@
 import { mockPassingResult, mockProblems, mockProblemSummaries, mockSkeletons } from './fixtures';
 import { mockMemoryProfile } from './memoryFixtures';
+import type { components } from '../shared/api/openapi';
 
 interface MockApiResponse<T> {
   data: T;
@@ -7,6 +8,7 @@ interface MockApiResponse<T> {
 }
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
+const mockMemoryEvents: components['schemas']['MemoryEvent'][] = [];
 
 function json<T>(data: T, init?: ResponseInit): Response {
   const body: MockApiResponse<T> = { data, error: null };
@@ -47,6 +49,34 @@ export async function mockApiFetch(
 
   if (method === 'GET' && path === '/memory/profile') {
     return json(mockMemoryProfile);
+  }
+
+  if (method === 'POST' && path === '/memory/profile/refresh') {
+    return json(mockMemoryProfile);
+  }
+
+  if (method === 'GET' && path === '/memory/events') {
+    return json(mockMemoryEvents);
+  }
+
+  if (method === 'POST' && path === '/memory/events') {
+    const input = JSON.parse(
+      init?.body?.toString() ?? '{}',
+    ) as components['schemas']['RecordMemoryEventInput'];
+    const now = new Date().toISOString();
+    const event: components['schemas']['MemoryEvent'] = {
+      id: `mock-memory-event-${Date.now()}`,
+      tenant_id: 'personal-dev',
+      user_id: 'dev-user',
+      source: input.source,
+      type: input.type,
+      summary: input.summary,
+      ...(input.payload !== undefined ? { payload: input.payload } : {}),
+      occurred_at: input.occurred_at ?? now,
+      created_at: now,
+    };
+    mockMemoryEvents.unshift(event);
+    return json(event, { status: 201 });
   }
 
   if (method === 'GET' && path === '/problems') {

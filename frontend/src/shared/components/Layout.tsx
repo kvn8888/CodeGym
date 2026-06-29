@@ -1,20 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import {
   Brain,
-  CircleHelp,
   Grid2X2,
   LayoutDashboard,
-  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Rows3,
-  Settings,
   type LucideIcon,
 } from 'lucide-react';
 import { FloatingChat } from './FloatingChat';
+import { AuthAccountMenu } from '../auth/AuthAccountMenu';
 
 type NavItem = {
   path: string;
@@ -47,18 +45,6 @@ export function Layout() {
   const location = useLocation();
   const shouldReduceMotion = useReducedMotion();
   const [collapsed, setCollapsed] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-        setProfileOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
@@ -152,54 +138,7 @@ export function Layout() {
           </nav>
         </div>
 
-        <div ref={profileRef} className="relative shrink-0 border-t border-gray-alpha-200 p-2">
-          <motion.button
-            type="button"
-            onClick={() => setProfileOpen((open) => !open)}
-            whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
-            className={`cg-focus flex h-11 w-full items-center rounded-md hover:bg-gray-alpha-100 ${
-              collapsed ? 'justify-center px-0' : 'gap-3 px-2'
-            }`}
-          >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-1000 font-mono text-[11px] font-semibold text-background-100">
-              KC
-            </div>
-            {!collapsed && (
-              <span className="truncate text-left text-[13px] text-gray-900">
-                kvn.c8888
-              </span>
-            )}
-          </motion.button>
-
-          <AnimatePresence>
-            {profileOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.98 }}
-                transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2, ease: [0.175, 0.885, 0.32, 1.1] }}
-                className={`absolute z-50 overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100 ${
-                  collapsed ? 'bottom-2 left-full ml-2 w-60' : 'bottom-full left-2 right-2 mb-2'
-                }`}
-                style={{ boxShadow: 'var(--cg-popover-shadow)' }}
-              >
-                <div className="border-b border-gray-alpha-200 px-4 py-3">
-                  <div className="truncate text-[13px] font-medium text-gray-1000">
-                    kvn.c8888@gmail.com
-                  </div>
-                  <div className="mt-0.5 text-xs text-gray-700">Personal workspace</div>
-                </div>
-                <div className="py-1">
-                  <ProfileAction icon={Settings} label="Settings" />
-                  <ProfileAction icon={CircleHelp} label="Get Help" />
-                </div>
-                <div className="border-t border-gray-alpha-200 py-1">
-                  <ProfileAction icon={LogOut} label="Log Out" />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        <AuthAccountMenu collapsed={collapsed} />
       </motion.aside>
 
       <main className="min-w-0 flex-1">
@@ -208,17 +147,5 @@ export function Layout() {
 
       <FloatingChat />
     </div>
-  );
-}
-
-function ProfileAction({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
-  return (
-    <button
-      type="button"
-      className="cg-focus flex w-full items-center gap-3 px-4 py-2.5 text-left text-[13px] text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000"
-    >
-      <Icon size={16} strokeWidth={1.8} />
-      {label}
-    </button>
   );
 }

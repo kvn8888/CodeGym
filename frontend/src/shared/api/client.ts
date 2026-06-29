@@ -1,16 +1,32 @@
 import { mockApiFetch } from '../../mocks/apiProxy';
 
-const API_BASE = '/api/v1';
+const DEFAULT_API_BASE = '/api/v1';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE).replace(/\/$/, '');
 const USE_MOCK_API = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API !== 'false';
 
+type AccessTokenProvider = () => Promise<string | null>;
+
+let accessTokenProvider: AccessTokenProvider | null = null;
 
 interface APIResponse<T> {
   data: T;
   error: { code: string; message: string } | null;
 }
 
+export function setApiAccessTokenProvider(provider: AccessTokenProvider | null) {
+  accessTokenProvider = provider;
+}
+
+async function getBearerToken(): Promise<string | null> {
+  if (accessTokenProvider) {
+    return accessTokenProvider();
+  }
+
+  return localStorage.getItem('codegym_token');
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('codegym_token');
+  const token = await getBearerToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

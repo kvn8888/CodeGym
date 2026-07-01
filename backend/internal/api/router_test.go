@@ -10,6 +10,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,7 +22,48 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"gopkg.in/yaml.v3"
 )
+
+func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current test file")
+	}
+
+	openAPIPath := filepath.Join(filepath.Dir(currentFile), "..", "..", "..", "api", "openapi.yaml")
+	openAPIBytes, err := os.ReadFile(openAPIPath)
+	if err != nil {
+		t.Fatalf("read OpenAPI contract: %v", err)
+	}
+
+	var contract struct {
+		Paths map[string]map[string]any `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(openAPIBytes, &contract); err != nil {
+		t.Fatalf("parse OpenAPI contract: %v", err)
+	}
+
+	required := map[string][]string{
+		"/health":                        {http.MethodGet},
+		"/ready":                         {http.MethodGet},
+		"/api/v1/memory/profile":         {http.MethodGet},
+		"/api/v1/memory/profile/refresh": {http.MethodPost},
+		"/api/v1/memory/events":          {http.MethodGet, http.MethodPost},
+	}
+
+	for path, methods := range required {
+		operations, ok := contract.Paths[path]
+		if !ok {
+			t.Fatalf("OpenAPI contract is missing route %s", path)
+		}
+		for _, method := range methods {
+			if _, ok := operations[strings.ToLower(method)]; !ok {
+				t.Fatalf("OpenAPI contract is missing %s %s", method, path)
+			}
+		}
+	}
+}
 
 func TestRouterMapsAuth0UserIntoIdentityBootstrap(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)

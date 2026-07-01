@@ -1,9 +1,17 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowRight, Command, Sparkles } from 'lucide-react';
+import { ArrowRight, Command as CommandIcon, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 import { SlidingTabs } from '../../shared/components/SlidingTabs';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -11,6 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/lib/utils';
 import { QuestionModal, type Question, type Answer } from './QuestionModal';
 
 type GenerateView = 'command' | 'spotlight';
@@ -61,22 +74,13 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   hard: 'Hard',
 };
 
-const DIFFICULTY_STYLES: Record<Difficulty, React.CSSProperties> = {
-  easy: {
-    color: 'var(--color-green-900)',
-    background: 'var(--color-green-100)',
-    borderColor: 'var(--color-green-400)',
-  },
-  medium: {
-    color: 'var(--color-amber-900)',
-    background: 'var(--color-amber-100)',
-    borderColor: 'var(--color-amber-400)',
-  },
-  hard: {
-    color: 'var(--color-red-900)',
-    background: 'var(--color-red-100)',
-    borderColor: 'var(--color-red-400)',
-  },
+const DIFFICULTY_TOGGLE_CLASSES: Record<Difficulty, string> = {
+  easy:
+    'data-[state=on]:border-green-400 data-[state=on]:bg-green-100 data-[state=on]:text-green-900 dark:data-[state=on]:border-green-500/40 dark:data-[state=on]:bg-green-500/15 dark:data-[state=on]:text-green-400',
+  medium:
+    'data-[state=on]:border-amber-400 data-[state=on]:bg-amber-100 data-[state=on]:text-amber-900 dark:data-[state=on]:border-amber-500/40 dark:data-[state=on]:bg-amber-500/15 dark:data-[state=on]:text-amber-400',
+  hard:
+    'data-[state=on]:border-red-400 data-[state=on]:bg-red-100 data-[state=on]:text-red-900 dark:data-[state=on]:border-red-500/40 dark:data-[state=on]:bg-red-500/15 dark:data-[state=on]:text-red-400',
 };
 
 function currentHourBucket() {
@@ -287,47 +291,44 @@ function CommandGenerateView({
     <main className="flex flex-col items-center px-0 pb-12 pt-14">
       <div className="w-full max-w-3xl">
         <div className="mb-8">
-          <h1 className="text-[40px] font-semibold leading-[48px] tracking-[-2.4px] text-gray-1000">
+          <h1 className="text-[40px] font-semibold leading-[48px] tracking-[-2.4px] text-foreground">
             What do you want to practice?
           </h1>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 md:flex-nowrap">
-            <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-gray-900">
-              <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-blue-100">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-700" />
+            <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">
+              <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-500/20">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-700 dark:bg-blue-400" />
               </span>
               <span>
                 Tuned to your history - lately you worked on{' '}
-                <strong className="font-semibold text-gray-1000">Graphs</strong> and{' '}
-                <strong className="font-semibold text-gray-1000">Concurrency</strong>.
+                <strong className="font-semibold text-foreground">Graphs</strong> and{' '}
+                <strong className="font-semibold text-foreground">Concurrency</strong>.
               </span>
             </div>
-            <Link
-              to="/memory"
-              className="cg-focus rounded-md px-1 text-sm font-medium text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline"
-            >
-              View Memory
-            </Link>
+            <Button variant="link" className="h-auto px-1 text-blue-700 dark:text-blue-400" asChild>
+              <Link to="/memory">View Memory</Link>
+            </Button>
           </div>
         </div>
 
-        <section
-          className="overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100"
-          style={{ boxShadow: 'var(--cg-card-shadow)' }}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-alpha-200 bg-background-200 px-4 py-3">
-            <SlidingTabs
-              ariaLabel="Problem format"
+        <Card className="gap-0 overflow-hidden py-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
+            <Tabs
               value={format}
-              onChange={onFormatChange}
-              options={(['problem', 'mcq', 'interview'] as GenerateFormat[]).map((item) => ({
-                value: item,
-                label: FORMAT_LABELS[item],
-              }))}
-            />
+              onValueChange={(value) => onFormatChange(value as GenerateFormat)}
+            >
+              <TabsList aria-label="Problem format">
+                {(['problem', 'mcq', 'interview'] as GenerateFormat[]).map((item) => (
+                  <TabsTrigger key={item} value={item}>
+                    {FORMAT_LABELS[item]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
 
             <Select value={language} onValueChange={onLanguageChange}>
-              <SelectTrigger className="h-10" aria-label="Language">
-                <span className="h-2 w-2 rounded-sm bg-blue-700" aria-hidden="true" />
+              <SelectTrigger className="h-9 w-[148px]" aria-label="Language">
+                <span className="h-2 w-2 rounded-sm bg-blue-700 dark:bg-blue-400" aria-hidden="true" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -337,66 +338,82 @@ function CommandGenerateView({
                 <SelectItem value="java">Java</SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </CardHeader>
 
-          <textarea
-            value={prompt}
-            onChange={(event) => onPromptChange(event.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Describe a challenge - e.g. a hard problem on topological sort with cycle detection, with tricky edge cases..."
-            rows={5}
-            className="cg-scroll block min-h-36 w-full resize-none bg-background-100 px-4 py-5 text-sm leading-6 text-gray-1000 placeholder-gray-700 focus-visible:outline-none"
-          />
+          <CardContent className="p-0">
+            <Textarea
+              value={prompt}
+              onChange={(event) => onPromptChange(event.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Describe a challenge - e.g. a hard problem on topological sort with cycle detection, with tricky edge cases..."
+              rows={5}
+              className="min-h-36 resize-none rounded-none border-0 bg-transparent px-4 py-5 text-sm leading-6 shadow-none focus-visible:ring-0"
+            />
+          </CardContent>
 
-          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-gray-alpha-200 bg-background-200 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="mr-2 text-xs text-gray-700">
-                Level
-              </span>
-              {(['easy', 'medium', 'hard'] as Difficulty[]).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => onDifficultyChange(item)}
-                  className={`cg-focus h-10 rounded-md border px-4 text-sm font-medium transition-colors ${
-                    difficulty === item
-                      ? 'border-transparent'
-                      : 'border-gray-alpha-200 bg-background-100 text-gray-900 hover:border-gray-alpha-400 hover:text-gray-1000'
-                  }`}
-                  style={difficulty === item ? DIFFICULTY_STYLES[item] : undefined}
-                >
-                  {DIFFICULTY_LABELS[item]}
-                </button>
-              ))}
+          <CardFooter className="flex-wrap items-center justify-between gap-4 border-t bg-muted/40 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Level</Label>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="lg"
+                spacing={0}
+                value={difficulty}
+                onValueChange={(value) => {
+                  if (value) onDifficultyChange(value as Difficulty);
+                }}
+              >
+                {(['easy', 'medium', 'hard'] as Difficulty[]).map((item) => (
+                  <ToggleGroupItem
+                    key={item}
+                    value={item}
+                    aria-label={DIFFICULTY_LABELS[item]}
+                    className={cn('min-w-20', DIFFICULTY_TOGGLE_CLASSES[item])}
+                  >
+                    {DIFFICULTY_LABELS[item]}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
             </div>
 
-            <GenerateButton
+            <Button
+              type="button"
               disabled={generating || !prompt.trim()}
-              generating={generating}
-              label="Generate"
               onClick={onGenerate}
-              variant="ink"
-            />
-          </div>
-        </section>
+              className="gap-2"
+            >
+              {generating ? (
+                <Spinner className="size-4" />
+              ) : (
+                <>
+                  <span>Generate</span>
+                  <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-primary-foreground/20 bg-primary-foreground/10 px-1.5 font-mono text-[10px] font-medium sm:inline-flex">
+                    <CommandIcon className="size-2.5" />
+                    Enter
+                  </kbd>
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
 
         <div className="mt-6 flex flex-wrap items-center gap-2">
-          <span className="mr-2 text-xs text-gray-700">
-            Recent
-          </span>
+          <Label className="text-xs text-muted-foreground">Recent</Label>
           {RECENT_PROMPTS.map((item) => (
-            <button
+            <Button
               key={item}
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => onUsePrompt(item)}
-              className="cg-focus h-10 rounded-md border border-gray-alpha-200 bg-background-100 px-4 text-sm text-gray-900 transition-colors hover:border-gray-alpha-400 hover:text-gray-1000"
             >
               {item}
-            </button>
+            </Button>
           ))}
         </div>
 
-        <GenerationState generating={generating} status={status} />
+        <CommandGenerationState generating={generating} status={status} />
       </div>
     </main>
   );
@@ -545,11 +562,41 @@ function GenerateButton({
         <>
           <span>{label}</span>
           <kbd className="font-mono rounded-[5px] bg-white/15 px-1.5 py-0.5 text-[11px] text-white/80">
-            <Command size={10} strokeWidth={2} className="inline" /> Enter
+            <CommandIcon size={10} strokeWidth={2} className="inline" /> Enter
           </kbd>
         </>
       )}
     </motion.button>
+  );
+}
+
+function CommandGenerationState({
+  generating,
+  status,
+}: {
+  generating: boolean;
+  status: string | null;
+}) {
+  if (generating) {
+    return (
+      <div className="cg-fade-in mt-12 flex flex-col items-center gap-4">
+        <Spinner className="size-6" />
+        <span className="font-mono text-xs tracking-[0.16em] text-muted-foreground uppercase">
+          Generating
+        </span>
+      </div>
+    );
+  }
+
+  if (!status) return null;
+
+  return (
+    <Card className="cg-fade-in mx-auto mt-6 max-w-xl gap-0 py-3">
+      <CardContent className="flex items-start gap-2 px-4 py-0 text-sm text-muted-foreground">
+        <Sparkles className="mt-0.5 size-3.5 shrink-0" />
+        <span>{status}</span>
+      </CardContent>
+    </Card>
   );
 }
 

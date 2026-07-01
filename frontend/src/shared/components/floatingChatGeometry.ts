@@ -90,7 +90,7 @@ export function defaultOpenBounds(): ChatBounds {
   const max = maxChatSize();
   const width = Math.min(DEFAULT_CHAT_W, max.width);
   const height = Math.min(DEFAULT_CHAT_H, max.height);
-  const anchor = cornerPosition('top-right', width, height);
+  const anchor = cornerPosition('bottom-right', width, height);
   return { x: anchor.x, y: anchor.y, width, height };
 }
 

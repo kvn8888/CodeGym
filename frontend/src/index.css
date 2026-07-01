@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap');
 @import "tailwindcss";
+@import "shadcn/tailwind.css";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -643,3 +644,21 @@ pre,
   border-radius: 999px;
 }
 .cg-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: color-mix(in oklab, var(--foreground) 18%, transparent);
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}

@@ -51,11 +51,10 @@ unchecked task below; they are independent unless noted.
   shadcn `Tabs` (add `components/ui/tabs.tsx`) or keep custom, hint reveals →
   `Button`. Monaco editor stays. The results panel hardcodes `#1e1e1e`/`#252526`/
   `#f14c4c` etc. — either keep as a deliberate "editor" surface or tokenize.
-- [ ] **Chat** (`shared/components/FloatingChat.tsx`, `features/chat/ChatPanel.tsx`):
-  shadcnify chrome — `Button` (send/close), `Input`/`Textarea`, `ScrollArea` for
-  the message list, `Card` surfaces. Keep `react-rnd` drag/resize + the Framer
-  bubble↔window morph. If you have the official shadcn chat block registry slug,
-  swap `ChatPanel` for it here.
+- [x] **Chat** (`shared/components/FloatingChat.tsx`, `features/chat/ChatPanel.tsx`):
+  shadcn chat block — `Card` chrome, `InputGroup` composer, `MessageScroller` +
+  `Bubble`/`Message` list, `Marker`/`Spinner` thinking state. Framer
+  bubble↔window morph + `react-rnd` drag/resize preserved.
 - [ ] **Finish GeneratePage**: convert `GenerateButton`, the Recent/Example
   chips, and the difficulty buttons to `Button`/`Badge` variants; the command
   `textarea` + spotlight `input` are still borderless inline (lightly themed) —

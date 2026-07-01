@@ -95,18 +95,42 @@ shape check fails.
 
 ## Frontend
 
-The frontend currently does not require private secrets to run. Keep any future
-browser-visible values prefixed with the framework's public env prefix and do
-not expose server-only secrets to Vite.
+The frontend uses public Vite env values for browser-visible configuration.
+Never put server-only secrets, Auth0 client secrets, Neon connection strings, or
+backend bearer tokens in Vite env files.
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-If the frontend later needs shared non-secret config from Doppler:
+For Auth0 login, copy `frontend/.env.example` to `frontend/.env.local` or load
+the same values through Doppler:
 
 ```bash
 cd frontend
 doppler run -p codegym -c dev -- npm run dev
+```
+
+Current Auth0 Single Page Application values:
+
+| Name | Value |
+| --- | --- |
+| `VITE_AUTH0_DOMAIN` | `dev-qpevrkauua3p7j6l.us.auth0.com` |
+| `VITE_AUTH0_CLIENT_ID` | `Z4LdZf8STLjtuUvkrdgrtGvwzwQlJbBZ` |
+
+Set `VITE_AUTH0_AUDIENCE` to the Auth0 API Identifier for the Go backend once
+that API exists. It should match `CODEGYM_AUTH0_AUDIENCE` / `AUTH0_AUDIENCE`.
+
+Auth0 dashboard settings for local frontend development:
+
+```text
+Allowed Callback URLs:
+http://localhost:3000, http://localhost:5173
+
+Allowed Logout URLs:
+http://localhost:3000, http://localhost:5173
+
+Allowed Web Origins:
+http://localhost:3000, http://localhost:5173
 ```

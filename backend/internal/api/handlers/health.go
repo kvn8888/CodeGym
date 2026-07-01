@@ -6,6 +6,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/api/response"
 )
 
+// Health is a lightweight liveness endpoint that confirms the process is up.
 func Health(w http.ResponseWriter, _ *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

@@ -10,14 +10,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// PostgresStore persists memory profiles and events in Postgres.
 type PostgresStore struct {
 	pool *pgxpool.Pool
 }
 
+// NewPostgresStore creates a Postgres-backed memory store.
 func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 	return &PostgresStore{pool: pool}
 }
 
+// EnsureSchema idempotently creates the tables and constraints used by memory
+// persistence.
 func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS user_memory_profiles (

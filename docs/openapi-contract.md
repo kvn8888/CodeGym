@@ -1,4 +1,4 @@
-# OpenAPI Contract Scaffold
+# Backend API Contract
 
 CodeGym uses OpenAPI as the frontend/backend contract, not as a full backend
 framework replacement.
@@ -9,27 +9,203 @@ framework replacement.
 - Generated frontend types: `frontend/src/shared/api/openapi.d.ts`
 - Backend implementation: `backend/internal/api`
 
-The contract should describe the HTTP surface that the frontend can call. Keep
-the Go handlers simple until the API stabilizes; backend server generation can
-be introduced later with `oapi-codegen` if the contract starts drifting.
+The contract describes the HTTP surface that the frontend can call. Keep the Go
+handlers simple until the API stabilizes; backend server generation can be
+introduced later with `oapi-codegen` if the contract starts drifting.
 
 ## Current Scope
 
-The first contract covers the existing backend:
+Base URL in local development is usually `http://127.0.0.1:8080`. When the
+frontend uses the Vite proxy, it can call the same endpoints relative to the
+browser origin.
 
-- `GET /health`
-- `GET /api/v1/memory/profile`
-- `POST /api/v1/memory/profile/refresh`
-- `GET /api/v1/memory/events`
-- `POST /api/v1/memory/events`
+Current routes:
 
-The spec also documents:
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/health` | No | Lightweight liveness check. |
+| `GET` | `/ready` | No | Readiness check; pings Postgres when a database URL is configured. |
+| `GET` | `/api/v1/memory/profile` | Yes | Fetch the scoped user's derived memory profile. |
+| `POST` | `/api/v1/memory/profile/refresh` | Yes | Rebuild and persist the scoped user's profile from memory events. |
+| `GET` | `/api/v1/memory/events` | Yes | List append-only memory events for the scoped user. |
+| `POST` | `/api/v1/memory/events` | Yes | Record one append-only memory event. |
 
-- `Authorization: Bearer ...`
-- optional `X-CodeGym-Tenant-ID` for the current internal workspace scope ID
-  (legacy name; product flows should normally omit it and use the authenticated
-  user's personal workspace)
-- the backend response envelope: `{ data, error }`
+## Auth and Workspace Scope
+
+Protected routes require:
+
+```http
+Authorization: Bearer <token>
+```
+
+For local development without Auth0, the token can use this dev format:
+
+```http
+Authorization: Bearer dev:<user-id>:<workspace-id>
+```
+
+Example:
+
+```http
+Authorization: Bearer dev:kevin:personal-dev
+```
+
+If `CODEGYM_DEV_AUTH_TOKEN` is configured, use that exact token instead. The
+backend maps it to `CODEGYM_DEV_USER_ID` and `CODEGYM_DEV_TENANT_ID`.
+
+`X-CodeGym-Tenant-ID` is an optional legacy/internal workspace-scope override.
+Product flows should omit it so the backend uses the authenticated user's
+default personal workspace. If the header is present and the authenticated
+principal is not allowed to use that scope, the backend returns `403`.
+
+## Response Envelope
+
+Every JSON response uses the same envelope:
+
+```json
+{
+  "data": {},
+  "error": null
+}
+```
+
+Error responses set `data` to `null` and include a stable code plus a safe
+message:
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "unauthenticated",
+    "message": "Missing bearer token."
+  }
+}
+```
+
+## Memory Payloads
+
+Create event request:
+
+```json
+{
+  "source": "system",
+  "type": "memory_api_checked",
+  "summary": "Backend smoke test verified memory event and profile APIs.",
+  "payload": {
+    "script": "backend-memory-smoke",
+    "schema_version": 1
+  },
+  "occurred_at": "2026-06-24T12:30:00Z"
+}
+```
+
+`source` and `type` should follow
+[memory-event-naming-guide-v0.md](./memory-event-naming-guide-v0.md). Keep
+`summary` short and do not place bearer tokens, API keys, connection strings,
+full user source code, or raw transcripts in either `summary` or `payload`.
+
+Create event response data:
+
+```json
+{
+  "id": "mem_evt_0123456789abcdef",
+  "tenant_id": "personal-dev",
+  "user_id": "kevin",
+  "source": "system",
+  "type": "memory_api_checked",
+  "summary": "Backend smoke test verified memory event and profile APIs.",
+  "payload": {
+    "script": "backend-memory-smoke",
+    "schema_version": 1
+  },
+  "occurred_at": "2026-06-24T12:30:00Z",
+  "created_at": "2026-06-24T12:30:01Z"
+}
+```
+
+Profile response data includes `summary`, `updated_at`, `next_review_at`,
+`strengths`, `growth_edges`, `skills`, and `notes`. Profile refresh is currently
+synchronous; the service boundary is the same one the future worker can call.
+
+## Curl Examples
+
+Set local shell variables:
+
+```bash
+API_BASE_URL=http://127.0.0.1:8080
+TOKEN=dev:kevin:personal-dev
+```
+
+Liveness:
+
+```bash
+curl -sS "$API_BASE_URL/health"
+```
+
+Readiness:
+
+```bash
+curl -sS "$API_BASE_URL/ready"
+```
+
+Create a memory event:
+
+```bash
+curl -sS -X POST "$API_BASE_URL/api/v1/memory/events" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "source": "system",
+    "type": "memory_api_checked",
+    "summary": "Backend smoke test verified memory event and profile APIs.",
+    "payload": {
+      "script": "manual-curl",
+      "schema_version": 1
+    }
+  }'
+```
+
+List memory events:
+
+```bash
+curl -sS "$API_BASE_URL/api/v1/memory/events" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Fetch profile:
+
+```bash
+curl -sS "$API_BASE_URL/api/v1/memory/profile" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Refresh profile from events:
+
+```bash
+curl -sS -X POST "$API_BASE_URL/api/v1/memory/profile/refresh" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+## Doppler and Neon
+
+Run the backend with Doppler so it can read the Neon connection string and auth
+configuration:
+
+```bash
+cd backend
+doppler run -p codegym -c dev -- go run ./cmd/server
+```
+
+In another terminal, run the smoke check:
+
+```bash
+cd backend
+./scripts/memory_smoke.sh
+```
+
+The script calls `/ready`, records one `system.memory_api_checked` event, checks
+that `GET /api/v1/memory/events` returns the created ID, and fetches
+`GET /api/v1/memory/profile`. It exits non-zero on the first failed step.
 
 ## Local Workflow
 

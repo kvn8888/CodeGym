@@ -61,6 +61,22 @@ doppler run -p codegym -c dev -- go run ./cmd/server
 See [../docs/secrets-and-local-env.md](../docs/secrets-and-local-env.md) for
 the shared secret contract.
 
+To validate the Neon-backed memory flow against a running local backend:
+
+```bash
+./scripts/memory_smoke.sh
+```
+
+If the backend is configured with `CODEGYM_DEV_AUTH_TOKEN`, run the script
+through Doppler too:
+
+```bash
+doppler run -p codegym -c dev -- ./scripts/memory_smoke.sh
+```
+
+The backend API contract, response envelopes, and curl examples are documented
+in [../docs/openapi-contract.md](../docs/openapi-contract.md).
+
 ## Auth
 
 Protected routes require a bearer token.
@@ -102,6 +118,28 @@ scope middleware.
 See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
 full auth -> identity -> personal workspace scope request flow.
 
+## Architecture: Principal and Personal Workspace Scope
+
+**Principal** = the authenticated user plus the internal workspace IDs the
+backend may use for scoping.
+
+When a request is authenticated, the auth middleware injects a `Principal` into
+the request context:
+
+- `UserID`: the durable CodeGym user identifier. With Auth0, this is `sub`.
+- `DefaultTenantID`: the user's default personal workspace ID.
+- `TenantIDs`: allowed internal workspace scope IDs. Today this is only the
+  user's personal workspace.
+
+The current package and table names still use `tenant` / `tenant_id`, but
+product behavior is personal workspace scoping. Do not build organization/team
+workspace behavior, tenant switching, or Auth0 tenant claims without a new
+product decision.
+
+Product flows should omit `X-CodeGym-Tenant-ID` and use the authenticated
+user's default personal workspace. The header remains only as a low-level
+internal override; if the requested scope is not in `Principal.TenantIDs`, the
+request is rejected with `403`.
 Memory event `source` and `type` names for emitters are documented in
 [../docs/memory-event-naming-guide-v0.md](../docs/memory-event-naming-guide-v0.md).
 
@@ -116,6 +154,38 @@ POST /api/v1/memory/profile/refresh
 GET  /api/v1/memory/events
 POST /api/v1/memory/events
 ```
+
+## Memory Profile Fields
+
+`GET /api/v1/memory/profile` returns a profile object with:
+
+- `summary`: high-level memory summary for the user in the current tenant
+- `updated_at`: timestamp for last profile update
+- `next_review_at`: timestamp for next scheduled review/refresh
+- `strengths`: list of observed strengths
+- `growth_edges`: list of growth opportunities
+- `skills`: list of skill proficiency objects
+- `notes`: list of problem-specific note objects
+
+Each `skills` item includes:
+
+- `id`
+- `label`
+- `area`
+- `level`
+- `confidence`
+- `trend`
+- `last_practiced`
+
+Each `notes` item includes:
+
+- `id`
+- `problem_id`
+- `title`
+- `summary`
+- `created_at`
+- `tags`
+- `action`
 
 
 ## Health vs Readiness

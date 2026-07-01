@@ -15,11 +15,13 @@ import (
 
 type Clock func() time.Time
 
+// Service orchestrates memory profile and event behavior for scoped users.
 type Service struct {
 	store Store
 	now   Clock
 }
 
+// NewService creates a memory service with a store and optional clock.
 func NewService(store Store, clock Clock) *Service {
 	if clock == nil {
 		clock = time.Now
@@ -27,6 +29,8 @@ func NewService(store Store, clock Clock) *Service {
 	return &Service{store: store, now: clock}
 }
 
+// GetProfile returns the scoped user's profile or a generated default profile
+// when no durable profile exists yet.
 func (s *Service) GetProfile(ctx context.Context) (Profile, error) {
 	identity, err := identityFromContext(ctx)
 	if err != nil {
@@ -40,6 +44,7 @@ func (s *Service) GetProfile(ctx context.Context) (Profile, error) {
 	return profile, err
 }
 
+// RecordEvent validates and appends a scoped memory event.
 func (s *Service) RecordEvent(ctx context.Context, input RecordEventInput) (Event, error) {
 	identity, err := identityFromContext(ctx)
 	if err != nil {

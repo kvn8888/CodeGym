@@ -3,31 +3,20 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   Brain,
-  CircleHelp,
   Grid2X2,
   LayoutDashboard,
-  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Rows3,
-  Settings,
   type LucideIcon,
 } from 'lucide-react';
 
 import { FloatingChat } from './FloatingChat';
 import { ModeToggle } from '@/components/mode-toggle';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { AuthAccountMenu } from '../auth/AuthAccountMenu';
 
 type NavItem = {
   path: string;
@@ -152,53 +141,14 @@ export function Layout() {
           </nav>
         </div>
 
-        <div className="border-sidebar-border shrink-0 border-t p-2">
-          <div className={cn('flex', collapsed ? 'flex-col items-center gap-1' : 'items-center gap-1')}>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    'hover:bg-sidebar-accent flex h-11 items-center rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                    collapsed ? 'w-9 justify-center px-0' : 'min-w-0 flex-1 gap-3 px-2',
-                  )}
-                >
-                  <Avatar className="size-7">
-                    <AvatarFallback className="bg-primary text-primary-foreground font-mono text-[11px] font-semibold">
-                      KC
-                    </AvatarFallback>
-                  </Avatar>
-                  {!collapsed && (
-                    <span className="text-muted-foreground truncate text-left text-[13px]">
-                      kvn.c8888
-                    </span>
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" className="w-60">
-                <DropdownMenuLabel className="font-normal">
-                  <div className="text-[13px] font-medium">kvn.c8888@gmail.com</div>
-                  <div className="text-muted-foreground text-xs">Personal workspace</div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <Settings />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <CircleHelp />
-                  Get Help
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive">
-                  <LogOut />
-                  Log Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <ModeToggle className="size-9 shrink-0" />
-          </div>
+        <div
+          className={cn(
+            'border-sidebar-border flex shrink-0 border-t',
+            collapsed ? 'flex-col items-center gap-1 p-2' : 'items-center gap-1 p-2',
+          )}
+        >
+          <AuthAccountMenu collapsed={collapsed} />
+          <ModeToggle className="size-9 shrink-0" />
         </div>
       </motion.aside>
 

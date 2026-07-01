@@ -5,8 +5,10 @@ import (
 	"errors"
 )
 
+// ErrProfileNotFound indicates a scoped memory profile is not yet persisted.
 var ErrProfileNotFound = errors.New("memory profile not found")
 
+// Store defines persistence operations required by the memory service.
 type Scope struct {
 	TenantID string
 	UserID   string

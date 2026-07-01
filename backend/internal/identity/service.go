@@ -8,14 +8,17 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 )
 
+// Service ensures identity bootstrap invariants for authenticated users.
 type Service struct {
 	store Store
 }
 
+// NewService creates an identity service with the provided persistence store.
 func NewService(store Store) *Service {
 	return &Service{store: store}
 }
 
+// EnsurePersonalTenant creates or refreshes a principal's personal tenant membership.
 func (s *Service) EnsurePersonalTenant(ctx context.Context, principal auth.Principal) error {
 	if s == nil || s.store == nil {
 		return nil

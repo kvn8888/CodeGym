@@ -140,7 +140,6 @@ Product flows should omit `X-CodeGym-Tenant-ID` and use the authenticated
 user's default personal workspace. The header remains only as a low-level
 internal override; if the requested scope is not in `Principal.TenantIDs`, the
 request is rejected with `403`.
-
 Memory event `source` and `type` names for emitters are documented in
 [../docs/memory-event-naming-guide-v0.md](../docs/memory-event-naming-guide-v0.md).
 

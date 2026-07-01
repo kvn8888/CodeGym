@@ -11,7 +11,11 @@ import {
   Rows3,
   type LucideIcon,
 } from 'lucide-react';
+
 import { FloatingChat } from './FloatingChat';
+import { ModeToggle } from '@/components/mode-toggle';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { AuthAccountMenu } from '../auth/AuthAccountMenu';
 
 type NavItem = {
@@ -60,36 +64,34 @@ export function Layout() {
   const motionTransition = shouldReduceMotion ? { duration: 0 } : sidebarTransition;
 
   return (
-    <div className="flex min-h-screen bg-background-200 text-gray-1000">
+    <div className="bg-background text-foreground flex min-h-screen">
       <motion.aside
         animate={{ width: collapsed ? 52 : 232 }}
         transition={motionTransition}
-        className="sticky top-0 z-40 flex h-screen shrink-0 flex-col border-r border-gray-alpha-200 bg-background-100"
+        className="bg-sidebar border-sidebar-border sticky top-0 z-40 flex h-screen shrink-0 flex-col border-r"
       >
         <div className="flex min-h-0 flex-1 flex-col">
           <div className={`flex h-16 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`}>
             <motion.div
-              animate={{
-                opacity: collapsed ? 0 : 1,
-                width: collapsed ? 0 : 132,
-              }}
+              animate={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 132 }}
               transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.15 }}
               className="min-w-0 overflow-hidden whitespace-nowrap"
             >
-              <Link to="/" className="font-mono text-[13px] font-semibold tracking-[0.08em] text-gray-1000 no-underline">
+              <Link to="/" className="font-mono text-[13px] font-semibold tracking-[0.08em] no-underline">
                 CODEGYM
               </Link>
             </motion.div>
 
-            <motion.button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => setCollapsed((current) => !current)}
-              whileTap={shouldReduceMotion ? undefined : { scale: 0.96 }}
               aria-label={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-              className="cg-focus flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000"
+              className="text-muted-foreground hover:text-foreground size-8 shrink-0"
             >
-              {collapsed ? <PanelLeftOpen size={16} strokeWidth={1.8} /> : <PanelLeftClose size={16} strokeWidth={1.8} />}
-            </motion.button>
+              {collapsed ? <PanelLeftOpen strokeWidth={1.8} /> : <PanelLeftClose strokeWidth={1.8} />}
+            </Button>
           </div>
 
           <nav className={`flex flex-1 flex-col gap-1 px-2 py-2 ${collapsed ? 'items-center' : ''}`}>
@@ -106,27 +108,28 @@ export function Layout() {
                 >
                   <Link
                     to={item.path}
-                    className={`t-tt-trigger cg-focus relative flex h-10 items-center rounded-md text-sm no-underline ${
-                      collapsed ? 'w-9 justify-center px-0' : 'w-full gap-3 px-3'
-                    } ${active ? 'text-gray-1000' : 'text-gray-900 hover:bg-gray-alpha-100 hover:text-gray-1000'}`}
+                    className={cn(
+                      't-tt-trigger relative flex h-10 items-center rounded-md text-sm no-underline outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                      collapsed ? 'w-9 justify-center px-0' : 'w-full gap-3 px-3',
+                      active
+                        ? 'text-foreground'
+                        : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+                    )}
                   >
                     {active && (
                       <motion.span
                         layoutId="geist-nav-active"
                         transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 40 }}
-                        className="absolute inset-0 rounded-md border border-gray-alpha-200 bg-gray-100"
+                        className="bg-sidebar-accent border-sidebar-border absolute inset-0 rounded-md border"
                         aria-hidden="true"
                       />
                     )}
                     <Icon className="relative z-10 shrink-0" size={17} strokeWidth={1.8} />
                     {!collapsed && (
-                      <span className="relative z-10 min-w-0 truncate font-medium">
-                        {item.label}
-                      </span>
+                      <span className="relative z-10 min-w-0 truncate font-medium">{item.label}</span>
                     )}
                   </Link>
-                  {/* transitions-dev tooltip (17): only when collapsed, since the
-                      label is hidden. Pure CSS — shows on hover/focus of the row. */}
+                  {/* transitions-dev tooltip (17): only when collapsed (label hidden). */}
                   {collapsed && (
                     <span className="t-tt" role="tooltip">
                       {item.label}
@@ -138,7 +141,15 @@ export function Layout() {
           </nav>
         </div>
 
-        <AuthAccountMenu collapsed={collapsed} />
+        <div
+          className={cn(
+            'border-sidebar-border flex shrink-0 border-t',
+            collapsed ? 'flex-col items-center gap-1 p-2' : 'items-center gap-1 p-2',
+          )}
+        >
+          <AuthAccountMenu collapsed={collapsed} />
+          <ModeToggle className="size-9 shrink-0" />
+        </div>
       </motion.aside>
 
       <main className="min-w-0 flex-1">

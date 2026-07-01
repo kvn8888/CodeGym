@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { motion } from 'motion/react';
+
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,75 +114,55 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
   };
 
   return (
-    /* ── Backdrop overlay ───────────────────────────────────────────── */
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-alpha-700 backdrop-blur-sm"
-      onClick={onClose}
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      {/* ── Modal card ────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.92, y: 18 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-        className="mx-4 w-full max-w-lg overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100"
-        style={{ boxShadow: 'var(--cg-modal-shadow)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* ── Header ─────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-3">
-          <h2 className="text-xl font-semibold leading-7 tracking-[-0.4px] text-gray-1000">
-            Tailor Your Problem
-          </h2>
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="cg-focus flex h-7 w-7 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-alpha-100 hover:text-gray-1000"
-            aria-label="Close"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
-        </div>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="px-6 pt-5 pb-3 text-left">
+          <DialogTitle className="text-xl tracking-[-0.4px]">Tailor Your Problem</DialogTitle>
+        </DialogHeader>
 
-        {/* ── Progress dots ──────────────────────────────────────── */}
+        {/* Progress dots */}
         <div className="flex gap-1.5 px-6 pb-4">
           {questions.map((_, i) => (
             <div
               key={i}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i <= currentIndex ? 'flex-[2] bg-blue-700' : 'flex-1 bg-gray-200'
+                i <= currentIndex ? 'bg-primary flex-[2]' : 'bg-muted flex-1'
               }`}
             />
           ))}
         </div>
 
-        {/* ── Question text ──────────────────────────────────────── */}
+        {/* Question text */}
         <div className="px-6 pb-4">
-          <p className="text-sm leading-6 text-gray-900">{question.text}</p>
+          <p className="text-muted-foreground text-sm leading-6">{question.text}</p>
         </div>
 
-        {/* ── Options ────────────────────────────────────────────── */}
-        <div className="px-6 pb-4 flex flex-col gap-2">
+        {/* Options */}
+        <div className="flex flex-col gap-2 px-6 pb-4">
           {question.options.map((option) => {
-            // Whether this specific option is currently selected.
             const selected = currentAnswer.selectedOption === option;
             return (
               <button
                 key={option}
                 onClick={() => handleSelect(option)}
-                className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition-all duration-150 ${
+                className={`w-full rounded-lg border px-4 py-3 text-left text-sm transition-all duration-150 ${
                   selected
-                    ? 'border-blue-400 bg-blue-100 font-medium text-gray-1000'
-                    : 'border-gray-alpha-200 bg-background-100 text-gray-900 hover:border-gray-alpha-400 hover:bg-gray-100'
+                    ? 'border-primary bg-accent text-foreground font-medium'
+                    : 'bg-background text-muted-foreground hover:bg-accent/50'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  {/* Radio-style circle indicator */}
-                  <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                    selected ? 'border-blue-700' : 'border-gray-alpha-400'
-                  }`}>
-                    {selected && <div className="h-2 w-2 rounded-full bg-blue-700" />}
+                  <div
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                      selected ? 'border-primary' : 'border-input'
+                    }`}
+                  >
+                    {selected && <div className="bg-primary h-2 w-2 rounded-full" />}
                   </div>
                   {option}
                 </div>
@@ -187,43 +170,33 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
             );
           })}
 
-          {/* ── Free-text input (shown when "Specify…" is selected) ── */}
+          {/* Free-text input (shown when "Specify…" is selected) */}
           {isSpecify && (
-            <input
+            <Input
               type="text"
               value={currentAnswer.freeText ?? ''}
               onChange={(e) => handleFreeText(e.target.value)}
               placeholder="Type your answer…"
               autoFocus
-              className="cg-focus w-full rounded-md border border-gray-alpha-200 bg-background-100 px-4 py-3 text-sm text-gray-1000 placeholder-gray-700 transition-colors"
             />
           )}
         </div>
 
-        {/* ── Footer: Back + Next/Generate ───────────────────────── */}
-        <div className="flex items-center justify-between border-t border-gray-alpha-200 px-6 py-4">
-          {/* Back button (hidden on first question) */}
+        {/* Footer: Back + Next/Generate */}
+        <div className="flex items-center justify-between border-t px-6 py-4">
           {currentIndex > 0 ? (
-            <button
-              onClick={handleBack}
-              className="text-sm text-gray-900 transition-colors hover:text-gray-1000"
-            >
+            <Button variant="ghost" size="sm" onClick={handleBack}>
               ← Back
-            </button>
+            </Button>
           ) : (
             <div />
           )}
 
-          {/* Next / Generate button */}
-          <button
-            onClick={handleNext}
-            disabled={!canAdvance}
-            className="cg-focus h-10 rounded-md bg-gray-1000 px-5 text-sm font-medium text-background-100 transition-colors hover:bg-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-700"
-          >
+          <Button onClick={handleNext} disabled={!canAdvance}>
             {isLast ? 'Generate' : 'Next'}
-          </button>
+          </Button>
         </div>
-      </motion.div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

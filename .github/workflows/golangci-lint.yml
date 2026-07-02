@@ -1,0 +1,44 @@
+name: golangci-lint
+
+# Advisory backend static analysis. The job uses continue-on-error until the
+# golangci-lint baseline is triaged; remove that flag to make it blocking.
+
+on:
+  push:
+    branches: [codegym-v2]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/golangci-lint.yml'
+      - 'backend/.golangci.yml'
+  pull_request:
+    branches: [codegym-v2]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/golangci-lint.yml'
+      - 'backend/.golangci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: golangci-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golangci:
+    name: Backend (golangci-lint)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: backend

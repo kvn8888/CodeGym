@@ -1,5 +1,5 @@
 import { mockPassingResult, mockProblems, mockProblemSummaries, mockSkeletons } from './fixtures';
-import { mockMemoryProfile } from './memoryFixtures';
+import { mockMemoryEvents, mockMemoryProfile } from './memoryFixtures';
 
 interface MockApiResponse<T> {
   data: T;
@@ -47,6 +47,10 @@ export async function mockApiFetch(
 
   if (method === 'GET' && path === '/memory/profile') {
     return json(mockMemoryProfile);
+  }
+
+  if (method === 'GET' && path === '/memory/events') {
+    return json(mockMemoryEvents);
   }
 
   if (method === 'GET' && path === '/problems') {

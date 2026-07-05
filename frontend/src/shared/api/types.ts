@@ -107,3 +107,15 @@ export interface MemoryNote {
   tags: string[];
   action: 'keep' | 'review' | 'prune';
 }
+
+export interface MemoryEvent {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  source: string;
+  type: string;
+  summary: string;
+  payload?: Record<string, unknown> | unknown[] | string | number | boolean | null;
+  occurred_at: string;
+  created_at: string;
+}

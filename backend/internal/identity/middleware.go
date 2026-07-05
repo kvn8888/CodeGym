@@ -7,8 +7,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 )
 
-// Middleware ensures the authenticated principal has a bootstrapped personal
-// tenant before proceeding.
+// Middleware ensures the authenticated principal has a bootstrapped personal tenant before proceeding.
 func Middleware(service *Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

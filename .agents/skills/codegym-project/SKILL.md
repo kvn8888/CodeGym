@@ -109,6 +109,63 @@ Recommended backend path:
 
 ## Task Workflows
 
+### Run an Implementation Goal Loop
+
+Use this process when Kevin asks to "set a goal", "start a loop", reconcile a
+track until complete, or run a multi-issue implementation cycle. The coordinator
+agent owns the loop state, board truth, issue sequencing, validation evidence,
+and pause/resume decisions.
+
+Loop shape:
+1. Read this skill, inspect the relevant GitHub issues/project fields, open PRs,
+   and current code before editing.
+2. Reconcile drift first: separate landed code, open PRs, board status, and
+   docs-only artifacts. Repair obvious board/status mismatches before starting
+   new implementation work.
+3. Build or refresh a dependency-ordered issue sequence. Keep spikes and
+   owner/architecture decisions ahead of stories that depend on them.
+4. Move the active issue to `In progress`, implement only that issue's
+   acceptance criteria, run the narrow validation path, and leave an issue
+   comment with outcome, validation, links, and blockers.
+5. Move work to `In review` when a PR exists or to `Done` only when the work is
+   actually merged/landed and validated, with any validation gap documented.
+6. Pick the next unblocked issue and repeat until the goal is complete or a
+   real pause condition is hit.
+
+Pause conditions:
+- External setup is required in Auth0, Render, Vercel, Doppler, Neon, GitHub
+  settings, or another vendor console.
+- Kevin must make a product, academic-scope, risk, launch, or architecture
+  decision before implementation would be meaningful.
+- The coordinator needs explicit permission for a write action outside normal
+  repo edits, such as merging clean PRs, pushing branches, modifying secrets, or
+  changing production/preprod settings.
+
+Parallel-agent rules:
+- Spawn subagents only after the coordinator has a current board/code/PR read
+  and has assigned each subagent one issue or one narrow review task.
+- Do not parallelize issues that modify the same API contract, generated client,
+  migration/schema boundary, auth middleware path, or memory service boundary
+  unless one branch is explicitly the base for the other.
+- Good parallel lanes are: PR/CI closeout, isolated docs/process updates,
+  backend worker scheduling, frontend memory UX, and session-store spike work
+  after its architecture doc is accepted.
+- The coordinator remains the only agent that reconciles the board globally,
+  declares the goal complete, or pauses for Kevin.
+- Each subagent must report issue number, files changed, validation command and
+  result, branch/PR if any, and remaining blockers. The coordinator folds that
+  into issue comments and board moves.
+
+For auth/backend/memory completion loops, keep the tracks distinct:
+- Auth/backend foundation: Auth0 config/docs, external Auth0/hosting setup,
+  backend static checks, OpenAPI drift checks, and lint baseline.
+- Memory services: typed frontend API helpers, memory UI/backend wiring, product
+  flow memory events, worker scheduling/backfill, and memory-aware generation
+  orchestration.
+- Session/resume backend: session schema/store, sessions API/OpenAPI, then
+  frontend resume/history integration. Do not treat session docs as
+  implementation completion.
+
 ### Manage the GitHub Project Board
 
 Use `.agents/skills/codegym-project/scripts/github_project_board.py` when an agent needs to inspect or update the CodeGym GitHub Projects v2 kanban board. The helper talks directly to GitHub GraphQL Projects v2 because ordinary connector surfaces do not expose every project field mutation. Treat the board as live planning state, not a static backlog.
@@ -143,6 +200,11 @@ Requirements:
   5. Move the issue to `Done` only after the requested work is genuinely complete and validation has run or the validation gap is documented.
 - Repopulate the board during normal work. If an agent discovers real follow-up work outside the current scope, create a new GitHub Issue instead of expanding the task: production bugs, missing tests, product ambiguity, architecture decisions, external setup, retrospective "what remains" items, AI/generation incidents, or refactors too large for the current change. Do not create issues for tiny fixes that can be safely included in the active task.
 - New agent-created issues should include context/source, acceptance criteria, likely starting files, risk or user impact, `Status`, `Category`, `Priority`, `Size`, `Source`, one primary `agency:*` label, one `agent:*` label, and `output:plan-only` when the expected next step is a memo rather than code.
+- The board helper emits non-blocking warnings when issue creation/import/upsert
+  metadata is missing a primary agency route, agent route, decision
+  `output:plan-only`, or required Project fields. Treat warnings as a prompt to
+  improve issue metadata before dispatching agents, not as a reason to invent
+  inaccurate labels or fields.
 - Draft Project cards are inbox items. Convert durable work to real GitHub Issues when it needs labels, comments, links, or agent routing; leave rough brainstorms as drafts until they are actionable.
 - Model large capabilities as **epics with sub-issues** (GitHub-native parent/child, with a `subIssuesSummary` rollup). An epic is a parent issue (title prefix `Epic:`) that opens with a gating **spike** wherever uncertainty is real, then **stories**. Spikes carry `agency:investigate` or `agency:needs-architecture-decision` + `output:plan-only`, and their Definition of Done is *"the implementation stories now exist, each with acceptance criteria"* — progressive elaboration: do not pre-write story acceptance criteria a spike will change. Stories carry `agency:ready`. Link children with `create-issue --parent <#>` or `add-sub-issue <parent> <child>`; `list`/`show` surface the rollup and parent/child. The M2 scope features are tracked as epics #35 (generation), #36 (execution sandbox), #38 (verification), #40 (personalization & memory), and #42 (MCQ).
 - Do not use `M1:` as an active kanban bucket. M1 is historical/foundation scope; active work should be named as `Week N: ...` issues under the relevant epic, while the academic M1/M2/M3/M4 milestone language stays in scope docs and presentation planning.

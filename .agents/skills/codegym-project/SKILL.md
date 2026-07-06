@@ -9,6 +9,19 @@ This is the single source of truth for recurring CodeGym agent work. Read this
 before changing code, issues, or the project board. Update it when product scope,
 architecture, workflow, validation, or durable gotchas change.
 
+## Live Project Memory Rule
+
+Treat this skill as living project memory. When a code, docs, board, or
+deployment change introduces or changes a durable repo fact, operational gotcha,
+vendor setup assumption, architecture decision, validation rule, risk, or
+debugging pattern, update this skill before finishing the task.
+
+Keep updates concise and remove stale or contradictory guidance rather than
+layering caveats. Do not record transient branch status, one-off command output,
+or momentary CI failures unless they change the durable workflow. When this
+skill conflicts with current code, live GitHub issues/PRs, or the project board,
+trust the current implementation and live planning state, then repair this skill.
+
 ## Branch Default
 
 `codegym-v2` is the default working branch for now.
@@ -18,6 +31,29 @@ Backend auth, personal workspace bootstrap, Neon/Postgres memory storage, and
 the memory service v0 are in scope. Legacy execution infrastructure, Docker
 runners, problem-pack fixtures, organization/team tenancy, and deploy automation
 should still stay out unless the user explicitly asks to reintroduce them.
+
+## Publishing and PR Discipline
+
+Do not leave completed repo work only in the local checkout. Branches are
+temporary PR heads, not the deliverable. Unless Kevin explicitly asks for
+local-only exploration, every code, docs, process, or project-helper change that
+should persist in the repository must end the session committed, pushed to the
+remote, and attached to a GitHub PR.
+
+Use this publish flow:
+1. Check `git status --short --branch` and inspect the diff before staging.
+2. Keep unrelated local/user changes out of the commit.
+3. Commit the scoped changes with a terse message.
+4. Push the active branch to `origin` and set upstream to the matching remote
+   branch.
+5. Open a draft PR against `codegym-v2`, or push updates to the existing PR for
+   the branch if one already exists.
+6. Move linked board work to `In review` once the PR exists. Move it to `Done`
+   only after merge/landing and validation evidence.
+
+If publishing is blocked by auth, network, failing validation, missing owner
+approval, or mixed unrelated work, say exactly what is blocked and what must
+happen next. Do not present local-only work as finished repository work.
 
 ## Current State (Last Updated: 2026-06-26)
 
@@ -106,6 +142,127 @@ Recommended backend path:
 - Add `golangci-lint` in a separate job/workflow once the config is pinned.
 - Add `govulncheck ./...` as an advisory dependency/security check; treat it as
   vulnerability reachability analysis, not a style linter.
+
+## Validation Matrix
+
+Use the narrowest validation path that covers the changed behavior. Record the
+commands and results in the issue/PR when the work maps to the board.
+
+| Surface | Blocking check | Advisory or situational check | Notes |
+| --- | --- | --- | --- |
+| Frontend route, component, or API consumption | `cd frontend && npm run lint`; `cd frontend && npm run build` | Storybook local review for visible component work | Add or update a `.stories.tsx` file for new page components. |
+| Storybook-only work | `cd frontend && npm run storybook` long enough to load the changed story | Screenshot or browser check for visual regressions | Storybook is not a substitute for `npm run build` when app code changes. |
+| Backend API/auth/workspace/memory code | `cd backend && go test ./...` | `go vet ./...`, `golangci-lint`, `govulncheck ./...` when the issue targets static/security checks | Go cache sandbox failures are environmental; rerun with an allowed cache path or approved escalation before calling tests broken. |
+| OpenAPI or HTTP contract change | `npm run api:lint` when `api/**` changes | Compare backend routes, OpenAPI, and typed frontend helpers for drift | Do not mark API work done when docs/spec changed but handlers or client helpers did not. |
+| Auth0 or external auth setup | Backend tests plus config/doc review | Owner verification in Auth0, Render, Vercel, and deployed preview/prod envs | External console work belongs in `agency:external-blocked` until Kevin or a permitted agent confirms it. |
+| Memory worker/scheduling | Backend tests plus route/worker boundary review | Manual worker start/schedule check once worker runtime exists | Request paths append raw events; derived profiles and summaries belong behind `memory.Service.RefreshProfile` or the worker boundary. |
+| Generation-memory orchestration | Backend tests and prompt/context unit coverage when available | Manual generated-problem flow check when wired end to end | GenAI provider adapters should not fetch memory directly. Orchestration composes memory with provider calls. |
+
+## Operational Readiness / External Setup
+
+Auth0 readiness requires the app's callback/logout URLs, allowed web origins,
+frontend Auth0 envs, backend issuer/audience envs, and the Auth0 API Identifier
+to agree. Auth0 `sub` is the durable user ID; `email` and `name` are metadata
+only and must not drive authorization or workspace selection.
+
+Render readiness for the Go backend means the service has the expected branch,
+start command, health check, Auth0 envs, database envs, and secret source wired.
+Deployment is not complete just because `.env.example` or docs list the values.
+
+Vercel/frontend readiness means preview and production environments have the
+matching Auth0 domain/client/audience values and point at the intended backend
+base URL. If frontend and backend are on different origins, confirm CORS and
+Auth0 allowed origins together.
+
+Doppler and Neon are the preferred local secret and Postgres targets. Prefer
+`NEON_CONNECTION_STRING` over `DATABASE_URL` when both exist. Never print or
+commit secret values while documenting setup.
+
+Preprod and prod should stay distinguishable. Safe preprod can share code and
+schema shape, but should use separate Auth0/Vercel/Render/Neon resources or
+explicitly safe config. Do not mark external setup issues `Done` without a
+comment that names the environment verified and the validation performed.
+
+## Current Risk Register
+
+Verified from the codebase and board reconciliation work around 2026-07-02.
+Treat exact PR/check status as time-sensitive, but keep the risk categories
+current as implementation lands.
+
+### Critical Open Risks
+
+- Auth/backend completion still depends on external Auth0 and hosting setup; the
+  repo can document expected envs, but owner/vendor-console actions may remain.
+- The memory worker boundary exists conceptually, but the server does not yet
+  start a scheduled `memory.Worker`; derived-memory refresh is not operationally
+  complete until scheduling/backfill is wired and validated.
+- Session/resume is documented, but there is no completed `backend/internal/session`
+  package or `/api/v1/sessions` route until the session schema/store and API
+  stories land.
+- Frontend memory/profile rendering does not finish typed API infrastructure.
+  Shared API errors still need typed handling and memory-specific helpers before
+  memory UX can rely on them broadly.
+- Memory-aware generation is not complete until generation/chat orchestration
+  reads memory through `memory.Service`, builds context, and calls the provider
+  adapter without making provider code fetch memory directly.
+
+### Medium Risks
+
+- Project board state can drift from PR state and code reality, especially when
+  draft/conflicting PRs or docs-only spikes are moved too far right.
+- OpenAPI drift can appear when backend routes, `api/**`, and frontend helpers
+  are changed independently.
+- The internal `tenant` naming still represents personal workspace scope. It can
+  confuse agents into designing organization/team SaaS tenancy that is out of
+  scope.
+- Deployment/env drift can hide behind passing local tests because Auth0,
+  Render, Vercel, Doppler, and Neon readiness depends on external state.
+
+### Already Mitigated / Guardrails
+
+- Auth0 validation is behind `auth.Authenticator`, with `DevAuthenticator` kept
+  for local fallback and tests.
+- Auth0 `sub` is the durable user identifier; optional email/name metadata is
+  explicitly not an authorization boundary.
+- Memory event names have a canonical naming guide. New event source/type names
+  should be added there before emitters write new shapes.
+- The GitHub Project helper can create/upsert/import issues, set Project fields,
+  link sub-issues, verify field writes, and warn about sparse process metadata.
+
+## Stale Docs / Source Of Truth
+
+Docs in `docs/` are valuable for contracts and decisions, but implementation
+truth is the current code plus live GitHub issue/PR/project-board state. A doc
+or spike proves intent; it does not prove the feature is implemented.
+
+When docs, board state, and code disagree:
+- Trust the current code for runtime behavior.
+- Trust live PR/issue state for review/merge status.
+- Trust the project board for current planning only after checking the linked
+  issue/PR and repairing obvious drift.
+- Update stale docs or this skill when the mismatch is durable.
+
+Session-history/resume docs do not mean session storage, sessions HTTP routes,
+OpenAPI coverage, or frontend resume/history UX are complete. Auth0 setup docs
+do not mean vendor-console configuration is complete. Memory architecture docs
+do not mean the worker is scheduled or running.
+
+## Common Pitfalls
+
+1. Treating docs-only work as implementation completion.
+2. Moving cards to `Done` because a PR exists, before merge/landing and
+   validation evidence.
+3. Using Auth0 `email` or `name` for authorization, identity durability, or
+   workspace selection instead of Auth0 `sub`.
+4. Expanding internal `tenant` names into organization/team tenancy without an
+   explicit product-scope change.
+5. Mixing raw memory events with derived profiles/notes; raw facts are written
+   quickly, derived understanding belongs behind service/worker refresh.
+6. Letting provider adapters fetch memory directly instead of composing memory
+   in generation/chat orchestration.
+7. Updating backend routes, OpenAPI, or frontend typed helpers without checking
+   the other two surfaces for drift.
+8. Assuming local tests prove Auth0/Render/Vercel/Doppler/Neon readiness.
 
 ## Task Workflows
 
@@ -200,6 +357,14 @@ Requirements:
   5. Move the issue to `Done` only after the requested work is genuinely complete and validation has run or the validation gap is documented.
 - Repopulate the board during normal work. If an agent discovers real follow-up work outside the current scope, create a new GitHub Issue instead of expanding the task: production bugs, missing tests, product ambiguity, architecture decisions, external setup, retrospective "what remains" items, AI/generation incidents, or refactors too large for the current change. Do not create issues for tiny fixes that can be safely included in the active task.
 - New agent-created issues should include context/source, acceptance criteria, likely starting files, risk or user impact, `Status`, `Category`, `Priority`, `Size`, `Source`, one primary `agency:*` label, one `agent:*` label, and `output:plan-only` when the expected next step is a memo rather than code.
+- CodeGym uses Project fields, not `category:*` or `priority:*` labels, as the
+  durable source for category and priority. Do not copy another repo's label
+  taxonomy blindly. Add optional type labels such as `bug`, `enhancement`,
+  `documentation`, or `technical-debt` only when the issue text supports them
+  and those labels exist in this repository.
+- Do not pad issues with inaccurate labels or fields to silence tooling, but do
+  avoid sparse issue metadata when the title/body clearly gives enough evidence
+  to set routing, category, priority, size, source, and expected output.
 - The board helper emits non-blocking warnings when issue creation/import/upsert
   metadata is missing a primary agency route, agent route, decision
   `output:plan-only`, or required Project fields. Treat warnings as a prompt to

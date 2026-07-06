@@ -93,6 +93,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List practice sessions for the authenticated user and workspace scope.
+         * @description Returns history summaries only; state snapshots and draft files are excluded.
+         */
+        get: operations["listSessions"];
+        put?: never;
+        /** Create a resumable practice session. */
+        post: operations["createSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        /** Get one practice session for resume. */
+        get: operations["getSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update a practice session title, status, or resume state. */
+        patch: operations["updateSession"];
+        trace?: never;
+    };
+    "/api/v1/sessions/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Batch upsert draft files for a workspace session. */
+        put: operations["upsertSessionFiles"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -138,6 +198,14 @@ export interface components {
         };
         MemoryEventEnvelope: {
             data: components["schemas"]["MemoryEvent"];
+            error: null;
+        };
+        SessionSummariesEnvelope: {
+            data: components["schemas"]["SessionSummary"][];
+            error: null;
+        };
+        SessionEnvelope: {
+            data: components["schemas"]["Session"];
             error: null;
         };
         MemoryProfile: {
@@ -203,6 +271,59 @@ export interface components {
              */
             occurred_at?: string;
         };
+        /** @enum {string} */
+        SessionKind: "workspace" | "mcq" | "interview";
+        /** @enum {string} */
+        SessionStatus: "active" | "completed" | "abandoned";
+        SessionSummary: {
+            /** @example sess_0123456789abcdef */
+            id: string;
+            /** @description Internal workspace-scope ID. Legacy field name. */
+            tenant_id: string;
+            user_id: string;
+            kind: components["schemas"]["SessionKind"];
+            status: components["schemas"]["SessionStatus"];
+            title: string;
+            problem_id?: string;
+            generation_job_id?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            last_activity_at: string;
+            /** Format: date-time */
+            completed_at?: string;
+        };
+        Session: components["schemas"]["SessionSummary"] & {
+            state: components["schemas"]["JsonValue"];
+            files?: components["schemas"]["SessionFile"][];
+        };
+        SessionFile: {
+            /** @example main.go */
+            file_path: string;
+            content: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateSessionInput: {
+            kind: components["schemas"]["SessionKind"];
+            title?: string;
+            problem_id?: string;
+            generation_job_id?: string;
+            state?: components["schemas"]["JsonValue"];
+        };
+        UpdateSessionInput: {
+            title?: string;
+            status?: components["schemas"]["SessionStatus"];
+            state?: components["schemas"]["JsonValue"];
+        };
+        UpsertSessionFilesInput: {
+            files: {
+                file_path: string;
+                content: string;
+            }[];
+        };
         JsonValue: {
             [key: string]: components["schemas"]["JsonValue"];
         } | components["schemas"]["JsonValue"][] | string | number | boolean | null;
@@ -235,6 +356,15 @@ export interface components {
                 "application/json": components["schemas"]["ErrorEnvelope"];
             };
         };
+        /** @description Requested resource was not found in the authenticated workspace scope. */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
         /** @description Backend failed while processing the request. */
         InternalError: {
             headers: {
@@ -248,6 +378,7 @@ export interface components {
     parameters: {
         /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
         TenantHeader: string;
+        SessionID: string;
     };
     requestBodies: never;
     headers: never;
@@ -410,6 +541,167 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["TenantForbidden"];
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["SessionKind"];
+                status?: components["schemas"]["SessionStatus"];
+                limit?: number;
+                /** @description RFC3339 last_activity_at cursor; returns sessions before this timestamp. */
+                cursor?: string;
+            };
+            header?: {
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
+                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session summaries loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSummariesEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["TenantForbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
+                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSessionInput"];
+            };
+        };
+        responses: {
+            /** @description Session created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["TenantForbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
+                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+            };
+            path: {
+                id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session detail loaded. Workspace sessions include draft files. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["TenantForbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
+                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+            };
+            path: {
+                id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSessionInput"];
+            };
+        };
+        responses: {
+            /** @description Session updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["TenantForbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    upsertSessionFiles: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
+                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+            };
+            path: {
+                id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertSessionFilesInput"];
+            };
+        };
+        responses: {
+            /** @description Session files updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["TenantForbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
         };
     };
 }

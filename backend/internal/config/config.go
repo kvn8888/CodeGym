@@ -20,6 +20,12 @@ type Config struct {
 	DevUserID          string
 	DevTenantID        string
 	CORSAllowedOrigins []string
+	MemoryWorker       WorkerConfig
+}
+
+type WorkerConfig struct {
+	Disabled bool
+	Interval time.Duration
 }
 
 // Load reads environment variables and returns the effective runtime config.
@@ -49,6 +55,13 @@ func Load() Config {
 			"http://localhost:5173",
 			"http://127.0.0.1:5173",
 		}),
+		MemoryWorker: WorkerConfig{
+			Disabled: boolEnv("CODEGYM_MEMORY_WORKER_DISABLED", false),
+			Interval: durationEnv(
+				"CODEGYM_MEMORY_WORKER_INTERVAL",
+				24*time.Hour,
+			),
+		},
 	}
 }
 
@@ -92,6 +105,20 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return duration
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	switch value {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func csvEnv(key string, fallback []string) []string {

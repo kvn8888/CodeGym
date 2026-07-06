@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kvn8888/codegym/backend/internal/api"
@@ -11,12 +15,15 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/config"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/session"
 )
 
 // main wires configuration, persistence adapters, services, and the HTTP router,
 // then starts the API server.
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	cfg := config.Load()
 
 	authenticator, err := buildAuthenticator(cfg)
@@ -26,6 +33,7 @@ func main() {
 
 	var memoryStore memory.Store = memory.NewInMemoryStore()
 	var identityStore identity.Store = identity.NewInMemoryStore()
+	var sessionStore session.Store = session.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -40,33 +48,61 @@ func main() {
 
 		postgresIdentityStore := identity.NewPostgresStore(pool)
 		postgresMemoryStore := memory.NewPostgresStore(pool)
+		postgresSessionStore := session.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
 		if err := postgresMemoryStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap memory schema: %v", err)
 		}
+		if err := postgresSessionStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap session schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
-		log.Print("CodeGym API using Postgres identity and memory stores")
+		sessionStore = postgresSessionStore
+		log.Print("CodeGym API using Postgres identity, memory, and session stores")
 	} else {
-		log.Print("CodeGym API using in-memory identity and memory stores; set NEON_CONNECTION_STRING to enable Postgres")
+		log.Print("CodeGym API using in-memory identity, memory, and session stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
 
 	identityService := identity.NewService(identityStore)
 	memoryService := memory.NewService(memoryStore, nil)
+	sessionService := session.NewService(sessionStore, nil)
+	if !cfg.MemoryWorker.Disabled {
+		worker := memory.NewWorker(memoryService, cfg.MemoryWorker.Interval)
+		go worker.Run(ctx)
+		log.Printf("CodeGym memory worker scheduled every %s", cfg.MemoryWorker.Interval)
+	} else {
+		log.Print("CodeGym memory worker disabled")
+	}
 
 	router := api.NewRouter(api.Dependencies{
 		Authenticator:      authenticator,
 		Identity:           identityService,
 		Memory:             memoryService,
+		Sessions:           sessionService,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 		DatabaseURL:        cfg.DatabaseURL,
 	})
 
 	log.Printf("CodeGym API listening on %s", cfg.Addr())
-	if err := http.ListenAndServe(cfg.Addr(), router); err != nil {
+	server := &http.Server{
+		Addr:              cfg.Addr(),
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("CodeGym API graceful shutdown failed: %v", err)
+		}
+	}()
+
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
 }

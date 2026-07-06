@@ -92,7 +92,9 @@ func (s *PostgresStore) EnsurePersonalTenant(ctx context.Context, tenant Persona
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	metadataDisplayName := strings.TrimSpace(tenant.DisplayName)
 	displayName := metadataDisplayName

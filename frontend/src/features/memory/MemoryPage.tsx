@@ -47,8 +47,8 @@ export function MemoryPage() {
       setLoading(true);
 
       const [profileResult, eventsResult] = await Promise.allSettled([
-        api.get<UserMemoryProfile>('/memory/profile'),
-        api.get<MemoryEvent[]>('/memory/events'),
+        api.memory.getProfile(),
+        api.memory.listEvents(),
       ]);
 
       if (cancelled) {
@@ -59,11 +59,7 @@ export function MemoryPage() {
         setProfile(profileResult.value);
         setError(null);
       } else {
-        setError(
-          profileResult.reason instanceof Error
-            ? profileResult.reason.message
-            : 'Could not load memory profile.',
-        );
+        setError( profileResult.reason instanceof Error ? profileResult.reason.message : 'Could not load memory profile.', );
       }
 
       if (eventsResult.status === 'fulfilled') {
@@ -74,11 +70,7 @@ export function MemoryPage() {
         setEventsError(null);
       } else {
         setEvents([]);
-        setEventsError(
-          eventsResult.reason instanceof Error
-            ? eventsResult.reason.message
-            : 'Could not load memory events.',
-        );
+        setEventsError( eventsResult.reason instanceof Error ? eventsResult.reason.message : 'Could not load memory events.', );
       }
 
       setLoading(false);

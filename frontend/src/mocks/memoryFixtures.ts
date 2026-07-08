@@ -1,4 +1,5 @@
 import type { MemoryEvent, UserMemoryProfile } from '../shared/api/types';
+import { memoryEventSources, memoryEventTypes } from '../shared/api/memoryEvents';
 
 export const mockMemoryProfile: UserMemoryProfile = {
   summary:
@@ -92,8 +93,8 @@ export const mockMemoryEvents: MemoryEvent[] = [
     id: 'mem_evt_01',
     tenant_id: 'workspace_kevin',
     user_id: 'user_kevin',
-    source: 'generate',
-    type: 'problem_generated',
+    source: memoryEventSources.generate,
+    type: memoryEventTypes.problemGenerated,
     summary: 'Generated an API design challenge focused on pagination and cache invalidation.',
     payload: {
       problem_id: 'pagination-api-cache',
@@ -107,8 +108,8 @@ export const mockMemoryEvents: MemoryEvent[] = [
     id: 'mem_evt_02',
     tenant_id: 'workspace_kevin',
     user_id: 'user_kevin',
-    source: 'submission',
-    type: 'problem_attempted',
+    source: memoryEventSources.workspace,
+    type: memoryEventTypes.problemAttempted,
     summary: 'Attempted goroutine fan-in collector and missed channel close ownership.',
     payload: {
       problem_id: 'goroutine-fan-in',
@@ -122,8 +123,8 @@ export const mockMemoryEvents: MemoryEvent[] = [
     id: 'mem_evt_03',
     tenant_id: 'workspace_kevin',
     user_id: 'user_kevin',
-    source: 'memory',
-    type: 'memory_note_created',
+    source: memoryEventSources.memory,
+    type: memoryEventTypes.memoryNoteCreated,
     summary: 'Captured a review note for sliding-window timestamp eviction ordering.',
     payload: {
       note_id: 'note-rate-limit',

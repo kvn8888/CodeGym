@@ -7,6 +7,8 @@ interface MockApiResponse<T> {
 }
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
+let memoryProfile = mockMemoryProfile;
+let memoryEvents = [...mockMemoryEvents];
 
 function json<T>(data: T, init?: ResponseInit): Response {
   const body: MockApiResponse<T> = { data, error: null };
@@ -32,6 +34,22 @@ function toUrl(input: RequestInfo | URL): URL {
   return new URL(input.toString(), window.location.origin);
 }
 
+function parseBody(input?: BodyInit | null) {
+  if (input == null) {
+    return null;
+  }
+
+  if (typeof input === 'string') {
+    return JSON.parse(input) as Record<string, unknown>;
+  }
+
+  if (input instanceof Blob) {
+    throw new Error('Blob request bodies are not supported by the mock API.');
+  }
+
+  return JSON.parse(String(input)) as Record<string, unknown>;
+}
+
 export async function mockApiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -46,11 +64,45 @@ export async function mockApiFetch(
   const path = url.pathname.replace('/api/v1', '') || '/';
 
   if (method === 'GET' && path === '/memory/profile') {
-    return json(mockMemoryProfile);
+    return json(memoryProfile);
+  }
+
+  if (method === 'POST' && path === '/memory/profile/refresh') {
+    memoryProfile = {
+      ...memoryProfile,
+      updated_at: new Date().toISOString(),
+    };
+
+    return json(memoryProfile);
   }
 
   if (method === 'GET' && path === '/memory/events') {
-    return json(mockMemoryEvents);
+    return json(memoryEvents);
+  }
+
+  if (method === 'POST' && path === '/memory/events') {
+    const body = parseBody(init?.body);
+
+    if (!body || typeof body.source !== 'string' || typeof body.type !== 'string' || typeof body.summary !== 'string') {
+      return error('invalid_request', 'Missing required memory event fields.', 400);
+    }
+
+    const now = new Date().toISOString();
+    const event = {
+      id: `mem_evt_mock_${memoryEvents.length + 1}`,
+      tenant_id: 'workspace_kevin',
+      user_id: 'user_kevin',
+      source: body.source,
+      type: body.type,
+      summary: body.summary,
+      payload: body.payload,
+      occurred_at: typeof body.occurred_at === 'string' ? body.occurred_at : now,
+      created_at: now,
+    };
+
+    memoryEvents = [...memoryEvents, event as (typeof memoryEvents)[number]];
+
+    return json(event, { status: 201 });
   }
 
   if (method === 'GET' && path === '/problems') {

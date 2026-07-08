@@ -28,6 +28,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthEnvelope"
 
+  /ready:
+    get:
+      operationId: getReadiness
+      summary: Check backend readiness.
+      description: >
+        Returns success in in-memory mode. When Postgres is configured through
+        NEON_CONNECTION_STRING or DATABASE_URL, this endpoint verifies database
+        connectivity and returns 503 if the dependency is unavailable.
+      security: []
+      responses:
+        "200":
+          description: Backend dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessEnvelope"
+        "503":
+          description: Backend dependencies are not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   /api/v1/memory/profile:
     get:
       operationId: getMemoryProfile
@@ -197,6 +220,27 @@ components:
           type: string
           example: ok
 
+    ReadinessEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/ReadinessStatus"
+        error:
+          type: "null"
+
+    ReadinessStatus:
+      type: object
+      required: [status, mode]
+      properties:
+        status:
+          type: string
+          example: ok
+        mode:
+          type: string
+          enum: [memory, postgres]
+          example: postgres
+
     MemoryProfileEnvelope:
       type: object
       required: [data, error]
@@ -328,10 +372,10 @@ components:
           type: string
         source:
           type: string
-          example: chat
+          example: memory
         type:
           type: string
-          example: memory_note_created
+          example: note_created
         summary:
           type: string
         payload:

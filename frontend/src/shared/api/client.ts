@@ -10,6 +10,9 @@ type MemoryEvents = paths['/api/v1/memory/events']['get']['responses'][200]['con
 type RefreshMemoryProfile = paths['/api/v1/memory/profile/refresh']['post']['responses'][200]['content']['application/json']['data'];
 type RecordMemoryEventInput = paths['/api/v1/memory/events']['post']['requestBody']['content']['application/json'];
 type RecordMemoryEvent = paths['/api/v1/memory/events']['post']['responses'][201]['content']['application/json']['data'];
+type AccessTokenProvider = () => Promise<string | null>;
+
+let accessTokenProvider: AccessTokenProvider | null = null;
 
 export class ApiRequestError extends Error {
   readonly code: string;
@@ -29,25 +32,12 @@ function resolveApiBaseUrl() {
   return (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '');
 }
 
-function getBearerToken() {
-  if (typeof localStorage === 'undefined') {
-    return null;
-  }
-
-  try {
-    return localStorage.getItem('codegym_token');
-  } catch {
-    return null;
-  }
-}
-
 function joinUrl(baseUrl: string, path: string) {
   return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-function buildHeaders(options?: RequestInit) {
+function buildHeaders(options?: RequestInit, token?: string | null) {
   const headers = new Headers(options?.headers ?? {});
-  const token = getBearerToken();
 
   if (!headers.has('Content-Type') && options?.body != null) {
     headers.set('Content-Type', 'application/json');
@@ -74,11 +64,32 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 }
 
+export function setApiAccessTokenProvider(provider: AccessTokenProvider | null) {
+  accessTokenProvider = provider;
+}
+
+async function getBearerToken(): Promise<string | null> {
+  if (accessTokenProvider) {
+    return accessTokenProvider();
+  }
+
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+
+  try {
+    return localStorage.getItem('codegym_token');
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = await getBearerToken();
   const url = joinUrl(resolveApiBaseUrl(), path);
   const requestOptions: RequestInit = {
     ...options,
-    headers: buildHeaders(options),
+    headers: buildHeaders(options, token),
   };
 
   const response =

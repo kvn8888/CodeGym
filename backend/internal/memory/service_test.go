@@ -33,7 +33,7 @@ func TestServiceRecordsEventForScopedUser(t *testing.T) {
 
 	event, err := service.RecordEvent(scopedContext(), RecordEventInput{
 		Source:  "generate",
-		Type:    "problem_requested",
+		Type:    "intake_started",
 		Summary: "Asked for pagination cache practice.",
 		Payload: payload,
 	})
@@ -64,7 +64,7 @@ func TestServiceRefreshProfilePersistsDerivedMemory(t *testing.T) {
 
 	_, err := service.RecordEvent(ctx, RecordEventInput{
 		Source:  "workspace",
-		Type:    "attempt_passed",
+		Type:    "attempt_solved",
 		Summary: "Solved graph traversal.",
 		Payload: json.RawMessage(`{"skill":"Graphs","problem_id":"graph-traversal","passed":true}`),
 	})
@@ -96,7 +96,7 @@ func TestServiceRefreshAllProfilesUsesEventScopes(t *testing.T) {
 
 	if _, err := service.RecordEvent(scopedContext(), RecordEventInput{
 		Source:  "mcq",
-		Type:    "answer_wrong",
+		Type:    "answer_incorrect",
 		Summary: "Missed SQL join.",
 		Payload: json.RawMessage(`{"skill":"SQL","problem_id":"sql-join","correct":false}`),
 	}); err != nil {
@@ -127,8 +127,8 @@ func TestWorkerRunOnceRefreshesActiveProfiles(t *testing.T) {
 	worker := NewWorker(service, time.Minute)
 
 	if _, err := service.RecordEvent(scopedContext(), RecordEventInput{
-		Source:  "chat",
-		Type:    "memory_note_created",
+		Source:  "memory",
+		Type:    "note_created",
 		Summary: "Asked for concurrency practice.",
 		Payload: json.RawMessage(`{"skill":"Concurrency","problem_id":"goroutine-worker"}`),
 	}); err != nil {

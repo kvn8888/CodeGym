@@ -34,8 +34,10 @@ func (s *Service) EnsurePersonalTenant(ctx context.Context, principal auth.Princ
 	}
 
 	return s.store.EnsurePersonalTenant(ctx, PersonalTenant{
-		UserID:   userID,
-		TenantID: tenantID,
-		Role:     "owner",
+		UserID:      userID,
+		TenantID:    tenantID,
+		Role:        "owner",
+		Email:       strings.TrimSpace(principal.UserMetadata.Email),
+		DisplayName: strings.TrimSpace(principal.UserMetadata.DisplayName),
 	})
 }

@@ -30,8 +30,7 @@ func (h *MemoryHandler) Profile(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, profile)
 }
 
-// ListEvents returns the scoped user's memory event stream.
-// Example fields: id, source, type, summary, payload, occurred_at, created_at.
+// RefreshProfile rebuilds the scoped user's memory profile from their event stream.
 func (h *MemoryHandler) RefreshProfile(w http.ResponseWriter, r *http.Request) {
 	profile, err := h.service.RefreshProfile(r.Context())
 	if err != nil {
@@ -42,6 +41,8 @@ func (h *MemoryHandler) RefreshProfile(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, profile)
 }
 
+// ListEvents returns the scoped user's memory event stream.
+// Example fields: id, source, type, summary, payload, occurred_at, created_at.
 func (h *MemoryHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	events, err := h.service.ListEvents(r.Context())
 	if err != nil {

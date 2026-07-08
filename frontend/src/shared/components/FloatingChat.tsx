@@ -47,37 +47,9 @@ function ChatChrome({
   draggable?: boolean;
 }) {
   return (
-    <>
-      <div
-        className={`flex shrink-0 select-none items-center justify-between border-b border-gray-alpha-200 bg-background-100 px-4 py-3 ${
-          draggable ? 'chat-drag-handle cursor-grab active:cursor-grabbing' : ''
-        }`}
-      >
-        <div
-          className={
-            draggable
-              ? 'pointer-events-none flex-1 min-w-0'
-              : 'flex-1 min-w-0'
-          }
-        >
-          <div className="text-sm font-medium text-gray-1000">Assistant</div>
-          <div className="text-xs text-gray-700">Goals, skills, and memory</div>
-        </div>
-        <button
-          onClick={onClose}
-          className="chat-drag-cancel cg-focus flex h-7 w-7 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-alpha-100 hover:text-gray-1000"
-          aria-label="Close chat"
-          title="Close"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
-      </div>
-      <div className="min-h-0 flex-1 bg-background-100">
-        <ChatPanel />
-      </div>
-    </>
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <ChatPanel onClose={onClose} draggable={draggable} />
+    </div>
   );
 }
 

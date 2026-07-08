@@ -49,6 +49,7 @@ type Principal struct {
     UserID          string
     DefaultTenantID string
     TenantIDs       []string
+    UserMetadata    UserMetadata
 }
 ```
 
@@ -58,6 +59,7 @@ For product reasoning, read those fields as:
 UserID          -> authenticated CodeGym user
 DefaultTenantID -> default personal workspace ID
 TenantIDs       -> allowed workspace IDs, currently only the personal workspace
+UserMetadata    -> optional Auth0 profile metadata for CodeGym's app user row
 ```
 
 For local development without a static token, use:
@@ -103,6 +105,12 @@ expiry, and not-before checks before mapping claims into `auth.Principal`.
 Auth0 `sub` becomes `Principal.UserID`, and CodeGym derives a deterministic
 personal workspace ID from `sub`, such as `personal-auth0-user-123`.
 
+Auth0 `email` and `name` are treated as optional profile metadata. The identity
+layer stores `email` on `app_users.email` when present and stores `name` as
+`app_users.display_name` when present. If a later access token omits those
+optional claims, the bootstrap keeps the existing stored values instead of
+blanking them. Neither field is used as a durable user key.
+
 Do not add Auth0 app tenant/workspace claims, organization claims, tenant
 switching, or team roles unless there is a real product requirement. Today,
 every Auth0 user maps to one personal workspace scope.
@@ -133,6 +141,8 @@ Using the dev example above, identity ensures:
 
 ```text
 app_users.id = kevin
+app_users.email = optional profile email when Auth0 supplies it
+app_users.display_name = optional Auth0 name, otherwise the user id fallback
 tenants.id = personal-kevin
 tenant_memberships = kevin owner of personal-kevin
 ```
@@ -206,6 +216,7 @@ Identity tables:
 ```text
 app_users
   id text primary key
+  email text
   display_name text
   created_at timestamptz
   updated_at timestamptz
@@ -289,7 +300,7 @@ memory row -> tenant_memberships
 Auth0 is now the selected production auth boundary. Remaining follow-up work:
 
 1. Keep `identity.Middleware` in the pipeline.
-2. Reconcile Auth0 users into the durable CodeGym identity model.
+2. Keep reconciling Auth0 `email` and `name` as optional app-user metadata.
 3. Keep every authenticated user mapped to one personal workspace until product
    scope explicitly requires shared/team workspaces.
 

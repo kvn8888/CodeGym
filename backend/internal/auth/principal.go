@@ -16,9 +16,15 @@ package auth
 // DefaultTenantID is the workspace used when no explicit tenant is specified in the request.
 // HasTenant(tenantID) validates that the user is allowed to access a given tenant.
 type Principal struct {
-	UserID          string   `json:"user_id"`
-	DefaultTenantID string   `json:"default_tenant_id"`
-	TenantIDs       []string `json:"tenant_ids"`
+	UserID          string       `json:"user_id"`
+	DefaultTenantID string       `json:"default_tenant_id"`
+	TenantIDs       []string     `json:"tenant_ids"`
+	UserMetadata    UserMetadata `json:"user_metadata,omitempty"`
+}
+
+type UserMetadata struct {
+	Email       string `json:"email,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
 }
 
 // HasTenant reports whether the principal is allowed to access tenantID.

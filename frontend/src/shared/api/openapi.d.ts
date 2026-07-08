@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check backend readiness.
+         * @description Returns success in in-memory mode. When Postgres is configured through NEON_CONNECTION_STRING or DATABASE_URL, this endpoint verifies database connectivity and returns 503 if the dependency is unavailable.
+         */
+        get: operations["getReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/profile": {
         parameters: {
             query?: never;
@@ -95,6 +115,19 @@ export interface components {
             /** @example ok */
             status: string;
         };
+        ReadinessEnvelope: {
+            data: components["schemas"]["ReadinessStatus"];
+            error: null;
+        };
+        ReadinessStatus: {
+            /** @example ok */
+            status: string;
+            /**
+             * @example postgres
+             * @enum {string}
+             */
+            mode: "memory" | "postgres";
+        };
         MemoryProfileEnvelope: {
             data: components["schemas"]["MemoryProfile"];
             error: null;
@@ -146,9 +179,9 @@ export interface components {
             /** @description Internal workspace-scope ID. Legacy field name. */
             tenant_id: string;
             user_id: string;
-            /** @example chat */
+            /** @example memory */
             source: string;
-            /** @example memory_note_created */
+            /** @example note_created */
             type: string;
             summary: string;
             payload?: components["schemas"]["JsonValue"];
@@ -238,6 +271,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthEnvelope"];
+                };
+            };
+        };
+    };
+    getReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backend dependencies are ready. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessEnvelope"];
+                };
+            };
+            /** @description Backend dependencies are not ready. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

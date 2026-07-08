@@ -27,7 +27,7 @@ func TestSummarizePlumbing(t *testing.T) {
 		{
 			ID:         "evt-1",
 			Source:     "workspace",
-			Type:       "attempt_passed",
+			Type:       "attempt_solved",
 			Summary:    "Solved pagination cache edge cases.",
 			Payload:    mustJSON(t, map[string]any{"skill": "API Patterns", "problem_id": "pagination-api-cache", "passed": true}),
 			OccurredAt: now.Add(-2 * time.Hour),
@@ -36,7 +36,7 @@ func TestSummarizePlumbing(t *testing.T) {
 		{
 			ID:         "evt-2",
 			Source:     "mcq",
-			Type:       "answer_wrong",
+			Type:       "answer_incorrect",
 			Summary:    "Missed SQL join cardinality.",
 			Payload:    mustJSON(t, map[string]any{"skill": "SQL", "problem_id": "sql-joins", "correct": false}),
 			OccurredAt: now.Add(-1 * time.Hour),
@@ -76,7 +76,7 @@ func TestSummarizeKeepsMixedSignalNeutral(t *testing.T) {
 		{
 			ID:         "evt-1",
 			Source:     "workspace",
-			Type:       "attempt_passed",
+			Type:       "attempt_solved",
 			Summary:    "Solved a cache problem.",
 			Payload:    mustJSON(t, map[string]any{"skill": "Caching", "passed": true}),
 			OccurredAt: now.Add(-2 * time.Hour),

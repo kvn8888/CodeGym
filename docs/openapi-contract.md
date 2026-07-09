@@ -29,6 +29,11 @@ Current routes:
 | `POST` | `/api/v1/memory/profile/refresh` | Yes | Rebuild and persist the scoped user's profile from memory events. |
 | `GET` | `/api/v1/memory/events` | Yes | List append-only memory events for the scoped user. |
 | `POST` | `/api/v1/memory/events` | Yes | Record one append-only memory event. |
+| `GET` | `/api/v1/sessions` | Yes | List resumable practice session summaries. |
+| `POST` | `/api/v1/sessions` | Yes | Create a generated-problem, MCQ, or interview practice session. |
+| `GET` | `/api/v1/sessions/{id}` | Yes | Fetch one full session state for resume. |
+| `PATCH` | `/api/v1/sessions/{id}` | Yes | Update title, status, or state snapshot. |
+| `PUT` | `/api/v1/sessions/{id}/files` | Yes | Batch upsert draft workspace files. |
 
 ## Auth and Workspace Scope
 
@@ -183,6 +188,31 @@ Refresh profile from events:
 
 ```bash
 curl -sS -X POST "$API_BASE_URL/api/v1/memory/profile/refresh" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Create and resume a workspace session:
+
+```bash
+curl -sS -X POST "$API_BASE_URL/api/v1/sessions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "kind": "workspace",
+    "title": "Graph traversal practice",
+    "problem_id": "prob_graph",
+    "state": {
+      "schema_version": 1,
+      "language": "go",
+      "active_file": "main.go"
+    }
+  }'
+```
+
+List active sessions:
+
+```bash
+curl -sS "$API_BASE_URL/api/v1/sessions?status=active&limit=5" \
   -H "Authorization: Bearer $TOKEN"
 ```
 

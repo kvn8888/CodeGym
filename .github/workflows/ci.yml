@@ -2,7 +2,7 @@ name: CI
 
 # First CI workflow for CodeGym (issue #5).
 #   Frontend job: install, lint, build.
-#   Backend job:  go test.
+#   Backend job:  go test, go vet, advisory govulncheck.
 # No production secrets are required. The Neon integration test skips itself
 # when CODEGYM_TEST_DATABASE_URL / NEON_CONNECTION_STRING are unset, so
 # `go test ./...` stays green without a database.
@@ -78,3 +78,15 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      # Advisory for now: keep dependency reachability visible without blocking
+      # merges until the baseline is understood.
+      - name: Vulnerability check (advisory)
+        continue-on-error: true
+        run: govulncheck ./...

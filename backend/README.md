@@ -77,6 +77,27 @@ doppler run -p codegym -c dev -- ./scripts/memory_smoke.sh
 The backend API contract, response envelopes, and curl examples are documented
 in [../docs/openapi-contract.md](../docs/openapi-contract.md).
 
+## Memory Worker
+
+The API server starts the memory profile refresh worker by default. The request
+path appends raw memory events quickly; the worker periodically calls
+`memory.Service.RefreshAllProfiles` off the request path so derived profiles can
+be refreshed without blocking event recording.
+
+Default interval: `24h`.
+
+Override with:
+
+```bash
+CODEGYM_MEMORY_WORKER_INTERVAL=1h
+```
+
+Disable the worker for local debugging with:
+
+```bash
+CODEGYM_MEMORY_WORKER_DISABLED=true
+```
+
 ## Auth
 
 Protected routes require a bearer token.
@@ -105,15 +126,16 @@ For Auth0, set the mode plus issuer/audience config:
 
 ```bash
 CODEGYM_AUTH_MODE=auth0
-AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
-AUTH0_AUDIENCE=https://api.codegym.example
+CODEGYM_AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
+CODEGYM_AUTH0_AUDIENCE=https://api.codegym.example
 ```
 
-The server also accepts `CODEGYM_AUTH0_DOMAIN`,
-`CODEGYM_AUTH0_ISSUER_URL`, and `CODEGYM_AUTH0_AUDIENCE`. When Auth0 is
-configured, access tokens are validated with Auth0 JWKS, RS256, issuer,
-audience, expiry, and not-before checks before they reach identity/workspace
-scope middleware.
+The server also accepts `AUTH0_DOMAIN` / `AUTH0_AUDIENCE` aliases and
+`CODEGYM_AUTH0_ISSUER_URL` for explicit issuer overrides. When Auth0 is
+configured, backend **access tokens** are validated with Auth0 JWKS, RS256,
+issuer, audience, expiry, and not-before checks before they reach
+identity/workspace scope middleware. The backend does not use Auth0 client IDs
+or client secrets; those belong to the frontend SPA login setup.
 
 See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
 full auth -> identity -> personal workspace scope request flow.
@@ -153,6 +175,12 @@ GET  /api/v1/memory/profile
 POST /api/v1/memory/profile/refresh
 GET  /api/v1/memory/events
 POST /api/v1/memory/events
+
+GET   /api/v1/sessions
+POST  /api/v1/sessions
+GET   /api/v1/sessions/{id}
+PATCH /api/v1/sessions/{id}
+PUT   /api/v1/sessions/{id}/files
 ```
 
 ## Memory Profile Fields
@@ -214,6 +242,8 @@ tables with `CREATE TABLE IF NOT EXISTS`:
 - `tenant_memberships`
 - `user_memory_profiles`
 - `memory_events`
+- `practice_sessions`
+- `session_files`
 
 `app_users.id` is the durable CodeGym user key. With Auth0, it is the Auth0
 `sub` claim. Auth0 `email` and `name` are stored as optional profile metadata
@@ -227,3 +257,23 @@ organization/team SaaS tenancy.
 This is intentionally not a migration framework yet. The first Neon/Postgres
 schema starts as a simple bootstrap and can move to versioned migrations when
 the schema hardens.
+
+## Generation Boundary
+
+The provider-neutral generation seam lives in `backend/internal/generation`.
+Provider adapters implement:
+
+```go
+type Generator interface {
+	Generate(ctx context.Context, request GenerateRequest) (GenerateResult, error)
+}
+```
+
+`GenerateRequest` always carries `Kind`, `Spec`, `MemoryContext`, `Schema`, and
+`ModelPolicy`. `GenerateResult` records the structured object plus the
+provider/model/tokens/cost that actually served the request. Provider SDKs
+belong in adapter packages, not in the interface package.
+
+`generation.Orchestrator` composes `memory.Service` with a `Generator`, builds
+memory context from the scoped profile, then calls the provider-neutral
+interface. This keeps provider adapters from fetching memory directly.

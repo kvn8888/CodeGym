@@ -41,6 +41,7 @@ const (
 	mcqMaxCount     = 20
 	mcqDefaultCount = 5
 	mcqOptionCount  = 4
+	mcqMaxTokens    = 4096
 	// mcqMaxAttempts bounds the validate/repair loop: one generation plus one
 	// retry that feeds the validation error back to the model.
 	mcqMaxAttempts = 2
@@ -187,10 +188,21 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 				Version:    "1",
 				JSONSchema: mcqJSONSchema,
 			},
+			ModelPolicy:  ModelPolicy{MaxTokens: mcqMaxTokens},
 			Instructions: instructions,
 		})
 		if err != nil {
 			log.Printf("mcq generation attempt %d failed class=%s detail=%s", attempt, DiagnosticClass(err), DiagnosticMessage(err))
+			var invalidErr *InvalidOutputError
+			if errors.As(err, &invalidErr) {
+				lastErr = err
+				lastRawOutput = invalidErr.RawOutput
+				if attempt == mcqMaxAttempts {
+					break
+				}
+				instructions = mcqRepairInstructions(invalidOutputReason(err))
+				continue
+			}
 			return nil, GenerateResult{}, err
 		}
 
@@ -208,8 +220,10 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 				RawOutput: lastRawOutput,
 			}),
 		)
-		instructions = mcqSystemPrompt + "\n\nYour previous output was rejected: " +
-			validateErr.Error() + ". Regenerate the FULL set, fixing that problem."
+		if attempt == mcqMaxAttempts {
+			break
+		}
+		instructions = mcqRepairInstructions(validateErr.Error())
 	}
 
 	return nil, GenerateResult{}, &InvalidOutputError{
@@ -217,4 +231,29 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 		RawOutput: lastRawOutput,
 		Err:       lastErr,
 	}
+}
+
+func mcqRepairInstructions(reason string) string {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "the output was not valid JSON matching the MCQ schema"
+	}
+	return mcqSystemPrompt + "\n\nYour previous output was rejected: " +
+		reason + ". Regenerate the FULL set as a single valid JSON array. Do not include prose, markdown fences, or trailing commentary."
+}
+
+func invalidOutputReason(err error) string {
+	var invalidErr *InvalidOutputError
+	if errors.As(err, &invalidErr) {
+		if strings.TrimSpace(invalidErr.Reason) != "" {
+			return invalidErr.Reason
+		}
+		if invalidErr.Err != nil {
+			return invalidErr.Err.Error()
+		}
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return ""
 }

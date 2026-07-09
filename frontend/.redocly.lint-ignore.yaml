@@ -1,0 +1,11 @@
+# This file instructs Redocly's linter to ignore the rules contained for specific parts of your API.
+# See https://redocly.com/docs/cli/ for more information.
+#
+# Public liveness/readiness endpoints intentionally have no caller-error shape:
+# GET /health cannot return a meaningful 4XX, and GET /ready reports dependency
+# failure as 503. Keep the contract behavior accurate instead of inventing fake
+# 4XX responses only to satisfy the generic lint rule.
+../api/openapi.yaml:
+  operation-4xx-response:
+    - '#/paths/~1health/get/responses'
+    - '#/paths/~1ready/get/responses'

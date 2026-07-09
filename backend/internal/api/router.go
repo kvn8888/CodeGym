@@ -7,6 +7,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/session"
 	"github.com/kvn8888/codegym/backend/internal/tenant"
 )
 
@@ -15,6 +16,7 @@ type Dependencies struct {
 	Authenticator      auth.Authenticator
 	Identity           *identity.Service
 	Memory             *memory.Service
+	Sessions           *session.Service
 	CORSAllowedOrigins []string
 	DatabaseURL        string
 }
@@ -40,6 +42,12 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/memory/profile/refresh", memoryHandler.RefreshProfile)
 	protected.HandleFunc("GET /api/v1/memory/events", memoryHandler.ListEvents)
 	protected.HandleFunc("POST /api/v1/memory/events", memoryHandler.RecordEvent)
+	sessionHandler := handlers.NewSessionHandler(deps.Sessions)
+	protected.HandleFunc("GET /api/v1/sessions", sessionHandler.List)
+	protected.HandleFunc("POST /api/v1/sessions", sessionHandler.Create)
+	protected.HandleFunc("GET /api/v1/sessions/{id}", sessionHandler.Get)
+	protected.HandleFunc("PATCH /api/v1/sessions/{id}", sessionHandler.Patch)
+	protected.HandleFunc("PUT /api/v1/sessions/{id}/files", sessionHandler.UpsertFiles)
 
 	protectedChain := chain(
 		protected,

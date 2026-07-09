@@ -33,6 +33,74 @@ PROJECT_FIELD_NAMES = {
     "size": "Size",
     "source": "Source",
 }
+PRIMARY_AGENCY_LABELS = {
+    "agency:ready",
+    "agency:investigate",
+    "agency:needs-owner-decision",
+    "agency:needs-architecture-decision",
+}
+AGENCY_BLOCKER_LABEL = "agency:external-blocked"
+DECISION_LABELS = {"agency:needs-owner-decision", "agency:needs-architecture-decision"}
+REQUIRED_PROJECT_FIELDS = ("status", "category", "priority", "size", "source")
+
+
+def issue_process_hygiene_warnings(
+    labels: list[str],
+    project_fields: dict[str, str],
+    *,
+    no_project: bool = False,
+) -> list[str]:
+    """Return non-blocking warnings for issue routing metadata."""
+    warnings: list[str] = []
+    label_set = set(labels)
+    primary_agency_labels = sorted(label_set & PRIMARY_AGENCY_LABELS)
+    agent_labels = sorted(label for label in label_set if label.startswith("agent:"))
+
+    if len(primary_agency_labels) != 1:
+        warnings.append(
+            "expected exactly one primary agency label, saw "
+            + (", ".join(primary_agency_labels) if primary_agency_labels else "none")
+        )
+    if AGENCY_BLOCKER_LABEL in label_set and not primary_agency_labels:
+        warnings.append("agency:external-blocked needs a primary agency label too")
+    if len(agent_labels) != 1:
+        warnings.append(
+            "expected exactly one agent label, saw "
+            + (", ".join(agent_labels) if agent_labels else "none")
+        )
+    if label_set & DECISION_LABELS and "output:plan-only" not in label_set:
+        warnings.append("decision-bound issue is missing output:plan-only")
+
+    if not no_project:
+        missing_fields = [
+            PROJECT_FIELD_NAMES[field]
+            for field in REQUIRED_PROJECT_FIELDS
+            if PROJECT_FIELD_NAMES[field] not in project_fields
+        ]
+        if missing_fields:
+            warnings.append("missing project fields: " + ", ".join(missing_fields))
+
+    return warnings
+
+
+def warn_issue_process_hygiene(
+    title: str,
+    labels: list[str],
+    project_fields: dict[str, str],
+    *,
+    no_project: bool = False,
+) -> None:
+    warnings = issue_process_hygiene_warnings(labels, project_fields, no_project=no_project)
+    if not warnings:
+        return
+    print(
+        "warning: issue process metadata for "
+        f"{title!r} is incomplete ({'; '.join(warnings)}). "
+        "Prefer one primary agency:* label, one agent:* label, optional "
+        "agency:external-blocked, output:plan-only for decision/spike work, "
+        "and Status/Category/Priority/Size/Source project fields.",
+        file=sys.stderr,
+    )
 
 
 def default_ssl_context() -> ssl.SSLContext | None:
@@ -1006,6 +1074,12 @@ def cmd_create_issue(args: argparse.Namespace, client: GitHubClient) -> None:
         "body": read_body_arg(args.body, args.body_file) or "",
     }
     labels = split_labels(args.label)
+    warn_issue_process_hygiene(
+        args.title,
+        labels,
+        project_field_values_from_args(args),
+        no_project=args.no_project,
+    )
     if labels:
         payload["labels"] = labels
 
@@ -1104,6 +1178,7 @@ def upsert_issue_by_title(
     field_args = argparse.Namespace(**vars(args))
     if close and not getattr(field_args, "status", None):
         field_args.status = "Done"
+    warn_issue_process_hygiene(title, labels, project_field_values_from_args(field_args))
 
     if dry_run:
         print(f"Would {action} issue: {title}")
@@ -1330,26 +1405,26 @@ def env_int(name: str) -> int | None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="View and manage the Polymarket EV Bot GitHub Projects v2 kanban board.",
+        description="View and manage the CodeGym GitHub Projects v2 kanban board.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """\
             Examples:
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py projects
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py columns --project-number 4
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py fields --project-number 4
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py list --project-number 4
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py add-issue 5 --project-number 4 --status Todo --category Performance --priority P1 --size M
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py add-draft "Write CI workflow" --project-number 4 --status Todo --category "Project / Process" --priority P2 --size S --body "..."
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py create-issue --project-number 4 --title "Write CI workflow" --body-file /tmp/body.md --label area:ci,type:task --status Todo --category "Project / Process" --priority P1 --size M --source "planning import"
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py upsert-issue --project-number 4 --title "Write CI workflow" --body-file /tmp/body.md --status Todo --category "Project / Process" --priority P1 --size M --source "planning import" --verify
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py import-issues --project-number 4 --file /tmp/issues.json --source "conversation import"
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py complete 5 --project-number 4 --source "validated in PR 12"
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py edit-issue 5 --project-number 4 --body-file /tmp/body.md --add-label area:backend --status "In Progress" --category "Provider API Integration"
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py move 5 "In Progress" --project-number 4
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py set-field 5 Priority P1 --project-number 4
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py set-fields 5 --status Done --priority P1 --size M --source "validated" --project-number 4
-              python .agents/skills/repo-knowledge/scripts/github_project_board.py rename 5 "M1: CI workflow" --project-number 4
+              python .agents/skills/codegym-project/scripts/github_project_board.py projects
+              python .agents/skills/codegym-project/scripts/github_project_board.py columns --project-number 2
+              python .agents/skills/codegym-project/scripts/github_project_board.py fields --project-number 2
+              python .agents/skills/codegym-project/scripts/github_project_board.py list --project-number 2
+              python .agents/skills/codegym-project/scripts/github_project_board.py add-issue 5 --project-number 2 --status Ready --category "Project / Process" --priority P1 --size M --source "manual triage"
+              python .agents/skills/codegym-project/scripts/github_project_board.py add-draft "Write CI workflow" --project-number 2 --status Backlog --category "Project / Process" --priority P2 --size S --body "..."
+              python .agents/skills/codegym-project/scripts/github_project_board.py create-issue --project-number 2 --title "Write CI workflow" --body-file /tmp/body.md --label agency:ready,agent:standard --status Ready --category "Project / Process" --priority P1 --size M --source "planning import"
+              python .agents/skills/codegym-project/scripts/github_project_board.py upsert-issue --project-number 2 --title "Write CI workflow" --body-file /tmp/body.md --label agency:ready,agent:standard --status Ready --category "Project / Process" --priority P1 --size M --source "planning import" --verify
+              python .agents/skills/codegym-project/scripts/github_project_board.py import-issues --project-number 2 --file /tmp/issues.json --source "conversation import"
+              python .agents/skills/codegym-project/scripts/github_project_board.py complete 5 --project-number 2 --source "validated in PR 12"
+              python .agents/skills/codegym-project/scripts/github_project_board.py edit-issue 5 --project-number 2 --body-file /tmp/body.md --add-label agency:investigate,agent:strong --status "In progress" --category "Backend / API"
+              python .agents/skills/codegym-project/scripts/github_project_board.py move 5 "In progress" --project-number 2
+              python .agents/skills/codegym-project/scripts/github_project_board.py set-field 5 Priority P1 --project-number 2
+              python .agents/skills/codegym-project/scripts/github_project_board.py set-fields 5 --status Done --priority P1 --size M --source "validated" --project-number 2
+              python .agents/skills/codegym-project/scripts/github_project_board.py rename 5 "Week 6: CI workflow" --project-number 2
             """
         ),
     )

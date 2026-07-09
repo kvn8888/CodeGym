@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -176,6 +177,7 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 
 	instructions := mcqSystemPrompt
 	var lastErr error
+	var lastRawOutput string
 	for attempt := 1; attempt <= mcqMaxAttempts; attempt++ {
 		result, err := orchestrator.Generate(ctx, GenerateInput{
 			Kind: KindMCQ,
@@ -188,6 +190,7 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 			Instructions: instructions,
 		})
 		if err != nil {
+			log.Printf("mcq generation attempt %d failed class=%s detail=%s", attempt, DiagnosticClass(err), DiagnosticMessage(err))
 			return nil, GenerateResult{}, err
 		}
 
@@ -197,9 +200,21 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 		}
 
 		lastErr = validateErr
+		lastRawOutput = string(result.Object)
+		log.Printf("mcq generation attempt %d failed class=invalid_output detail=%s",
+			attempt,
+			DiagnosticMessage(&InvalidOutputError{
+				Reason:    validateErr.Error(),
+				RawOutput: lastRawOutput,
+			}),
+		)
 		instructions = mcqSystemPrompt + "\n\nYour previous output was rejected: " +
 			validateErr.Error() + ". Regenerate the FULL set, fixing that problem."
 	}
 
-	return nil, GenerateResult{}, fmt.Errorf("mcq generation produced invalid output after %d attempts: %w", mcqMaxAttempts, lastErr)
+	return nil, GenerateResult{}, &InvalidOutputError{
+		Reason:    fmt.Sprintf("mcq generation produced invalid output after %d attempts", mcqMaxAttempts),
+		RawOutput: lastRawOutput,
+		Err:       lastErr,
+	}
 }

@@ -75,6 +75,9 @@ func main() {
 
 	var generationOrchestrator *generation.Orchestrator
 	if cfg.GenAI.Enabled() {
+		if warning := cfg.GenAI.PairingWarning(); warning != "" {
+			log.Printf("WARNING: %s base_url=%s model=%s", warning, cfg.GenAI.BaseURL, cfg.GenAI.Model)
+		}
 		generator, err := openaicompat.New(openaicompat.Config{
 			BaseURL: cfg.GenAI.BaseURL,
 			APIKey:  cfg.GenAI.APIKey,

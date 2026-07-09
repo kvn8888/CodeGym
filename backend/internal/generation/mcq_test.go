@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,7 @@ func validMCQJSON(count int) json.RawMessage {
 // scriptedGenerator returns queued payloads in order, recording requests.
 type scriptedGenerator struct {
 	payloads []json.RawMessage
+	errs     []error
 	requests []GenerateRequest
 }
 
@@ -40,6 +42,9 @@ func (s *scriptedGenerator) Generate(_ context.Context, request GenerateRequest)
 	index := len(s.requests) - 1
 	if index >= len(s.payloads) {
 		index = len(s.payloads) - 1
+	}
+	if index < len(s.errs) && s.errs[index] != nil {
+		return GenerateResult{}, s.errs[index]
 	}
 	return GenerateResult{
 		Object:   s.payloads[index],
@@ -127,6 +132,31 @@ func TestGenerateMCQSetFailsAfterRetryBudget(t *testing.T) {
 	}
 	if len(generator.requests) != 2 {
 		t.Fatalf("generator called %d times, want 2 (initial + one retry)", len(generator.requests))
+	}
+	if DiagnosticClass(err) != "invalid_output" {
+		t.Fatalf("DiagnosticClass = %q, want invalid_output; err=%v", DiagnosticClass(err), err)
+	}
+	if !strings.Contains(DiagnosticMessage(err), "raw_output=") {
+		t.Fatalf("DiagnosticMessage missing raw output snapshot: %s", DiagnosticMessage(err))
+	}
+}
+
+func TestGenerateMCQSetSurfacesProviderErrors(t *testing.T) {
+	generator := &scriptedGenerator{
+		payloads: []json.RawMessage{validMCQJSON(1)},
+		errs: []error{&ProviderError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "model not found",
+		}},
+	}
+	orchestrator := newTestOrchestrator(generator)
+
+	_, _, err := GenerateMCQSet(scopedContext(), orchestrator, MCQSpec{Count: 1})
+	if err == nil {
+		t.Fatal("expected provider error")
+	}
+	if DiagnosticClass(err) != "provider_error" {
+		t.Fatalf("DiagnosticClass = %q, want provider_error; err=%v", DiagnosticClass(err), err)
 	}
 }
 

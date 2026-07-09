@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -199,5 +200,61 @@ func TestLoadGenAIConfig(t *testing.T) {
 	}
 	if cfg.GenAI.BaseURL != "https://example.test/v1" || cfg.GenAI.Model != "custom-model" {
 		t.Fatalf("GenAI = %#v", cfg.GenAI)
+	}
+}
+
+func TestGenAIPairingWarning(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     GenAIConfig
+		want    bool
+		wantSub string
+	}{
+		{
+			name: "google direct warns for gateway slug",
+			cfg: GenAIConfig{
+				BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+				Model:   "google/gemini-2.5-flash",
+			},
+			want:    true,
+			wantSub: "bare Gemini model slug",
+		},
+		{
+			name: "gateway warns for bare slug",
+			cfg: GenAIConfig{
+				BaseURL: "https://ai-gateway.vercel.sh/v1",
+				Model:   "gemini-flash-latest",
+			},
+			want:    true,
+			wantSub: "vendor-prefixed model slug",
+		},
+		{
+			name: "google direct accepts bare slug",
+			cfg: GenAIConfig{
+				BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+				Model:   "gemini-flash-latest",
+			},
+			want: false,
+		},
+		{
+			name: "gateway accepts vendor slug",
+			cfg: GenAIConfig{
+				BaseURL: "https://ai-gateway.vercel.sh/v1",
+				Model:   "google/gemini-2.5-flash",
+			},
+			want: false,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := testCase.cfg.PairingWarning()
+			if (got != "") != testCase.want {
+				t.Fatalf("PairingWarning() = %q, want warning=%v", got, testCase.want)
+			}
+			if testCase.wantSub != "" && !strings.Contains(got, testCase.wantSub) {
+				t.Fatalf("PairingWarning() = %q, want substring %q", got, testCase.wantSub)
+			}
+		})
 	}
 }

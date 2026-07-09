@@ -70,20 +70,28 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	Temperature *float64      `json:"temperature,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []chatMessage   `json:"messages"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
+	Temperature    *float64        `json:"temperature,omitempty"`
+	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+}
+
+type responseFormat struct {
+	Type string `json:"type"`
 }
 
 type chatResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content string          `json:"content"`
+			Refusal json.RawMessage `json:"refusal,omitempty"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason,omitempty"`
 	} `json:"choices"`
-	Usage struct {
+	Candidates json.RawMessage `json:"candidates,omitempty"`
+	Usage      struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
@@ -116,47 +124,33 @@ func (a *Adapter) Generate(ctx context.Context, request generation.GenerateReque
 		},
 		MaxTokens:   request.ModelPolicy.MaxTokens,
 		Temperature: request.ModelPolicy.Temperature,
+		ResponseFormat: &responseFormat{
+			Type: "json_object",
+		},
 	}
 
-	payload, err := json.Marshal(body)
+	parsed, err := a.sendChatCompletion(ctx, body)
+	if isResponseFormatRejection(err) {
+		body.ResponseFormat = nil
+		parsed, err = a.sendChatCompletion(ctx, body)
+	}
 	if err != nil {
-		return generation.GenerateResult{}, fmt.Errorf("openaicompat: encode request: %w", err)
+		return generation.GenerateResult{}, err
 	}
 
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, a.baseURL+"/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return generation.GenerateResult{}, fmt.Errorf("openaicompat: build request: %w", err)
-	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	httpRequest.Header.Set("Authorization", "Bearer "+a.apiKey)
-
-	httpResponse, err := a.client.Do(httpRequest)
-	if err != nil {
-		return generation.GenerateResult{}, fmt.Errorf("openaicompat: call provider: %w", err)
-	}
-	defer func() { _ = httpResponse.Body.Close() }()
-
-	responseBody, err := io.ReadAll(io.LimitReader(httpResponse.Body, 4<<20))
-	if err != nil {
-		return generation.GenerateResult{}, fmt.Errorf("openaicompat: read response: %w", err)
-	}
-
-	var parsed chatResponse
-	if err := json.Unmarshal(responseBody, &parsed); err != nil {
-		return generation.GenerateResult{}, fmt.Errorf("openaicompat: provider returned non-JSON (status %d)", httpResponse.StatusCode)
-	}
-	if httpResponse.StatusCode < 200 || httpResponse.StatusCode >= 300 {
-		message := strings.TrimSpace(string(responseBody))
-		if parsed.Error != nil {
-			message = parsed.Error.Message
-		}
-		return generation.GenerateResult{}, fmt.Errorf("openaicompat: provider error (status %d): %s", httpResponse.StatusCode, truncate(message, 300))
-	}
 	if len(parsed.Choices) == 0 {
 		return generation.GenerateResult{}, errors.New("openaicompat: provider returned no choices")
 	}
 
-	object, err := extractJSON(parsed.Choices[0].Message.Content)
+	content := parsed.Choices[0].Message.Content
+	if strings.TrimSpace(content) == "" {
+		return generation.GenerateResult{}, &generation.InvalidOutputError{
+			Reason:    "provider returned empty message content",
+			RawOutput: emptyContentDetail(parsed),
+		}
+	}
+
+	object, err := extractJSON(content)
 	if err != nil {
 		return generation.GenerateResult{}, err
 	}
@@ -174,6 +168,68 @@ func (a *Adapter) Generate(ctx context.Context, request generation.GenerateReque
 		TokensOut: parsed.Usage.CompletionTokens,
 		CostUnits: parsed.Usage.PromptTokens + parsed.Usage.CompletionTokens,
 	}, nil
+}
+
+func (a *Adapter) sendChatCompletion(ctx context.Context, body chatRequest) (chatResponse, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return chatResponse{}, fmt.Errorf("openaicompat: encode request: %w", err)
+	}
+
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, a.baseURL+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return chatResponse{}, fmt.Errorf("openaicompat: build request: %w", err)
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("Authorization", "Bearer "+a.apiKey)
+
+	httpResponse, err := a.client.Do(httpRequest)
+	if err != nil {
+		return chatResponse{}, &generation.ProviderError{
+			Message: "call provider",
+			Err:     err,
+		}
+	}
+	defer func() { _ = httpResponse.Body.Close() }()
+
+	responseBody, err := io.ReadAll(io.LimitReader(httpResponse.Body, 4<<20))
+	if err != nil {
+		return chatResponse{}, fmt.Errorf("openaicompat: read response: %w", err)
+	}
+
+	var parsed chatResponse
+	if err := json.Unmarshal(responseBody, &parsed); err != nil {
+		message := truncate(string(responseBody), 300)
+		if message == "" {
+			message = "provider returned non-JSON response"
+		}
+		return chatResponse{}, &generation.ProviderError{
+			StatusCode: httpResponse.StatusCode,
+			Message:    message,
+			Err:        err,
+		}
+	}
+	if httpResponse.StatusCode < 200 || httpResponse.StatusCode >= 300 {
+		message := strings.TrimSpace(string(responseBody))
+		if parsed.Error != nil {
+			message = parsed.Error.Message
+		}
+		return chatResponse{}, &generation.ProviderError{
+			StatusCode: httpResponse.StatusCode,
+			Message:    message,
+		}
+	}
+
+	return parsed, nil
+}
+
+func isResponseFormatRejection(err error) bool {
+	var providerErr *generation.ProviderError
+	if !errors.As(err, &providerErr) {
+		return false
+	}
+	return providerErr.StatusCode == http.StatusBadRequest &&
+		strings.Contains(strings.ToLower(providerErr.Message), "response_format")
 }
 
 // buildSystemMessage frames orchestration's instructions with JSON discipline
@@ -218,14 +274,89 @@ func extractJSON(content string) (json.RawMessage, error) {
 	trimmed = strings.TrimSpace(trimmed)
 
 	if !json.Valid([]byte(trimmed)) {
-		return nil, fmt.Errorf("openaicompat: model output is not valid JSON: %s", truncate(trimmed, 200))
+		substring, found := extractFirstJSONValue(trimmed)
+		if found && json.Valid([]byte(substring)) {
+			return json.RawMessage(substring), nil
+		}
+		return nil, &generation.InvalidOutputError{
+			Reason:    "model output is not valid JSON",
+			RawOutput: trimmed,
+		}
 	}
 	return json.RawMessage(trimmed), nil
+}
+
+func extractFirstJSONValue(content string) (string, bool) {
+	start := strings.IndexAny(content, "[{")
+	if start < 0 {
+		return "", false
+	}
+
+	stack := make([]byte, 0, 8)
+	inString := false
+	escaped := false
+	for index := start; index < len(content); index++ {
+		char := content[index]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			switch char {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+
+		switch char {
+		case '"':
+			inString = true
+		case '{', '[':
+			stack = append(stack, char)
+		case '}', ']':
+			if len(stack) == 0 {
+				return "", false
+			}
+			open := stack[len(stack)-1]
+			if (open == '{' && char != '}') || (open == '[' && char != ']') {
+				return "", false
+			}
+			stack = stack[:len(stack)-1]
+			if len(stack) == 0 {
+				return strings.TrimSpace(content[start : index+1]), true
+			}
+		}
+	}
+	return "", false
+}
+
+func emptyContentDetail(parsed chatResponse) string {
+	if len(parsed.Choices) == 0 {
+		if len(parsed.Candidates) > 0 {
+			return "candidates=" + string(parsed.Candidates)
+		}
+		return "no choices"
+	}
+	choice := parsed.Choices[0]
+	parts := make([]string, 0, 3)
+	if strings.TrimSpace(choice.FinishReason) != "" {
+		parts = append(parts, "finish_reason="+choice.FinishReason)
+	}
+	if len(choice.Message.Refusal) > 0 {
+		parts = append(parts, "refusal="+string(choice.Message.Refusal))
+	}
+	if len(parsed.Candidates) > 0 {
+		parts = append(parts, "candidates="+string(parsed.Candidates))
+	}
+	return strings.Join(parts, " ")
 }
 
 func truncate(value string, max int) string {
 	if len(value) <= max {
 		return value
 	}
-	return value[:max] + "…"
+	return value[:max] + "..."
 }

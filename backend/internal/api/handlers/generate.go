@@ -79,7 +79,7 @@ func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, ra
 		if r.Context().Err() != nil {
 			return // client went away; nothing useful to write
 		}
-		log.Printf("mcq generation failed: %v", err)
+		log.Printf("mcq generation failed class=%s detail=%s", generation.DiagnosticClass(err), generation.DiagnosticMessage(err))
 		response.Error(w, http.StatusBadGateway, "generation_failed",
 			"The model did not return a usable MCQ set. Try again or adjust the topic.")
 		h.recordEvent(r, memory.RecordEventInput{

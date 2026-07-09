@@ -83,6 +83,9 @@ func TestGenerateReturnsParsedObject(t *testing.T) {
 	if captured.body["model"] != "test-model" {
 		t.Errorf("model = %v, want test-model", captured.body["model"])
 	}
+	if format, ok := captured.body["response_format"].(map[string]any); !ok || format["type"] != "json_object" {
+		t.Errorf("response_format = %#v, want json_object", captured.body["response_format"])
+	}
 
 	messages, ok := captured.body["messages"].([]any)
 	if !ok || len(messages) != 2 {
@@ -107,6 +110,44 @@ func TestGenerateReturnsParsedObject(t *testing.T) {
 	}
 }
 
+func TestGenerateRetriesWithoutResponseFormatWhenProviderRejectsIt(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if attempts == 1 {
+			if _, ok := body["response_format"]; !ok {
+				t.Fatal("first request missing response_format")
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"response_format is not supported","type":"invalid_request_error"}}`))
+			return
+		}
+		if _, ok := body["response_format"]; ok {
+			t.Fatal("retry still included response_format")
+		}
+		_, _ = w.Write([]byte(chatCompletionBody(t, `[{"id":"mq1"}]`)))
+	}))
+	defer server.Close()
+
+	adapter, err := New(Config{BaseURL: server.URL, APIKey: "k", Model: "m"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := adapter.Generate(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if string(result.Object) != `[{"id":"mq1"}]` {
+		t.Errorf("object = %s", result.Object)
+	}
+}
+
 func TestGenerateStripsMarkdownFences(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(chatCompletionBody(t, "```json\n[{\"id\":\"mq1\"}]\n```")))
@@ -127,9 +168,29 @@ func TestGenerateStripsMarkdownFences(t *testing.T) {
 	}
 }
 
+func TestGenerateExtractsProseWrappedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(chatCompletionBody(t, "Sure, here is the set:\n[{\"id\":\"mq1\",\"text\":\"Q?\"}]\nDone.")))
+	}))
+	defer server.Close()
+
+	adapter, err := New(Config{BaseURL: server.URL, APIKey: "k", Model: "m"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := adapter.Generate(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if string(result.Object) != `[{"id":"mq1","text":"Q?"}]` {
+		t.Errorf("object = %s", result.Object)
+	}
+}
+
 func TestGenerateRejectsNonJSONOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(chatCompletionBody(t, "Sure! Here are your questions: 1) ...")))
+		_, _ = w.Write([]byte(chatCompletionBody(t, "Sure! Here are your questions: one, two, three.")))
 	}))
 	defer server.Close()
 
@@ -140,6 +201,33 @@ func TestGenerateRejectsNonJSONOutput(t *testing.T) {
 
 	if _, err := adapter.Generate(context.Background(), testRequest()); err == nil {
 		t.Fatal("expected error for non-JSON model output")
+	}
+}
+
+func TestGenerateSurfacesEmptyContentDetails(t *testing.T) {
+	body := `{
+		"model":"gemini-flash-latest",
+		"choices":[{"message":{"content":"","refusal":{"reason":"safety"}},"finish_reason":"SAFETY"}],
+		"candidates":[{"finishReason":"SAFETY"}]
+	}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	adapter, err := New(Config{BaseURL: server.URL, APIKey: "k", Model: "m"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = adapter.Generate(context.Background(), testRequest())
+	if err == nil {
+		t.Fatal("expected error for empty content")
+	}
+	if !strings.Contains(err.Error(), "invalid_output") ||
+		!strings.Contains(err.Error(), "finish_reason=SAFETY") ||
+		!strings.Contains(err.Error(), "refusal=") {
+		t.Fatalf("err = %v, want empty-content diagnostic details", err)
 	}
 }
 

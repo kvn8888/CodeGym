@@ -44,6 +44,24 @@ func (g GenAIConfig) Enabled() bool {
 	return strings.TrimSpace(g.APIKey) != ""
 }
 
+func (g GenAIConfig) PairingWarning() string {
+	baseURL := strings.ToLower(strings.TrimSpace(g.BaseURL))
+	model := strings.TrimSpace(g.Model)
+	if baseURL == "" || model == "" {
+		return ""
+	}
+
+	modelHasVendorPrefix := strings.Contains(model, "/")
+	switch {
+	case strings.Contains(baseURL, "generativelanguage.googleapis.com") && modelHasVendorPrefix:
+		return "GenAI config mismatch: Google direct OpenAI-compatible base URL expects a bare Gemini model slug such as gemini-flash-latest or gemini-2.5-flash; current model includes a vendor prefix."
+	case strings.Contains(baseURL, "ai-gateway.vercel.sh") && !modelHasVendorPrefix:
+		return "GenAI config mismatch: Vercel AI Gateway base URL expects a vendor-prefixed model slug such as google/gemini-2.5-flash; current model has no vendor prefix."
+	default:
+		return ""
+	}
+}
+
 // Load reads environment variables and returns the effective runtime config.
 //
 // If both NEON_CONNECTION_STRING and DATABASE_URL are set, Neon is preferred.

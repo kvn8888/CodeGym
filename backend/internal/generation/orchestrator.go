@@ -42,14 +42,16 @@ func (o *Orchestrator) Generate(ctx context.Context, input GenerateInput) (Gener
 		MemoryContext: MemoryContextFromProfile(profile),
 		Schema:        input.Schema,
 		ModelPolicy:   input.ModelPolicy,
+		Instructions:  input.Instructions,
 	})
 }
 
 type GenerateInput struct {
-	Kind        Kind
-	Spec        json.RawMessage
-	Schema      Schema
-	ModelPolicy ModelPolicy
+	Kind         Kind
+	Spec         json.RawMessage
+	Schema       Schema
+	ModelPolicy  ModelPolicy
+	Instructions string
 }
 
 func MemoryContextFromProfile(profile memory.Profile) MemoryContext {

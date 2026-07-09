@@ -135,10 +135,69 @@ func clearConfigEnv(t *testing.T) {
 		"CODEGYM_DEV_TENANT_ID",
 		"CODEGYM_HOST",
 		"CODEGYM_PORT",
+		"PORT",
 		"CODEGYM_CORS_ALLOWED_ORIGINS",
 		"CODEGYM_MEMORY_WORKER_DISABLED",
 		"CODEGYM_MEMORY_WORKER_INTERVAL",
+		"CODEGYM_GENAI_BASE_URL",
+		"CODEGYM_GENAI_API_KEY",
+		"AI_GATEWAY_API_KEY",
+		"CODEGYM_GENAI_MODEL",
 	} {
 		t.Setenv(key, "")
+	}
+}
+
+func TestLoadPortFallsBackToPlatformPort(t *testing.T) {
+	clearConfigEnv(t)
+
+	t.Setenv("PORT", "10000")
+	if got := Load().Port; got != "10000" {
+		t.Fatalf("Port = %q, want platform PORT 10000", got)
+	}
+
+	t.Setenv("CODEGYM_PORT", "9999")
+	if got := Load().Port; got != "9999" {
+		t.Fatalf("Port = %q, want CODEGYM_PORT to win", got)
+	}
+}
+
+func TestLoadPortDefault(t *testing.T) {
+	clearConfigEnv(t)
+
+	if got := Load().Port; got != "8080" {
+		t.Fatalf("Port = %q, want default 8080", got)
+	}
+}
+
+func TestLoadGenAIConfig(t *testing.T) {
+	clearConfigEnv(t)
+
+	cfg := Load()
+	if cfg.GenAI.Enabled() {
+		t.Fatal("GenAI should be disabled without an API key")
+	}
+	if cfg.GenAI.BaseURL != "https://ai-gateway.vercel.sh/v1" {
+		t.Fatalf("BaseURL = %q", cfg.GenAI.BaseURL)
+	}
+	if cfg.GenAI.Model == "" {
+		t.Fatal("Model default is empty")
+	}
+
+	t.Setenv("AI_GATEWAY_API_KEY", "vercel-key")
+	cfg = Load()
+	if !cfg.GenAI.Enabled() || cfg.GenAI.APIKey != "vercel-key" {
+		t.Fatalf("GenAI = %#v, want AI_GATEWAY_API_KEY alias honored", cfg.GenAI)
+	}
+
+	t.Setenv("CODEGYM_GENAI_API_KEY", "codegym-key")
+	t.Setenv("CODEGYM_GENAI_BASE_URL", "https://example.test/v1")
+	t.Setenv("CODEGYM_GENAI_MODEL", "custom-model")
+	cfg = Load()
+	if cfg.GenAI.APIKey != "codegym-key" {
+		t.Fatalf("APIKey = %q, want CODEGYM_GENAI_API_KEY to win", cfg.GenAI.APIKey)
+	}
+	if cfg.GenAI.BaseURL != "https://example.test/v1" || cfg.GenAI.Model != "custom-model" {
+		t.Fatalf("GenAI = %#v", cfg.GenAI)
 	}
 }

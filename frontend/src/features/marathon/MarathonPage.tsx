@@ -3,14 +3,17 @@ import { CircleHelpIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { HelpFlashcard } from './HelpFlashcard';
+import { api } from '../../shared/api/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-/** A single multiple-choice question in the marathon. */
+/** A single multiple-choice question in the marathon. Matches the backend
+ *  MCQQuestion shape returned by POST /api/v1/generate. */
 interface MarathonQuestion {
   id: string;
   text: string;
@@ -29,10 +32,36 @@ interface QuestionResult {
   usedHelp: boolean;
 }
 
+/** Response envelope data for POST /api/v1/generate with kind "mcq". */
+interface GenerateMcqResponse {
+  kind: string;
+  questions: MarathonQuestion[];
+  provider: string;
+  model: string;
+}
+
+/** How many questions to request per marathon. */
+const QUESTION_COUNT = 5;
+
+/** Fire-and-forget memory event emitter for the mcq source. Event writes must
+ *  never block or break the practice flow, so failures are swallowed. Names
+ *  follow docs/memory-event-naming-guide-v0.md. */
+function emitMcqEvent(type: string, summary: string, payload: Record<string, unknown>) {
+  void api
+    .post('/memory/events', {
+      source: 'mcq',
+      type,
+      summary,
+      payload: { ...payload, schema_version: 1 },
+    })
+    .catch(() => {});
+}
+
 // ── Mock data ────────────────────────────────────────────────────────────────
 
-/** Sample questions for the marathon demo. In production, these come from
- *  POST /api/v1/marathon/generate which reads the user's memory file. */
+/** Fallback questions when generation is unavailable (no backend, no GenAI key,
+ *  or a provider error). The real set comes from POST /api/v1/generate, which
+ *  reads the user's memory profile. */
 const MOCK_QUESTIONS: MarathonQuestion[] = [
   {
     id: 'mq1',
@@ -117,14 +146,15 @@ function SuccessCheck() {
 /**
  * MarathonPage — timed multiple-choice question marathon.
  *
- * Three states:
+ * Four states:
  * - idle: start screen (select topic, see previous scores)
+ * - loading: generating a personalized set via POST /api/v1/generate
  * - active: question display with timer + options + help button
  * - results: score summary + time breakdown + recommendations
  */
 export function MarathonPage() {
   // Which phase the marathon is in.
-  const [phase, setPhase] = useState<'idle' | 'active' | 'results'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'loading' | 'active' | 'results'>('idle');
 
   // Guard: prevents accidental option selection when Next button unmounts
   // and mouseup lands on an option button underneath.
@@ -151,7 +181,16 @@ export function MarathonPage() {
   // Whether help was used on the current question.
   const [helpUsed, setHelpUsed] = useState(false);
 
-  const questions = MOCK_QUESTIONS;
+  // The question set for this run: generated when the backend + GenAI are
+  // available, otherwise the built-in practice set.
+  const [questions, setQuestions] = useState<MarathonQuestion[]>(MOCK_QUESTIONS);
+
+  // True when this run fell back to the built-in practice set.
+  const [usingFallback, setUsingFallback] = useState(false);
+
+  // Client-side id tying this run's memory events together.
+  const sessionIdRef = useRef('');
+
   const currentQ = questions[questionIndex];
 
   // ── Timer logic ──────────────────────────────────────────────────────────
@@ -162,15 +201,42 @@ export function MarathonPage() {
     return () => clearInterval(interval);
   }, [phase, confirmed]);
 
-  /** Start the marathon. */
-  const handleStart = () => {
-    setPhase('active');
+  /** Start the marathon: generate a personalized set, falling back to the
+   *  built-in practice set when generation is unavailable. */
+  const handleStart = async () => {
+    setPhase('loading');
     setQuestionIndex(0);
     setResults([]);
     setElapsed(0);
     setSelectedIndex(null);
     setConfirmed(false);
     setHelpUsed(false);
+    setShowHelp(false);
+
+    let nextQuestions = MOCK_QUESTIONS;
+    let fallback = true;
+    try {
+      const generated = await api.post<GenerateMcqResponse>('/generate', {
+        kind: 'mcq',
+        spec: { topic: '', count: QUESTION_COUNT },
+      });
+      if (generated.questions?.length) {
+        nextQuestions = generated.questions;
+        fallback = false;
+      }
+    } catch (err) {
+      console.warn('MCQ generation unavailable; using the built-in practice set.', err);
+    }
+
+    sessionIdRef.current = `mcq_${Date.now().toString(36)}`;
+    setQuestions(nextQuestions);
+    setUsingFallback(fallback);
+    emitMcqEvent('session_started', `Started a ${nextQuestions.length}-question MCQ marathon.`, {
+      session_id: sessionIdRef.current,
+      question_count: nextQuestions.length,
+      generated: !fallback,
+    });
+    setPhase('active');
   };
 
   /** User selects an answer option (radio-style, can change before confirming). */
@@ -191,6 +257,26 @@ export function MarathonPage() {
       usedHelp: helpUsed,
     };
     setResults((prev) => [...prev, result]);
+
+    // question_answered for correct answers; answer_incorrect feeds growth
+    // edges for misses (one event per answer, per the naming guide).
+    if (result.correct) {
+      emitMcqEvent('question_answered', `Answered a ${currentQ.concept} question correctly.`, {
+        session_id: sessionIdRef.current,
+        topic: currentQ.concept,
+        correct: true,
+        duration_ms: result.timeMs,
+        used_help: result.usedHelp,
+      });
+    } else {
+      emitMcqEvent('answer_incorrect', `Missed a ${currentQ.concept} question.`, {
+        session_id: sessionIdRef.current,
+        topic: currentQ.concept,
+        correct: false,
+        duration_ms: result.timeMs,
+        used_help: result.usedHelp,
+      });
+    }
   };
 
   /** Advance to the next question or show results. */
@@ -210,6 +296,21 @@ export function MarathonPage() {
       setShowHelp(false);
       setHelpUsed(false);
     } else {
+      const correctCount = results.filter((r) => r.correct).length;
+      emitMcqEvent(
+        'session_completed',
+        `Finished a ${results.length}-question MCQ marathon with ${correctCount} correct.`,
+        {
+          session_id: sessionIdRef.current,
+          question_count: results.length,
+          correct_count: correctCount,
+        },
+      );
+      // Re-derive the profile now so the NEXT set is personalized by this
+      // session. The 24h worker can't be relied on when the backend host
+      // spins down while idle (Render free tier); the summarizer is cheap
+      // deterministic Go, so refreshing per completed session is fine.
+      void api.post('/memory/profile/refresh', {}).catch(() => {});
       setPhase('results');
     }
   };
@@ -234,9 +335,26 @@ export function MarathonPage() {
           </p>
           <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="inline-block">
             <Button size="lg" onClick={handleStart}>
-              Start Marathon ({questions.length} questions)
+              Start Marathon ({QUESTION_COUNT} questions)
             </Button>
           </motion.div>
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Loading state: generating a personalized set ─────────────────────────
+  if (phase === 'loading') {
+    return (
+      <div className="mx-auto mt-12 max-w-lg">
+        <Card className="gap-0 px-6 py-16 text-center">
+          <div className="mx-auto mb-6 flex size-10 items-center justify-center">
+            <Spinner className="text-muted-foreground size-8" />
+          </div>
+          <h1 className="mb-3 text-2xl font-semibold tracking-tight">Building your set</h1>
+          <p className="text-muted-foreground mx-auto max-w-sm text-sm leading-6">
+            Picking {QUESTION_COUNT} questions from your growth edges…
+          </p>
         </Card>
       </div>
     );
@@ -320,6 +438,11 @@ export function MarathonPage() {
       <div className="mb-8 flex items-center justify-between">
         <span className="text-muted-foreground text-sm font-medium">
           {questionIndex + 1} of {questions.length}
+          {usingFallback && (
+            <span className="text-muted-foreground/70 ml-2 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+              practice set
+            </span>
+          )}
         </span>
         <div className="flex items-center gap-4">
           <span className="text-muted-foreground font-mono text-sm tabular-nums">{elapsed}s</span>

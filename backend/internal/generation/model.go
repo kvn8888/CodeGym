@@ -25,6 +25,10 @@ type GenerateRequest struct {
 	MemoryContext MemoryContext   `json:"memory_context"`
 	Schema        Schema          `json:"schema"`
 	ModelPolicy   ModelPolicy     `json:"model_policy"`
+	// Instructions carries the kind-specific system prompt built by
+	// orchestration. Provider adapters include it verbatim; they never invent
+	// product prompt text themselves.
+	Instructions string `json:"instructions,omitempty"`
 }
 
 type Schema struct {

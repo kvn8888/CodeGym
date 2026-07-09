@@ -293,6 +293,50 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/generate:
+    post:
+      operationId: generateContent
+      summary: Generate practice content (MCQ sets today; problems and interviews later) personalized by the caller's memory profile.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateInput"
+      responses:
+        "200":
+          description: Content generated and validated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateMCQEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "501":
+          description: The requested generation kind is not implemented yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "502":
+          description: The model provider failed or returned unusable output after the retry budget.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Generation is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -716,6 +760,84 @@ components:
                 type: string
               content:
                 type: string
+
+    GenerateInput:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [mcq, problem, interview]
+          description: Generation kind. Only "mcq" is implemented today.
+        spec:
+          $ref: "#/components/schemas/MCQSpec"
+
+    MCQSpec:
+      type: object
+      properties:
+        topic:
+          type: string
+          description: Coarse topic; empty spreads questions across growth edges.
+          example: hash tables
+        count:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+        difficulty:
+          type: string
+          example: medium
+
+    MCQQuestion:
+      type: object
+      required: [id, text, options, correctIndex, concept, helpContent]
+      properties:
+        id:
+          type: string
+          example: mq1
+        text:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+          minItems: 4
+          maxItems: 4
+        correctIndex:
+          type: integer
+          minimum: 0
+          maximum: 3
+        concept:
+          type: string
+        helpContent:
+          type: string
+
+    GenerateMCQResult:
+      type: object
+      required: [kind, questions, provider, model]
+      properties:
+        kind:
+          type: string
+          example: mcq
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MCQQuestion"
+        provider:
+          type: string
+          example: openai_compat
+        model:
+          type: string
+          example: anthropic/claude-haiku-4.5
+
+    GenerateMCQEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/GenerateMCQResult"
+        error:
+          type: "null"
 
     JsonValue:
       oneOf:

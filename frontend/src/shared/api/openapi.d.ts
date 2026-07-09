@@ -41,6 +41,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the authenticated user's account profile. */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update the authenticated user's editable account profile. */
+        patch: operations["updateCurrentUser"];
+        trace?: never;
+    };
     "/api/v1/memory/profile": {
         parameters: {
             query?: never;
@@ -187,6 +205,35 @@ export interface components {
              * @enum {string}
              */
             mode: "memory" | "postgres";
+        };
+        UserProfileEnvelope: {
+            data: components["schemas"]["UserProfile"];
+            error: null;
+        };
+        UserProfile: {
+            /** @example auth0|user_123 */
+            user_id: string;
+            /** @example kevin@example.com */
+            email: string;
+            /** @example Kevin Chen */
+            display_name: string;
+            /**
+             * @description Where the current display name came from. `oauth` is seeded from the Auth0/Google name claim; `user` means the Settings page saved a manual override; `fallback` means no provider name was available.
+             * @enum {string}
+             */
+            display_name_source: "oauth" | "user" | "fallback";
+            /**
+             * @description Internal default personal workspace ID.
+             * @example personal-auth0-user-123
+             */
+            default_tenant_id: string;
+        };
+        UpdateUserProfileInput: {
+            /**
+             * @example Kevin Chen
+             * @maxLength 80
+             */
+            display_name: string;
         };
         MemoryProfileEnvelope: {
             data: components["schemas"]["MemoryProfile"];
@@ -433,6 +480,55 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+        };
+    };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User profile loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserProfileInput"];
+            };
+        };
+        responses: {
+            /** @description User profile updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
         };
     };
     getMemoryProfile: {

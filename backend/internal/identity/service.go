@@ -3,10 +3,14 @@ package identity
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 )
+
+const maxDisplayNameLength = 80
 
 // Service ensures identity bootstrap invariants for authenticated users.
 type Service struct {
@@ -34,10 +38,68 @@ func (s *Service) EnsurePersonalTenant(ctx context.Context, principal auth.Princ
 	}
 
 	return s.store.EnsurePersonalTenant(ctx, PersonalTenant{
-		UserID:      userID,
-		TenantID:    tenantID,
-		Role:        "owner",
-		Email:       strings.TrimSpace(principal.UserMetadata.Email),
-		DisplayName: strings.TrimSpace(principal.UserMetadata.DisplayName),
+		UserID:            userID,
+		TenantID:          tenantID,
+		Role:              "owner",
+		Email:             strings.TrimSpace(principal.UserMetadata.Email),
+		DisplayName:       strings.TrimSpace(principal.UserMetadata.DisplayName),
+		DisplayNameSource: displayNameSourceFor(principal.UserMetadata.DisplayName),
 	})
+}
+
+// GetUserProfile returns the authenticated user's editable profile.
+func (s *Service) GetUserProfile(ctx context.Context, principal auth.Principal) (UserProfile, error) {
+	if s == nil || s.store == nil {
+		return UserProfile{}, ErrUserNotFound
+	}
+
+	userID := strings.TrimSpace(principal.UserID)
+	if userID == "" {
+		return UserProfile{}, errors.New("user profile requires a user id")
+	}
+
+	profile, err := s.store.GetUserProfile(ctx, userID)
+	if err != nil {
+		return UserProfile{}, err
+	}
+	if profile.DefaultTenantID == "" {
+		profile.DefaultTenantID = strings.TrimSpace(principal.DefaultTenantID)
+	}
+	return profile, nil
+}
+
+// UpdateDisplayName stores a user-controlled display name.
+func (s *Service) UpdateDisplayName(ctx context.Context, principal auth.Principal, displayName string) (UserProfile, error) {
+	if s == nil || s.store == nil {
+		return UserProfile{}, ErrUserNotFound
+	}
+
+	userID := strings.TrimSpace(principal.UserID)
+	if userID == "" {
+		return UserProfile{}, errors.New("user profile requires a user id")
+	}
+
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return UserProfile{}, fmt.Errorf("%w: display name is required", ErrInvalidProfile)
+	}
+	if utf8.RuneCountInString(name) > maxDisplayNameLength {
+		return UserProfile{}, fmt.Errorf("%w: display name must be 80 characters or fewer", ErrInvalidProfile)
+	}
+
+	profile, err := s.store.UpdateDisplayName(ctx, userID, name)
+	if err != nil {
+		return UserProfile{}, err
+	}
+	if profile.DefaultTenantID == "" {
+		profile.DefaultTenantID = strings.TrimSpace(principal.DefaultTenantID)
+	}
+	return profile, nil
+}
+
+func displayNameSourceFor(displayName string) string {
+	if strings.TrimSpace(displayName) == "" {
+		return "fallback"
+	}
+	return "oauth"
 }

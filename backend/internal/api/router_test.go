@@ -48,6 +48,7 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 	required := map[string][]string{
 		"/health":                        {http.MethodGet},
 		"/ready":                         {http.MethodGet},
+		"/api/v1/me":                     {http.MethodGet, http.MethodPatch},
 		"/api/v1/memory/profile":         {http.MethodGet},
 		"/api/v1/memory/profile/refresh": {http.MethodPost},
 		"/api/v1/memory/events":          {http.MethodGet, http.MethodPost},
@@ -68,6 +69,50 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 				t.Fatalf("OpenAPI contract is missing %s %s", method, path)
 			}
 		}
+	}
+}
+
+func TestRouterUserProfileLifecycle(t *testing.T) {
+	router := NewRouter(Dependencies{
+		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:      identity.NewService(identity.NewInMemoryStore()),
+		Memory:        memory.NewService(memory.NewInMemoryStore(), nil),
+		Sessions:      session.NewService(session.NewInMemoryStore(), nil),
+	})
+
+	getInitial := httptest.NewRecorder()
+	getInitialReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	getInitialReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(getInitial, getInitialReq)
+
+	if getInitial.Code != http.StatusOK {
+		t.Fatalf("initial profile status = %d: %s", getInitial.Code, getInitial.Body.String())
+	}
+	initial := decodeEnvelopeData[identity.UserProfile](t, getInitial)
+	if initial.UserID != "kevin" || initial.DisplayName != "kevin" || initial.DisplayNameSource != "fallback" {
+		t.Fatalf("initial profile = %#v", initial)
+	}
+
+	patch := httptest.NewRecorder()
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/me", strings.NewReader(`{"display_name":"Kevin Chen"}`))
+	patchReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(patch, patchReq)
+
+	if patch.Code != http.StatusOK {
+		t.Fatalf("patch profile status = %d: %s", patch.Code, patch.Body.String())
+	}
+	updated := decodeEnvelopeData[identity.UserProfile](t, patch)
+	if updated.DisplayName != "Kevin Chen" || updated.DisplayNameSource != "user" {
+		t.Fatalf("updated profile = %#v", updated)
+	}
+
+	bad := httptest.NewRecorder()
+	badReq := httptest.NewRequest(http.MethodPatch, "/api/v1/me", strings.NewReader(`{"display_name":"   "}`))
+	badReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(bad, badReq)
+
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("blank display name status = %d: %s", bad.Code, bad.Body.String())
 	}
 }
 
@@ -295,6 +340,45 @@ func (s *recordingIdentityStore) EnsurePersonalTenant(_ context.Context, persona
 
 	s.records[personalTenant.TenantID+"\x00"+personalTenant.UserID] = personalTenant
 	return nil
+}
+
+func (s *recordingIdentityStore) GetUserProfile(_ context.Context, userID string) (identity.UserProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, record := range s.records {
+		if record.UserID == userID {
+			return identity.UserProfile{
+				UserID:            record.UserID,
+				Email:             record.Email,
+				DisplayName:       record.DisplayName,
+				DisplayNameSource: record.DisplayNameSource,
+				DefaultTenantID:   record.TenantID,
+			}, nil
+		}
+	}
+	return identity.UserProfile{}, identity.ErrUserNotFound
+}
+
+func (s *recordingIdentityStore) UpdateDisplayName(_ context.Context, userID, displayName string) (identity.UserProfile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, record := range s.records {
+		if record.UserID == userID {
+			record.DisplayName = displayName
+			record.DisplayNameSource = "user"
+			s.records[key] = record
+			return identity.UserProfile{
+				UserID:            record.UserID,
+				Email:             record.Email,
+				DisplayName:       record.DisplayName,
+				DisplayNameSource: record.DisplayNameSource,
+				DefaultTenantID:   record.TenantID,
+			}, nil
+		}
+	}
+	return identity.UserProfile{}, identity.ErrUserNotFound
 }
 
 func (s *recordingIdentityStore) get(tenantID, userID string) identity.PersonalTenant {

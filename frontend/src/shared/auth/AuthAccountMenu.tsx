@@ -2,6 +2,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { CircleHelp, LogIn, LogOut, Settings, UserRound } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   auth0AuthorizationParams,
   hasAuth0ApiAudience,
@@ -25,6 +26,7 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
     logout,
     user,
   } = useAuth0();
+  const navigate = useNavigate();
   const shouldReduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -42,7 +44,7 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
   const label = isLoading
     ? 'Loading...'
     : isAuthenticated
-      ? user?.email ?? user?.name ?? 'Signed in'
+      ? user?.name ?? user?.email ?? 'Signed in'
       : 'Sign in';
   const initials = initialsFor(user?.name ?? user?.email ?? 'CodeGym');
 
@@ -100,7 +102,14 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
             <div className="py-1">
               {isAuthenticated ? (
                 <>
-                  <ProfileAction icon={Settings} label="Settings" />
+                  <ProfileAction
+                    icon={Settings}
+                    label="Settings"
+                    onClick={() => {
+                      setOpen(false);
+                      navigate('/settings');
+                    }}
+                  />
                   <ProfileAction icon={CircleHelp} label="Get Help" />
                   <ProfileAction
                     icon={LogOut}

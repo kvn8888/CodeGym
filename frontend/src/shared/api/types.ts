@@ -78,6 +78,18 @@ export interface Submission {
   result?: TestResult;
 }
 
+export interface UserProfile {
+  user_id: string;
+  email: string;
+  display_name: string;
+  display_name_source: 'oauth' | 'user' | 'fallback';
+  default_tenant_id: string;
+}
+
+export interface UpdateUserProfileInput {
+  display_name: string;
+}
+
 export interface UserMemoryProfile {
   summary: string;
   updated_at: string;

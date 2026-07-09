@@ -117,6 +117,7 @@ func assertConstraints(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		name  string
 		table string
 	}{
+		{name: "chk_app_users_display_name_source", table: "app_users"},
 		{name: "chk_tenants_tenant_type", table: "tenants"},
 		{name: "chk_tenant_memberships_role", table: "tenant_memberships"},
 		{name: "fk_user_memory_profiles_membership", table: "user_memory_profiles"},

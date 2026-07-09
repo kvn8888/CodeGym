@@ -1,6 +1,7 @@
 import { mockPassingResult, mockProblems, mockProblemSummaries, mockSkeletons } from './fixtures';
 import { mockMcqQuestions } from './mcqFixtures';
 import { mockMemoryProfile } from './memoryFixtures';
+import type { UserProfile } from '../shared/api/types';
 
 interface MockApiResponse<T> {
   data: T;
@@ -8,6 +9,14 @@ interface MockApiResponse<T> {
 }
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
+
+let mockUserProfile: UserProfile = {
+  user_id: 'auth0|mock-user',
+  email: 'kevin@example.com',
+  display_name: 'Kevin Chen',
+  display_name_source: 'oauth',
+  default_tenant_id: 'personal-auth0-mock-user',
+};
 
 function json<T>(data: T, init?: ResponseInit): Response {
   const body: MockApiResponse<T> = { data, error: null };
@@ -45,6 +54,26 @@ export async function mockApiFetch(
   }
 
   const path = url.pathname.replace('/api/v1', '') || '/';
+
+  if (method === 'GET' && path === '/me') {
+    return json(mockUserProfile);
+  }
+
+  if (method === 'PATCH' && path === '/me') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as { display_name?: string };
+    const displayName = body.display_name?.trim();
+    if (!displayName) {
+      return error('invalid_profile', 'display name is required', 400);
+    }
+
+    mockUserProfile = {
+      ...mockUserProfile,
+      display_name: displayName,
+      display_name_source: 'user',
+    };
+    return json(mockUserProfile);
+  }
 
   if (method === 'GET' && path === '/memory/profile') {
     return json(mockMemoryProfile);

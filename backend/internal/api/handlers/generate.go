@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -115,6 +116,77 @@ func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, ra
 		Provider:  result.Provider,
 		Model:     result.Model,
 	})
+}
+
+type maintainNotesRequestBody struct {
+	SessionID string `json:"session_id"`
+}
+
+// MaintainNotes handles POST /api/v1/memory/notes/maintain — the reflection
+// pass after a practice round. It always runs the deterministic profile
+// refresh; the LLM note-CRUD pass is best-effort on top (skipped when
+// generation is unconfigured or the model output is unusable), so callers can
+// invoke it unconditionally after every round.
+func (h *GenerateHandler) MaintainNotes(w http.ResponseWriter, r *http.Request) {
+	var body maintainNotesRequestBody
+	if r.Body != nil {
+		// An empty or absent body is fine; only malformed JSON is rejected.
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			response.Error(w, http.StatusBadRequest, "invalid_json", "Request body must be valid JSON.")
+			return
+		}
+	}
+
+	result, err := generation.MaintainNotes(r.Context(), h.orchestrator, h.memory, generation.MaintainNotesInput{
+		SessionID: body.SessionID,
+	})
+	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+		log.Printf("note maintenance failed: %v", err)
+		response.Error(w, http.StatusInternalServerError, "note_maintenance_failed", "Could not update memory notes.")
+		return
+	}
+	if result.Skipped != "" {
+		log.Printf("note maintenance skipped LLM pass: %s", result.Skipped)
+	}
+
+	// Audit trail: one memory event per applied CRUD action so the memory
+	// page shows the model editing its own notes.
+	for _, action := range result.AppliedActions {
+		eventType := map[string]string{
+			"create": "note_created",
+			"update": "note_updated",
+			"prune":  "note_pruned",
+		}[action.Op]
+		if eventType == "" {
+			continue
+		}
+		h.recordEvent(r, memory.RecordEventInput{
+			Source:  "memory",
+			Type:    eventType,
+			Summary: fmt.Sprintf("Model %sd note %q after a practice round.", action.Op, firstNonEmptyString(action.Note.Title, action.Note.ID)),
+			Payload: mustJSON(map[string]any{
+				"note_id":        action.Note.ID,
+				"tags":           action.Note.Tags,
+				"action":         action.Note.Action,
+				"session_id":     body.SessionID,
+				"schema_version": 1,
+			}),
+		})
+	}
+
+	response.JSON(w, http.StatusOK, result.Profile)
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // recordEvent appends a memory event on a best-effort basis; generation

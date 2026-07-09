@@ -55,6 +55,7 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 		"/api/v1/sessions/{id}":          {http.MethodGet, http.MethodPatch},
 		"/api/v1/sessions/{id}/files":    {http.MethodPut},
 		"/api/v1/generate":               {http.MethodPost},
+		"/api/v1/memory/notes/maintain":  {http.MethodPost},
 	}
 
 	for path, methods := range required {

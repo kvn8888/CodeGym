@@ -11,9 +11,16 @@ import (
 // MCQSpec is the caller-supplied request for an MCQ set. Topic may be empty,
 // in which case the model spreads questions across the user's growth edges.
 type MCQSpec struct {
-	Topic      string `json:"topic"`
+	Topic string `json:"topic"`
+	// Prompt is the user's free-text "what do you want to study?" ask. It is
+	// inserted into the generation spec and steers concept selection together
+	// with memory notes.
+	Prompt     string `json:"prompt,omitempty"`
 	Count      int    `json:"count"`
 	Difficulty string `json:"difficulty,omitempty"`
+	// Round distinguishes successive rounds of a continuous marathon so the
+	// model can avoid repeating earlier questions verbatim.
+	Round int `json:"round,omitempty"`
 }
 
 // MCQQuestion matches the frontend MarathonQuestion shape
@@ -53,10 +60,12 @@ Each element:
 }
 
 Rules:
-- Generate exactly the requested count of questions on the requested topic, or a spread across the user's growth edges if the topic is empty.
+- Generate exactly the requested count of questions. The spec's "prompt" field is the user's own ask ("what do you want to study?") — treat it as the primary topic directive when present; fall back to "topic", then to a spread across the user's growth edges.
+- The personalization context includes memory NOTES — the user's living study journal. Notes with action "review" are known gaps: prioritize questions that probe those concepts. Notes with action "keep" are mastered techniques: avoid re-testing them unless the user's prompt asks for them.
 - Exactly 4 options each; exactly one correct. Distractors must be plausible common misconceptions, not filler.
 - Vary correctIndex across the set — do not always put the answer first.
 - Calibrate difficulty to the user's level from the personalization context: bias toward growth edges, don't waste questions on demonstrated strengths.
+- In later rounds (spec "round" > 1), do not repeat earlier questions verbatim — approach the same weak concepts from new angles.
 - helpContent teaches the underlying idea; never just restate the answer.
 - Keep each question standalone.`
 
@@ -82,7 +91,14 @@ var mcqJSONSchema = json.RawMessage(`{
 // out-of-range explicit count so the endpoint stays forgiving.
 func NormalizeMCQSpec(spec MCQSpec) (MCQSpec, error) {
 	spec.Topic = strings.TrimSpace(spec.Topic)
+	spec.Prompt = strings.TrimSpace(spec.Prompt)
+	if len(spec.Prompt) > 500 {
+		spec.Prompt = spec.Prompt[:500]
+	}
 	spec.Difficulty = strings.TrimSpace(strings.ToLower(spec.Difficulty))
+	if spec.Round < 0 {
+		spec.Round = 0
+	}
 	if spec.Count == 0 {
 		spec.Count = mcqDefaultCount
 	}

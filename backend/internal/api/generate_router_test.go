@@ -108,6 +108,104 @@ func TestGenerateRouteReturnsMCQSetAndRecordsMemoryEvent(t *testing.T) {
 	}
 }
 
+// sequencedGenerator returns payloads in call order (last repeats).
+type sequencedGenerator struct {
+	payloads []string
+	requests []generation.GenerateRequest
+}
+
+func (s *sequencedGenerator) Generate(_ context.Context, request generation.GenerateRequest) (generation.GenerateResult, error) {
+	s.requests = append(s.requests, request)
+	index := len(s.requests) - 1
+	if index >= len(s.payloads) {
+		index = len(s.payloads) - 1
+	}
+	return generation.GenerateResult{
+		Object:   []byte(s.payloads[index]),
+		Provider: "sequenced",
+		Model:    "fake-model",
+	}, nil
+}
+
+func TestMaintainNotesRouteAppliesActionsAndAuditsEvents(t *testing.T) {
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	generator := &sequencedGenerator{payloads: []string{
+		`{"actions":[{"op":"create","note":{"id":"note_sql-joins","title":"SQL joins","summary":"Missed LEFT JOIN semantics.","tags":["sql"],"action":"review"}}],"reason":"missed sql"}`,
+	}}
+	orchestrator := generation.NewOrchestrator(memoryService, generator)
+	router := newGenerateTestRouter(t, orchestrator, memoryService)
+
+	authed := func(method, path, body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(method, path, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+		router.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	// Seed one round of answer events (what the marathon emits per question).
+	for _, event := range []string{
+		`{"source":"mcq","type":"answer_incorrect","summary":"Missed a SQL Joins question.","payload":{"session_id":"mcq_r1","topic":"SQL Joins","correct":false}}`,
+		`{"source":"mcq","type":"question_answered","summary":"Answered a Two Pointers question correctly.","payload":{"session_id":"mcq_r1","topic":"Two Pointers","correct":true}}`,
+	} {
+		if code := authed(http.MethodPost, "/api/v1/memory/events", event).Code; code != http.StatusCreated {
+			t.Fatalf("seed event status = %d", code)
+		}
+	}
+
+	maintain := authed(http.MethodPost, "/api/v1/memory/notes/maintain", `{"session_id":"mcq_r1"}`)
+	if maintain.Code != http.StatusOK {
+		t.Fatalf("maintain status = %d: %s", maintain.Code, maintain.Body.String())
+	}
+	if !strings.Contains(maintain.Body.String(), "note_sql-joins") {
+		t.Fatalf("maintained profile missing note: %s", maintain.Body.String())
+	}
+
+	// Audit event recorded for the CRUD action.
+	events := authed(http.MethodGet, "/api/v1/memory/events", "")
+	if !strings.Contains(events.Body.String(), "note_created") {
+		t.Fatalf("missing note_created audit event: %s", events.Body.String())
+	}
+
+	// The next generation call must see the updated note in its memory context.
+	generator.payloads = append(generator.payloads, `[
+		{"id":"mq1","text":"Which JOIN keeps unmatched left rows?","options":["INNER","LEFT","RIGHT","CROSS"],"correctIndex":1,"concept":"SQL Joins","helpContent":"LEFT JOIN keeps all left rows."},
+		{"id":"mq2","text":"Q2","options":["a","b","c","d"],"correctIndex":0,"concept":"C","helpContent":"H"}
+	]`)
+	generate := authed(http.MethodPost, "/api/v1/generate", `{"kind":"mcq","spec":{"prompt":"drill my weak spots","count":2,"round":2}}`)
+	if generate.Code != http.StatusOK {
+		t.Fatalf("generate status = %d: %s", generate.Code, generate.Body.String())
+	}
+	lastRequest := generator.requests[len(generator.requests)-1]
+	foundNote := false
+	for _, note := range lastRequest.MemoryContext.Notes {
+		if note.Title == "SQL joins" {
+			foundNote = true
+		}
+	}
+	if !foundNote {
+		t.Fatalf("generation memory context missing maintained note: %+v", lastRequest.MemoryContext.Notes)
+	}
+	if !strings.Contains(string(lastRequest.Spec), "drill my weak spots") {
+		t.Fatalf("spec missing user prompt: %s", lastRequest.Spec)
+	}
+}
+
+func TestMaintainNotesRouteWorksWithoutOrchestrator(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	router := newGenerateTestRouter(t, nil, memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/memory/notes/maintain", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (refresh-only fallback): %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestGenerateRouteRejectsUnknownKind(t *testing.T) {
 	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
 	orchestrator := generation.NewOrchestrator(memoryService, staticGenerator{payload: `[]`})

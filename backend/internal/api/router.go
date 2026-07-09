@@ -54,6 +54,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("PUT /api/v1/sessions/{id}/files", sessionHandler.UpsertFiles)
 	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory)
 	protected.HandleFunc("POST /api/v1/generate", generateHandler.Generate)
+	protected.HandleFunc("POST /api/v1/memory/notes/maintain", generateHandler.MaintainNotes)
 
 	protectedChain := chain(
 		protected,

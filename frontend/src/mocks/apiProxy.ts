@@ -100,6 +100,11 @@ export async function mockApiFetch(
     return json({ id: `mock-event-${Date.now()}`, created_at: new Date().toISOString() }, { status: 201 });
   }
 
+  // Profile refresh after a completed session; return the mock profile.
+  if (method === 'POST' && path === '/memory/profile/refresh') {
+    return json(mockMemoryProfile);
+  }
+
   // Generation: return a canned MCQ set shaped like the backend response so
   // the marathon flow works without a backend or GenAI key.
   if (method === 'POST' && path === '/generate') {

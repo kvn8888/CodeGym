@@ -306,6 +306,11 @@ export function MarathonPage() {
           correct_count: correctCount,
         },
       );
+      // Re-derive the profile now so the NEXT set is personalized by this
+      // session. The 24h worker can't be relied on when the backend host
+      // spins down while idle (Render free tier); the summarizer is cheap
+      // deterministic Go, so refreshing per completed session is fine.
+      void api.post('/memory/profile/refresh', {}).catch(() => {});
       setPhase('results');
     }
   };

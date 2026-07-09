@@ -5,6 +5,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/session"
@@ -17,6 +18,9 @@ type Dependencies struct {
 	Identity           *identity.Service
 	Memory             *memory.Service
 	Sessions           *session.Service
+	// Generation is nil when no GenAI provider is configured; the generate
+	// route stays registered and answers 503 so clients can fall back.
+	Generation         *generation.Orchestrator
 	CORSAllowedOrigins []string
 	DatabaseURL        string
 }
@@ -48,6 +52,8 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("GET /api/v1/sessions/{id}", sessionHandler.Get)
 	protected.HandleFunc("PATCH /api/v1/sessions/{id}", sessionHandler.Patch)
 	protected.HandleFunc("PUT /api/v1/sessions/{id}/files", sessionHandler.UpsertFiles)
+	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory)
+	protected.HandleFunc("POST /api/v1/generate", generateHandler.Generate)
 
 	protectedChain := chain(
 		protected,

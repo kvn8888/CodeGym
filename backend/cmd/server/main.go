@@ -13,6 +13,8 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/api"
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/config"
+	"github.com/kvn8888/codegym/backend/internal/generation"
+	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/session"
@@ -70,6 +72,23 @@ func main() {
 	identityService := identity.NewService(identityStore)
 	memoryService := memory.NewService(memoryStore, nil)
 	sessionService := session.NewService(sessionStore, nil)
+
+	var generationOrchestrator *generation.Orchestrator
+	if cfg.GenAI.Enabled() {
+		generator, err := openaicompat.New(openaicompat.Config{
+			BaseURL: cfg.GenAI.BaseURL,
+			APIKey:  cfg.GenAI.APIKey,
+			Model:   cfg.GenAI.Model,
+		})
+		if err != nil {
+			log.Fatalf("could not configure GenAI adapter: %v", err)
+		}
+		generationOrchestrator = generation.NewOrchestrator(memoryService, generator)
+		log.Printf("CodeGym generation enabled via %s (model %s)", cfg.GenAI.BaseURL, cfg.GenAI.Model)
+	} else {
+		log.Print("CodeGym generation disabled; set CODEGYM_GENAI_API_KEY to enable POST /api/v1/generate")
+	}
+
 	if !cfg.MemoryWorker.Disabled {
 		worker := memory.NewWorker(memoryService, cfg.MemoryWorker.Interval)
 		go worker.Run(ctx)
@@ -83,6 +102,7 @@ func main() {
 		Identity:           identityService,
 		Memory:             memoryService,
 		Sessions:           sessionService,
+		Generation:         generationOrchestrator,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 		DatabaseURL:        cfg.DatabaseURL,
 	})

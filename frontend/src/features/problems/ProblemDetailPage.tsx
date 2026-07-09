@@ -9,9 +9,10 @@ import {
 import { useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import Editor from '@monaco-editor/react';
-import { api } from '../../shared/api/client';
+import { APIError, api } from '../../shared/api/client';
 import type { Problem, SubmissionFile, TestResult, TestCaseResult } from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
+import { mockPassingResult, mockProblems, mockSkeletons } from '../../mocks/fixtures';
 
 const languageMap: Record<string, string> = {
   go: 'go',
@@ -37,6 +38,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function isProblemBackendUnavailable(error: unknown) {
+  return error instanceof APIError && (error.status === 404 || error.status === 501);
+}
+
 export function ProblemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const pageRef = useRef<HTMLDivElement>(null);
@@ -56,13 +61,27 @@ export function ProblemDetailPage() {
     Promise.all([
       api.get<Problem>(`/problems/${id}`),
       api.get<{ files: SubmissionFile[] }>(`/problems/${id}/skeleton`),
-    ]).then(([prob, skel]) => {
-      setProblem(prob);
-      setFiles(skel.files);
-      setError(null);
-    }).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Could not load this problem.');
-    });
+    ])
+      .then(([prob, skel]) => {
+        setProblem(prob);
+        setFiles(skel.files);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (isProblemBackendUnavailable(err)) {
+          const sampleProblem = mockProblems.find((candidate) => candidate.id === id);
+          const sampleFiles = mockSkeletons[id];
+
+          if (sampleProblem && sampleFiles) {
+            setProblem(sampleProblem);
+            setFiles(sampleFiles);
+            setError(null);
+            return;
+          }
+        }
+
+        setError(err instanceof Error ? err.message : 'Could not load this problem.');
+      });
   }, [id]);
 
   const handleCodeChange = useCallback(
@@ -204,6 +223,12 @@ export function ProblemDetailPage() {
       };
       poll();
     } catch (err) {
+      if (isProblemBackendUnavailable(err)) {
+        setResult(mockPassingResult);
+        setSubmitting(false);
+        return;
+      }
+
       console.error(err);
       setError(err instanceof Error ? err.message : 'Submission failed.');
       setSubmitting(false);

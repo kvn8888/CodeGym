@@ -29,9 +29,9 @@ type WorkerConfig struct {
 	Interval time.Duration
 }
 
-// GenAIConfig configures the OpenAI-compatible generation provider adapter.
-// The default base URL targets the Vercel AI Gateway, which fronts Claude and
-// Gemini behind the OpenAI chat-completions wire format.
+// GenAIConfig configures the model-backed generation adapter. Google Gemini's
+// direct API uses the native Interactions endpoint; Vercel AI Gateway and other
+// OpenAI-shaped providers use the OpenAI-compatible chat-completions adapter.
 type GenAIConfig struct {
 	BaseURL string
 	APIKey  string
@@ -54,12 +54,16 @@ func (g GenAIConfig) PairingWarning() string {
 	modelHasVendorPrefix := strings.Contains(model, "/")
 	switch {
 	case strings.Contains(baseURL, "generativelanguage.googleapis.com") && modelHasVendorPrefix:
-		return "GenAI config mismatch: Google direct OpenAI-compatible base URL expects a bare Gemini model slug such as gemini-flash-latest or gemini-2.5-flash; current model includes a vendor prefix."
+		return "GenAI config mismatch: Google direct Gemini API expects a bare Gemini model slug such as gemini-3.5-flash or gemini-2.5-flash; current model includes a vendor prefix."
 	case strings.Contains(baseURL, "ai-gateway.vercel.sh") && !modelHasVendorPrefix:
 		return "GenAI config mismatch: Vercel AI Gateway base URL expects a vendor-prefixed model slug such as google/gemini-2.5-flash; current model has no vendor prefix."
 	default:
 		return ""
 	}
+}
+
+func (g GenAIConfig) UseGeminiInteractions() bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(g.BaseURL)), "generativelanguage.googleapis.com")
 }
 
 // Load reads environment variables and returns the effective runtime config.
@@ -77,6 +81,8 @@ func Load() Config {
 	if port == "" {
 		port = "8080"
 	}
+
+	genAIBaseURL, genAIModel := defaultGenAIEndpoint()
 
 	return Config{
 		Host:           env("CODEGYM_HOST", "127.0.0.1"),
@@ -104,11 +110,19 @@ func Load() Config {
 			),
 		},
 		GenAI: GenAIConfig{
-			BaseURL: env("CODEGYM_GENAI_BASE_URL", "https://ai-gateway.vercel.sh/v1"),
+			BaseURL: env("CODEGYM_GENAI_BASE_URL", genAIBaseURL),
 			APIKey:  firstEnv("CODEGYM_GENAI_API_KEY", "AI_GATEWAY_API_KEY"),
-			Model:   env("CODEGYM_GENAI_MODEL", "anthropic/claude-haiku-4.5"),
+			Model:   env("CODEGYM_GENAI_MODEL", genAIModel),
 		},
 	}
+}
+
+func defaultGenAIEndpoint() (baseURL string, model string) {
+	if strings.TrimSpace(os.Getenv("CODEGYM_GENAI_API_KEY")) == "" &&
+		strings.TrimSpace(os.Getenv("AI_GATEWAY_API_KEY")) != "" {
+		return "https://ai-gateway.vercel.sh/v1", "anthropic/claude-haiku-4.5"
+	}
+	return "https://generativelanguage.googleapis.com/v1beta", "gemini-3.5-flash"
 }
 
 // Addr returns the listen address in host:port form.

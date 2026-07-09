@@ -98,6 +98,9 @@ func TestGenerateMCQSetHappyPath(t *testing.T) {
 	if request.Schema.Name != "mcq_set" {
 		t.Errorf("schema name = %q", request.Schema.Name)
 	}
+	if request.ModelPolicy.MaxTokens != mcqMaxTokens {
+		t.Errorf("max tokens = %d, want %d", request.ModelPolicy.MaxTokens, mcqMaxTokens)
+	}
 }
 
 func TestGenerateMCQSetRetriesOnceOnInvalidOutput(t *testing.T) {
@@ -119,6 +122,38 @@ func TestGenerateMCQSetRetriesOnceOnInvalidOutput(t *testing.T) {
 	}
 	if !strings.Contains(generator.requests[1].Instructions, "previous output was rejected") {
 		t.Error("retry instructions do not carry the validation error back")
+	}
+	if !strings.Contains(generator.requests[1].Instructions, "single valid JSON array") {
+		t.Error("retry instructions do not tighten the JSON-only requirement")
+	}
+}
+
+func TestGenerateMCQSetRetriesOnceOnAdapterInvalidOutput(t *testing.T) {
+	generator := &scriptedGenerator{
+		payloads: []json.RawMessage{nil, validMCQJSON(2)},
+		errs: []error{&InvalidOutputError{
+			Reason:    "model output is not valid JSON",
+			RawOutput: `[{"id":"mq1","text":"Q?","options":["a"`,
+		}},
+	}
+	orchestrator := newTestOrchestrator(generator)
+
+	questions, _, err := GenerateMCQSet(scopedContext(), orchestrator, MCQSpec{Count: 2})
+	if err != nil {
+		t.Fatalf("GenerateMCQSet: %v", err)
+	}
+	if len(questions) != 2 {
+		t.Fatalf("got %d questions, want 2", len(questions))
+	}
+	if len(generator.requests) != 2 {
+		t.Fatalf("generator called %d times, want 2", len(generator.requests))
+	}
+	retryInstructions := generator.requests[1].Instructions
+	if !strings.Contains(retryInstructions, "model output is not valid JSON") {
+		t.Error("retry instructions do not include the adapter parse failure")
+	}
+	if !strings.Contains(retryInstructions, "single valid JSON array") {
+		t.Error("retry instructions do not tighten the JSON-only requirement")
 	}
 }
 
@@ -157,6 +192,9 @@ func TestGenerateMCQSetSurfacesProviderErrors(t *testing.T) {
 	}
 	if DiagnosticClass(err) != "provider_error" {
 		t.Fatalf("DiagnosticClass = %q, want provider_error; err=%v", DiagnosticClass(err), err)
+	}
+	if len(generator.requests) != 1 {
+		t.Fatalf("generator called %d times, want 1", len(generator.requests))
 	}
 }
 

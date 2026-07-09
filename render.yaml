@@ -48,16 +48,17 @@ services:
 
       # --- CORS ---
       - key: CODEGYM_CORS_ALLOWED_ORIGINS
-        value: https://codegym.vercel.app # placeholder: replace with the
-        # real Vercel frontend URL(s). Comma-separated list, no spaces.
+        # Exact origins and one-label wildcards are supported. This allows the
+        # production alias plus Vercel preview URLs for Kevin's project scope.
+        value: https://code-gym-rho.vercel.app,https://*-kvn8888s-projects.vercel.app
 
-      # --- GenAI (Vercel AI Gateway) ---
+      # --- GenAI (Gemini native Interactions API) ---
       - key: CODEGYM_GENAI_BASE_URL
-        value: https://ai-gateway.vercel.sh/v1
+        value: https://generativelanguage.googleapis.com/v1beta
       - key: CODEGYM_GENAI_API_KEY
-        sync: false # secret; set by hand in the Render dashboard.
+        sync: false # secret Gemini API key; set by hand in Render.
       - key: CODEGYM_GENAI_MODEL
-        value: anthropic/claude-haiku-4.5
+        value: gemini-3.5-flash
 
       # Optional (not set here; see docs/render-deploy.md):
       #   CODEGYM_MEMORY_WORKER_DISABLED

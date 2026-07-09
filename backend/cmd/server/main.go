@@ -14,6 +14,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/config"
 	"github.com/kvn8888/codegym/backend/internal/generation"
+	"github.com/kvn8888/codegym/backend/internal/generation/gemini"
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
@@ -78,16 +79,12 @@ func main() {
 		if warning := cfg.GenAI.PairingWarning(); warning != "" {
 			log.Printf("WARNING: %s base_url=%s model=%s", warning, cfg.GenAI.BaseURL, cfg.GenAI.Model)
 		}
-		generator, err := openaicompat.New(openaicompat.Config{
-			BaseURL: cfg.GenAI.BaseURL,
-			APIKey:  cfg.GenAI.APIKey,
-			Model:   cfg.GenAI.Model,
-		})
+		generator, providerName, err := buildGenerator(cfg.GenAI)
 		if err != nil {
 			log.Fatalf("could not configure GenAI adapter: %v", err)
 		}
 		generationOrchestrator = generation.NewOrchestrator(memoryService, generator)
-		log.Printf("CodeGym generation enabled via %s (model %s)", cfg.GenAI.BaseURL, cfg.GenAI.Model)
+		log.Printf("CodeGym generation enabled via %s (model %s, provider %s)", cfg.GenAI.BaseURL, cfg.GenAI.Model, providerName)
 	} else {
 		log.Print("CodeGym generation disabled; set CODEGYM_GENAI_API_KEY to enable POST /api/v1/generate")
 	}
@@ -128,6 +125,24 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+}
+
+func buildGenerator(cfg config.GenAIConfig) (generation.Generator, string, error) {
+	if cfg.UseGeminiInteractions() {
+		generator, err := gemini.New(gemini.Config{
+			BaseURL: cfg.BaseURL,
+			APIKey:  cfg.APIKey,
+			Model:   cfg.Model,
+		})
+		return generator, "gemini_interactions", err
+	}
+
+	generator, err := openaicompat.New(openaicompat.Config{
+		BaseURL: cfg.BaseURL,
+		APIKey:  cfg.APIKey,
+		Model:   cfg.Model,
+	})
+	return generator, "openai_compat", err
 }
 
 func buildAuthenticator(cfg config.Config) (auth.Authenticator, error) {

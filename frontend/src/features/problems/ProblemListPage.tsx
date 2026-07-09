@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 
-import { api } from '../../shared/api/client';
+import { APIError, api } from '../../shared/api/client';
 import type { ProblemSummary } from '../../shared/api/types';
+import { mockProblemSummaries } from '../../mocks/fixtures';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -33,6 +34,10 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 320, damping: 28 } },
 };
 
+function isProblemCatalogUnavailable(error: unknown) {
+  return error instanceof APIError && (error.status === 404 || error.status === 501);
+}
+
 export function ProblemListPage() {
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +50,14 @@ export function ProblemListPage() {
     api
       .get<{ problems: ProblemSummary[]; total: number }>('/problems')
       .then((data) => setProblems(data.problems ?? []))
-      .catch(console.error)
+      .catch((error: unknown) => {
+        if (isProblemCatalogUnavailable(error)) {
+          setProblems(mockProblemSummaries);
+          return;
+        }
+
+        console.error(error);
+      })
       .finally(() => setLoading(false));
   }, []);
 

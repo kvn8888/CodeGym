@@ -23,6 +23,15 @@ forwards those requests to Render **server-side**. Two consequences:
   same-origin and hits the rewrite. This mirrors the local `vite dev` proxy in
   `vite.config.ts`.
 
+If you deliberately set `VITE_API_BASE_URL` to the Render backend so the
+browser calls Render directly, Render must allow that Vercel origin in
+`CODEGYM_CORS_ALLOWED_ORIGINS`. The backend supports one-label wildcard origins
+for previews; Kevin's Vercel preview pattern is:
+
+```text
+https://*-kvn8888s-projects.vercel.app
+```
+
 The second rewrite (`/:path*` -> `/index.html`) is the SPA fallback so deep
 links like `/marathon` load the app instead of 404ing. Real build assets under
 `/assets/*` are served from the filesystem before rewrites apply.

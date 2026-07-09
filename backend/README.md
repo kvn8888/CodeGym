@@ -29,6 +29,16 @@ Override with:
 CODEGYM_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
+Hosted preview origins can use a one-label wildcard. For Kevin's Vercel
+previews:
+
+```bash
+CODEGYM_CORS_ALLOWED_ORIGINS=https://code-gym-rho.vercel.app,https://*-kvn8888s-projects.vercel.app
+```
+
+That wildcard matches `https://code-bxvtwkxtn-kvn8888s-projects.vercel.app`,
+but not arbitrary `vercel.app` domains.
+
 If the browser `Origin` is not on this list, CORS headers are not returned,
 and browsers will block cross-origin API calls.
 

@@ -44,9 +44,17 @@ reproduced or re-created without clicking through the dashboard by hand.
 | `CODEGYM_AUTH0_AUDIENCE` | Auth0 API identifier/audience. |
 | `CODEGYM_GENAI_API_KEY` | Gemini API key from Google AI Studio. |
 
-Also review/replace the placeholder value for `CODEGYM_CORS_ALLOWED_ORIGINS`
-(defaults to a placeholder Vercel URL) with the real frontend origin(s),
-comma-separated.
+`CODEGYM_CORS_ALLOWED_ORIGINS` accepts exact origins plus one-label wildcard
+origins. The default blueprint value allows the production Vercel alias and
+Kevin's Vercel preview URLs:
+
+```text
+https://code-gym-rho.vercel.app,https://*-kvn8888s-projects.vercel.app
+```
+
+The wildcard matches preview origins such as
+`https://code-bxvtwkxtn-kvn8888s-projects.vercel.app`, but not arbitrary
+`vercel.app` domains.
 
 The default GenAI pairing uses Gemini's native Interactions API:
 `CODEGYM_GENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta` and

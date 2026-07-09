@@ -11,6 +11,9 @@ const (
 	KindProblem   Kind = "problem"
 	KindMCQ       Kind = "mcq"
 	KindInterview Kind = "interview"
+	// KindNotes is the internal memory note-maintenance pass; it is not
+	// exposed as a client-requestable kind on POST /api/v1/generate.
+	KindNotes Kind = "notes"
 )
 
 // Generator is the provider-neutral seam for all model-backed generation.

@@ -105,6 +105,12 @@ export async function mockApiFetch(
     return json(mockMemoryProfile);
   }
 
+  // Post-round reflection (deterministic refresh + LLM note CRUD); the mock
+  // just returns the profile so the round loop keeps moving without a backend.
+  if (method === 'POST' && path === '/memory/notes/maintain') {
+    return json(mockMemoryProfile);
+  }
+
   // Generation: return a canned MCQ set shaped like the backend response so
   // the marathon flow works without a backend or GenAI key.
   if (method === 'POST' && path === '/generate') {

@@ -105,6 +105,31 @@ func (s *Service) RefreshProfile(ctx context.Context) (Profile, error) {
 	return s.RefreshProfileFor(ctx, id.tenantID, id.userID)
 }
 
+// ReplaceNotes persists a curated notes list on the scoped user's profile,
+// preserving every other derived field. Notes are the LLM-maintained slice of
+// memory (agentic CRUD after practice sessions); the deterministic Summarize
+// keys existing notes by ID, so later refreshes preserve this curation.
+func (s *Service) ReplaceNotes(ctx context.Context, notes []Note) (Profile, error) {
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+
+	profile, err := s.store.GetProfile(ctx, id.tenantID, id.userID)
+	if errors.Is(err, ErrProfileNotFound) {
+		profile = s.defaultProfile()
+	} else if err != nil {
+		return Profile{}, err
+	}
+
+	profile.Notes = notes
+	profile.UpdatedAt = s.now().UTC()
+	if err := s.store.UpsertProfile(ctx, id.tenantID, id.userID, profile); err != nil {
+		return Profile{}, err
+	}
+	return profile, nil
+}
+
 // RefreshProfileFor is the explicit-scope version of RefreshProfile. Use this
 // outside HTTP request handling — workers, smoke tests, or GenAI orchestration
 // code should not have to fabricate auth/tenant middleware context just to

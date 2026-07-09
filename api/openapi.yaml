@@ -337,6 +337,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /api/v1/memory/notes/maintain:
+    post:
+      operationId: maintainMemoryNotes
+      summary: Run the post-round memory reflection pass — deterministic profile refresh plus a best-effort LLM CRUD pass over memory notes.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintainNotesInput"
+      responses:
+        "200":
+          description: Profile refreshed; note maintenance applied when the model produced usable actions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -779,6 +807,11 @@ components:
           type: string
           description: Coarse topic; empty spreads questions across growth edges.
           example: hash tables
+        prompt:
+          type: string
+          maxLength: 500
+          description: The user's free-text "what do you want to study?" ask; steers concept selection together with memory notes.
+          example: I want to drill Go concurrency patterns
         count:
           type: integer
           minimum: 1
@@ -787,6 +820,18 @@ components:
         difficulty:
           type: string
           example: medium
+        round:
+          type: integer
+          minimum: 0
+          description: Round number in a continuous marathon; later rounds avoid repeating earlier questions.
+
+    MaintainNotesInput:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: Scopes the reflection digest to one practice round; empty uses the most recent round in the event log.
+          example: mcq_abc123_r2
 
     MCQQuestion:
       type: object

@@ -55,12 +55,14 @@ If publishing is blocked by auth, network, failing validation, missing owner
 approval, or mixed unrelated work, say exactly what is blocked and what must
 happen next. Do not present local-only work as finished repository work.
 
-## Current State (Last Updated: 2026-06-26)
+## Current State (Last Updated: 2026-07-09)
 
 - Branch: `codegym-v2`.
-- Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes.
-- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, memory profile/event APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
-- Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`.
+- Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes. MarathonPage calls `POST /api/v1/generate` (kind `mcq`) with a built-in fallback set and emits `mcq.*` memory events.
+- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, memory profile/event APIs, session APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
+- Generation: `generation.Orchestrator` composes the scoped memory profile with the provider-neutral `Generator` seam. `generation/openaicompat` is the first adapter (OpenAI chat-completions wire format; default base URL is the Vercel AI Gateway). `POST /api/v1/generate` serves MCQ sets with structural validation and one bounded repair retry; it answers 503 when `CODEGYM_GENAI_API_KEY` is unset. MCQ prompt text mirrors `docs/ai-prompts/05-mcq-marathon.md` — keep them in sync.
+- Deploy: backend runs on Render (`https://codegym.onrender.com`); `render.yaml` is the blueprint and `docs/render-deploy.md` documents applying it. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render.
+- Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`. GenAI: `CODEGYM_GENAI_BASE_URL` / `CODEGYM_GENAI_API_KEY` (alias `AI_GATEWAY_API_KEY`) / `CODEGYM_GENAI_MODEL`.
 - CI: `.github/workflows/ci.yml` runs frontend `npm ci`, lint, build, and backend `go test ./...` on PRs/pushes to `codegym-v2`. `.github/workflows/openapi-lint.yml` runs `npm run api:lint` (Redocly) when `api/**` changes.
 - Project board: GitHub Projects v2 project `#2` (`CodeGym v2`) is the active kanban unless the user says otherwise.
 

@@ -178,11 +178,11 @@ func TestLoadGenAIConfig(t *testing.T) {
 	if cfg.GenAI.Enabled() {
 		t.Fatal("GenAI should be disabled without an API key")
 	}
-	if cfg.GenAI.BaseURL != "https://ai-gateway.vercel.sh/v1" {
+	if cfg.GenAI.BaseURL != "https://generativelanguage.googleapis.com/v1beta" {
 		t.Fatalf("BaseURL = %q", cfg.GenAI.BaseURL)
 	}
-	if cfg.GenAI.Model == "" {
-		t.Fatal("Model default is empty")
+	if cfg.GenAI.Model != "gemini-3.5-flash" {
+		t.Fatalf("Model = %q, want gemini-3.5-flash", cfg.GenAI.Model)
 	}
 
 	t.Setenv("AI_GATEWAY_API_KEY", "vercel-key")
@@ -190,15 +190,18 @@ func TestLoadGenAIConfig(t *testing.T) {
 	if !cfg.GenAI.Enabled() || cfg.GenAI.APIKey != "vercel-key" {
 		t.Fatalf("GenAI = %#v, want AI_GATEWAY_API_KEY alias honored", cfg.GenAI)
 	}
+	if cfg.GenAI.BaseURL != "https://ai-gateway.vercel.sh/v1" || cfg.GenAI.Model != "anthropic/claude-haiku-4.5" {
+		t.Fatalf("GenAI gateway alias defaults = %#v", cfg.GenAI)
+	}
 
 	t.Setenv("CODEGYM_GENAI_API_KEY", "codegym-key")
-	t.Setenv("CODEGYM_GENAI_BASE_URL", "https://example.test/v1")
-	t.Setenv("CODEGYM_GENAI_MODEL", "custom-model")
+	t.Setenv("CODEGYM_GENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
+	t.Setenv("CODEGYM_GENAI_MODEL", "gemini-3.5-flash")
 	cfg = Load()
 	if cfg.GenAI.APIKey != "codegym-key" {
 		t.Fatalf("APIKey = %q, want CODEGYM_GENAI_API_KEY to win", cfg.GenAI.APIKey)
 	}
-	if cfg.GenAI.BaseURL != "https://example.test/v1" || cfg.GenAI.Model != "custom-model" {
+	if cfg.GenAI.BaseURL != "https://generativelanguage.googleapis.com/v1beta" || cfg.GenAI.Model != "gemini-3.5-flash" {
 		t.Fatalf("GenAI = %#v", cfg.GenAI)
 	}
 }
@@ -213,7 +216,7 @@ func TestGenAIPairingWarning(t *testing.T) {
 		{
 			name: "google direct warns for gateway slug",
 			cfg: GenAIConfig{
-				BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
+				BaseURL: "https://generativelanguage.googleapis.com/v1beta",
 				Model:   "google/gemini-2.5-flash",
 			},
 			want:    true,
@@ -231,8 +234,16 @@ func TestGenAIPairingWarning(t *testing.T) {
 		{
 			name: "google direct accepts bare slug",
 			cfg: GenAIConfig{
+				BaseURL: "https://generativelanguage.googleapis.com/v1beta",
+				Model:   "gemini-3.5-flash",
+			},
+			want: false,
+		},
+		{
+			name: "google direct accepts legacy openai path with bare slug",
+			cfg: GenAIConfig{
 				BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-				Model:   "gemini-flash-latest",
+				Model:   "gemini-3.5-flash",
 			},
 			want: false,
 		},
@@ -254,6 +265,38 @@ func TestGenAIPairingWarning(t *testing.T) {
 			}
 			if testCase.wantSub != "" && !strings.Contains(got, testCase.wantSub) {
 				t.Fatalf("PairingWarning() = %q, want substring %q", got, testCase.wantSub)
+			}
+		})
+	}
+}
+
+func TestGenAIUsesGeminiInteractions(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  GenAIConfig
+		want bool
+	}{
+		{
+			name: "google direct",
+			cfg:  GenAIConfig{BaseURL: "https://generativelanguage.googleapis.com/v1beta"},
+			want: true,
+		},
+		{
+			name: "google direct legacy openai path",
+			cfg:  GenAIConfig{BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai"},
+			want: true,
+		},
+		{
+			name: "gateway",
+			cfg:  GenAIConfig{BaseURL: "https://ai-gateway.vercel.sh/v1"},
+			want: false,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := testCase.cfg.UseGeminiInteractions(); got != testCase.want {
+				t.Fatalf("UseGeminiInteractions() = %v, want %v", got, testCase.want)
 			}
 		})
 	}

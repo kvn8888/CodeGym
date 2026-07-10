@@ -105,6 +105,47 @@ func TestServiceKeepsExistingMetadataWhenClaimsAreOmitted(t *testing.T) {
 	}
 }
 
+func TestServicePreservesUserDisplayNameOverride(t *testing.T) {
+	store := NewInMemoryStore()
+	service := NewService(store)
+	principal := auth.Principal{
+		UserID:          "auth0|user_123",
+		DefaultTenantID: "personal-auth0-user-123",
+		TenantIDs:       []string{"personal-auth0-user-123"},
+		UserMetadata: auth.UserMetadata{
+			Email:       "kevin@example.com",
+			DisplayName: "Kevin From Google",
+		},
+	}
+
+	if err := service.EnsurePersonalTenant(context.Background(), principal); err != nil {
+		t.Fatalf("EnsurePersonalTenant returned error: %v", err)
+	}
+	updated, err := service.UpdateDisplayName(context.Background(), principal, "Kevin Chen")
+	if err != nil {
+		t.Fatalf("UpdateDisplayName returned error: %v", err)
+	}
+	if updated.DisplayName != "Kevin Chen" || updated.DisplayNameSource != "user" {
+		t.Fatalf("updated profile = %#v", updated)
+	}
+
+	principal.UserMetadata.DisplayName = "Kevin From Google Again"
+	if err := service.EnsurePersonalTenant(context.Background(), principal); err != nil {
+		t.Fatalf("second EnsurePersonalTenant returned error: %v", err)
+	}
+
+	profile, err := service.GetUserProfile(context.Background(), principal)
+	if err != nil {
+		t.Fatalf("GetUserProfile returned error: %v", err)
+	}
+	if profile.DisplayName != "Kevin Chen" {
+		t.Fatalf("expected manual display name to survive OAuth metadata, got %q", profile.DisplayName)
+	}
+	if profile.DisplayNameSource != "user" {
+		t.Fatalf("expected user display name source, got %q", profile.DisplayNameSource)
+	}
+}
+
 func TestServiceRejectsMissingUser(t *testing.T) {
 	service := NewService(NewInMemoryStore())
 
@@ -113,5 +154,21 @@ func TestServiceRejectsMissingUser(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected missing user error")
+	}
+}
+
+func TestServiceRejectsInvalidDisplayName(t *testing.T) {
+	service := NewService(NewInMemoryStore())
+	principal := auth.Principal{
+		UserID:          "kevin",
+		DefaultTenantID: "personal-kevin",
+		TenantIDs:       []string{"personal-kevin"},
+	}
+	if err := service.EnsurePersonalTenant(context.Background(), principal); err != nil {
+		t.Fatalf("EnsurePersonalTenant returned error: %v", err)
+	}
+
+	if _, err := service.UpdateDisplayName(context.Background(), principal, "  "); err == nil {
+		t.Fatal("expected blank display name to be rejected")
 	}
 }

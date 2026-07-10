@@ -14,10 +14,10 @@ import (
 
 // Dependencies contains services and middleware inputs required to build the API router.
 type Dependencies struct {
-	Authenticator      auth.Authenticator
-	Identity           *identity.Service
-	Memory             *memory.Service
-	Sessions           *session.Service
+	Authenticator auth.Authenticator
+	Identity      *identity.Service
+	Memory        *memory.Service
+	Sessions      *session.Service
 	// Generation is nil when no GenAI provider is configured; the generate
 	// route stays registered and answers 503 so clients can fall back.
 	Generation         *generation.Orchestrator
@@ -41,6 +41,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.DatabaseURL))
 
 	protected := http.NewServeMux()
+	profileHandler := handlers.NewProfileHandler(deps.Identity)
+	protected.HandleFunc("GET /api/v1/me", profileHandler.Me)
+	protected.HandleFunc("PATCH /api/v1/me", profileHandler.UpdateMe)
 	memoryHandler := handlers.NewMemoryHandler(deps.Memory)
 	protected.HandleFunc("GET /api/v1/memory/profile", memoryHandler.Profile)
 	protected.HandleFunc("POST /api/v1/memory/profile/refresh", memoryHandler.RefreshProfile)

@@ -6,8 +6,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { api } from '../../shared/api/client';
-import type { UpdateUserProfileInput, UserProfile } from '../../shared/api/types';
+import type { UserProfile } from '../../shared/api/types';
+import { useAccountProfile } from '../../shared/auth/accountProfileStore';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 
 const sourceLabel: Record<UserProfile['display_name_source'], string> = {
@@ -17,26 +17,52 @@ const sourceLabel: Record<UserProfile['display_name_source'], string> = {
 };
 
 export function SettingsPage() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [displayName, setDisplayName] = useState('');
-  const [loading, setLoading] = useState(true);
+  const profile = useAccountProfile((state) => state.profile);
+  const loading = useAccountProfile((state) => state.loading);
+  const profileError = useAccountProfile((state) => state.error);
+  const loadProfile = useAccountProfile((state) => state.loadProfile);
+
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  if (loading || (!profile && !profileError)) {
+    return (
+      <div className="flex justify-center py-16">
+        <GridSpinner size="md" />
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-12">
+        <h1 className="mb-8 text-[40px] font-semibold leading-[48px] tracking-[-2.4px]">Settings</h1>
+        <Card className="items-start gap-4 px-6 py-6">
+          <p className="text-destructive text-sm">{profileError || 'Could not load settings.'}</p>
+          <Button type="button" variant="outline" onClick={() => void loadProfile(true)}>
+            Try again
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  return <SettingsForm profile={profile} profileError={profileError} />;
+}
+
+function SettingsForm({
+  profile,
+  profileError,
+}: {
+  profile: UserProfile;
+  profileError: string | null;
+}) {
+  const updateDisplayName = useAccountProfile((state) => state.updateDisplayName);
+  const [displayName, setDisplayName] = useState(profile.display_name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    api
-      .get<UserProfile>('/me')
-      .then((data) => {
-        setProfile(data);
-        setDisplayName(data.display_name);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Could not load settings.');
-      })
-      .finally(() => setLoading(false));
-  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -52,9 +78,7 @@ export function SettingsPage() {
     setError(null);
 
     try {
-      const input: UpdateUserProfileInput = { display_name: nextDisplayName };
-      const updated = await api.patch<UserProfile>('/me', input);
-      setProfile(updated);
+      const updated = await updateDisplayName(nextDisplayName);
       setDisplayName(updated.display_name);
       setSaved(true);
     } catch (err) {
@@ -63,14 +87,6 @@ export function SettingsPage() {
       setSaving(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <GridSpinner size="md" />
-      </div>
-    );
-  }
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-12">
@@ -87,33 +103,34 @@ export function SettingsPage() {
               onChange={(event) => {
                 setDisplayName(event.target.value);
                 setSaved(false);
+                setError(null);
               }}
               autoComplete="name"
             />
           </div>
 
           <div className="grid gap-4 rounded-xl border border-border bg-muted/30 p-4 text-sm md:grid-cols-2">
-            <div>
+            <div className="min-w-0">
               <div className="text-muted-foreground text-xs">Email</div>
-              <div className="mt-1 truncate font-medium">{profile?.email || 'Not provided'}</div>
+              <div className="mt-1 truncate font-medium">{profile.email || 'Not provided'}</div>
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="text-muted-foreground text-xs">Name source</div>
               <div className="mt-1">
                 <Badge variant="secondary">
-                  {profile ? sourceLabel[profile.display_name_source] : 'Unknown'}
+                  {sourceLabel[profile.display_name_source]}
                 </Badge>
               </div>
             </div>
-            <div className="md:col-span-2">
+            <div className="min-w-0 md:col-span-2">
               <div className="text-muted-foreground text-xs">Workspace</div>
-              <div className="mt-1 truncate font-mono text-xs">{profile?.default_workspace_id || 'Not available'}</div>
+              <div className="mt-1 break-all font-mono text-xs">{profile.default_workspace_id || 'Not available'}</div>
             </div>
           </div>
 
-          {error && (
+          {(error || profileError) && (
             <div className="border-destructive/40 bg-destructive/10 text-destructive rounded-xl border px-4 py-3 text-sm">
-              {error}
+              {error || profileError}
             </div>
           )}
 

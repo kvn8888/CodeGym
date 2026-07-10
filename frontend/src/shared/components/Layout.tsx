@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 
 import { FloatingChat } from './FloatingChat';
-import { ModeToggle } from '@/components/mode-toggle';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AuthAccountMenu } from '../auth/AuthAccountMenu';
@@ -50,7 +49,9 @@ const sidebarTransition = {
 export function Layout() {
   const location = useLocation();
   const shouldReduceMotion = useReducedMotion();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
+  );
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
@@ -143,14 +144,8 @@ export function Layout() {
           </nav>
         </div>
 
-        <div
-          className={cn(
-            'border-sidebar-border flex shrink-0 border-t',
-            collapsed ? 'flex-col items-center gap-1 p-2' : 'items-center gap-1 p-2',
-          )}
-        >
+        <div className="shrink-0">
           <AuthAccountMenu collapsed={collapsed} />
-          <ModeToggle className="size-9 shrink-0" />
         </div>
       </motion.aside>
 

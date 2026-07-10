@@ -5,12 +5,12 @@ api_base_url="${CODEGYM_API_BASE_URL:-http://127.0.0.1:8080}"
 api_base_url="${api_base_url%/}"
 
 dev_user_id="${CODEGYM_DEV_USER_ID:-smoke-user}"
-dev_tenant_id="${CODEGYM_DEV_TENANT_ID:-personal-smoke}"
+dev_workspace_id="${CODEGYM_DEV_WORKSPACE_ID:-personal-smoke}"
 
 if [[ -n "${CODEGYM_DEV_AUTH_TOKEN:-}" ]]; then
   bearer_token="${CODEGYM_DEV_AUTH_TOKEN}"
 else
-  bearer_token="dev:${dev_user_id}:${dev_tenant_id}"
+  bearer_token="dev:${dev_user_id}:${dev_workspace_id}"
 fi
 
 run_id="${CODEGYM_SMOKE_RUN_ID:-memory-smoke-$(date -u +%Y%m%dT%H%M%SZ)-$$}"

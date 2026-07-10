@@ -9,7 +9,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/session"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 // Dependencies contains services and middleware inputs required to build the API router.
@@ -32,7 +32,7 @@ type Dependencies struct {
 //   - GET /health
 //   - GET /ready
 //
-// Protected routes under /api/v1 pass through auth, identity, and tenant
+// Protected routes under /api/v1 pass through auth, identity, and workspace
 // middleware. CORS middleware is applied at the top level.
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
@@ -63,7 +63,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		protected,
 		auth.Middleware(deps.Authenticator),
 		identity.Middleware(deps.Identity),
-		tenant.Middleware(),
+		workspace.Middleware(),
 	)
 	mux.Handle("/api/v1/", protectedChain)
 

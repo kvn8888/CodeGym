@@ -41,16 +41,16 @@ func (w *Worker) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			// The key design problem: Service.RefreshProfile reads the
-			// identity (tenant_id, user_id) from the *request* context via
-			// auth/tenant middleware — but a background tick has no request. Two ways:
+			// identity (workspace_id, user_id) from the *request* context via
+			// auth/workspace middleware — but a background tick has no request. Two ways:
 			//
-			//   (a) Add a Store method to list (tenant_id, user_id) pairs that have
+			//   (a) Add a Store method to list (workspace_id, user_id) pairs that have
 			//       events, then for each pair build a context with
-			//       auth.WithPrincipal(...) + tenant.WithScope(...) and call
+			//       auth.WithPrincipal(...) + workspace.WithScope(...) and call
 			//       RefreshProfile. (See internal/integration/neon_test.go for how
 			//       a context is seeded this way.)
 			//
-			//   (b) Add a Service method like RefreshProfileFor(ctx, tenantID, userID)
+			//   (b) Add a Service method like RefreshProfileFor(ctx, workspaceID, userID)
 			//       that takes the identity explicitly instead of from context, and
 			//       call it directly. Simpler — recommended for v0.
 			//

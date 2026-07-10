@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 type Clock func() time.Time
@@ -47,7 +47,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Session, error
 	now := s.now().UTC()
 	session := Session{
 		ID:              newID("sess"),
-		TenantID:        id.tenantID,
+		WorkspaceID:        id.workspaceID,
 		UserID:          id.userID,
 		Kind:            kind,
 		Status:          StatusActive,
@@ -67,7 +67,7 @@ func (s *Service) Get(ctx context.Context, sessionID string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	return s.store.Get(ctx, id.tenantID, id.userID, strings.TrimSpace(sessionID))
+	return s.store.Get(ctx, id.workspaceID, id.userID, strings.TrimSpace(sessionID))
 }
 
 func (s *Service) List(ctx context.Context, filter ListFilter) ([]Summary, error) {
@@ -86,7 +86,7 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]Summary, error
 	}
 	filter.Limit = normalizeLimit(filter.Limit)
 
-	return s.store.List(ctx, id.tenantID, id.userID, filter)
+	return s.store.List(ctx, id.workspaceID, id.userID, filter)
 }
 
 func (s *Service) Update(ctx context.Context, sessionID string, input UpdateInput) (Session, error) {
@@ -151,14 +151,14 @@ func (s *Service) UpsertFiles(ctx context.Context, sessionID string, input Upser
 		})
 	}
 	if len(files) == 0 {
-		return s.store.Get(ctx, id.tenantID, id.userID, sessionID)
+		return s.store.Get(ctx, id.workspaceID, id.userID, sessionID)
 	}
 
-	return s.store.UpsertFiles(ctx, id.tenantID, id.userID, sessionID, files)
+	return s.store.UpsertFiles(ctx, id.workspaceID, id.userID, sessionID, files)
 }
 
 type identity struct {
-	tenantID string
+	workspaceID string
 	userID   string
 }
 
@@ -167,11 +167,11 @@ func identityFromContext(ctx context.Context) (identity, error) {
 	if !ok || principal.UserID == "" {
 		return identity{}, errors.New("missing authenticated user")
 	}
-	scope, ok := tenant.ScopeFromContext(ctx)
-	if !ok || scope.TenantID == "" {
-		return identity{}, errors.New("missing tenant scope")
+	scope, ok := workspace.ScopeFromContext(ctx)
+	if !ok || scope.WorkspaceID == "" {
+		return identity{}, errors.New("missing workspace scope")
 	}
-	return identity{tenantID: scope.TenantID, userID: principal.UserID}, nil
+	return identity{workspaceID: scope.WorkspaceID, userID: principal.UserID}, nil
 }
 
 func normalizeKind(kind Kind) (Kind, error) {

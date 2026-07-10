@@ -73,7 +73,7 @@ Browser (React/Vite)
 
 Deeper docs:
 
-- [Auth, identity, and workspace scope](docs/auth-identity-tenant.md)
+- [Auth, identity, and workspace scope](docs/auth-identity-workspace.md)
 - [Backend M1 user stories](docs/backend-m1-user-stories.md)
 - [Secrets and local env](docs/secrets-and-local-env.md)
 - [OpenAPI contract notes](docs/openapi-contract.md)

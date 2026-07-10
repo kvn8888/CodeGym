@@ -1,6 +1,6 @@
 # Backend M1 — Middleware & Memory: User Stories & Learning Path
 
-Companion to [auth-identity-tenant.md](auth-identity-tenant.md) and issue
+Companion to [auth-identity-workspace.md](auth-identity-workspace.md) and issue
 [#2 — Week 5: Finish auth, personal workspace, and memory foundation](https://github.com/kvn8888/CodeGym/issues/2).
 
 This doc started as a learning workflow: hand-write the code (with
@@ -15,8 +15,8 @@ main follow-up work.
 The middleware chain and the memory read/write paths are complete:
 
 - **Auth → identity → personal workspace scope** middleware (`internal/auth`,
-  `internal/identity`, `internal/tenant`), chained in `internal/api/router.go`.
-  A request resolves to an `auth.Principal` and an internal `tenant.Scope` in
+  `internal/identity`, `internal/workspace`), chained in `internal/api/router.go`.
+  A request resolves to an `auth.Principal` and an internal `workspace.Scope` in
   context.
 - **Auth0 identity reconciliation**: Auth0 `sub` maps to the durable CodeGym
   user id, each user gets a deterministic personal workspace, and optional
@@ -63,7 +63,7 @@ issuer, audience, RS256 signature, expiry, and not-before validation.
 
 **Acceptance criteria:**
 - [x] Implements `auth.Authenticator` (so it drops into `auth.Middleware`).
-- [x] Valid token → `Principal{UserID, DefaultTenantID, TenantIDs}` for the
+- [x] Valid token → `Principal{UserID, DefaultWorkspaceID, WorkspaceIDs}` for the
   user's personal workspace.
 - [x] Optional Auth0 `email` and `name` metadata flows through identity
   middleware into the durable app-user bootstrap.
@@ -117,7 +117,7 @@ returns a summary derived from those events (not the default placeholder).
 cancellation; and the real design question of *how a background job gets an
 identity/workspace scope* when there is no HTTP request.
 
-**Completed v0:** `RefreshProfileFor(ctx, tenantID, userID)` handles explicit
+**Completed v0:** `RefreshProfileFor(ctx, workspaceID, userID)` handles explicit
 internal workspace-scope refreshes, `RefreshAllProfiles` refreshes every
 workspace/user pair with events, `memory.Worker.RunOnce` exposes the worker
 behavior for tests, and `POST /api/v1/memory/profile/refresh` manually refreshes

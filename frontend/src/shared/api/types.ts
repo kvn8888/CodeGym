@@ -83,7 +83,7 @@ export interface UserProfile {
   email: string;
   display_name: string;
   display_name_source: 'oauth' | 'user' | 'fallback';
-  default_tenant_id: string;
+  default_workspace_id: string;
 }
 
 export interface UpdateUserProfileInput {

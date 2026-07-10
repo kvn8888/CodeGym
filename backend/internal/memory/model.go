@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Profile is the long-lived memory summary for a user within a tenant.
+// Profile is the long-lived memory summary for a user within a workspace.
 type Profile struct {
 	Summary      string             `json:"summary"`
 	UpdatedAt    time.Time          `json:"updated_at"`
@@ -41,7 +41,7 @@ type Note struct {
 // Event is an append-only memory event emitted from product surfaces.
 type Event struct {
 	ID         string          `json:"id"`
-	TenantID   string          `json:"tenant_id"`
+	WorkspaceID   string          `json:"workspace_id"`
 	UserID     string          `json:"user_id"`
 	Source     string          `json:"source"`
 	Type       string          `json:"type"`

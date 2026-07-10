@@ -105,7 +105,7 @@ Protected routes require a bearer token.
 For local development without a configured provider, use:
 
 ```http
-Authorization: Bearer dev:<user-id>:<tenant-id>
+Authorization: Bearer dev:<user-id>:<workspace-id>
 ```
 
 Example:
@@ -115,12 +115,12 @@ Authorization: Bearer dev:kevin:personal-dev
 ```
 
 If `CODEGYM_DEV_AUTH_TOKEN` is set, the backend accepts only that exact bearer
-token and maps it to `CODEGYM_DEV_USER_ID` / `CODEGYM_DEV_TENANT_ID`.
+token and maps it to `CODEGYM_DEV_USER_ID` / `CODEGYM_DEV_WORKSPACE_ID`.
 
-The dev token still calls the scope segment `tenant-id` because the current
-internal package and database schema use `tenant_id`. Product code should treat
-that value as the user's personal workspace ID, not as a business SaaS
-organization tenant.
+The dev token third segment is the personal workspace id. Prefer
+`CODEGYM_DEV_WORKSPACE_ID` over the legacy alias `CODEGYM_DEV_TENANT_ID`.
+Product code should treat that value as the user's personal workspace ID, not as
+a business SaaS organization workspace.
 
 For Auth0, set the mode plus issuer/audience config:
 
@@ -137,7 +137,7 @@ issuer, audience, expiry, and not-before checks before they reach
 identity/workspace scope middleware. The backend does not use Auth0 client IDs
 or client secrets; those belong to the frontend SPA login setup.
 
-See [../docs/auth-identity-tenant.md](../docs/auth-identity-tenant.md) for the
+See [../docs/auth-identity-workspace.md](../docs/auth-identity-workspace.md) for the
 full auth -> identity -> personal workspace scope request flow.
 
 ## Architecture: Principal and Personal Workspace Scope
@@ -149,18 +149,17 @@ When a request is authenticated, the auth middleware injects a `Principal` into
 the request context:
 
 - `UserID`: the durable CodeGym user identifier. With Auth0, this is `sub`.
-- `DefaultTenantID`: the user's default personal workspace ID.
-- `TenantIDs`: allowed internal workspace scope IDs. Today this is only the
+- `DefaultWorkspaceID`: the user's default personal workspace ID.
+- `WorkspaceIDs`: allowed internal workspace scope IDs. Today this is only the
   user's personal workspace.
 
-The current package and table names still use `tenant` / `tenant_id`, but
-product behavior is personal workspace scoping. Do not build organization/team
-workspace behavior, tenant switching, or Auth0 tenant claims without a new
-product decision.
+Package, table, and field names use `workspace` / `workspace_id`. Product
+behavior is personal workspace scoping. Do not build organization/team workspace
+switching or Auth0 organization claims without a new product decision.
 
-Product flows should omit `X-CodeGym-Tenant-ID` and use the authenticated
+Product flows should omit `X-CodeGym-Workspace-ID` and use the authenticated
 user's default personal workspace. The header remains only as a low-level
-internal override; if the requested scope is not in `Principal.TenantIDs`, the
+internal override; if the requested scope is not in `Principal.WorkspaceIDs`, the
 request is rejected with `403`.
 Memory event `source` and `type` names for emitters are documented in
 [../docs/memory-event-naming-guide-v0.md](../docs/memory-event-naming-guide-v0.md).
@@ -187,7 +186,7 @@ PUT   /api/v1/sessions/{id}/files
 
 `GET /api/v1/memory/profile` returns a profile object with:
 
-- `summary`: high-level memory summary for the user in the current tenant
+- `summary`: high-level memory summary for the user in the current workspace
 - `updated_at`: timestamp for last profile update
 - `next_review_at`: timestamp for next scheduled review/refresh
 - `strengths`: list of observed strengths
@@ -238,8 +237,8 @@ On startup with Postgres enabled, the backend idempotently bootstraps the M1
 tables with `CREATE TABLE IF NOT EXISTS`:
 
 - `app_users`
-- `tenants`
-- `tenant_memberships`
+- `workspaces`
+- `workspace_memberships`
 - `user_memory_profiles`
 - `memory_events`
 - `practice_sessions`
@@ -250,7 +249,7 @@ tables with `CREATE TABLE IF NOT EXISTS`:
 (`email` and `display_name`) when present, but neither field is used for
 authorization or workspace selection.
 
-The `tenants` and `tenant_memberships` table names are current internal schema
+The `workspaces` and `workspace_memberships` tables are the current schema
 names for personal workspace scope. They are not a product commitment to
 organization/team SaaS tenancy.
 

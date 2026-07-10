@@ -145,6 +145,6 @@ func buildAuthenticator(cfg config.Config) (auth.Authenticator, error) {
 	return auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{
 		StaticToken:     cfg.DevAuthToken,
 		DefaultUserID:   cfg.DevUserID,
-		DefaultTenantID: cfg.DevTenantID,
+		DefaultWorkspaceID: cfg.DevWorkspaceID,
 	}), nil
 }

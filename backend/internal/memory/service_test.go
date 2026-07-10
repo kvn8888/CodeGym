@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 func TestServiceReturnsDefaultProfileWhenMissing(t *testing.T) {
@@ -43,8 +43,8 @@ func TestServiceRecordsEventForScopedUser(t *testing.T) {
 	if event.ID == "" {
 		t.Fatal("expected event id")
 	}
-	if event.TenantID != "tenant-1" || event.UserID != "user-1" {
-		t.Fatalf("unexpected scope: %s/%s", event.TenantID, event.UserID)
+	if event.WorkspaceID != "tenant-1" || event.UserID != "user-1" {
+		t.Fatalf("unexpected scope: %s/%s", event.WorkspaceID, event.UserID)
 	}
 
 	events, err := service.ListEvents(scopedContext())
@@ -148,8 +148,8 @@ func scopedContext() context.Context {
 	ctx := context.Background()
 	ctx = auth.WithPrincipal(ctx, auth.Principal{
 		UserID:          "user-1",
-		DefaultTenantID: "tenant-1",
-		TenantIDs:       []string{"tenant-1"},
+		DefaultWorkspaceID: "tenant-1",
+		WorkspaceIDs:       []string{"tenant-1"},
 	})
-	return tenant.WithScope(ctx, tenant.Scope{TenantID: "tenant-1"})
+	return workspace.WithScope(ctx, workspace.Scope{WorkspaceID: "tenant-1"})
 }

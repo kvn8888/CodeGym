@@ -21,21 +21,37 @@ func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 }
 
 // EnsureSchema idempotently creates the tables and constraints used by memory
-// persistence.
+// persistence. It also renames legacy tenant_id columns from earlier schema versions.
 func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	statements := []string{
+		// Legacy rename: tenant_id → workspace_id on existing memory tables.
+		`DO $$
+		BEGIN
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'user_memory_profiles' AND column_name = 'tenant_id'
+			) THEN
+				ALTER TABLE user_memory_profiles RENAME COLUMN tenant_id TO workspace_id;
+			END IF;
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'memory_events' AND column_name = 'tenant_id'
+			) THEN
+				ALTER TABLE memory_events RENAME COLUMN tenant_id TO workspace_id;
+			END IF;
+		END $$`,
 		`CREATE TABLE IF NOT EXISTS user_memory_profiles (
-			tenant_id text NOT NULL,
+			workspace_id text NOT NULL,
 			user_id text NOT NULL,
 			profile jsonb NOT NULL,
 			updated_at timestamptz NOT NULL,
 			next_review_at timestamptz NOT NULL,
 			created_at timestamptz NOT NULL DEFAULT now(),
-			PRIMARY KEY (tenant_id, user_id)
+			PRIMARY KEY (workspace_id, user_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS memory_events (
 			id text PRIMARY KEY,
-			tenant_id text NOT NULL,
+			workspace_id text NOT NULL,
 			user_id text NOT NULL,
 			source text NOT NULL,
 			type text NOT NULL,
@@ -44,8 +60,8 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			occurred_at timestamptz NOT NULL,
 			created_at timestamptz NOT NULL
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_created_at ON memory_events (tenant_id, user_id, created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_occurred_at ON memory_events (tenant_id, user_id, occurred_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_created_at ON memory_events (workspace_id, user_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_occurred_at ON memory_events (workspace_id, user_id, occurred_at DESC)`,
 		`DO $$
 		BEGIN
 			IF NOT EXISTS (
@@ -56,8 +72,8 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			) THEN
 				ALTER TABLE user_memory_profiles
 				ADD CONSTRAINT fk_user_memory_profiles_membership
-				FOREIGN KEY (tenant_id, user_id)
-				REFERENCES tenant_memberships (tenant_id, user_id)
+				FOREIGN KEY (workspace_id, user_id)
+				REFERENCES workspace_memberships (workspace_id, user_id)
 				ON DELETE CASCADE
 				NOT VALID;
 			END IF;
@@ -72,8 +88,8 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			) THEN
 				ALTER TABLE memory_events
 				ADD CONSTRAINT fk_memory_events_membership
-				FOREIGN KEY (tenant_id, user_id)
-				REFERENCES tenant_memberships (tenant_id, user_id)
+				FOREIGN KEY (workspace_id, user_id)
+				REFERENCES workspace_memberships (workspace_id, user_id)
 				ON DELETE CASCADE
 				NOT VALID;
 			END IF;
@@ -88,13 +104,13 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-func (s *PostgresStore) GetProfile(ctx context.Context, tenantID, userID string) (Profile, error) {
+func (s *PostgresStore) GetProfile(ctx context.Context, workspaceID, userID string) (Profile, error) {
 	var profileJSON []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT profile
 		FROM user_memory_profiles
-		WHERE tenant_id = $1 AND user_id = $2
-	`, tenantID, userID).Scan(&profileJSON)
+		WHERE workspace_id = $1 AND user_id = $2
+	`, workspaceID, userID).Scan(&profileJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Profile{}, ErrProfileNotFound
 	}
@@ -109,7 +125,7 @@ func (s *PostgresStore) GetProfile(ctx context.Context, tenantID, userID string)
 	return profile, nil
 }
 
-func (s *PostgresStore) UpsertProfile(ctx context.Context, tenantID, userID string, profile Profile) error {
+func (s *PostgresStore) UpsertProfile(ctx context.Context, workspaceID, userID string, profile Profile) error {
 	profile.UpdatedAt = profile.UpdatedAt.UTC()
 	profile.NextReviewAt = profile.NextReviewAt.UTC()
 
@@ -119,13 +135,13 @@ func (s *PostgresStore) UpsertProfile(ctx context.Context, tenantID, userID stri
 	}
 
 	_, err = s.pool.Exec(ctx, `
-		INSERT INTO user_memory_profiles (tenant_id, user_id, profile, updated_at, next_review_at)
+		INSERT INTO user_memory_profiles (workspace_id, user_id, profile, updated_at, next_review_at)
 		VALUES ($1, $2, $3::jsonb, $4, $5)
-		ON CONFLICT (tenant_id, user_id) DO UPDATE
+		ON CONFLICT (workspace_id, user_id) DO UPDATE
 		SET profile = EXCLUDED.profile,
 			updated_at = EXCLUDED.updated_at,
 			next_review_at = EXCLUDED.next_review_at
-	`, tenantID, userID, string(profileJSON), profile.UpdatedAt, profile.NextReviewAt)
+	`, workspaceID, userID, string(profileJSON), profile.UpdatedAt, profile.NextReviewAt)
 	return err
 }
 
@@ -141,7 +157,7 @@ func (s *PostgresStore) AppendEvent(ctx context.Context, event Event) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO memory_events (
 			id,
-			tenant_id,
+			workspace_id,
 			user_id,
 			source,
 			type,
@@ -151,15 +167,15 @@ func (s *PostgresStore) AppendEvent(ctx context.Context, event Event) error {
 			created_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
-	`, event.ID, event.TenantID, event.UserID, event.Source, event.Type, event.Summary, payload, event.OccurredAt.UTC(), event.CreatedAt.UTC())
+	`, event.ID, event.WorkspaceID, event.UserID, event.Source, event.Type, event.Summary, payload, event.OccurredAt.UTC(), event.CreatedAt.UTC())
 	return err
 }
 
-func (s *PostgresStore) ListEvents(ctx context.Context, tenantID, userID string) ([]Event, error) {
+func (s *PostgresStore) ListEvents(ctx context.Context, workspaceID, userID string) ([]Event, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			id,
-			tenant_id,
+			workspace_id,
 			user_id,
 			source,
 			type,
@@ -168,9 +184,9 @@ func (s *PostgresStore) ListEvents(ctx context.Context, tenantID, userID string)
 			occurred_at,
 			created_at
 		FROM memory_events
-		WHERE tenant_id = $1 AND user_id = $2
+		WHERE workspace_id = $1 AND user_id = $2
 		ORDER BY created_at ASC
-	`, tenantID, userID)
+	`, workspaceID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +198,7 @@ func (s *PostgresStore) ListEvents(ctx context.Context, tenantID, userID string)
 		var payload string
 		if err := rows.Scan(
 			&event.ID,
-			&event.TenantID,
+			&event.WorkspaceID,
 			&event.UserID,
 			&event.Source,
 			&event.Type,
@@ -206,10 +222,10 @@ func (s *PostgresStore) ListEvents(ctx context.Context, tenantID, userID string)
 
 func (s *PostgresStore) ListEventScopes(ctx context.Context) ([]Scope, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT tenant_id, user_id
+		SELECT workspace_id, user_id
 		FROM memory_events
-		GROUP BY tenant_id, user_id
-		ORDER BY tenant_id ASC, user_id ASC
+		GROUP BY workspace_id, user_id
+		ORDER BY workspace_id ASC, user_id ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -219,7 +235,7 @@ func (s *PostgresStore) ListEventScopes(ctx context.Context) ([]Scope, error) {
 	scopes := []Scope{}
 	for rows.Next() {
 		var scope Scope
-		if err := rows.Scan(&scope.TenantID, &scope.UserID); err != nil {
+		if err := rows.Scan(&scope.WorkspaceID, &scope.UserID); err != nil {
 			return nil, err
 		}
 		scopes = append(scopes, scope)

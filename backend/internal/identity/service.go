@@ -22,24 +22,24 @@ func NewService(store Store) *Service {
 	return &Service{store: store}
 }
 
-// EnsurePersonalTenant creates or refreshes a principal's personal tenant membership.
-func (s *Service) EnsurePersonalTenant(ctx context.Context, principal auth.Principal) error {
+// EnsurePersonalWorkspace creates or refreshes a principal's personal workspace membership.
+func (s *Service) EnsurePersonalWorkspace(ctx context.Context, principal auth.Principal) error {
 	if s == nil || s.store == nil {
 		return nil
 	}
 
 	userID := strings.TrimSpace(principal.UserID)
-	tenantID := strings.TrimSpace(principal.DefaultTenantID)
+	workspaceID := strings.TrimSpace(principal.DefaultWorkspaceID)
 	if userID == "" {
-		return errors.New("personal tenant bootstrap requires a user id")
+		return errors.New("personal workspace bootstrap requires a user id")
 	}
-	if tenantID == "" {
-		return errors.New("personal tenant bootstrap requires a default tenant id")
+	if workspaceID == "" {
+		return errors.New("personal workspace bootstrap requires a default workspace id")
 	}
 
-	return s.store.EnsurePersonalTenant(ctx, PersonalTenant{
+	return s.store.EnsurePersonalWorkspace(ctx, PersonalWorkspace{
 		UserID:            userID,
-		TenantID:          tenantID,
+		WorkspaceID:       workspaceID,
 		Role:              "owner",
 		Email:             strings.TrimSpace(principal.UserMetadata.Email),
 		DisplayName:       strings.TrimSpace(principal.UserMetadata.DisplayName),
@@ -62,8 +62,8 @@ func (s *Service) GetUserProfile(ctx context.Context, principal auth.Principal) 
 	if err != nil {
 		return UserProfile{}, err
 	}
-	if profile.DefaultTenantID == "" {
-		profile.DefaultTenantID = strings.TrimSpace(principal.DefaultTenantID)
+	if profile.DefaultWorkspaceID == "" {
+		profile.DefaultWorkspaceID = strings.TrimSpace(principal.DefaultWorkspaceID)
 	}
 	return profile, nil
 }
@@ -91,8 +91,8 @@ func (s *Service) UpdateDisplayName(ctx context.Context, principal auth.Principa
 	if err != nil {
 		return UserProfile{}, err
 	}
-	if profile.DefaultTenantID == "" {
-		profile.DefaultTenantID = strings.TrimSpace(principal.DefaultTenantID)
+	if profile.DefaultWorkspaceID == "" {
+		profile.DefaultWorkspaceID = strings.TrimSpace(principal.DefaultWorkspaceID)
 	}
 	return profile, nil
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PostgresStore persists identity and tenant membership bootstrap data.
+// PostgresStore persists identity and workspace membership bootstrap data.
 type PostgresStore struct {
 	pool *pgxpool.Pool
 }
@@ -19,7 +19,8 @@ func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 	return &PostgresStore{pool: pool}
 }
 
-// EnsureSchema idempotently creates identity and tenancy tables.
+// EnsureSchema idempotently creates identity and workspace tables.
+// It also renames legacy tenant_* tables/columns from earlier schema versions.
 func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS app_users (
@@ -32,23 +33,54 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 		`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email text NOT NULL DEFAULT ''`,
 		`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS display_name text NOT NULL DEFAULT ''`,
 		`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS display_name_source text NOT NULL DEFAULT 'fallback'`,
-		`CREATE TABLE IF NOT EXISTS tenants (
+		// Legacy rename: tenants / tenant_memberships → workspaces / workspace_memberships
+		`DO $$
+		BEGIN
+			IF to_regclass('public.tenants') IS NOT NULL AND to_regclass('public.workspaces') IS NULL THEN
+				ALTER TABLE tenants RENAME TO workspaces;
+			END IF;
+			IF to_regclass('public.tenant_memberships') IS NOT NULL AND to_regclass('public.workspace_memberships') IS NULL THEN
+				ALTER TABLE tenant_memberships RENAME TO workspace_memberships;
+			END IF;
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'workspaces' AND column_name = 'tenant_type'
+			) THEN
+				ALTER TABLE workspaces RENAME COLUMN tenant_type TO workspace_type;
+			END IF;
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'workspace_memberships' AND column_name = 'tenant_id'
+			) THEN
+				ALTER TABLE workspace_memberships RENAME COLUMN tenant_id TO workspace_id;
+			END IF;
+			IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_tenants_tenant_type') THEN
+				ALTER TABLE workspaces RENAME CONSTRAINT chk_tenants_tenant_type TO chk_workspaces_workspace_type;
+			END IF;
+			IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_tenant_memberships_role') THEN
+				ALTER TABLE workspace_memberships RENAME CONSTRAINT chk_tenant_memberships_role TO chk_workspace_memberships_role;
+			END IF;
+			IF to_regclass('public.idx_tenant_memberships_user_id') IS NOT NULL THEN
+				ALTER INDEX idx_tenant_memberships_user_id RENAME TO idx_workspace_memberships_user_id;
+			END IF;
+		END $$`,
+		`CREATE TABLE IF NOT EXISTS workspaces (
 			id text PRIMARY KEY,
 			name text NOT NULL,
-			tenant_type text NOT NULL DEFAULT 'personal',
+			workspace_type text NOT NULL DEFAULT 'personal',
 			created_at timestamptz NOT NULL DEFAULT now(),
 			updated_at timestamptz NOT NULL DEFAULT now()
 		)`,
-		`CREATE TABLE IF NOT EXISTS tenant_memberships (
-			tenant_id text NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+		`CREATE TABLE IF NOT EXISTS workspace_memberships (
+			workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
 			user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
 			role text NOT NULL,
 			created_at timestamptz NOT NULL DEFAULT now(),
 			updated_at timestamptz NOT NULL DEFAULT now(),
-			PRIMARY KEY (tenant_id, user_id)
+			PRIMARY KEY (workspace_id, user_id)
 		)`,
-		`ALTER TABLE tenants ALTER COLUMN tenant_type SET DEFAULT 'personal'`,
-		`ALTER TABLE tenant_memberships ALTER COLUMN role SET DEFAULT 'owner'`,
+		`ALTER TABLE workspaces ALTER COLUMN workspace_type SET DEFAULT 'personal'`,
+		`ALTER TABLE workspace_memberships ALTER COLUMN role SET DEFAULT 'owner'`,
 		`DO $$
 		BEGIN
 			IF NOT EXISTS (
@@ -67,12 +99,12 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			IF NOT EXISTS (
 				SELECT 1
 				FROM pg_constraint
-				WHERE conname = 'chk_tenants_tenant_type'
-					AND conrelid = 'tenants'::regclass
+				WHERE conname = 'chk_workspaces_workspace_type'
+					AND conrelid = 'workspaces'::regclass
 			) THEN
-				ALTER TABLE tenants
-				ADD CONSTRAINT chk_tenants_tenant_type
-				CHECK (tenant_type IN ('personal', 'team'));
+				ALTER TABLE workspaces
+				ADD CONSTRAINT chk_workspaces_workspace_type
+				CHECK (workspace_type IN ('personal', 'team'));
 			END IF;
 		END $$`,
 		`DO $$
@@ -80,15 +112,15 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			IF NOT EXISTS (
 				SELECT 1
 				FROM pg_constraint
-				WHERE conname = 'chk_tenant_memberships_role'
-					AND conrelid = 'tenant_memberships'::regclass
+				WHERE conname = 'chk_workspace_memberships_role'
+					AND conrelid = 'workspace_memberships'::regclass
 			) THEN
-				ALTER TABLE tenant_memberships
-				ADD CONSTRAINT chk_tenant_memberships_role
+				ALTER TABLE workspace_memberships
+				ADD CONSTRAINT chk_workspace_memberships_role
 				CHECK (role IN ('owner', 'admin', 'member'));
 			END IF;
 		END $$`,
-		`CREATE INDEX IF NOT EXISTS idx_tenant_memberships_user_id ON tenant_memberships (user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_workspace_memberships_user_id ON workspace_memberships (user_id)`,
 	}
 
 	for _, statement := range statements {
@@ -99,8 +131,8 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-func (s *PostgresStore) EnsurePersonalTenant(ctx context.Context, tenant PersonalTenant) error {
-	role := strings.TrimSpace(tenant.Role)
+func (s *PostgresStore) EnsurePersonalWorkspace(ctx context.Context, workspace PersonalWorkspace) error {
+	role := strings.TrimSpace(workspace.Role)
 	if role == "" {
 		role = "owner"
 	}
@@ -113,11 +145,11 @@ func (s *PostgresStore) EnsurePersonalTenant(ctx context.Context, tenant Persona
 		_ = tx.Rollback(ctx)
 	}()
 
-	metadataDisplayName := strings.TrimSpace(tenant.DisplayName)
+	metadataDisplayName := strings.TrimSpace(workspace.DisplayName)
 	displayName := metadataDisplayName
-	displayNameSource := normalizeDisplayNameSource(tenant.DisplayNameSource)
+	displayNameSource := normalizeDisplayNameSource(workspace.DisplayNameSource)
 	if displayName == "" {
-		displayName = tenant.UserID
+		displayName = workspace.UserID
 		displayNameSource = "fallback"
 	}
 
@@ -142,26 +174,26 @@ func (s *PostgresStore) EnsurePersonalTenant(ctx context.Context, tenant Persona
 				ELSE app_users.display_name_source
 			END,
 			updated_at = now()
-	`, tenant.UserID, strings.TrimSpace(tenant.Email), displayName, displayNameSource); err != nil {
+	`, workspace.UserID, strings.TrimSpace(workspace.Email), displayName, displayNameSource); err != nil {
 		return err
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO tenants (id, name, tenant_type)
+		INSERT INTO workspaces (id, name, workspace_type)
 		VALUES ($1, $2, 'personal')
 		ON CONFLICT (id) DO UPDATE
 		SET updated_at = now()
-	`, tenant.TenantID, tenant.TenantID); err != nil {
+	`, workspace.WorkspaceID, workspace.WorkspaceID); err != nil {
 		return err
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO tenant_memberships (tenant_id, user_id, role)
+		INSERT INTO workspace_memberships (workspace_id, user_id, role)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (tenant_id, user_id) DO UPDATE
+		ON CONFLICT (workspace_id, user_id) DO UPDATE
 		SET role = EXCLUDED.role,
 			updated_at = now()
-	`, tenant.TenantID, tenant.UserID, role); err != nil {
+	`, workspace.WorkspaceID, workspace.UserID, role); err != nil {
 		return err
 	}
 
@@ -177,12 +209,12 @@ func (s *PostgresStore) GetUserProfile(ctx context.Context, userID string) (User
 			u.display_name,
 			u.display_name_source,
 			COALESCE((
-				SELECT m.tenant_id
-				FROM tenant_memberships m
-				JOIN tenants t ON t.id = m.tenant_id
+				SELECT m.workspace_id
+				FROM workspace_memberships m
+				JOIN workspaces w ON w.id = m.workspace_id
 				WHERE m.user_id = u.id
-					AND t.tenant_type = 'personal'
-				ORDER BY m.created_at ASC, m.tenant_id ASC
+					AND w.workspace_type = 'personal'
+				ORDER BY m.created_at ASC, m.workspace_id ASC
 				LIMIT 1
 			), '')
 		FROM app_users u
@@ -192,7 +224,7 @@ func (s *PostgresStore) GetUserProfile(ctx context.Context, userID string) (User
 		&profile.Email,
 		&profile.DisplayName,
 		&profile.DisplayNameSource,
-		&profile.DefaultTenantID,
+		&profile.DefaultWorkspaceID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return UserProfile{}, ErrUserNotFound

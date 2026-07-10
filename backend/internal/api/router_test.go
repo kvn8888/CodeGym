@@ -22,7 +22,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/session"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -300,8 +300,8 @@ func TestRouterMapsAuth0UserIntoIdentityBootstrap(t *testing.T) {
 	if bootstrapped.UserID != "auth0|user_123" {
 		t.Fatalf("UserID = %q, want auth0|user_123", bootstrapped.UserID)
 	}
-	if bootstrapped.TenantID != "personal-auth0-user-123" {
-		t.Fatalf("TenantID = %q, want personal-auth0-user-123", bootstrapped.TenantID)
+	if bootstrapped.WorkspaceID != "personal-auth0-user-123" {
+		t.Fatalf("WorkspaceID = %q, want personal-auth0-user-123", bootstrapped.WorkspaceID)
 	}
 	if bootstrapped.Email != "kevin@example.com" {
 		t.Fatalf("Email = %q, want kevin@example.com", bootstrapped.Email)
@@ -316,7 +316,7 @@ func TestRouterMapsAuth0UserIntoIdentityBootstrap(t *testing.T) {
 	forbidden := httptest.NewRecorder()
 	forbiddenReq := httptest.NewRequest(http.MethodGet, "/api/v1/memory/profile", nil)
 	forbiddenReq.Header.Set("Authorization", "Bearer "+token)
-	forbiddenReq.Header.Set(tenant.HeaderTenantID, "shared-claimed")
+	forbiddenReq.Header.Set(workspace.HeaderWorkspaceID, "shared-claimed")
 
 	router.ServeHTTP(forbidden, forbiddenReq)
 
@@ -327,18 +327,18 @@ func TestRouterMapsAuth0UserIntoIdentityBootstrap(t *testing.T) {
 
 type recordingIdentityStore struct {
 	mu      sync.RWMutex
-	records map[string]identity.PersonalTenant
+	records map[string]identity.PersonalWorkspace
 }
 
 func newRecordingIdentityStore() *recordingIdentityStore {
-	return &recordingIdentityStore{records: map[string]identity.PersonalTenant{}}
+	return &recordingIdentityStore{records: map[string]identity.PersonalWorkspace{}}
 }
 
-func (s *recordingIdentityStore) EnsurePersonalTenant(_ context.Context, personalTenant identity.PersonalTenant) error {
+func (s *recordingIdentityStore) EnsurePersonalWorkspace(_ context.Context, personalWorkspace identity.PersonalWorkspace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.records[personalTenant.TenantID+"\x00"+personalTenant.UserID] = personalTenant
+	s.records[personalWorkspace.WorkspaceID+"\x00"+personalWorkspace.UserID] = personalWorkspace
 	return nil
 }
 
@@ -349,11 +349,11 @@ func (s *recordingIdentityStore) GetUserProfile(_ context.Context, userID string
 	for _, record := range s.records {
 		if record.UserID == userID {
 			return identity.UserProfile{
-				UserID:            record.UserID,
-				Email:             record.Email,
-				DisplayName:       record.DisplayName,
-				DisplayNameSource: record.DisplayNameSource,
-				DefaultTenantID:   record.TenantID,
+				UserID:             record.UserID,
+				Email:              record.Email,
+				DisplayName:        record.DisplayName,
+				DisplayNameSource:  record.DisplayNameSource,
+				DefaultWorkspaceID: record.WorkspaceID,
 			}, nil
 		}
 	}
@@ -370,22 +370,22 @@ func (s *recordingIdentityStore) UpdateDisplayName(_ context.Context, userID, di
 			record.DisplayNameSource = "user"
 			s.records[key] = record
 			return identity.UserProfile{
-				UserID:            record.UserID,
-				Email:             record.Email,
-				DisplayName:       record.DisplayName,
-				DisplayNameSource: record.DisplayNameSource,
-				DefaultTenantID:   record.TenantID,
+				UserID:             record.UserID,
+				Email:              record.Email,
+				DisplayName:        record.DisplayName,
+				DisplayNameSource:  record.DisplayNameSource,
+				DefaultWorkspaceID: record.WorkspaceID,
 			}, nil
 		}
 	}
 	return identity.UserProfile{}, identity.ErrUserNotFound
 }
 
-func (s *recordingIdentityStore) get(tenantID, userID string) identity.PersonalTenant {
+func (s *recordingIdentityStore) get(workspaceID, userID string) identity.PersonalWorkspace {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.records[tenantID+"\x00"+userID]
+	return s.records[workspaceID+"\x00"+userID]
 }
 
 func (s *recordingIdentityStore) count() int {

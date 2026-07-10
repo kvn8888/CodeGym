@@ -107,7 +107,7 @@ export function SettingsPage() {
             </div>
             <div className="md:col-span-2">
               <div className="text-muted-foreground text-xs">Workspace</div>
-              <div className="mt-1 truncate font-mono text-xs">{profile?.default_tenant_id || 'Not available'}</div>
+              <div className="mt-1 truncate font-mono text-xs">{profile?.default_workspace_id || 'Not available'}</div>
             </div>
           </div>
 

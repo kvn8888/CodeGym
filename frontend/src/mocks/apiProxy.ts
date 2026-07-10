@@ -15,7 +15,7 @@ let mockUserProfile: UserProfile = {
   email: 'kevin@example.com',
   display_name: 'Kevin Chen',
   display_name_source: 'oauth',
-  default_tenant_id: 'personal-auth0-mock-user',
+  default_workspace_id: 'personal-auth0-mock-user',
 };
 
 function json<T>(data: T, init?: ResponseInit): Response {

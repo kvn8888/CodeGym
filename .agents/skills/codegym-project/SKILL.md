@@ -55,11 +55,11 @@ If publishing is blocked by auth, network, failing validation, missing owner
 approval, or mixed unrelated work, say exactly what is blocked and what must
 happen next. Do not present local-only work as finished repository work.
 
-## Current State (Last Updated: 2026-07-09)
+## Current State (Last Updated: 2026-07-10)
 
 - Branch: `codegym-v2`.
 - Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes. Settings exposes the authenticated `/api/v1/me` profile and lets users save a custom display name. MarathonPage is a continuous round loop: a "what do you want to study?" prompt feeds `POST /api/v1/generate` (kind `mcq`, per-round `session_id` = `<base>_r<round>`), each round end awaits `POST /api/v1/memory/notes/maintain` before generating the next round, and a Finished button ends the loop with a final reflection. Emits `mcq.*` memory events; falls back to a built-in practice set when generation is unavailable.
-- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, `/api/v1/me` account profile APIs, memory profile/event APIs, session APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh. Auth0/Google `name` seeds `app_users.display_name` with `display_name_source=oauth`; Settings updates set `display_name_source=user`, and future OAuth metadata must not overwrite user-edited names.
+- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, `/api/v1/me` account profile APIs, memory profile/event APIs, session APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh. Auth0/Google `name` seeds `app_users.display_name` with `display_name_source=oauth`; Settings updates set `display_name_source=user`, and future OAuth metadata must not overwrite user-edited names. Hosted Auth0 sign-in across the Vercel frontend and Render backend was owner-verified on 2026-07-10; the external setup blocker in #21 is resolved.
 - Generation: `generation.Orchestrator` composes the scoped memory profile with the provider-neutral `Generator` seam. `generation/openaicompat` is the first adapter (OpenAI chat-completions wire format; default base URL is the Vercel AI Gateway). `POST /api/v1/generate` serves MCQ sets with structural validation and one bounded repair retry; it answers 503 when `CODEGYM_GENAI_API_KEY` is unset. MCQ prompt text mirrors `docs/ai-prompts/05-mcq-marathon.md` — keep them in sync.
 - Memory notes are the LLM-curated slice of the profile (agentic CRUD, like editing a living project doc): `POST /api/v1/memory/notes/maintain` runs deterministic profile refresh, then a best-effort LLM pass (`generation.MaintainNotes`, prompt mirrors `docs/ai-prompts/08-memory-notes.md`) that creates/updates/prunes notes from the round's events and emits `memory.note_created/updated/pruned` audit events. The deterministic `memory.Summarize` preserves notes by ID, so worker/cron refreshes never clobber LLM curation. The user-level summary stays deterministic until the daily cron work (#41) lands.
 - Deploy: backend runs on Render (`https://codegym.onrender.com`); `render.yaml` is the blueprint and `docs/render-deploy.md` documents applying it. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render.
@@ -195,8 +195,6 @@ current as implementation lands.
 
 ### Critical Open Risks
 
-- Auth/backend completion still depends on external Auth0 and hosting setup; the
-  repo can document expected envs, but owner/vendor-console actions may remain.
 - The memory worker is scheduled from the API server with configurable interval,
   but production readiness still needs deployed schedule/env validation and
   observability for refresh failures.
@@ -212,6 +210,9 @@ current as implementation lands.
 
 ### Medium Risks
 
+- #85 tracks when the first authenticated backend request creates the persisted
+  account/workspace record. This is separate from the verified Auth0 sign-in
+  and token configuration.
 - Project board state can drift from PR state and code reality, especially when
   draft/conflicting PRs or docs-only spikes are moved too far right.
 - OpenAPI drift can appear when backend routes, `api/**`, and frontend helpers
@@ -323,8 +324,8 @@ Parallel-agent rules:
   into issue comments and board moves.
 
 For auth/backend/memory completion loops, keep the tracks distinct:
-- Auth/backend foundation: Auth0 config/docs, external Auth0/hosting setup,
-  backend static checks, OpenAPI drift checks, and lint baseline.
+- Auth/backend follow-ups: eager account-bootstrap timing (#85), deployment
+  drift monitoring, backend static checks, OpenAPI drift checks, and lint baseline.
 - Memory services: typed frontend API helpers, memory UI/backend wiring, product
   flow memory events, worker scheduling/backfill, and memory-aware generation
   orchestration.

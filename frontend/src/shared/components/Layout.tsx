@@ -9,7 +9,6 @@ import {
   PanelLeftOpen,
   Plus,
   Rows3,
-  Settings,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -36,7 +35,6 @@ const navItems: NavItem[] = [
   },
   { path: '/marathon', label: 'Marathon', icon: Rows3 },
   { path: '/memory', label: 'Memory', icon: Brain },
-  { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const sidebarTransition = {

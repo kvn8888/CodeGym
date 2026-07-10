@@ -18,7 +18,7 @@ type Config struct {
 	Auth0ClockSkew     time.Duration
 	DevAuthToken       string
 	DevUserID          string
-	DevTenantID        string
+	DevWorkspaceID     string
 	CORSAllowedOrigins []string
 	MemoryWorker       WorkerConfig
 	GenAI              GenAIConfig
@@ -89,7 +89,8 @@ func Load() Config {
 		Auth0ClockSkew: durationEnv("CODEGYM_AUTH0_CLOCK_SKEW", 0),
 		DevAuthToken:   os.Getenv("CODEGYM_DEV_AUTH_TOKEN"),
 		DevUserID:      env("CODEGYM_DEV_USER_ID", "dev-user"),
-		DevTenantID:    env("CODEGYM_DEV_TENANT_ID", "personal-dev"),
+		// Prefer CODEGYM_DEV_WORKSPACE_ID; fall back to legacy CODEGYM_DEV_TENANT_ID.
+		DevWorkspaceID: firstEnvOr("personal-dev", "CODEGYM_DEV_WORKSPACE_ID", "CODEGYM_DEV_TENANT_ID"),
 		CORSAllowedOrigins: csvEnv("CODEGYM_CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",
@@ -139,6 +140,13 @@ func firstEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstEnvOr(fallback string, keys ...string) string {
+	if value := firstEnv(keys...); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func durationEnv(key string, fallback time.Duration) time.Duration {

@@ -56,9 +56,9 @@ Authorization: Bearer dev:kevin:personal-dev
 ```
 
 If `CODEGYM_DEV_AUTH_TOKEN` is configured, use that exact token instead. The
-backend maps it to `CODEGYM_DEV_USER_ID` and `CODEGYM_DEV_TENANT_ID`.
+backend maps it to `CODEGYM_DEV_USER_ID` and `CODEGYM_DEV_WORKSPACE_ID`.
 
-`X-CodeGym-Tenant-ID` is an optional legacy/internal workspace-scope override.
+`X-CodeGym-Workspace-ID` is an optional legacy/internal workspace-scope override.
 Product flows should omit it so the backend uses the authenticated user's
 default personal workspace. If the header is present and the authenticated
 principal is not allowed to use that scope, the backend returns `403`.
@@ -114,7 +114,7 @@ Create event response data:
 ```json
 {
   "id": "mem_evt_0123456789abcdef",
-  "tenant_id": "personal-dev",
+  "workspace_id": "personal-dev",
   "user_id": "kevin",
   "source": "system",
   "type": "memory_api_checked",

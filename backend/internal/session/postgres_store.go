@@ -22,9 +22,19 @@ func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 
 func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	statements := []string{
+		// Legacy rename: tenant_id → workspace_id on existing session tables.
+		`DO $$
+		BEGIN
+			IF EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'practice_sessions' AND column_name = 'tenant_id'
+			) THEN
+				ALTER TABLE practice_sessions RENAME COLUMN tenant_id TO workspace_id;
+			END IF;
+		END $$`,
 		`CREATE TABLE IF NOT EXISTS practice_sessions (
 			id text PRIMARY KEY,
-			tenant_id text NOT NULL,
+			workspace_id text NOT NULL,
 			user_id text NOT NULL,
 			kind text NOT NULL,
 			status text NOT NULL DEFAULT 'active',
@@ -36,8 +46,8 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			updated_at timestamptz NOT NULL DEFAULT now(),
 			last_activity_at timestamptz NOT NULL DEFAULT now(),
 			completed_at timestamptz,
-			FOREIGN KEY (tenant_id, user_id)
-				REFERENCES tenant_memberships (tenant_id, user_id)
+			FOREIGN KEY (workspace_id, user_id)
+				REFERENCES workspace_memberships (workspace_id, user_id)
 				ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS session_files (
@@ -47,8 +57,8 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			updated_at timestamptz NOT NULL DEFAULT now(),
 			PRIMARY KEY (session_id, file_path)
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_practice_sessions_scope_activity ON practice_sessions (tenant_id, user_id, last_activity_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_practice_sessions_scope_active ON practice_sessions (tenant_id, user_id) WHERE status = 'active'`,
+		`CREATE INDEX IF NOT EXISTS idx_practice_sessions_scope_activity ON practice_sessions (workspace_id, user_id, last_activity_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_practice_sessions_scope_active ON practice_sessions (workspace_id, user_id) WHERE status = 'active'`,
 		`DO $$
 		BEGIN
 			IF NOT EXISTS (
@@ -93,7 +103,7 @@ func (s *PostgresStore) Create(ctx context.Context, session Session) (Session, e
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO practice_sessions (
 			id,
-			tenant_id,
+			workspace_id,
 			user_id,
 			kind,
 			status,
@@ -107,18 +117,18 @@ func (s *PostgresStore) Create(ctx context.Context, session Session) (Session, e
 			completed_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
-	`, session.ID, session.TenantID, session.UserID, session.Kind, session.Status, session.Title, session.ProblemID, session.GenerationJobID, state, session.CreatedAt.UTC(), session.UpdatedAt.UTC(), session.LastActivityAt.UTC(), nullableTime(session.CompletedAt))
+	`, session.ID, session.WorkspaceID, session.UserID, session.Kind, session.Status, session.Title, session.ProblemID, session.GenerationJobID, state, session.CreatedAt.UTC(), session.UpdatedAt.UTC(), session.LastActivityAt.UTC(), nullableTime(session.CompletedAt))
 	if err != nil {
 		return Session{}, err
 	}
-	return s.Get(ctx, session.TenantID, session.UserID, session.ID)
+	return s.Get(ctx, session.WorkspaceID, session.UserID, session.ID)
 }
 
-func (s *PostgresStore) Get(ctx context.Context, tenantID, userID, id string) (Session, error) {
+func (s *PostgresStore) Get(ctx context.Context, workspaceID, userID, id string) (Session, error) {
 	session, err := s.scanSession(s.pool.QueryRow(ctx, `
 		SELECT
 			id,
-			tenant_id,
+			workspace_id,
 			user_id,
 			kind,
 			status,
@@ -131,8 +141,8 @@ func (s *PostgresStore) Get(ctx context.Context, tenantID, userID, id string) (S
 			last_activity_at,
 			completed_at
 		FROM practice_sessions
-		WHERE id = $1 AND tenant_id = $2 AND user_id = $3
-	`, id, tenantID, userID))
+		WHERE id = $1 AND workspace_id = $2 AND user_id = $3
+	`, id, workspaceID, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNotFound
 	}
@@ -148,11 +158,11 @@ func (s *PostgresStore) Get(ctx context.Context, tenantID, userID, id string) (S
 	return session, nil
 }
 
-func (s *PostgresStore) List(ctx context.Context, tenantID, userID string, filter ListFilter) ([]Summary, error) {
+func (s *PostgresStore) List(ctx context.Context, workspaceID, userID string, filter ListFilter) ([]Summary, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			id,
-			tenant_id,
+			workspace_id,
 			user_id,
 			kind,
 			status,
@@ -165,14 +175,14 @@ func (s *PostgresStore) List(ctx context.Context, tenantID, userID string, filte
 			last_activity_at,
 			completed_at
 		FROM practice_sessions
-		WHERE tenant_id = $1
+		WHERE workspace_id = $1
 			AND user_id = $2
 			AND ($3 = '' OR kind = $3)
 			AND ($4 = '' OR status = $4)
 			AND ($5::timestamptz IS NULL OR last_activity_at < $5)
 		ORDER BY last_activity_at DESC
 		LIMIT $6
-	`, tenantID, userID, string(filter.Kind), string(filter.Status), nullableFilterTime(filter.Before), filter.Limit)
+	`, workspaceID, userID, string(filter.Kind), string(filter.Status), nullableFilterTime(filter.Before), filter.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -205,18 +215,18 @@ func (s *PostgresStore) Update(ctx context.Context, session Session) (Session, e
 			updated_at = $7,
 			last_activity_at = $8,
 			completed_at = $9
-		WHERE id = $1 AND tenant_id = $2 AND user_id = $3
-	`, session.ID, session.TenantID, session.UserID, session.Status, session.Title, state, session.UpdatedAt.UTC(), session.LastActivityAt.UTC(), nullableTime(session.CompletedAt))
+		WHERE id = $1 AND workspace_id = $2 AND user_id = $3
+	`, session.ID, session.WorkspaceID, session.UserID, session.Status, session.Title, state, session.UpdatedAt.UTC(), session.LastActivityAt.UTC(), nullableTime(session.CompletedAt))
 	if err != nil {
 		return Session{}, err
 	}
 	if tag.RowsAffected() == 0 {
 		return Session{}, ErrNotFound
 	}
-	return s.Get(ctx, session.TenantID, session.UserID, session.ID)
+	return s.Get(ctx, session.WorkspaceID, session.UserID, session.ID)
 }
 
-func (s *PostgresStore) UpsertFiles(ctx context.Context, tenantID, userID, sessionID string, files []File) (Session, error) {
+func (s *PostgresStore) UpsertFiles(ctx context.Context, workspaceID, userID, sessionID string, files []File) (Session, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Session{}, err
@@ -229,8 +239,8 @@ func (s *PostgresStore) UpsertFiles(ctx context.Context, tenantID, userID, sessi
 	if err := tx.QueryRow(ctx, `
 		SELECT 1
 		FROM practice_sessions
-		WHERE id = $1 AND tenant_id = $2 AND user_id = $3
-	`, sessionID, tenantID, userID).Scan(&exists); errors.Is(err, pgx.ErrNoRows) {
+		WHERE id = $1 AND workspace_id = $2 AND user_id = $3
+	`, sessionID, workspaceID, userID).Scan(&exists); errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrNotFound
 	} else if err != nil {
 		return Session{}, err
@@ -259,15 +269,15 @@ func (s *PostgresStore) UpsertFiles(ctx context.Context, tenantID, userID, sessi
 		UPDATE practice_sessions
 		SET updated_at = $4,
 			last_activity_at = $4
-		WHERE id = $1 AND tenant_id = $2 AND user_id = $3
-	`, sessionID, tenantID, userID, lastUpdate.Time); err != nil {
+		WHERE id = $1 AND workspace_id = $2 AND user_id = $3
+	`, sessionID, workspaceID, userID, lastUpdate.Time); err != nil {
 		return Session{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return Session{}, err
 	}
-	return s.Get(ctx, tenantID, userID, sessionID)
+	return s.Get(ctx, workspaceID, userID, sessionID)
 }
 
 type scanner interface {
@@ -282,7 +292,7 @@ func (s *PostgresStore) scanSession(row scanner) (Session, error) {
 	var completedAt sql.NullTime
 	if err := row.Scan(
 		&session.ID,
-		&session.TenantID,
+		&session.WorkspaceID,
 		&session.UserID,
 		&kind,
 		&status,

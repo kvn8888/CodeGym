@@ -32,7 +32,7 @@ stops fitting a snapshot (interview transcripts already do not — see below).
 ```sql
 CREATE TABLE practice_sessions (
     id text PRIMARY KEY,                     -- sess_<ulid>
-    tenant_id text NOT NULL,                 -- personal workspace scope, see auth-identity-tenant.md
+    workspace_id text NOT NULL,                 -- personal workspace scope, see auth-identity-workspace.md
     user_id text NOT NULL,
     kind text NOT NULL,                      -- 'workspace' | 'mcq' | 'interview'
     status text NOT NULL DEFAULT 'active',   -- 'active' | 'completed' | 'abandoned'
@@ -44,14 +44,14 @@ CREATE TABLE practice_sessions (
     updated_at timestamptz NOT NULL DEFAULT now(),
     last_activity_at timestamptz NOT NULL DEFAULT now(),
     completed_at timestamptz,
-    FOREIGN KEY (tenant_id, user_id)
-        REFERENCES tenant_memberships (tenant_id, user_id) ON DELETE CASCADE
+    FOREIGN KEY (workspace_id, user_id)
+        REFERENCES workspace_memberships (workspace_id, user_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_practice_sessions_scope_activity
-    ON practice_sessions (tenant_id, user_id, last_activity_at DESC);
+    ON practice_sessions (workspace_id, user_id, last_activity_at DESC);
 CREATE INDEX idx_practice_sessions_scope_active
-    ON practice_sessions (tenant_id, user_id) WHERE status = 'active';
+    ON practice_sessions (workspace_id, user_id) WHERE status = 'active';
 ```
 
 ```sql
@@ -66,7 +66,7 @@ CREATE TABLE session_files (
 ```
 
 Schema management follows the existing memory-store pattern: idempotent
-`EnsureSchema` statements with scope FKs to `tenant_memberships`, matching
+`EnsureSchema` statements with scope FKs to `workspace_memberships`, matching
 `backend/internal/memory/postgres_store.go`.
 
 ### State Snapshot Shapes
@@ -126,7 +126,7 @@ existing approved names from the naming guide:
 ## Minimal API Routes
 
 All under the protected `/api/v1/` middleware chain
-([auth-identity-tenant.md](./auth-identity-tenant.md)), documented in
+([auth-identity-workspace.md](./auth-identity-workspace.md)), documented in
 [../api/openapi.yaml](../api/openapi.yaml) per the
 [openapi-contract.md](./openapi-contract.md) workflow.
 

@@ -30,8 +30,8 @@ func TestMiddlewareStoresPrincipal(t *testing.T) {
 		if principal.UserID != "kevin" {
 			t.Fatalf("expected user kevin, got %q", principal.UserID)
 		}
-		if principal.DefaultTenantID != "rit" {
-			t.Fatalf("expected tenant rit, got %q", principal.DefaultTenantID)
+		if principal.DefaultWorkspaceID != "rit" {
+			t.Fatalf("expected workspace rit, got %q", principal.DefaultWorkspaceID)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))

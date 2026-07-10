@@ -8,7 +8,7 @@ import (
 )
 
 // Middleware ensures the authenticated principal has a bootstrapped personal
-// tenant before proceeding.
+// workspace before proceeding.
 func Middleware(service *Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -18,8 +18,8 @@ func Middleware(service *Service) func(http.Handler) http.Handler {
 				return
 			}
 
-			if err := service.EnsurePersonalTenant(r.Context(), principal); err != nil {
-				response.Error(w, http.StatusInternalServerError, "tenant_bootstrap_failed", "Could not bootstrap personal tenant.")
+			if err := service.EnsurePersonalWorkspace(r.Context(), principal); err != nil {
+				response.Error(w, http.StatusInternalServerError, "workspace_bootstrap_failed", "Could not bootstrap personal workspace.")
 				return
 			}
 

@@ -8,16 +8,16 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/memory"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 func TestOrchestratorInjectsMemoryContext(t *testing.T) {
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
 		UserID:          "kevin",
-		DefaultTenantID: "personal-kevin",
-		TenantIDs:       []string{"personal-kevin"},
+		DefaultWorkspaceID: "personal-kevin",
+		WorkspaceIDs:       []string{"personal-kevin"},
 	})
-	ctx = tenant.WithScope(ctx, tenant.Scope{TenantID: "personal-kevin"})
+	ctx = workspace.WithScope(ctx, workspace.Scope{WorkspaceID: "personal-kevin"})
 
 	store := memory.NewInMemoryStore()
 	now := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)

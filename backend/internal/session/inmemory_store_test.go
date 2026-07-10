@@ -15,7 +15,7 @@ func TestInMemoryStoreSessionLifecycle(t *testing.T) {
 
 	first, err := store.Create(ctx, Session{
 		ID:             "sess_first",
-		TenantID:       "personal-kevin",
+		WorkspaceID:       "personal-kevin",
 		UserID:         "kevin",
 		Kind:           KindWorkspace,
 		Status:         StatusActive,
@@ -33,7 +33,7 @@ func TestInMemoryStoreSessionLifecycle(t *testing.T) {
 	later := now.Add(time.Hour)
 	_, err = store.Create(ctx, Session{
 		ID:             "sess_second",
-		TenantID:       "personal-kevin",
+		WorkspaceID:       "personal-kevin",
 		UserID:         "kevin",
 		Kind:           KindMCQ,
 		Status:         StatusCompleted,
@@ -108,7 +108,7 @@ func TestInMemoryStoreScopesSessions(t *testing.T) {
 
 	_, err := store.Create(ctx, Session{
 		ID:             "sess_scoped",
-		TenantID:       "personal-kevin",
+		WorkspaceID:       "personal-kevin",
 		UserID:         "kevin",
 		Kind:           KindWorkspace,
 		Status:         StatusActive,

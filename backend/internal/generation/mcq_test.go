@@ -11,7 +11,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/memory"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 func validMCQJSON(count int) json.RawMessage {
@@ -56,10 +56,10 @@ func (s *scriptedGenerator) Generate(_ context.Context, request GenerateRequest)
 func scopedContext() context.Context {
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
 		UserID:          "kevin",
-		DefaultTenantID: "personal-kevin",
-		TenantIDs:       []string{"personal-kevin"},
+		DefaultWorkspaceID: "personal-kevin",
+		WorkspaceIDs:       []string{"personal-kevin"},
 	})
-	return tenant.WithScope(ctx, tenant.Scope{TenantID: "personal-kevin"})
+	return workspace.WithScope(ctx, workspace.Scope{WorkspaceID: "personal-kevin"})
 }
 
 func newTestOrchestrator(generator Generator) *Orchestrator {

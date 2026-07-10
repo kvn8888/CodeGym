@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 type Clock func() time.Time
@@ -37,7 +37,7 @@ func (s *Service) GetProfile(ctx context.Context) (Profile, error) {
 		return Profile{}, err
 	}
 
-	profile, err := s.store.GetProfile(ctx, identity.tenantID, identity.userID)
+	profile, err := s.store.GetProfile(ctx, identity.workspaceID, identity.userID)
 	if errors.Is(err, ErrProfileNotFound) {
 		return s.defaultProfile(), nil
 	}
@@ -65,7 +65,7 @@ func (s *Service) RecordEvent(ctx context.Context, input RecordEventInput) (Even
 
 	event := Event{
 		ID:         newID("mem_evt"),
-		TenantID:   identity.tenantID,
+		WorkspaceID:   identity.workspaceID,
 		UserID:     identity.userID,
 		Source:     source,
 		Type:       eventType,
@@ -102,7 +102,7 @@ func (s *Service) RefreshProfile(ctx context.Context) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	return s.RefreshProfileFor(ctx, id.tenantID, id.userID)
+	return s.RefreshProfileFor(ctx, id.workspaceID, id.userID)
 }
 
 // ReplaceNotes persists a curated notes list on the scoped user's profile,
@@ -115,7 +115,7 @@ func (s *Service) ReplaceNotes(ctx context.Context, notes []Note) (Profile, erro
 		return Profile{}, err
 	}
 
-	profile, err := s.store.GetProfile(ctx, id.tenantID, id.userID)
+	profile, err := s.store.GetProfile(ctx, id.workspaceID, id.userID)
 	if errors.Is(err, ErrProfileNotFound) {
 		profile = s.defaultProfile()
 	} else if err != nil {
@@ -124,7 +124,7 @@ func (s *Service) ReplaceNotes(ctx context.Context, notes []Note) (Profile, erro
 
 	profile.Notes = notes
 	profile.UpdatedAt = s.now().UTC()
-	if err := s.store.UpsertProfile(ctx, id.tenantID, id.userID, profile); err != nil {
+	if err := s.store.UpsertProfile(ctx, id.workspaceID, id.userID, profile); err != nil {
 		return Profile{}, err
 	}
 	return profile, nil
@@ -132,21 +132,21 @@ func (s *Service) ReplaceNotes(ctx context.Context, notes []Note) (Profile, erro
 
 // RefreshProfileFor is the explicit-scope version of RefreshProfile. Use this
 // outside HTTP request handling — workers, smoke tests, or GenAI orchestration
-// code should not have to fabricate auth/tenant middleware context just to
+// code should not have to fabricate auth/workspace middleware context just to
 // refresh memory.
-func (s *Service) RefreshProfileFor(ctx context.Context, tenantID, userID string) (Profile, error) {
-	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(userID) == "" {
-		return Profile{}, errors.New("memory refresh requires tenant id and user id")
+func (s *Service) RefreshProfileFor(ctx context.Context, workspaceID, userID string) (Profile, error) {
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(userID) == "" {
+		return Profile{}, errors.New("memory refresh requires workspace id and user id")
 	}
 
-	events, err := s.store.ListEvents(ctx, tenantID, userID)
+	events, err := s.store.ListEvents(ctx, workspaceID, userID)
 	if err != nil {
 		return Profile{}, err
 	}
 
 	// Load the current profile so Summarize can preserve fields it doesn't
 	// recompute. A missing profile is fine — start from the default.
-	current, err := s.store.GetProfile(ctx, tenantID, userID)
+	current, err := s.store.GetProfile(ctx, workspaceID, userID)
 	if errors.Is(err, ErrProfileNotFound) {
 		current = s.defaultProfile()
 	} else if err != nil {
@@ -154,13 +154,13 @@ func (s *Service) RefreshProfileFor(ctx context.Context, tenantID, userID string
 	}
 
 	next := Summarize(current, events, s.now())
-	if err := s.store.UpsertProfile(ctx, tenantID, userID, next); err != nil {
+	if err := s.store.UpsertProfile(ctx, workspaceID, userID, next); err != nil {
 		return Profile{}, err
 	}
 	return next, nil
 }
 
-// RefreshAllProfiles re-derives profiles for every tenant/user pair that has
+// RefreshAllProfiles re-derives profiles for every workspace/user pair that has
 // memory events. It is intentionally small: the worker owns scheduling, while
 // this service owns the memory semantics.
 func (s *Service) RefreshAllProfiles(ctx context.Context) (int, error) {
@@ -169,7 +169,7 @@ func (s *Service) RefreshAllProfiles(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	for _, scope := range scopes {
-		if _, err := s.RefreshProfileFor(ctx, scope.TenantID, scope.UserID); err != nil {
+		if _, err := s.RefreshProfileFor(ctx, scope.WorkspaceID, scope.UserID); err != nil {
 			return 0, err
 		}
 	}
@@ -181,7 +181,7 @@ func (s *Service) ListEvents(ctx context.Context) ([]Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListEvents(ctx, identity.tenantID, identity.userID)
+	return s.store.ListEvents(ctx, identity.workspaceID, identity.userID)
 }
 
 func (s *Service) defaultProfile() Profile {
@@ -198,7 +198,7 @@ func (s *Service) defaultProfile() Profile {
 }
 
 type identity struct {
-	tenantID string
+	workspaceID string
 	userID   string
 }
 
@@ -208,12 +208,12 @@ func identityFromContext(ctx context.Context) (identity, error) {
 		return identity{}, errors.New("missing authenticated user")
 	}
 
-	scope, ok := tenant.ScopeFromContext(ctx)
-	if !ok || scope.TenantID == "" {
-		return identity{}, errors.New("missing tenant scope")
+	scope, ok := workspace.ScopeFromContext(ctx)
+	if !ok || scope.WorkspaceID == "" {
+		return identity{}, errors.New("missing workspace scope")
 	}
 
-	return identity{tenantID: scope.TenantID, userID: principal.UserID}, nil
+	return identity{workspaceID: scope.WorkspaceID, userID: principal.UserID}, nil
 }
 
 func newID(prefix string) string {

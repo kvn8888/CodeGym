@@ -232,7 +232,7 @@ v0 is designed to evolve without a schema migration:
 
 ## Related Docs
 
-- [auth-identity-tenant.md](./auth-identity-tenant.md) documents request scoping
+- [auth-identity-workspace.md](./auth-identity-workspace.md) documents request scoping
   for memory routes.
 - [openapi-contract.md](./openapi-contract.md) documents the HTTP contract
   workflow.

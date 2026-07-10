@@ -71,7 +71,7 @@ happen next. Do not present local-only work as finished repository work.
 
 1. Identify the task surface area.
 - Frontend route/page/API consumption: inspect `frontend/src/App.tsx`, `frontend/src/features/`, and `frontend/src/shared/api/`.
-- Backend API/auth/workspace/memory work: inspect `backend/README.md`, `docs/auth-identity-tenant.md`, and `backend/internal/`.
+- Backend API/auth/workspace/memory work: inspect `backend/README.md`, `docs/auth-identity-workspace.md`, and `backend/internal/`.
 - Project scope or product intent: read the "Scope Specification" section in this skill first.
 
 2. Select the shortest local validation path.
@@ -104,8 +104,8 @@ happen next. Do not present local-only work as finished repository work.
 - Preserve the request path conceptually: auth middleware establishes
   `auth.Principal`, identity middleware bootstraps/persists the user and a
   personal workspace, workspace-scope middleware establishes the active scope,
-  and handlers read scoped services. The current implementation still uses
-  `tenant` package/table/field names as internal scope names; do not expand that
+  and handlers read scoped services. Scope uses the `workspace` package and
+  `workspace_id` fields for personal workspace isolation; do not expand that
   into organization/team SaaS tenancy unless product scope changes.
 - Memory writes should append events quickly. Profile summarization should stay
   behind `Service.RefreshProfile` or a worker boundary so request paths do not
@@ -217,9 +217,8 @@ current as implementation lands.
   draft/conflicting PRs or docs-only spikes are moved too far right.
 - OpenAPI drift can appear when backend routes, `api/**`, and frontend helpers
   are changed independently.
-- The internal `tenant` naming still represents personal workspace scope. It can
-  confuse agents into designing organization/team SaaS tenancy that is out of
-  scope.
+- Agents may still treat "workspace" as multi-org SaaS tenancy. It is personal
+  data scope only; legacy `tenant` env/header aliases are compatibility shims.
 - Deployment/env drift can hide behind passing local tests because Auth0,
   Render, Vercel, Doppler, and Neon readiness depends on external state.
 
@@ -264,7 +263,7 @@ do not mean the worker is scheduled or running.
    validation evidence.
 3. Using Auth0 `email` or `name` for authorization, identity durability, or
    workspace selection instead of Auth0 `sub`.
-4. Expanding internal `tenant` names into organization/team tenancy without an
+4. Expanding personal workspaces into organization/team tenancy without an
    explicit product-scope change.
 5. Mixing raw memory events with derived profiles/notes; raw facts are written
    quickly, derived understanding belongs behind service/worker refresh.

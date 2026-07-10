@@ -96,12 +96,12 @@ func (a *Auth0Authenticator) Authenticate(ctx context.Context, bearerToken strin
 		return Principal{}, fmt.Errorf("%w: missing subject", ErrUnauthenticated)
 	}
 
-	defaultTenantID := personalTenantIDForSubject(userID)
+	defaultWorkspaceID := personalWorkspaceIDForSubject(userID)
 
 	return Principal{
 		UserID:          userID,
-		DefaultTenantID: defaultTenantID,
-		TenantIDs:       []string{defaultTenantID},
+		DefaultWorkspaceID: defaultWorkspaceID,
+		WorkspaceIDs:       []string{defaultWorkspaceID},
 		UserMetadata:    userMetadataFromAuth0Claims(validatedClaims),
 	}, nil
 }
@@ -155,7 +155,7 @@ func auth0IssuerURL(config Auth0AuthenticatorConfig) (*url.URL, error) {
 	return issuerURL, nil
 }
 
-func personalTenantIDForSubject(subject string) string {
+func personalWorkspaceIDForSubject(subject string) string {
 	var builder strings.Builder
 	builder.Grow(len(subject))
 	lastDash := false

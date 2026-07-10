@@ -52,11 +52,11 @@ func TestAuth0Authenticator(t *testing.T) {
 		if principal.UserID != "auth0|user_123" {
 			t.Fatalf("UserID = %q, want auth0|user_123", principal.UserID)
 		}
-		if principal.DefaultTenantID != "personal-auth0-user-123" {
-			t.Fatalf("DefaultTenantID = %q, want personal-auth0-user-123", principal.DefaultTenantID)
+		if principal.DefaultWorkspaceID != "personal-auth0-user-123" {
+			t.Fatalf("DefaultWorkspaceID = %q, want personal-auth0-user-123", principal.DefaultWorkspaceID)
 		}
-		if !principal.HasTenant("personal-auth0-user-123") || principal.HasTenant("shared-claimed") {
-			t.Fatalf("expected only personal-auth0-user-123 in TenantIDs: %#v", principal.TenantIDs)
+		if !principal.HasWorkspace("personal-auth0-user-123") || principal.HasWorkspace("shared-claimed") {
+			t.Fatalf("expected only personal-auth0-user-123 in WorkspaceIDs: %#v", principal.WorkspaceIDs)
 		}
 		if principal.UserMetadata.Email != "kevin@example.com" {
 			t.Fatalf("Email = %q, want kevin@example.com", principal.UserMetadata.Email)
@@ -80,11 +80,11 @@ func TestAuth0Authenticator(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected valid token, got %v", err)
 		}
-		if principal.DefaultTenantID != "personal-auth0-user-123" {
-			t.Fatalf("DefaultTenantID = %q, want personal-auth0-user-123", principal.DefaultTenantID)
+		if principal.DefaultWorkspaceID != "personal-auth0-user-123" {
+			t.Fatalf("DefaultWorkspaceID = %q, want personal-auth0-user-123", principal.DefaultWorkspaceID)
 		}
-		if principal.HasTenant("personal-claimed") || principal.HasTenant("shared-claimed") {
-			t.Fatalf("unexpected app-claimed workspace access: %#v", principal.TenantIDs)
+		if principal.HasWorkspace("personal-claimed") || principal.HasWorkspace("shared-claimed") {
+			t.Fatalf("unexpected app-claimed workspace access: %#v", principal.WorkspaceIDs)
 		}
 	})
 

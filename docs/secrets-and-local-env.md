@@ -51,7 +51,7 @@ Required development secrets:
 | `CODEGYM_AUTH0_CLOCK_SKEW` | Optional | Go duration for token time skew, e.g. `30s`. Defaults to no skew. |
 | `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for local protected routes. |
 | `CODEGYM_DEV_USER_ID` | Optional | Default dev user for static-token auth. |
-| `CODEGYM_DEV_TENANT_ID` | Optional | Default personal workspace ID for static-token auth. Legacy env name. |
+| `CODEGYM_DEV_WORKSPACE_ID` | Optional | Default personal workspace ID for static-token auth. Legacy env name. |
 | `CODEGYM_HOST` | Optional | Backend listen host. |
 | `CODEGYM_PORT` | Optional | Backend listen port. |
 | `CODEGYM_MEMORY_WORKER_DISABLED` | Optional | Set to `true` to disable the scheduled profile refresh worker. Defaults to `false`. |
@@ -111,7 +111,7 @@ doppler run -p codegym -c dev -- ./scripts/memory_smoke.sh
 The smoke script uses `CODEGYM_API_BASE_URL` when set, otherwise
 `http://127.0.0.1:8080`. For auth, it uses `CODEGYM_DEV_AUTH_TOKEN` when set;
 otherwise it builds a local dev token from `CODEGYM_DEV_USER_ID` and
-`CODEGYM_DEV_TENANT_ID`:
+`CODEGYM_DEV_WORKSPACE_ID`:
 
 ```text
 Authorization: Bearer dev:<user-id>:<workspace-id>

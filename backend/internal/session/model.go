@@ -24,7 +24,7 @@ const (
 // Session is the durable resume record for a bounded practice activity.
 type Session struct {
 	ID              string          `json:"id"`
-	TenantID        string          `json:"tenant_id"`
+	WorkspaceID        string          `json:"workspace_id"`
 	UserID          string          `json:"user_id"`
 	Kind            Kind            `json:"kind"`
 	Status          Status          `json:"status"`
@@ -43,7 +43,7 @@ type Session struct {
 // heavyweight resume state and draft files.
 type Summary struct {
 	ID              string     `json:"id"`
-	TenantID        string     `json:"tenant_id"`
+	WorkspaceID        string     `json:"workspace_id"`
 	UserID          string     `json:"user_id"`
 	Kind            Kind       `json:"kind"`
 	Status          Status     `json:"status"`
@@ -95,7 +95,7 @@ type FileInput struct {
 func (s Session) Summary() Summary {
 	return Summary{
 		ID:              s.ID,
-		TenantID:        s.TenantID,
+		WorkspaceID:        s.WorkspaceID,
 		UserID:          s.UserID,
 		Kind:            s.Kind,
 		Status:          s.Status,

@@ -7,21 +7,21 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 )
 
-func TestServiceEnsuresPersonalTenant(t *testing.T) {
+func TestServiceEnsuresPersonalWorkspace(t *testing.T) {
 	store := NewInMemoryStore()
 	service := NewService(store)
 
-	err := service.EnsurePersonalTenant(context.Background(), auth.Principal{
-		UserID:          "kevin",
-		DefaultTenantID: "personal-kevin",
-		TenantIDs:       []string{"personal-kevin"},
+	err := service.EnsurePersonalWorkspace(context.Background(), auth.Principal{
+		UserID:             "kevin",
+		DefaultWorkspaceID: "personal-kevin",
+		WorkspaceIDs:       []string{"personal-kevin"},
 		UserMetadata: auth.UserMetadata{
 			Email:       "kevin@example.com",
 			DisplayName: "Kevin Chen",
 		},
 	})
 	if err != nil {
-		t.Fatalf("EnsurePersonalTenant returned error: %v", err)
+		t.Fatalf("EnsurePersonalWorkspace returned error: %v", err)
 	}
 
 	store.mu.RLock()
@@ -37,8 +37,8 @@ func TestServiceEnsuresPersonalTenant(t *testing.T) {
 	if user.DisplayName != "Kevin Chen" {
 		t.Fatalf("expected display name metadata, got %q", user.DisplayName)
 	}
-	if _, ok := store.tenants["personal-kevin"]; !ok {
-		t.Fatal("expected tenant to be bootstrapped")
+	if _, ok := store.workspaces["personal-kevin"]; !ok {
+		t.Fatal("expected workspace to be bootstrapped")
 	}
 
 	membership := store.memberships[membershipKey("personal-kevin", "kevin")]
@@ -51,13 +51,13 @@ func TestServiceUsesStableFallbackDisplayName(t *testing.T) {
 	store := NewInMemoryStore()
 	service := NewService(store)
 
-	err := service.EnsurePersonalTenant(context.Background(), auth.Principal{
-		UserID:          "auth0|user_123",
-		DefaultTenantID: "personal-auth0-user-123",
-		TenantIDs:       []string{"personal-auth0-user-123"},
+	err := service.EnsurePersonalWorkspace(context.Background(), auth.Principal{
+		UserID:             "auth0|user_123",
+		DefaultWorkspaceID: "personal-auth0-user-123",
+		WorkspaceIDs:       []string{"personal-auth0-user-123"},
 	})
 	if err != nil {
-		t.Fatalf("EnsurePersonalTenant returned error: %v", err)
+		t.Fatalf("EnsurePersonalWorkspace returned error: %v", err)
 	}
 
 	store.mu.RLock()
@@ -73,21 +73,21 @@ func TestServiceKeepsExistingMetadataWhenClaimsAreOmitted(t *testing.T) {
 	store := NewInMemoryStore()
 	service := NewService(store)
 	principal := auth.Principal{
-		UserID:          "auth0|user_123",
-		DefaultTenantID: "personal-auth0-user-123",
-		TenantIDs:       []string{"personal-auth0-user-123"},
+		UserID:             "auth0|user_123",
+		DefaultWorkspaceID: "personal-auth0-user-123",
+		WorkspaceIDs:       []string{"personal-auth0-user-123"},
 		UserMetadata: auth.UserMetadata{
 			Email:       "kevin@example.com",
 			DisplayName: "Kevin Chen",
 		},
 	}
 
-	if err := service.EnsurePersonalTenant(context.Background(), principal); err != nil {
-		t.Fatalf("first EnsurePersonalTenant returned error: %v", err)
+	if err := service.EnsurePersonalWorkspace(context.Background(), principal); err != nil {
+		t.Fatalf("first EnsurePersonalWorkspace returned error: %v", err)
 	}
 	principal.UserMetadata = auth.UserMetadata{}
-	if err := service.EnsurePersonalTenant(context.Background(), principal); err != nil {
-		t.Fatalf("second EnsurePersonalTenant returned error: %v", err)
+	if err := service.EnsurePersonalWorkspace(context.Background(), principal); err != nil {
+		t.Fatalf("second EnsurePersonalWorkspace returned error: %v", err)
 	}
 
 	store.mu.RLock()
@@ -109,17 +109,17 @@ func TestServicePreservesUserDisplayNameOverride(t *testing.T) {
 	store := NewInMemoryStore()
 	service := NewService(store)
 	principal := auth.Principal{
-		UserID:          "auth0|user_123",
-		DefaultTenantID: "personal-auth0-user-123",
-		TenantIDs:       []string{"personal-auth0-user-123"},
+		UserID:             "auth0|user_123",
+		DefaultWorkspaceID: "personal-auth0-user-123",
+		WorkspaceIDs:       []string{"personal-auth0-user-123"},
 		UserMetadata: auth.UserMetadata{
 			Email:       "kevin@example.com",
 			DisplayName: "Kevin From Google",
 		},
 	}
 
-	if err := service.EnsurePersonalTenant(context.Background(), principal); err != nil {
-		t.Fatalf("EnsurePersonalTenant returned error: %v", err)
+	if err := service.EnsurePersonalWorkspace(context.Background(), principal); err != nil {
+		t.Fatalf("EnsurePersonalWorkspace returned error: %v", err)
 	}
 	updated, err := service.UpdateDisplayName(context.Background(), principal, "Kevin Chen")
 	if err != nil {
@@ -130,8 +130,8 @@ func TestServicePreservesUserDisplayNameOverride(t *testing.T) {
 	}
 
 	principal.UserMetadata.DisplayName = "Kevin From Google Again"
-	if err := service.EnsurePersonalTenant(context.Background(), principal); err != nil {
-		t.Fatalf("second EnsurePersonalTenant returned error: %v", err)
+	if err := service.EnsurePersonalWorkspace(context.Background(), principal); err != nil {
+		t.Fatalf("second EnsurePersonalWorkspace returned error: %v", err)
 	}
 
 	profile, err := service.GetUserProfile(context.Background(), principal)
@@ -149,8 +149,8 @@ func TestServicePreservesUserDisplayNameOverride(t *testing.T) {
 func TestServiceRejectsMissingUser(t *testing.T) {
 	service := NewService(NewInMemoryStore())
 
-	err := service.EnsurePersonalTenant(context.Background(), auth.Principal{
-		DefaultTenantID: "personal-kevin",
+	err := service.EnsurePersonalWorkspace(context.Background(), auth.Principal{
+		DefaultWorkspaceID: "personal-kevin",
 	})
 	if err == nil {
 		t.Fatal("expected missing user error")
@@ -160,12 +160,12 @@ func TestServiceRejectsMissingUser(t *testing.T) {
 func TestServiceRejectsInvalidDisplayName(t *testing.T) {
 	service := NewService(NewInMemoryStore())
 	principal := auth.Principal{
-		UserID:          "kevin",
-		DefaultTenantID: "personal-kevin",
-		TenantIDs:       []string{"personal-kevin"},
+		UserID:             "kevin",
+		DefaultWorkspaceID: "personal-kevin",
+		WorkspaceIDs:       []string{"personal-kevin"},
 	}
-	if err := service.EnsurePersonalTenant(context.Background(), principal); err != nil {
-		t.Fatalf("EnsurePersonalTenant returned error: %v", err)
+	if err := service.EnsurePersonalWorkspace(context.Background(), principal); err != nil {
+		t.Fatalf("EnsurePersonalWorkspace returned error: %v", err)
 	}
 
 	if _, err := service.UpdateDisplayName(context.Background(), principal, "  "); err == nil {

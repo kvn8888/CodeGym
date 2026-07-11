@@ -5,6 +5,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/tenant"
@@ -14,6 +15,7 @@ type Dependencies struct {
 	Authenticator auth.Authenticator
 	Identity      *identity.Service
 	Memory        *memory.Service
+	Execution     *execution.Service
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -25,6 +27,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("GET /api/v1/memory/profile", memoryHandler.Profile)
 	protected.HandleFunc("GET /api/v1/memory/events", memoryHandler.ListEvents)
 	protected.HandleFunc("POST /api/v1/memory/events", memoryHandler.RecordEvent)
+
+	executionHandler := handlers.NewExecutionHandler(deps.Execution)
+	protected.HandleFunc("POST /api/v1/executions", executionHandler.Submit)
+	protected.HandleFunc("GET /api/v1/executions", executionHandler.List)
+	protected.HandleFunc("GET /api/v1/executions/{id}", executionHandler.Get)
 
 	protectedChain := chain(
 		protected,

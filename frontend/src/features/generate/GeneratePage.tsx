@@ -1,629 +1,281 @@
-import { useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowRight, Command as CommandIcon, Sparkles } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { GridSpinner } from '../../shared/components/GridSpinner';
-import { SlidingTabs } from '../../shared/components/SlidingTabs';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowRight, Brain, Check, Clock3, ListChecks } from 'lucide-react';
+
+import { api } from '../../shared/api/client';
+import type {
+  NewPracticeConfig,
+  PracticeSession,
+  PracticeSessionSummary,
+  UserMemoryProfile,
+} from '../../shared/api/types';
+import {
+  WorkspacePage,
+  WorkspacePageHeader,
+  WorkspaceSectionHeader,
+} from '../../shared/components/WorkspacePage';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-} from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Spinner } from '@/components/ui/spinner';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { cn } from '@/lib/utils';
-import { QuestionModal, type Question, type Answer } from './QuestionModal';
 
-type GenerateView = 'command' | 'spotlight';
-type GenerateFormat = 'problem' | 'mcq' | 'interview';
-type Difficulty = 'easy' | 'medium' | 'hard';
-
-const PHRASE_STORAGE_KEY = 'codegym.generate.sessionPhrase';
-
-const SESSION_PHRASES = [
-  'Build real fluency.',
-  'Practice with intent.',
-  'Turn gaps into reps.',
-  'Make hard topics familiar.',
-  'Train the parts that matter.',
+const questionCounts = [5, 10, 15];
+const difficulties: Array<{ value: NewPracticeConfig['difficulty']; label: string }> = [
+  { value: 'easy', label: 'Easy' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'hard', label: 'Hard' },
 ];
 
-const RECENT_PROMPTS = [
-  'Implement an LRU cache',
-  'Sliding-window rate limiter',
-  'Level-order tree traversal',
-];
-
-const SPOTLIGHT_TOPICS = [
-  { label: 'DSA', count: 128, color: 'var(--color-green-700)' },
-  { label: 'API Patterns', count: 64, color: 'var(--color-blue-700)' },
-  { label: 'System Design', count: 52, color: 'var(--color-purple-700)' },
-  { label: 'Concurrency', count: 37, color: 'var(--color-pink-700)' },
-];
-
-const EXAMPLES = [
-  'Pagination API pattern in Express',
-  'Iterator pattern in Java',
-  'Go goroutines for fan-out fan-in',
-  'REST API with Python FastAPI',
-  'Linked list implementation in C++',
-  'Simple neural network with PyTorch',
-];
-
-const FORMAT_LABELS: Record<GenerateFormat, string> = {
-  problem: 'Problem',
-  mcq: 'MCQ',
-  interview: 'Interview',
-};
-
-const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  easy: 'Easy',
-  medium: 'Medium',
-  hard: 'Hard',
-};
-
-const DIFFICULTY_TOGGLE_CLASSES: Record<Difficulty, string> = {
-  easy:
-    'data-[state=on]:border-green-400 data-[state=on]:bg-green-100 data-[state=on]:text-green-900 dark:data-[state=on]:border-green-500/40 dark:data-[state=on]:bg-green-500/15 dark:data-[state=on]:text-green-400',
-  medium:
-    'data-[state=on]:border-amber-400 data-[state=on]:bg-amber-100 data-[state=on]:text-amber-900 dark:data-[state=on]:border-amber-500/40 dark:data-[state=on]:bg-amber-500/15 dark:data-[state=on]:text-amber-400',
-  hard:
-    'data-[state=on]:border-red-400 data-[state=on]:bg-red-100 data-[state=on]:text-red-900 dark:data-[state=on]:border-red-500/40 dark:data-[state=on]:bg-red-500/15 dark:data-[state=on]:text-red-400',
-};
-
-function currentHourBucket() {
-  const now = new Date();
-  return `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}`;
+function sessionTitle(prompt: string) {
+  const normalized = prompt.trim().replace(/\s+/g, ' ');
+  if (!normalized) return 'Personalized MCQ practice';
+  return normalized.length > 64 ? `${normalized.slice(0, 61)}...` : normalized;
 }
 
-function chooseSessionPhrase() {
-  if (typeof window === 'undefined') return SESSION_PHRASES[0];
-
-  const bucket = currentHourBucket();
-
-  try {
-    const stored = window.sessionStorage.getItem(PHRASE_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored) as { bucket?: string; phrase?: string };
-      if (parsed.bucket === bucket && parsed.phrase && SESSION_PHRASES.includes(parsed.phrase)) {
-        return parsed.phrase;
-      }
-    }
-
-    const phrase = SESSION_PHRASES[Math.floor(Math.random() * SESSION_PHRASES.length)];
-    window.sessionStorage.setItem(PHRASE_STORAGE_KEY, JSON.stringify({ bucket, phrase }));
-    return phrase;
-  } catch {
-    return SESSION_PHRASES[0];
-  }
+function formatRelativeDate(value: string) {
+  const minutes = Math.round((new Date(value).getTime() - Date.now()) / 60_000);
+  const formatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  if (Math.abs(minutes) < 60) return formatter.format(minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return formatter.format(hours, 'hour');
+  return formatter.format(Math.round(hours / 24), 'day');
 }
 
 export function GeneratePage() {
-  const shouldReduceMotion = useReducedMotion();
-  const [sessionPhrase] = useState(chooseSessionPhrase);
-  const [view, setView] = useState<GenerateView>('command');
-  const [format, setFormat] = useState<GenerateFormat>('problem');
-  const [language, setLanguage] = useState('python');
-  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
-  const [prompt, setPrompt] = useState('');
-  const [generating, setGenerating] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
-  const [showQuestions, setShowQuestions] = useState(false);
-  const [agentQuestions, setAgentQuestions] = useState<Question[]>([]);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [prompt, setPrompt] = useState(() => searchParams.get('prompt') ?? '');
+  const [difficulty, setDifficulty] = useState<NewPracticeConfig['difficulty']>('medium');
+  const [count, setCount] = useState(5);
+  const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
+  const [recentSessions, setRecentSessions] = useState<PracticeSessionSummary[]>([]);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleGenerate = async () => {
-    if (!prompt.trim() || generating) return;
-    setGenerating(true);
-    setStatus(null);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.allSettled([
+      api.get<UserMemoryProfile>('/memory/profile'),
+      api.get<PracticeSessionSummary[]>('/sessions?kind=mcq&limit=5'),
+    ]).then(([profileResult, sessionsResult]) => {
+      if (cancelled) return;
+      if (profileResult.status === 'fulfilled') setProfile(profileResult.value);
+      if (sessionsResult.status === 'fulfilled') setRecentSessions(sessionsResult.value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-    const requestContext = {
+  const contextItems = useMemo(() => {
+    if (!profile) return [];
+    return [
+      ...profile.growth_edges.slice(0, 2).map((label) => ({ label, source: 'Focus area' })),
+      ...profile.notes
+        .filter((note) => note.action === 'review')
+        .slice(0, 2)
+        .map((note) => ({ label: note.title, source: 'Memory note' })),
+    ].slice(0, 4);
+  }, [profile]);
+
+  const startPractice = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (starting) return;
+
+    const config: NewPracticeConfig = {
       prompt: prompt.trim(),
-      format,
-      language,
       difficulty,
-      view,
+      count,
     };
 
-    // TODO: Call /api/v1/generate/questions with requestContext to get real questions.
-    console.log('[generate]', requestContext);
-
-    const mockQuestions: Question[] = [
-      {
-        id: 'q1',
-        text: 'What programming language would you like to use?',
-        options: ['Python', 'Go', 'JavaScript', 'TypeScript', 'Specify...'],
-      },
-      {
-        id: 'q2',
-        text: 'What area should this practice focus on?',
-        options: ['Core algorithm', 'Data structure design', 'API integration', 'Specify...'],
-      },
-      {
-        id: 'q3',
-        text: 'How challenging should this be?',
-        options: ['Beginner friendly', 'Moderate complexity', 'Senior-level challenge', 'Specify...'],
-      },
-    ];
-
-    setAgentQuestions(mockQuestions);
-    setShowQuestions(true);
-    setGenerating(false);
-  };
-
-  const handleQuestionsComplete = (answers: Answer[]) => {
-    setShowQuestions(false);
-    setGenerating(true);
-    console.log('[generate] answers:', answers);
-    // TODO: Call POST /api/v1/generate with prompt + answers + view context.
-    setTimeout(() => {
-      setStatus('Generation endpoint not yet implemented');
-      setGenerating(false);
-    }, 3000);
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      handleGenerate();
+    setStarting(true);
+    setError(null);
+    try {
+      const session = await api.post<PracticeSession>('/sessions', {
+        kind: 'mcq',
+        title: sessionTitle(config.prompt),
+        state: {
+          schema_version: 1,
+          ...config,
+          round: 1,
+          question_index: 0,
+          elapsed: 0,
+          results: [],
+        },
+      });
+      navigate(`/marathon?session=${encodeURIComponent(session.id)}`, {
+        state: { newPractice: { sessionId: session.id, config } },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start practice.');
+      setStarting(false);
     }
   };
 
-  const usePrompt = (value: string) => {
-    setPrompt(value);
-  };
-
   return (
-    <div className="min-h-screen bg-background-100 px-6 py-8">
-      <div className="mx-auto flex w-full max-w-[1200px] justify-end">
-        <div className="flex items-center gap-3">
-          <span className="text-muted-foreground hidden text-xs sm:inline">Generate Style</span>
-          <SlidingTabs
-            ariaLabel="Generate style"
-            value={view}
-            onChange={setView}
-            options={[
-              { value: 'command', label: 'Command' },
-              { value: 'spotlight', label: 'Spotlight' },
-            ]}
-          />
-        </div>
-      </div>
+    <WorkspacePage>
+      <WorkspacePageHeader
+        title="New practice"
+        description="Set the focus for a personalized multiple-choice session."
+      />
 
-      <AnimatePresence mode="wait" initial={false}>
-        {view === 'command' ? (
-          <motion.div
-            key="command"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -6 }}
-            transition={{ duration: shouldReduceMotion ? 0 : 0.18, ease: [0.175, 0.885, 0.32, 1.1] }}
-          >
-            <CommandGenerateView
-              difficulty={difficulty}
-              format={format}
-              generating={generating}
-              language={language}
-              prompt={prompt}
-              status={status}
-              onDifficultyChange={setDifficulty}
-              onFormatChange={setFormat}
-              onGenerate={handleGenerate}
-              onKeyDown={handleKeyDown}
-              onLanguageChange={setLanguage}
-              onPromptChange={setPrompt}
-              onUsePrompt={usePrompt}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="spotlight"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -6 }}
-            transition={{ duration: shouldReduceMotion ? 0 : 0.18, ease: [0.175, 0.885, 0.32, 1.1] }}
-          >
-            <SpotlightGenerateView
-              generating={generating}
-              prompt={prompt}
-              sessionPhrase={sessionPhrase}
-              status={status}
-              onGenerate={handleGenerate}
-              onKeyDown={handleKeyDown}
-              onPromptChange={setPrompt}
-              onUsePrompt={usePrompt}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <form onSubmit={(event) => void startPractice(event)}>
+        <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0">
+            <section className="overflow-hidden rounded-lg border">
+              <div className="bg-muted/25 flex items-center justify-between border-b px-4 py-3">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <ListChecks size={16} strokeWidth={1.8} />
+                  Multiple choice
+                </div>
+                <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <Check size={14} strokeWidth={2} />
+                  Available
+                </span>
+              </div>
 
-      {showQuestions && agentQuestions.length > 0 && (
-        <QuestionModal
-          questions={agentQuestions}
-          onComplete={handleQuestionsComplete}
-          onClose={() => setShowQuestions(false)}
-        />
-      )}
-    </div>
-  );
-}
+              <div className="p-4 sm:p-5">
+                <Label htmlFor="practice-prompt" className="text-sm font-medium">
+                  What should this session focus on?
+                </Label>
+                <Textarea
+                  id="practice-prompt"
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder="Go concurrency patterns, channel ownership, and cancellation..."
+                  maxLength={500}
+                  rows={5}
+                  className="mt-2 min-h-32 resize-none text-sm leading-5"
+                  autoFocus
+                />
+                <div className="text-muted-foreground mt-1.5 flex justify-between gap-3 text-xs">
+                  <span>Leave blank to practice your current focus areas.</span>
+                  <span className="font-mono tabular-nums">{prompt.length}/500</span>
+                </div>
+              </div>
 
-function CommandGenerateView({
-  difficulty,
-  format,
-  generating,
-  language,
-  prompt,
-  status,
-  onDifficultyChange,
-  onFormatChange,
-  onGenerate,
-  onKeyDown,
-  onLanguageChange,
-  onPromptChange,
-  onUsePrompt,
-}: {
-  difficulty: Difficulty;
-  format: GenerateFormat;
-  generating: boolean;
-  language: string;
-  prompt: string;
-  status: string | null;
-  onDifficultyChange: (difficulty: Difficulty) => void;
-  onFormatChange: (format: GenerateFormat) => void;
-  onGenerate: () => void;
-  onKeyDown: (event: React.KeyboardEvent) => void;
-  onLanguageChange: (language: string) => void;
-  onPromptChange: (prompt: string) => void;
-  onUsePrompt: (prompt: string) => void;
-}) {
-  return (
-    <main className="flex flex-col items-center px-0 pb-12 pt-14">
-      <div className="w-full max-w-3xl">
-        <div className="mb-8">
-          <h1 className="text-[40px] font-semibold leading-[48px] tracking-[-2.4px] text-foreground">
-            What do you want to practice?
-          </h1>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 md:flex-nowrap">
-            <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">
-              <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-500/20">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-700 dark:bg-blue-400" />
-              </span>
-              <span>
-                Tuned to your history - lately you worked on{' '}
-                <strong className="font-semibold text-foreground">Graphs</strong> and{' '}
-                <strong className="font-semibold text-foreground">Concurrency</strong>.
-              </span>
-            </div>
-            <Button variant="link" className="h-auto px-1 text-blue-700 dark:text-blue-400" asChild>
-              <Link to="/memory">View Memory</Link>
-            </Button>
-          </div>
-        </div>
-
-        <Card className="gap-0 overflow-hidden py-0">
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
-            <Tabs
-              value={format}
-              onValueChange={(value) => onFormatChange(value as GenerateFormat)}
-            >
-              <TabsList aria-label="Problem format">
-                {(['problem', 'mcq', 'interview'] as GenerateFormat[]).map((item) => (
-                  <TabsTrigger key={item} value={item}>
-                    {FORMAT_LABELS[item]}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-
-            <Select value={language} onValueChange={onLanguageChange}>
-              <SelectTrigger className="h-9 w-[148px]" aria-label="Language">
-                <span className="h-2 w-2 rounded-sm bg-blue-700 dark:bg-blue-400" aria-hidden="true" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="python">Python</SelectItem>
-                <SelectItem value="typescript">TypeScript</SelectItem>
-                <SelectItem value="go">Go</SelectItem>
-                <SelectItem value="java">Java</SelectItem>
-              </SelectContent>
-            </Select>
-          </CardHeader>
-
-          <CardContent className="p-0">
-            <Textarea
-              value={prompt}
-              onChange={(event) => onPromptChange(event.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder="Describe a challenge - e.g. a hard problem on topological sort with cycle detection, with tricky edge cases..."
-              rows={5}
-              className="min-h-36 resize-none rounded-none border-0 bg-transparent px-4 py-5 text-sm leading-6 shadow-none focus-visible:ring-0"
-            />
-          </CardContent>
-
-          <CardFooter className="flex-wrap items-center justify-between gap-4 border-t bg-muted/40 px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Level</Label>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="lg"
-                spacing={0}
-                value={difficulty}
-                onValueChange={(value) => {
-                  if (value) onDifficultyChange(value as Difficulty);
-                }}
-              >
-                {(['easy', 'medium', 'hard'] as Difficulty[]).map((item) => (
-                  <ToggleGroupItem
-                    key={item}
-                    value={item}
-                    aria-label={DIFFICULTY_LABELS[item]}
-                    className={cn('min-w-20', DIFFICULTY_TOGGLE_CLASSES[item])}
+              <div className="grid border-t sm:grid-cols-2">
+                <fieldset className="border-b p-4 sm:border-r sm:border-b-0 sm:p-5">
+                  <legend className="mb-2 text-sm font-medium">Questions</legend>
+                  <ToggleGroup
+                    type="single"
+                    value={String(count)}
+                    onValueChange={(value) => value && setCount(Number(value))}
+                    variant="outline"
+                    className="justify-start"
+                    aria-label="Question count"
                   >
-                    {DIFFICULTY_LABELS[item]}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </div>
+                    {questionCounts.map((value) => (
+                      <ToggleGroupItem key={value} value={String(value)} className="min-w-11">
+                        {value}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </fieldset>
 
-            <Button
-              type="button"
-              disabled={generating || !prompt.trim()}
-              onClick={onGenerate}
-              className="gap-2"
-            >
-              {generating ? (
-                <Spinner className="size-4" />
-              ) : (
-                <>
-                  <span>Generate</span>
-                  <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-primary-foreground/20 bg-primary-foreground/10 px-1.5 font-mono text-[10px] font-medium sm:inline-flex">
-                    <CommandIcon className="size-2.5" />
-                    Enter
-                  </kbd>
-                </>
-              )}
-            </Button>
-          </CardFooter>
-        </Card>
+                <fieldset className="p-4 sm:p-5">
+                  <legend className="mb-2 text-sm font-medium">Difficulty</legend>
+                  <ToggleGroup
+                    type="single"
+                    value={difficulty}
+                    onValueChange={(value) => value && setDifficulty(value as NewPracticeConfig['difficulty'])}
+                    variant="outline"
+                    className="justify-start"
+                    aria-label="Difficulty"
+                  >
+                    {difficulties.map((item) => (
+                      <ToggleGroupItem key={item.value} value={item.value} className="px-3">
+                        {item.label}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </fieldset>
+              </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <Label className="text-xs text-muted-foreground">Recent</Label>
-          {RECENT_PROMPTS.map((item) => (
-            <Button
-              key={item}
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onUsePrompt(item)}
-            >
-              {item}
-            </Button>
-          ))}
-        </div>
+              <div className="bg-muted/20 flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-muted-foreground text-xs">
+                  Progress is saved after every answer.
+                </div>
+                <Button type="submit" disabled={starting} className="sm:min-w-36">
+                  {starting ? 'Starting' : 'Start practice'}
+                  {!starting && <ArrowRight data-icon="inline-end" />}
+                </Button>
+              </div>
+            </section>
 
-        <CommandGenerationState generating={generating} status={status} />
-      </div>
-    </main>
-  );
-}
+            {error && (
+              <div className="border-destructive/40 bg-destructive/5 text-destructive mt-4 rounded-md border px-3 py-2 text-sm">
+                {error}
+              </div>
+            )}
 
-function SpotlightGenerateView({
-  generating,
-  prompt,
-  sessionPhrase,
-  status,
-  onGenerate,
-  onKeyDown,
-  onPromptChange,
-  onUsePrompt,
-}: {
-  generating: boolean;
-  prompt: string;
-  sessionPhrase: string;
-  status: string | null;
-  onGenerate: () => void;
-  onKeyDown: (event: React.KeyboardEvent) => void;
-  onPromptChange: (prompt: string) => void;
-  onUsePrompt: (prompt: string) => void;
-}) {
-  return (
-    <main className="flex items-start justify-center px-0 pt-16">
-      <div className="w-full max-w-4xl text-center">
-        <div className="mb-10">
-          <div className="mb-5 font-mono text-xs tracking-[0.2em] text-gray-700 uppercase">
-            AI Problem Engine
+            {recentSessions.length > 0 && (
+              <section className="mt-7">
+                <WorkspaceSectionHeader
+                  title="Recent topics"
+                  description="Reuse a previous focus without rebuilding the setup."
+                />
+                <div className="overflow-hidden rounded-lg border">
+                  {recentSessions.slice(0, 4).map((session) => (
+                    <button
+                      key={session.id}
+                      type="button"
+                      onClick={() => setPrompt(session.title)}
+                      className="hover:bg-muted/35 flex min-h-11 w-full items-center gap-3 border-b px-3 py-2 text-left last:border-b-0"
+                    >
+                      <Clock3 className="text-muted-foreground shrink-0" size={15} strokeWidth={1.8} />
+                      <span className="min-w-0 flex-1 truncate text-sm">{session.title}</span>
+                      <span className="text-muted-foreground shrink-0 text-xs">
+                        {formatRelativeDate(session.last_activity_at)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
-          <h1 className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px] text-gray-1000 sm:whitespace-nowrap xl:text-[64px] xl:leading-[64px] xl:tracking-[-3.84px]">
-            {sessionPhrase}
-          </h1>
-          <p className="mx-auto mt-8 max-w-2xl text-xl leading-9 text-gray-900">
-            One prompt becomes a unique problem, a test suite, and a sandbox to prove your
-            solution in.
-          </p>
+
+          <aside className="min-w-0 lg:border-l lg:pl-7">
+            <WorkspaceSectionHeader
+              title="Personalization"
+              description="Included automatically when CodeGym builds the set."
+            />
+            {contextItems.length > 0 ? (
+              <div className="overflow-hidden rounded-lg border">
+                {contextItems.map((item, index) => (
+                  <button
+                    key={`${item.source}-${item.label}`}
+                    type="button"
+                    onClick={() => setPrompt(item.label)}
+                    className="hover:bg-muted/35 flex w-full gap-3 border-b px-3 py-3 text-left last:border-b-0"
+                  >
+                    <span className="text-muted-foreground mt-0.5 w-5 shrink-0 font-mono text-xs">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm leading-5">{item.label}</span>
+                      <span className="text-muted-foreground mt-0.5 block text-xs">{item.source}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-muted/20 rounded-lg border border-dashed px-4 py-5">
+                <Brain className="text-muted-foreground" size={18} strokeWidth={1.8} />
+                <p className="text-muted-foreground mt-3 text-sm leading-5">
+                  Finish a session to build personalized focus areas and memory notes.
+                </p>
+              </div>
+            )}
+
+            <div className="mt-5 border-t pt-4">
+              <div className="text-muted-foreground text-xs leading-5">
+                Difficulty and question count steer this session. Your learning history determines which concepts receive emphasis.
+              </div>
+            </div>
+          </aside>
         </div>
-
-        <div
-          className="mx-auto flex max-w-3xl items-center rounded-xl border border-gray-alpha-200 bg-background-100 p-2"
-          style={{ boxShadow: 'var(--cg-card-shadow)' }}
-        >
-          <input
-            type="text"
-            value={prompt}
-            onChange={(event) => onPromptChange(event.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Describe what you want to practice..."
-            className="min-w-0 flex-1 bg-transparent px-4 text-base text-gray-1000 placeholder-gray-700 focus-visible:outline-none"
-          />
-          <GenerateButton
-            disabled={generating || !prompt.trim()}
-            generating={generating}
-            label="Generate"
-            onClick={onGenerate}
-            variant="blueprint"
-          />
-        </div>
-
-        <div className="mt-10 flex flex-wrap justify-center gap-3">
-          {SPOTLIGHT_TOPICS.map((topic) => (
-            <motion.button
-              key={topic.label}
-              type="button"
-              onClick={() => onUsePrompt(topic.label)}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              className="cg-focus flex min-w-56 items-center justify-center gap-3 rounded-xl border border-gray-alpha-200 bg-background-100 px-5 py-4 text-sm text-gray-1000"
-              style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}
-            >
-              <span
-                className="h-2.5 w-2.5 rounded-sm"
-                style={{ backgroundColor: topic.color }}
-                aria-hidden="true"
-              />
-              <span className="font-semibold">{topic.label}</span>
-              <span className="text-gray-700">.{topic.count}</span>
-            </motion.button>
-          ))}
-        </div>
-
-        <div className="mt-8 flex items-center justify-center gap-2 text-sm text-gray-700">
-          <span className="relative flex h-3 w-3 items-center justify-center rounded-full bg-blue-100">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-700" />
-          </span>
-          <span>Personalized from your recent activity - 3 skills tracked</span>
-        </div>
-
-        <div className="mt-8 flex flex-wrap justify-center gap-2">
-          {EXAMPLES.slice(0, 3).map((example) => (
-            <button
-              key={example}
-              type="button"
-              onClick={() => onUsePrompt(example)}
-              className="cg-focus h-9 rounded-full border border-gray-alpha-200 bg-background-100 px-4 text-sm text-gray-900 transition-colors hover:border-gray-alpha-400 hover:text-gray-1000"
-            >
-              {example}
-            </button>
-          ))}
-        </div>
-
-        <GenerationState generating={generating} status={status} />
-      </div>
-    </main>
-  );
-}
-
-function GenerateButton({
-  disabled,
-  generating,
-  label,
-  onClick,
-  variant,
-}: {
-  disabled: boolean;
-  generating: boolean;
-  label: string;
-  onClick: () => void;
-  variant: 'ink' | 'blueprint';
-}) {
-  const isBlueprint = variant === 'blueprint';
-  const shouldReduceMotion = useReducedMotion();
-
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      whileHover={disabled || shouldReduceMotion ? undefined : { y: -1 }}
-      whileTap={disabled || shouldReduceMotion ? undefined : { scale: 0.97 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 34 }}
-      className={`cg-focus flex h-10 shrink-0 items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-700 ${
-        isBlueprint
-          ? 'bg-blue-700 text-white hover:bg-blue-800'
-          : 'bg-gray-1000 text-background-100 hover:bg-gray-900'
-      }`}
-      aria-label={label}
-    >
-      {generating ? (
-        <GridSpinner size="sm" />
-      ) : isBlueprint ? (
-        <ArrowRight size={18} strokeWidth={2.2} />
-      ) : (
-        <>
-          <span>{label}</span>
-          <kbd className="font-mono rounded-[5px] bg-white/15 px-1.5 py-0.5 text-[11px] text-white/80">
-            <CommandIcon size={10} strokeWidth={2} className="inline" /> Enter
-          </kbd>
-        </>
-      )}
-    </motion.button>
-  );
-}
-
-function CommandGenerationState({
-  generating,
-  status,
-}: {
-  generating: boolean;
-  status: string | null;
-}) {
-  if (generating) {
-    return (
-      <div className="cg-fade-in mt-12 flex flex-col items-center gap-4">
-        <Spinner className="size-6" />
-        <span className="font-mono text-xs tracking-[0.16em] text-muted-foreground uppercase">
-          Generating
-        </span>
-      </div>
-    );
-  }
-
-  if (!status) return null;
-
-  return (
-    <Card className="cg-fade-in mx-auto mt-6 max-w-xl gap-0 py-3">
-      <CardContent className="flex items-start gap-2 px-4 py-0 text-sm text-muted-foreground">
-        <Sparkles className="mt-0.5 size-3.5 shrink-0" />
-        <span>{status}</span>
-      </CardContent>
-    </Card>
-  );
-}
-
-function GenerationState({
-  generating,
-  status,
-}: {
-  generating: boolean;
-  status: string | null;
-}) {
-  if (generating) {
-    return (
-      <div className="cg-fade-in mt-12 flex flex-col items-center gap-4">
-        <GridSpinner size="md" />
-        <span className="font-mono text-xs tracking-[0.16em] text-gray-700 uppercase">
-          Generating
-        </span>
-      </div>
-    );
-  }
-
-  if (!status) return null;
-
-  return (
-    <div className="cg-fade-in mx-auto mt-6 max-w-xl rounded-xl border border-gray-alpha-200 bg-background-100 px-4 py-3 text-sm text-gray-900">
-      <Sparkles size={14} strokeWidth={1.8} className="mr-2 inline text-gray-700" />
-      {status}
-    </div>
+      </form>
+    </WorkspacePage>
   );
 }

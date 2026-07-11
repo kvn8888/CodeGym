@@ -5,11 +5,13 @@ import {
   Brain,
   Grid2X2,
   LayoutDashboard,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Rows3,
   Settings,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -28,7 +30,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/generate', label: 'Generate', icon: Plus },
+  { path: '/generate', label: 'New practice', icon: Plus },
   {
     path: '/',
     label: 'Problems',
@@ -47,10 +49,68 @@ const sidebarTransition = {
   mass: 0.9,
 };
 
+function NavigationLinks({
+  pathname,
+  collapsed,
+  shouldReduceMotion,
+  onNavigate,
+  layoutId,
+}: {
+  pathname: string;
+  collapsed: boolean;
+  shouldReduceMotion: boolean | null;
+  onNavigate?: () => void;
+  layoutId: string;
+}) {
+  return navItems.map((item) => {
+    const active = item.match ? item.match(pathname) : pathname.startsWith(item.path);
+    const Icon = item.icon;
+
+    return (
+      <motion.div
+        key={item.path}
+        whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+        className="t-tt-wrap w-full"
+      >
+        <Link
+          to={item.path}
+          onClick={onNavigate}
+          className={cn(
+            't-tt-trigger relative flex h-9 items-center rounded-md text-sm no-underline outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            collapsed ? 'w-9 justify-center px-0' : 'w-full gap-3 px-3',
+            active
+              ? 'text-foreground'
+              : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+          )}
+        >
+          {active && (
+            <motion.span
+              layoutId={layoutId}
+              transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 40 }}
+              className="bg-sidebar-accent border-sidebar-border absolute inset-0 rounded-md border"
+              aria-hidden="true"
+            />
+          )}
+          <Icon className="relative z-10 shrink-0" size={17} strokeWidth={1.8} />
+          {!collapsed && <span className="relative z-10 min-w-0 truncate font-medium">{item.label}</span>}
+        </Link>
+        {collapsed && (
+          <span className="t-tt" role="tooltip">
+            {item.label}
+          </span>
+        )}
+      </motion.div>
+    );
+  });
+}
+
 export function Layout() {
   const location = useLocation();
   const shouldReduceMotion = useReducedMotion();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const showContextualChat =
+    location.pathname.startsWith('/problems/') || location.pathname.startsWith('/marathon');
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
@@ -66,14 +126,52 @@ export function Layout() {
   const motionTransition = shouldReduceMotion ? { duration: 0 } : sidebarTransition;
 
   return (
-    <div className="bg-background text-foreground flex min-h-screen">
+    <div className="bg-background text-foreground min-h-screen md:flex">
+      <header className="bg-background sticky top-0 z-40 flex h-14 items-center justify-between border-b px-3 md:hidden">
+        <Link to="/dashboard" className="font-mono text-[13px] font-semibold tracking-[0.08em] no-underline">
+          CODEGYM
+        </Link>
+        <div className="flex items-center gap-1">
+          <AuthAccountMenu collapsed />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-9"
+            onClick={() => setMobileOpen((current) => !current)}
+            aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={mobileOpen}
+          >
+            {mobileOpen ? <X /> : <Menu />}
+          </Button>
+        </div>
+      </header>
+
+      {mobileOpen && (
+        <div className="bg-background fixed inset-x-0 top-14 bottom-0 z-50 flex flex-col md:hidden">
+          <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
+            <NavigationLinks
+              pathname={location.pathname}
+              collapsed={false}
+              shouldReduceMotion={shouldReduceMotion}
+              onNavigate={() => setMobileOpen(false)}
+              layoutId="mobile-nav-active"
+            />
+          </nav>
+          <div className="flex items-center justify-between border-t p-3">
+            <AuthAccountMenu collapsed={false} />
+            <ModeToggle className="size-9 shrink-0" />
+          </div>
+        </div>
+      )}
+
       <motion.aside
-        animate={{ width: collapsed ? 52 : 232 }}
+        animate={{ width: collapsed ? 52 : 216 }}
         transition={motionTransition}
-        className="bg-sidebar border-sidebar-border sticky top-0 z-40 flex h-screen shrink-0 flex-col border-r"
+        className="bg-sidebar border-sidebar-border sticky top-0 z-40 hidden h-screen shrink-0 flex-col border-r md:flex"
       >
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className={`flex h-16 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`}>
+          <div className={`flex h-14 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}>
             <motion.div
               animate={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 132 }}
               transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.15 }}
@@ -96,50 +194,13 @@ export function Layout() {
             </Button>
           </div>
 
-          <nav className={`flex flex-1 flex-col gap-1 px-2 py-2 ${collapsed ? 'items-center' : ''}`}>
-            {navItems.map((item) => {
-              const active = item.match ? item.match(location.pathname) : location.pathname.startsWith(item.path);
-              const Icon = item.icon;
-
-              return (
-                <motion.div
-                  key={item.path}
-                  whileHover={shouldReduceMotion ? undefined : { y: -1 }}
-                  whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
-                  className="t-tt-wrap w-full"
-                >
-                  <Link
-                    to={item.path}
-                    className={cn(
-                      't-tt-trigger relative flex h-10 items-center rounded-md text-sm no-underline outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                      collapsed ? 'w-9 justify-center px-0' : 'w-full gap-3 px-3',
-                      active
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
-                    )}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="geist-nav-active"
-                        transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 40 }}
-                        className="bg-sidebar-accent border-sidebar-border absolute inset-0 rounded-md border"
-                        aria-hidden="true"
-                      />
-                    )}
-                    <Icon className="relative z-10 shrink-0" size={17} strokeWidth={1.8} />
-                    {!collapsed && (
-                      <span className="relative z-10 min-w-0 truncate font-medium">{item.label}</span>
-                    )}
-                  </Link>
-                  {/* transitions-dev tooltip (17): only when collapsed (label hidden). */}
-                  {collapsed && (
-                    <span className="t-tt" role="tooltip">
-                      {item.label}
-                    </span>
-                  )}
-                </motion.div>
-              );
-            })}
+          <nav className={`flex flex-1 flex-col gap-0.5 px-2 py-2 ${collapsed ? 'items-center' : ''}`}>
+            <NavigationLinks
+              pathname={location.pathname}
+              collapsed={collapsed}
+              shouldReduceMotion={shouldReduceMotion}
+              layoutId="desktop-nav-active"
+            />
           </nav>
         </div>
 
@@ -158,7 +219,7 @@ export function Layout() {
         <Outlet />
       </main>
 
-      <FloatingChat />
+      {showContextualChat && <FloatingChat />}
     </div>
   );
 }

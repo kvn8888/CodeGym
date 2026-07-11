@@ -52,10 +52,10 @@ export function ProblemListPage() {
   const languages = [...new Set(problems.map((p) => p.language))];
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-12">
-      <div className="mb-10 flex items-end justify-between">
+    <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div className="mb-6 flex items-end justify-between border-b pb-5">
         <div>
-          <h1 className="text-[40px] font-semibold leading-[48px] tracking-[-2.4px]">Problems</h1>
+          <h1 className="text-2xl leading-8 font-semibold">Problems</h1>
           {!loading && (
             <p className="mt-2 text-sm text-muted-foreground">
               <span className="font-semibold text-foreground">{filteredProblems.length}</span> available
@@ -82,22 +82,22 @@ export function ProblemListPage() {
       </div>
 
       {loading ? (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[66px] w-full rounded-xl" />
+            <Skeleton key={i} className="h-13 w-full rounded-lg" />
           ))}
         </div>
       ) : filteredProblems.length === 0 ? (
         <div className="text-muted-foreground py-16 text-center text-sm">No problems found.</div>
       ) : (
-        <motion.div className="flex flex-col gap-4" variants={listVariants} initial="hidden" animate="visible">
+        <motion.div className="overflow-hidden rounded-lg border" variants={listVariants} initial="hidden" animate="visible">
           {filteredProblems.map((problem) => {
             const chip = difficultyChips[problem.difficulty];
             return (
-              <motion.div key={problem.id} variants={itemVariants}>
+              <motion.div key={problem.id} variants={itemVariants} className="border-b last:border-b-0">
                 <Link
                   to={`/problems/${problem.id}`}
-                  className="group bg-card hover:border-ring/40 focus-visible:border-ring focus-visible:ring-ring/50 flex items-center justify-between gap-4 rounded-xl border px-5 py-4 no-underline shadow-sm transition-colors outline-none focus-visible:ring-[3px]"
+                  className="group bg-card hover:bg-muted/35 focus-visible:ring-ring/50 flex min-h-13 items-center justify-between gap-4 px-3 py-2.5 no-underline transition-colors outline-none focus-visible:ring-[3px]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="group-hover:text-primary truncate text-sm font-semibold transition-colors">

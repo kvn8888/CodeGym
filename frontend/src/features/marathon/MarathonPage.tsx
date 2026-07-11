@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { CircleHelpIcon } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 import { HelpFlashcard } from './HelpFlashcard';
 import { api } from '../../shared/api/client';
+import type { NewPracticeConfig, PracticeSession } from '../../shared/api/types';
+import { WorkspacePage } from '../../shared/components/WorkspacePage';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -44,8 +47,54 @@ interface GenerateMcqResponse {
   model: string;
 }
 
-/** How many questions to request per marathon. */
-const QUESTION_COUNT = 5;
+interface MarathonSessionState {
+  schema_version: 1;
+  prompt: string;
+  difficulty: NewPracticeConfig['difficulty'];
+  count: number;
+  round: number;
+  question_index: number;
+  elapsed: number;
+  selected_index: number | null;
+  confirmed: boolean;
+  using_fallback: boolean;
+  questions: MarathonQuestion[];
+  results: QuestionResult[];
+}
+
+interface MarathonLocationState {
+  newPractice?: {
+    sessionId: string;
+    config: NewPracticeConfig;
+  };
+}
+
+const DEFAULT_CONFIG: NewPracticeConfig = {
+  prompt: '',
+  difficulty: 'medium',
+  count: 5,
+};
+
+function isMarathonSessionState(value: unknown): value is MarathonSessionState {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<MarathonSessionState>;
+  return (
+    candidate.schema_version === 1 &&
+    typeof candidate.prompt === 'string' &&
+    (candidate.difficulty === 'easy' ||
+      candidate.difficulty === 'medium' ||
+      candidate.difficulty === 'hard') &&
+    typeof candidate.count === 'number' &&
+    typeof candidate.round === 'number' &&
+    typeof candidate.question_index === 'number' &&
+    typeof candidate.elapsed === 'number' &&
+    (candidate.selected_index === null || typeof candidate.selected_index === 'number') &&
+    typeof candidate.confirmed === 'boolean' &&
+    typeof candidate.using_fallback === 'boolean' &&
+    Array.isArray(candidate.questions) &&
+    Array.isArray(candidate.results)
+  );
+}
 
 /** Fire-and-forget memory event emitter for the mcq source. Event writes must
  *  never block or break the practice flow, so failures are swallowed. Names
@@ -157,8 +206,15 @@ function SuccessCheck() {
  * - results: score summary + time breakdown + recommendations
  */
 export function MarathonPage() {
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const launch = (location.state as MarathonLocationState | null)?.newPractice;
+  const requestedSessionId = searchParams.get('session') ?? '';
+
   // Which phase the marathon is in.
-  const [phase, setPhase] = useState<'idle' | 'loading' | 'active' | 'results'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'loading' | 'active' | 'results'>(
+    launch || requestedSessionId ? 'loading' : 'idle',
+  );
 
   // Guard: prevents accidental option selection when Next button unmounts
   // and mouseup lands on an option button underneath.
@@ -192,9 +248,17 @@ export function MarathonPage() {
   // True when this round fell back to the built-in practice set.
   const [usingFallback, setUsingFallback] = useState(false);
 
+  const [sessionError, setSessionError] = useState<string | null>(null);
+
   // The user's free-text "what do you want to study?" ask; inserted into the
   // MCQ generation spec each round.
-  const [studyPrompt, setStudyPrompt] = useState('');
+  const [studyPrompt, setStudyPrompt] = useState(launch?.config.prompt ?? '');
+
+  const [difficulty, setDifficulty] = useState<NewPracticeConfig['difficulty']>(
+    launch?.config.difficulty ?? DEFAULT_CONFIG.difficulty,
+  );
+
+  const [questionCount, setQuestionCount] = useState(launch?.config.count ?? DEFAULT_CONFIG.count);
 
   // 1-based round number in the continuous marathon loop.
   const [round, setRound] = useState(1);
@@ -202,6 +266,12 @@ export function MarathonPage() {
   // Base id for the marathon run; each round derives `${base}_r${round}` so
   // the post-round reflection digests exactly one round of events.
   const baseIdRef = useRef('');
+
+  // Durable practice session id used by the resume/history APIs.
+  const practiceSessionIdRef = useRef(launch?.sessionId ?? requestedSessionId);
+
+  // StrictMode-safe guard for the one-shot launch/resume effect.
+  const initializedRef = useRef(false);
 
   // Session id for the current round's memory events.
   const sessionIdRef = useRef('');
@@ -218,13 +288,22 @@ export function MarathonPage() {
 
   /** Generate one round's question set; falls back to the built-in practice
    *  set when generation is unavailable. */
-  const generateRound = async (roundNumber: number) => {
+  const generateRound = async (
+    roundNumber: number,
+    config: NewPracticeConfig = { prompt: studyPrompt, difficulty, count: questionCount },
+  ) => {
     let nextQuestions = MOCK_QUESTIONS;
     let fallback = true;
     try {
       const generated = await api.post<GenerateMcqResponse>('/generate', {
         kind: 'mcq',
-        spec: { topic: '', prompt: studyPrompt.trim(), count: QUESTION_COUNT, round: roundNumber },
+        spec: {
+          topic: '',
+          prompt: config.prompt.trim(),
+          count: config.count,
+          difficulty: config.difficulty,
+          round: roundNumber,
+        },
       });
       if (generated.questions?.length) {
         nextQuestions = generated.questions;
@@ -257,6 +336,59 @@ export function MarathonPage() {
     setPhase('active');
   };
 
+  const buildSnapshot = (
+    overrides: Partial<MarathonSessionState> = {},
+  ): MarathonSessionState => ({
+    schema_version: 1,
+    prompt: studyPrompt,
+    difficulty,
+    count: questionCount,
+    round,
+    question_index: questionIndex,
+    elapsed,
+    selected_index: selectedIndex,
+    confirmed,
+    using_fallback: usingFallback,
+    questions,
+    results,
+    ...overrides,
+  });
+
+  const persistSession = (
+    overrides: Partial<MarathonSessionState> = {},
+    status?: 'active' | 'completed' | 'abandoned',
+  ) => {
+    if (!practiceSessionIdRef.current) return;
+    void api
+      .patch<PracticeSession>(`/sessions/${practiceSessionIdRef.current}`, {
+        ...(status ? { status } : {}),
+        state: buildSnapshot(overrides),
+      })
+      .catch(() => {});
+  };
+
+  const ensurePracticeSession = async (config: NewPracticeConfig) => {
+    if (practiceSessionIdRef.current) return practiceSessionIdRef.current;
+    const session = await api.post<PracticeSession>('/sessions', {
+      kind: 'mcq',
+      title: config.prompt.trim() || 'Personalized MCQ practice',
+      state: {
+        schema_version: 1,
+        ...config,
+        round: 1,
+        question_index: 0,
+        elapsed: 0,
+        selected_index: null,
+        confirmed: false,
+        using_fallback: false,
+        questions: [],
+        results: [],
+      },
+    });
+    practiceSessionIdRef.current = session.id;
+    return session.id;
+  };
+
   /** Record the just-finished round: session_completed event, then the
    *  memory reflection pass (deterministic refresh + LLM note CRUD). Awaited
    *  so the next round's generation reads the updated notes. */
@@ -287,14 +419,104 @@ export function MarathonPage() {
   };
 
   /** Start the marathon at round 1. */
-  const handleStart = async () => {
+  const handleStart = async (config?: NewPracticeConfig) => {
+    const nextConfig = config ?? { prompt: studyPrompt, difficulty, count: questionCount };
     setPhase('loading');
+    setSessionError(null);
     setResults([]);
-    baseIdRef.current = `mcq_${Date.now().toString(36)}`;
-    setRound(1);
-    const { nextQuestions, fallback } = await generateRound(1);
-    beginRound(1, nextQuestions, fallback);
+    setStudyPrompt(nextConfig.prompt);
+    setDifficulty(nextConfig.difficulty);
+    setQuestionCount(nextConfig.count);
+    try {
+      const durableSessionId = await ensurePracticeSession(nextConfig);
+      baseIdRef.current = durableSessionId;
+      setRound(1);
+      const { nextQuestions, fallback } = await generateRound(1, nextConfig);
+      beginRound(1, nextQuestions, fallback);
+      persistSession({
+        prompt: nextConfig.prompt,
+        difficulty: nextConfig.difficulty,
+        count: nextConfig.count,
+        round: 1,
+        question_index: 0,
+        elapsed: 0,
+        selected_index: null,
+        confirmed: false,
+        using_fallback: fallback,
+        questions: nextQuestions,
+        results: [],
+      });
+    } catch (err) {
+      setSessionError(err instanceof Error ? err.message : 'Could not start the practice session.');
+      setPhase('idle');
+    }
   };
+
+  useEffect(() => {
+    if (initializedRef.current || (!launch && !requestedSessionId)) return;
+    initializedRef.current = true;
+
+    const initialize = async () => {
+      if (launch) {
+        await handleStart(launch.config);
+        return;
+      }
+
+      try {
+        const session = await api.get<PracticeSession>(`/sessions/${requestedSessionId}`);
+        practiceSessionIdRef.current = session.id;
+        baseIdRef.current = session.id;
+        if (session.status !== 'active') {
+          setPhase('results');
+          const snapshot = isMarathonSessionState(session.state) ? session.state : null;
+          if (snapshot) {
+            setStudyPrompt(snapshot.prompt);
+            setDifficulty(snapshot.difficulty);
+            setQuestionCount(snapshot.count);
+            setRound(snapshot.round);
+            setQuestions(snapshot.questions.length > 0 ? snapshot.questions : MOCK_QUESTIONS);
+            setResults(snapshot.results);
+          }
+          return;
+        }
+
+        if (isMarathonSessionState(session.state) && session.state.questions.length > 0) {
+          const snapshot = session.state;
+          setStudyPrompt(snapshot.prompt);
+          setDifficulty(snapshot.difficulty);
+          setQuestionCount(snapshot.count);
+          setRound(snapshot.round);
+          setQuestionIndex(Math.min(snapshot.question_index, snapshot.questions.length - 1));
+          setElapsed(snapshot.elapsed);
+          setSelectedIndex(snapshot.selected_index);
+          setConfirmed(snapshot.confirmed);
+          setUsingFallback(snapshot.using_fallback);
+          setQuestions(snapshot.questions);
+          setResults(snapshot.results);
+          sessionIdRef.current = `${session.id}_r${snapshot.round}`;
+          setPhase('active');
+          return;
+        }
+
+        const fallbackConfig: NewPracticeConfig = isMarathonSessionState(session.state)
+          ? {
+              prompt: session.state.prompt,
+              difficulty: session.state.difficulty,
+              count: session.state.count,
+            }
+          : DEFAULT_CONFIG;
+        await handleStart(fallbackConfig);
+      } catch {
+        practiceSessionIdRef.current = '';
+        baseIdRef.current = '';
+        setPhase('idle');
+      }
+    };
+
+    void initialize();
+    // The launch payload and query id are intentionally consumed once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Round finished, user wants more: reflect (memory update), then build the
    *  next round from the just-updated notes. */
@@ -304,12 +526,22 @@ export function MarathonPage() {
     const nextRound = round + 1;
     const { nextQuestions, fallback } = await generateRound(nextRound);
     beginRound(nextRound, nextQuestions, fallback);
+    persistSession({
+      round: nextRound,
+      question_index: 0,
+      elapsed: 0,
+      selected_index: null,
+      confirmed: false,
+      using_fallback: fallback,
+      questions: nextQuestions,
+    });
   };
 
   /** User clicked Finished: run the final memory update in the background and
    *  show aggregate results immediately. */
   const handleFinish = () => {
     void reflectOnRound();
+    persistSession({}, 'completed');
     setPhase('results');
   };
 
@@ -332,7 +564,13 @@ export function MarathonPage() {
       timeMs: elapsed * 1000,
       usedHelp: helpUsed,
     };
-    setResults((prev) => [...prev, result]);
+    const nextResults = [...results, result];
+    setResults(nextResults);
+    persistSession({
+      selected_index: selectedIndex,
+      confirmed: true,
+      results: nextResults,
+    });
 
     // question_answered for correct answers; answer_incorrect feeds growth
     // edges for misses (one event per answer, per the naming guide).
@@ -366,14 +604,28 @@ export function MarathonPage() {
     });
 
     if (questionIndex < questions.length - 1) {
-      setQuestionIndex((i) => i + 1);
+      const nextQuestionIndex = questionIndex + 1;
+      setQuestionIndex(nextQuestionIndex);
       setElapsed(0);
       setSelectedIndex(null);
       setConfirmed(false);
       setShowHelp(false);
       setHelpUsed(false);
+      persistSession({
+        question_index: nextQuestionIndex,
+        elapsed: 0,
+        selected_index: null,
+        confirmed: false,
+      });
     }
   };
+
+  useEffect(() => {
+    if (phase !== 'active' || elapsed === 0 || elapsed % 5 !== 0) return;
+    persistSession({ elapsed });
+    // Persisting every five seconds keeps resume timers close without writing every tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsed, phase]);
 
   /** Open the help flashcard. */
   const handleHelp = () => {
@@ -384,16 +636,16 @@ export function MarathonPage() {
   // ── Idle state: start screen ─────────────────────────────────────────────
   if (phase === 'idle') {
     return (
-      <div className="mx-auto mt-12 max-w-lg">
-        <Card className="gap-0 px-6 py-16 text-center">
-          <h1 className="mb-4 text-[48px] font-semibold leading-[56px] tracking-[-2.88px]">
+      <WorkspacePage>
+        <Card className="mx-auto max-w-xl gap-0 px-6 py-8 text-center">
+          <h1 className="mb-3 text-[28px] leading-9 font-semibold">
             MCQ Marathon
           </h1>
-          <p className="text-muted-foreground mx-auto mb-8 max-w-sm text-sm leading-6">
-            Rounds of {QUESTION_COUNT} timed questions. After every round the AI updates its notes on
+          <p className="text-muted-foreground mx-auto mb-6 max-w-md text-sm leading-5">
+            Rounds of {questionCount} timed questions. After every round the AI updates its notes on
             you and builds the next round from what it learned — keep going until you hit Finished.
           </p>
-          <div className="mx-auto mb-8 w-full max-w-sm text-left">
+          <div className="mx-auto mb-6 w-full max-w-md text-left">
             <label
               htmlFor="study-prompt"
               className="text-muted-foreground mb-2 block text-xs font-semibold uppercase tracking-wide"
@@ -413,14 +665,19 @@ export function MarathonPage() {
             <p className="text-muted-foreground/70 mt-2 text-xs">
               Optional — leave empty to drill your current growth edges.
             </p>
+            {sessionError && (
+              <p className="text-destructive mt-3 text-sm" role="alert">
+                {sessionError}
+              </p>
+            )}
           </div>
           <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="inline-block">
-            <Button size="lg" onClick={handleStart}>
+            <Button size="lg" onClick={() => void handleStart()}>
               Start Marathon
             </Button>
           </motion.div>
         </Card>
-      </div>
+      </WorkspacePage>
     );
   }
 
@@ -428,23 +685,23 @@ export function MarathonPage() {
   if (phase === 'loading') {
     const firstRound = round === 1 && results.length === 0;
     return (
-      <div className="mx-auto mt-12 max-w-lg">
-        <Card className="gap-0 px-6 py-16 text-center">
+      <WorkspacePage>
+        <Card className="mx-auto max-w-xl gap-0 px-6 py-8 text-center">
           <div className="mx-auto mb-6 flex size-10 items-center justify-center">
             <Spinner className="text-muted-foreground size-8" />
           </div>
-          <h1 className="mb-3 text-2xl font-semibold tracking-tight">
+          <h1 className="mb-2 text-xl font-semibold">
             {firstRound ? 'Building your set' : 'Updating memory'}
           </h1>
-          <p className="text-muted-foreground mx-auto max-w-sm text-sm leading-6">
+          <p className="text-muted-foreground mx-auto max-w-md text-sm leading-5">
             {firstRound
               ? studyPrompt.trim()
-                ? `Writing ${QUESTION_COUNT} questions on “${studyPrompt.trim()}”…`
-                : `Picking ${QUESTION_COUNT} questions from your growth edges…`
+                ? `Writing ${questionCount} questions on “${studyPrompt.trim()}”…`
+                : `Picking ${questionCount} questions from your growth edges…`
               : `Reflecting on round ${round}, then building round ${round + 1} from the updated notes…`}
           </p>
         </Card>
-      </div>
+      </WorkspacePage>
     );
   }
 
@@ -452,11 +709,11 @@ export function MarathonPage() {
   if (phase === 'results') {
     const correct = results.filter((r) => r.correct).length;
     const totalTime = results.reduce((sum, r) => sum + r.timeMs, 0);
-    const avgTime = Math.round(totalTime / results.length / 1000);
+    const avgTime = results.length > 0 ? Math.round(totalTime / results.length / 1000) : 0;
 
     return (
-      <div className="mx-auto max-w-lg px-6 py-24">
-        <h1 className="mb-2 text-center text-[40px] font-semibold leading-[48px] tracking-[-2.4px]">
+      <div className="mx-auto max-w-xl px-4 py-8 sm:px-6">
+        <h1 className="mb-1 text-center text-[28px] leading-9 font-semibold">
           Results
         </h1>
         <p className="text-muted-foreground mb-8 text-center text-sm">
@@ -473,14 +730,14 @@ export function MarathonPage() {
           <Card className="gap-0 p-6">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <div className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px]">
+                <div className="text-[32px] leading-10 font-semibold tabular-nums">
                   {correct}
                   <span className="text-muted-foreground text-3xl">/{results.length}</span>
                 </div>
                 <div className="text-muted-foreground mt-2 text-sm">correct answers</div>
               </div>
               <div className="text-right">
-                <div className="text-[48px] font-semibold leading-[56px] tracking-[-2.88px] text-blue-700">
+                <div className="text-[32px] leading-10 font-semibold tabular-nums">
                   {avgTime}s
                 </div>
                 <div className="text-muted-foreground mt-2 text-sm">avg per question</div>
@@ -513,7 +770,14 @@ export function MarathonPage() {
         </motion.div>
 
         <div className="flex justify-center gap-3">
-          <Button onClick={handleStart}>Try Again</Button>
+          <Button
+            onClick={() => {
+              practiceSessionIdRef.current = '';
+              void handleStart();
+            }}
+          >
+            Try Again
+          </Button>
           <Button variant="outline" onClick={() => setPhase('idle')}>
             Back
           </Button>
@@ -524,12 +788,12 @@ export function MarathonPage() {
 
   // ── Active state: question display ───────────────────────────────────────
   return (
-    <div className="mx-auto max-w-lg px-6 py-12">
-      <div className="mb-8 flex items-center justify-between">
+    <div className="mx-auto max-w-xl px-4 py-8 sm:px-6">
+      <div className="mb-5 flex items-center justify-between">
         <span className="text-muted-foreground text-sm font-medium">
           Round {round} · {questionIndex + 1} of {questions.length}
           {usingFallback && (
-            <span className="text-muted-foreground/70 ml-2 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+            <span className="text-muted-foreground/70 ml-2 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
               practice set
             </span>
           )}
@@ -542,12 +806,12 @@ export function MarathonPage() {
         </div>
       </div>
 
-      <Progress value={((questionIndex + 1) / questions.length) * 100} className="mb-8" />
+      <Progress value={((questionIndex + 1) / questions.length) * 100} className="mb-6" />
 
-      <h2 className="mb-6 text-2xl font-semibold leading-8 tracking-[-0.96px]">{currentQ.text}</h2>
+      <h2 className="mb-5 text-xl leading-7 font-semibold">{currentQ.text}</h2>
 
       {/* Option buttons — radio-style selection */}
-      <div className="mb-8 flex flex-col gap-3">
+      <div className="mb-6 flex flex-col gap-2.5">
         {currentQ.options.map((option, i) => {
           const isSelected = selectedIndex === i;
           const isCorrect = i === currentQ.correctIndex;
@@ -636,7 +900,7 @@ export function MarathonPage() {
         {confirmed &&
           (questionIndex < questions.length - 1 ? (
             <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-              <Button onClick={handleNext} className="bg-blue-700 text-white hover:bg-blue-800">
+              <Button onClick={handleNext}>
                 Next
               </Button>
             </motion.div>
@@ -649,7 +913,7 @@ export function MarathonPage() {
               <Button variant="outline" onClick={handleFinish}>
                 Finished
               </Button>
-              <Button onClick={handleNextRound} className="bg-blue-700 text-white hover:bg-blue-800">
+              <Button onClick={handleNextRound}>
                 Next Round
               </Button>
             </motion.div>

@@ -1,7 +1,8 @@
 import { mockPassingResult, mockProblems, mockProblemSummaries, mockSkeletons } from './fixtures';
 import { mockMcqQuestions } from './mcqFixtures';
 import { mockMemoryProfile } from './memoryFixtures';
-import type { UserProfile } from '../shared/api/types';
+import { mockMemoryEvents, mockSessions } from './activityFixtures';
+import type { PracticeSession, UserProfile } from '../shared/api/types';
 
 interface MockApiResponse<T> {
   data: T;
@@ -17,6 +18,17 @@ let mockUserProfile: UserProfile = {
   display_name_source: 'oauth',
   default_workspace_id: 'personal-auth0-mock-user',
 };
+
+let sessions: PracticeSession[] = structuredClone(mockSessions);
+
+export type MockApiScenario = 'default' | 'empty' | 'error' | 'loading';
+
+let mockApiScenario: MockApiScenario = 'default';
+
+export function setMockApiScenario(scenario: MockApiScenario) {
+  mockApiScenario = scenario;
+  sessions = structuredClone(mockSessions);
+}
 
 function json<T>(data: T, init?: ResponseInit): Response {
   const body: MockApiResponse<T> = { data, error: null };
@@ -55,6 +67,18 @@ export async function mockApiFetch(
 
   const path = url.pathname.replace('/api/v1', '') || '/';
 
+  if (mockApiScenario === 'loading' && method === 'GET') {
+    await new Promise<never>(() => {});
+  }
+
+  if (
+    mockApiScenario === 'error' &&
+    method === 'GET' &&
+    (path === '/memory/profile' || path === '/memory/events' || path === '/sessions')
+  ) {
+    return error('mock_unavailable', 'The learning workspace could not be loaded.', 503);
+  }
+
   if (method === 'GET' && path === '/me') {
     return json(mockUserProfile);
   }
@@ -76,7 +100,97 @@ export async function mockApiFetch(
   }
 
   if (method === 'GET' && path === '/memory/profile') {
-    return json(mockMemoryProfile);
+    return json(
+      mockApiScenario === 'empty'
+        ? {
+            ...mockMemoryProfile,
+            summary: 'CodeGym is ready to learn from your first practice session.',
+            strengths: [],
+            growth_edges: [],
+            skills: [],
+            notes: [],
+          }
+        : mockMemoryProfile,
+    );
+  }
+
+  if (method === 'GET' && path === '/memory/events') {
+    return json(mockApiScenario === 'empty' ? [] : mockMemoryEvents);
+  }
+
+  if (method === 'GET' && path === '/sessions') {
+    const status = url.searchParams.get('status');
+    const kind = url.searchParams.get('kind');
+    const limit = Number(url.searchParams.get('limit') ?? 20);
+    const filtered = (mockApiScenario === 'empty' ? [] : sessions)
+      .filter((session) => !status || session.status === status)
+      .filter((session) => !kind || session.kind === kind)
+      .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at))
+      .slice(0, limit)
+      .map((session) => ({
+        id: session.id,
+        workspace_id: session.workspace_id,
+        user_id: session.user_id,
+        kind: session.kind,
+        status: session.status,
+        title: session.title,
+        problem_id: session.problem_id,
+        generation_job_id: session.generation_job_id,
+        created_at: session.created_at,
+        updated_at: session.updated_at,
+        last_activity_at: session.last_activity_at,
+        completed_at: session.completed_at,
+      }));
+    return json(filtered);
+  }
+
+  if (method === 'POST' && path === '/sessions') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as Partial<PracticeSession>;
+    const now = new Date().toISOString();
+    const session: PracticeSession = {
+      id: `sess_${Date.now().toString(36)}`,
+      workspace_id: mockUserProfile.default_workspace_id,
+      user_id: mockUserProfile.user_id,
+      kind: body.kind ?? 'mcq',
+      status: 'active',
+      title: body.title?.trim() || 'Untitled practice',
+      created_at: now,
+      updated_at: now,
+      last_activity_at: now,
+      state: body.state ?? {},
+      files: [],
+    };
+    sessions = [session, ...sessions];
+    return json(session, { status: 201 });
+  }
+
+  const sessionMatch = path.match(/^\/sessions\/([^/]+)$/);
+  if (sessionMatch) {
+    const sessionIndex = sessions.findIndex((candidate) => candidate.id === sessionMatch[1]);
+    if (sessionIndex < 0) {
+      return error('not_found', 'Practice session not found.', 404);
+    }
+
+    if (method === 'GET') {
+      return json(sessions[sessionIndex]);
+    }
+
+    if (method === 'PATCH') {
+      const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+      const body = JSON.parse(rawBody) as Partial<PracticeSession>;
+      const now = new Date().toISOString();
+      const updated: PracticeSession = {
+        ...sessions[sessionIndex],
+        ...body,
+        updated_at: now,
+        last_activity_at: now,
+        completed_at:
+          body.status === 'completed' ? now : sessions[sessionIndex].completed_at,
+      };
+      sessions[sessionIndex] = updated;
+      return json(updated);
+    }
   }
 
   if (method === 'GET' && path === '/problems') {

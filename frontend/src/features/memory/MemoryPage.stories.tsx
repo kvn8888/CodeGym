@@ -14,5 +14,18 @@ export default meta;
 type Story = StoryObj<typeof MemoryPage>;
 
 export const Default: Story = {
-  name: 'Mock Profile',
+  name: 'Populated',
+};
+
+export const Empty: Story = {
+  parameters: { mockApiScenario: 'empty' },
+};
+
+export const Loading: Story = {
+  parameters: { mockApiScenario: 'loading' },
+};
+
+export const ErrorState: Story = {
+  name: 'Error',
+  parameters: { mockApiScenario: 'error' },
 };

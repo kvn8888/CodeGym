@@ -119,3 +119,48 @@ export interface MemoryNote {
   tags: string[];
   action: 'keep' | 'review' | 'prune';
 }
+
+export interface MemoryEvent {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  source: string;
+  type: string;
+  summary: string;
+  payload?: unknown;
+  occurred_at: string;
+  created_at: string;
+}
+
+export type SessionKind = 'workspace' | 'mcq' | 'interview';
+export type SessionStatus = 'active' | 'completed' | 'abandoned';
+
+export interface PracticeSessionSummary {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  kind: SessionKind;
+  status: SessionStatus;
+  title: string;
+  problem_id?: string;
+  generation_job_id?: string;
+  created_at: string;
+  updated_at: string;
+  last_activity_at: string;
+  completed_at?: string;
+}
+
+export interface PracticeSession extends PracticeSessionSummary {
+  state: unknown;
+  files?: Array<{
+    file_path: string;
+    content: string;
+    updated_at: string;
+  }>;
+}
+
+export interface NewPracticeConfig {
+  prompt: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  count: number;
+}

@@ -85,7 +85,11 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 				ALTER TABLE tenant_memberships DROP CONSTRAINT chk_tenant_memberships_role;
 			END IF;
 			IF to_regclass('public.idx_tenant_memberships_user_id') IS NOT NULL THEN
-				ALTER INDEX idx_tenant_memberships_user_id RENAME TO idx_workspace_memberships_user_id;
+				IF to_regclass('public.idx_workspace_memberships_user_id') IS NULL THEN
+					ALTER INDEX idx_tenant_memberships_user_id RENAME TO idx_workspace_memberships_user_id;
+				ELSE
+					DROP INDEX idx_tenant_memberships_user_id;
+				END IF;
 			END IF;
 		END $$`,
 		`CREATE TABLE IF NOT EXISTS workspaces (

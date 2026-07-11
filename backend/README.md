@@ -59,7 +59,9 @@ doppler run -p codegym -c dev -- go run ./cmd/server
 ```
 
 See [../docs/secrets-and-local-env.md](../docs/secrets-and-local-env.md) for
-the shared secret contract.
+the shared secret contract. Production Render/Vercel use a single
+`DOPPLER_TOKEN` and `doppler run` — app secrets are not stored in those
+dashboards.
 
 To validate the Neon-backed memory flow against a running local backend:
 

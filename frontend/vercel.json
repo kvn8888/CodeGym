@@ -1,15 +1,5 @@
 {
   "installCommand": "npm ci",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://codegym.onrender.com/api/:path*"
-    },
-    {
-      "source": "/:path*",
-      "destination": "/index.html"
-    }
-  ]
+  "buildCommand": "curl -Ls https://cli.doppler.com/install.sh | sh && doppler run -- npm run build",
+  "outputDirectory": "dist"
 }

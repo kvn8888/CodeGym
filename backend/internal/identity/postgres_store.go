@@ -54,11 +54,35 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			) THEN
 				ALTER TABLE workspace_memberships RENAME COLUMN tenant_id TO workspace_id;
 			END IF;
-			IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_tenants_tenant_type') THEN
+			-- Only rename constraints that already live on the renamed tables.
+			-- If both tenants and workspaces exist (partial migrate), the legacy
+			-- constraint remains on tenants — drop it there instead of failing
+			-- ALTER TABLE workspaces RENAME CONSTRAINT ...
+			IF EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conname = 'chk_tenants_tenant_type'
+					AND conrelid = 'workspaces'::regclass
+			) THEN
 				ALTER TABLE workspaces RENAME CONSTRAINT chk_tenants_tenant_type TO chk_workspaces_workspace_type;
+			ELSIF to_regclass('public.tenants') IS NOT NULL AND EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conname = 'chk_tenants_tenant_type'
+					AND conrelid = 'tenants'::regclass
+			) THEN
+				ALTER TABLE tenants DROP CONSTRAINT chk_tenants_tenant_type;
 			END IF;
-			IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_tenant_memberships_role') THEN
+			IF EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conname = 'chk_tenant_memberships_role'
+					AND conrelid = 'workspace_memberships'::regclass
+			) THEN
 				ALTER TABLE workspace_memberships RENAME CONSTRAINT chk_tenant_memberships_role TO chk_workspace_memberships_role;
+			ELSIF to_regclass('public.tenant_memberships') IS NOT NULL AND EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conname = 'chk_tenant_memberships_role'
+					AND conrelid = 'tenant_memberships'::regclass
+			) THEN
+				ALTER TABLE tenant_memberships DROP CONSTRAINT chk_tenant_memberships_role;
 			END IF;
 			IF to_regclass('public.idx_tenant_memberships_user_id') IS NOT NULL THEN
 				ALTER INDEX idx_tenant_memberships_user_id RENAME TO idx_workspace_memberships_user_id;

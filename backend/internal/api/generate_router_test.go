@@ -1,0 +1,237 @@
+package api
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/generation"
+	"github.com/kvn8888/codegym/backend/internal/identity"
+	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/session"
+)
+
+// staticGenerator returns a fixed payload, satisfying generation.Generator.
+type staticGenerator struct {
+	payload string
+}
+
+func (s staticGenerator) Generate(_ context.Context, _ generation.GenerateRequest) (generation.GenerateResult, error) {
+	return generation.GenerateResult{
+		Object:   []byte(s.payload),
+		Provider: "static",
+		Model:    "fake-model",
+	}, nil
+}
+
+func newGenerateTestRouter(t *testing.T, orchestrator *generation.Orchestrator, memoryService *memory.Service) http.Handler {
+	t.Helper()
+	return NewRouter(Dependencies{
+		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:      identity.NewService(identity.NewInMemoryStore()),
+		Memory:        memoryService,
+		Sessions:      session.NewService(session.NewInMemoryStore(), nil),
+		Generation:    orchestrator,
+	})
+}
+
+func TestGenerateRouteRespondsServiceUnavailableWhenUnconfigured(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	router := newGenerateTestRouter(t, nil, memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"mcq","spec":{"count":2}}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "generation_unconfigured") {
+		t.Fatalf("body = %s", recorder.Body.String())
+	}
+}
+
+func TestGenerateRouteRequiresAuth(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	router := newGenerateTestRouter(t, nil, memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"mcq"}`))
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", recorder.Code)
+	}
+}
+
+func TestGenerateRouteReturnsMCQSetAndRecordsMemoryEvent(t *testing.T) {
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	orchestrator := generation.NewOrchestrator(memoryService, staticGenerator{payload: `[
+		{"id":"mq1","text":"What is FIFO?","options":["Queue","Stack","Heap","Trie"],"correctIndex":0,"concept":"Queues","helpContent":"First in, first out."},
+		{"id":"mq2","text":"BFS order?","options":["Depth","Level","Post","In"],"correctIndex":1,"concept":"BFS","helpContent":"Level by level."}
+	]`})
+	router := newGenerateTestRouter(t, orchestrator, memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"mcq","spec":{"topic":"queues","count":2}}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"questions"`) || !strings.Contains(body, `"correctIndex"`) {
+		t.Fatalf("body = %s", body)
+	}
+	if !strings.Contains(body, `"provider":"static"`) {
+		t.Fatalf("body missing provider: %s", body)
+	}
+
+	// The generate flow should append a generate.mcq_set_generated event.
+	events := httptest.NewRecorder()
+	eventsRequest := httptest.NewRequest(http.MethodGet, "/api/v1/memory/events", nil)
+	eventsRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(events, eventsRequest)
+
+	if events.Code != http.StatusOK {
+		t.Fatalf("events status = %d", events.Code)
+	}
+	if !strings.Contains(events.Body.String(), "mcq_set_generated") {
+		t.Fatalf("memory events missing mcq_set_generated: %s", events.Body.String())
+	}
+}
+
+// sequencedGenerator returns payloads in call order (last repeats).
+type sequencedGenerator struct {
+	payloads []string
+	requests []generation.GenerateRequest
+}
+
+func (s *sequencedGenerator) Generate(_ context.Context, request generation.GenerateRequest) (generation.GenerateResult, error) {
+	s.requests = append(s.requests, request)
+	index := len(s.requests) - 1
+	if index >= len(s.payloads) {
+		index = len(s.payloads) - 1
+	}
+	return generation.GenerateResult{
+		Object:   []byte(s.payloads[index]),
+		Provider: "sequenced",
+		Model:    "fake-model",
+	}, nil
+}
+
+func TestMaintainNotesRouteAppliesActionsAndAuditsEvents(t *testing.T) {
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	generator := &sequencedGenerator{payloads: []string{
+		`{"actions":[{"op":"create","note":{"id":"note_sql-joins","title":"SQL joins","summary":"Missed LEFT JOIN semantics.","tags":["sql"],"action":"review"}}],"reason":"missed sql"}`,
+	}}
+	orchestrator := generation.NewOrchestrator(memoryService, generator)
+	router := newGenerateTestRouter(t, orchestrator, memoryService)
+
+	authed := func(method, path, body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(method, path, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+		router.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	// Seed one round of answer events (what the marathon emits per question).
+	for _, event := range []string{
+		`{"source":"mcq","type":"answer_incorrect","summary":"Missed a SQL Joins question.","payload":{"session_id":"mcq_r1","topic":"SQL Joins","correct":false}}`,
+		`{"source":"mcq","type":"question_answered","summary":"Answered a Two Pointers question correctly.","payload":{"session_id":"mcq_r1","topic":"Two Pointers","correct":true}}`,
+	} {
+		if code := authed(http.MethodPost, "/api/v1/memory/events", event).Code; code != http.StatusCreated {
+			t.Fatalf("seed event status = %d", code)
+		}
+	}
+
+	maintain := authed(http.MethodPost, "/api/v1/memory/notes/maintain", `{"session_id":"mcq_r1"}`)
+	if maintain.Code != http.StatusOK {
+		t.Fatalf("maintain status = %d: %s", maintain.Code, maintain.Body.String())
+	}
+	if !strings.Contains(maintain.Body.String(), "note_sql-joins") {
+		t.Fatalf("maintained profile missing note: %s", maintain.Body.String())
+	}
+
+	// Audit event recorded for the CRUD action.
+	events := authed(http.MethodGet, "/api/v1/memory/events", "")
+	if !strings.Contains(events.Body.String(), "note_created") {
+		t.Fatalf("missing note_created audit event: %s", events.Body.String())
+	}
+
+	// The next generation call must see the updated note in its memory context.
+	generator.payloads = append(generator.payloads, `[
+		{"id":"mq1","text":"Which JOIN keeps unmatched left rows?","options":["INNER","LEFT","RIGHT","CROSS"],"correctIndex":1,"concept":"SQL Joins","helpContent":"LEFT JOIN keeps all left rows."},
+		{"id":"mq2","text":"Q2","options":["a","b","c","d"],"correctIndex":0,"concept":"C","helpContent":"H"}
+	]`)
+	generate := authed(http.MethodPost, "/api/v1/generate", `{"kind":"mcq","spec":{"prompt":"drill my weak spots","count":2,"round":2}}`)
+	if generate.Code != http.StatusOK {
+		t.Fatalf("generate status = %d: %s", generate.Code, generate.Body.String())
+	}
+	lastRequest := generator.requests[len(generator.requests)-1]
+	foundNote := false
+	for _, note := range lastRequest.MemoryContext.Notes {
+		if note.Title == "SQL joins" {
+			foundNote = true
+		}
+	}
+	if !foundNote {
+		t.Fatalf("generation memory context missing maintained note: %+v", lastRequest.MemoryContext.Notes)
+	}
+	if !strings.Contains(string(lastRequest.Spec), "drill my weak spots") {
+		t.Fatalf("spec missing user prompt: %s", lastRequest.Spec)
+	}
+}
+
+func TestMaintainNotesRouteWorksWithoutOrchestrator(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	router := newGenerateTestRouter(t, nil, memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/memory/notes/maintain", strings.NewReader(`{}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (refresh-only fallback): %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGenerateRouteRejectsUnknownKind(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	orchestrator := generation.NewOrchestrator(memoryService, staticGenerator{payload: `[]`})
+	router := newGenerateTestRouter(t, orchestrator, memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"poem"}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGenerateRouteNotImplementedKinds(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	orchestrator := generation.NewOrchestrator(memoryService, staticGenerator{payload: `[]`})
+	router := newGenerateTestRouter(t, orchestrator, memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"problem"}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501: %s", recorder.Code, recorder.Body.String())
+	}
+}

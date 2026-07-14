@@ -105,6 +105,19 @@ expiry, and not-before checks before mapping claims into `auth.Principal`.
 Auth0 `sub` becomes `Principal.UserID`, and CodeGym derives a deterministic
 personal workspace ID from `sub`, such as `personal-auth0-user-123`.
 
+Important Auth0 setup boundaries:
+
+- The backend validates **access tokens** whose `aud` matches the configured
+  Auth0 API Identifier. Do not send frontend ID tokens to the backend.
+- The backend needs the Auth0 domain or issuer URL plus audience. It does not
+  need an Auth0 client ID or client secret.
+- The frontend SPA needs its Auth0 domain, SPA client ID, and the same audience
+  so it can request backend API access tokens.
+- `CODEGYM_AUTH0_DOMAIN` / `CODEGYM_AUTH0_AUDIENCE` are the preferred Doppler
+  names. `AUTH0_DOMAIN` / `AUTH0_AUDIENCE` remain supported aliases.
+- `CODEGYM_AUTH0_ISSUER_URL` is only for non-standard issuer setups. A normal
+  Auth0 domain is converted to `https://<domain>/` automatically.
+
 Auth0 `email` and `name` are treated as optional profile metadata. The identity
 layer stores `email` on `app_users.email` when present and stores `name` as
 `app_users.display_name` when present. If a later access token omits those

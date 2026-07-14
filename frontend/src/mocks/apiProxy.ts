@@ -1,4 +1,6 @@
 import { mockPassingResult, mockProblems, mockProblemSummaries, mockSkeletons } from './fixtures';
+import { mockMcqQuestions } from './mcqFixtures';
+import { mockMemoryProfile } from './memoryFixtures';
 import { mockMemoryEvents, mockMemoryProfile } from './memoryFixtures';
 
 interface MockApiResponse<T> {
@@ -147,6 +149,33 @@ export async function mockApiFetch(
     return json({
       status: 'completed',
       result: mockPassingResult,
+    });
+  }
+
+  // Memory event writes are fire-and-forget from product flows; accept and echo.
+  if (method === 'POST' && path === '/memory/events') {
+    return json({ id: `mock-event-${Date.now()}`, created_at: new Date().toISOString() }, { status: 201 });
+  }
+
+  // Profile refresh after a completed session; return the mock profile.
+  if (method === 'POST' && path === '/memory/profile/refresh') {
+    return json(mockMemoryProfile);
+  }
+
+  // Post-round reflection (deterministic refresh + LLM note CRUD); the mock
+  // just returns the profile so the round loop keeps moving without a backend.
+  if (method === 'POST' && path === '/memory/notes/maintain') {
+    return json(mockMemoryProfile);
+  }
+
+  // Generation: return a canned MCQ set shaped like the backend response so
+  // the marathon flow works without a backend or GenAI key.
+  if (method === 'POST' && path === '/generate') {
+    return json({
+      kind: 'mcq',
+      provider: 'mock',
+      model: 'mock-model',
+      questions: mockMcqQuestions,
     });
   }
 

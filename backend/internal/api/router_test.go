@@ -10,6 +10,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,8 +21,173 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/session"
 	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"gopkg.in/yaml.v3"
 )
+
+func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current test file")
+	}
+
+	openAPIPath := filepath.Join(filepath.Dir(currentFile), "..", "..", "..", "api", "openapi.yaml")
+	openAPIBytes, err := os.ReadFile(openAPIPath)
+	if err != nil {
+		t.Fatalf("read OpenAPI contract: %v", err)
+	}
+
+	var contract struct {
+		Paths map[string]map[string]any `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(openAPIBytes, &contract); err != nil {
+		t.Fatalf("parse OpenAPI contract: %v", err)
+	}
+
+	required := map[string][]string{
+		"/health":                        {http.MethodGet},
+		"/ready":                         {http.MethodGet},
+		"/api/v1/memory/profile":         {http.MethodGet},
+		"/api/v1/memory/profile/refresh": {http.MethodPost},
+		"/api/v1/memory/events":          {http.MethodGet, http.MethodPost},
+		"/api/v1/sessions":               {http.MethodGet, http.MethodPost},
+		"/api/v1/sessions/{id}":          {http.MethodGet, http.MethodPatch},
+		"/api/v1/sessions/{id}/files":    {http.MethodPut},
+		"/api/v1/generate":               {http.MethodPost},
+		"/api/v1/memory/notes/maintain":  {http.MethodPost},
+	}
+
+	for path, methods := range required {
+		operations, ok := contract.Paths[path]
+		if !ok {
+			t.Fatalf("OpenAPI contract is missing route %s", path)
+		}
+		for _, method := range methods {
+			if _, ok := operations[strings.ToLower(method)]; !ok {
+				t.Fatalf("OpenAPI contract is missing %s %s", method, path)
+			}
+		}
+	}
+}
+
+func TestRouterSessionsLifecycle(t *testing.T) {
+	now := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+	router := NewRouter(Dependencies{
+		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:      identity.NewService(identity.NewInMemoryStore()),
+		Memory:        memory.NewService(memory.NewInMemoryStore(), nil),
+		Sessions:      session.NewService(session.NewInMemoryStore(), func() time.Time { return now }),
+	})
+
+	create := httptest.NewRecorder()
+	createReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/sessions",
+		strings.NewReader(`{"kind":"workspace","title":"Graph traversal","problem_id":"prob_graph","state":{"schema_version":1,"language":"go"}}`),
+	)
+	createReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(create, createReq)
+
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create session status = %d: %s", create.Code, create.Body.String())
+	}
+	created := decodeEnvelopeData[session.Session](t, create)
+	if created.ID == "" {
+		t.Fatal("created session id is empty")
+	}
+	if len(created.State) == 0 {
+		t.Fatal("created session state is empty")
+	}
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/sessions?status=active&limit=5", nil)
+	listReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(list, listReq)
+
+	if list.Code != http.StatusOK {
+		t.Fatalf("list sessions status = %d: %s", list.Code, list.Body.String())
+	}
+	if strings.Contains(list.Body.String(), `"state"`) || strings.Contains(list.Body.String(), `"files"`) {
+		t.Fatalf("list response included heavy fields: %s", list.Body.String())
+	}
+	summaries := decodeEnvelopeData[[]session.Summary](t, list)
+	if len(summaries) != 1 || summaries[0].ID != created.ID {
+		t.Fatalf("summaries = %#v", summaries)
+	}
+
+	detail := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+created.ID, nil)
+	detailReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(detail, detailReq)
+
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail status = %d: %s", detail.Code, detail.Body.String())
+	}
+	detailed := decodeEnvelopeData[session.Session](t, detail)
+	if string(detailed.State) == "" {
+		t.Fatalf("detail state is empty: %#v", detailed)
+	}
+
+	patch := httptest.NewRecorder()
+	patchReq := httptest.NewRequest(
+		http.MethodPatch,
+		"/api/v1/sessions/"+created.ID,
+		strings.NewReader(`{"title":"Completed graph traversal","status":"completed","state":{"schema_version":1,"language":"go","last_run":{"passed":3,"total":3}}}`),
+	)
+	patchReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(patch, patchReq)
+
+	if patch.Code != http.StatusOK {
+		t.Fatalf("patch status = %d: %s", patch.Code, patch.Body.String())
+	}
+	updated := decodeEnvelopeData[session.Session](t, patch)
+	if updated.Status != session.StatusCompleted || updated.CompletedAt == nil {
+		t.Fatalf("updated session = %#v", updated)
+	}
+
+	files := httptest.NewRecorder()
+	filesReq := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/sessions/"+created.ID+"/files",
+		strings.NewReader(`{"files":[{"file_path":"main.go","content":"package main\n"}]}`),
+	)
+	filesReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(files, filesReq)
+
+	if files.Code != http.StatusOK {
+		t.Fatalf("upsert files status = %d: %s", files.Code, files.Body.String())
+	}
+	withFiles := decodeEnvelopeData[session.Session](t, files)
+	if len(withFiles.Files) != 1 || withFiles.Files[0].Path != "main.go" {
+		t.Fatalf("files = %#v", withFiles.Files)
+	}
+
+	crossScope := httptest.NewRecorder()
+	crossScopeReq := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+created.ID, nil)
+	crossScopeReq.Header.Set("Authorization", "Bearer dev:alec:personal-alec")
+	router.ServeHTTP(crossScope, crossScopeReq)
+
+	if crossScope.Code != http.StatusNotFound {
+		t.Fatalf("cross-scope status = %d: %s", crossScope.Code, crossScope.Body.String())
+	}
+}
+
+func decodeEnvelopeData[T any](t *testing.T, recorder *httptest.ResponseRecorder) T {
+	t.Helper()
+
+	var envelope struct {
+		Data  T           `json:"data"`
+		Error interface{} `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode envelope: %v; body=%s", err, recorder.Body.String())
+	}
+	if envelope.Error != nil {
+		t.Fatalf("unexpected envelope error: %#v", envelope.Error)
+	}
+	return envelope.Data
+}
 
 func TestRouterMapsAuth0UserIntoIdentityBootstrap(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)

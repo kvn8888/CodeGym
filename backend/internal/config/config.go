@@ -20,6 +20,46 @@ type Config struct {
 	DevUserID          string
 	DevTenantID        string
 	CORSAllowedOrigins []string
+	MemoryWorker       WorkerConfig
+	GenAI              GenAIConfig
+}
+
+type WorkerConfig struct {
+	Disabled bool
+	Interval time.Duration
+}
+
+// GenAIConfig configures the OpenAI-compatible generation provider adapter.
+// The default base URL targets the Vercel AI Gateway, which fronts Claude and
+// Gemini behind the OpenAI chat-completions wire format.
+type GenAIConfig struct {
+	BaseURL string
+	APIKey  string
+	Model   string
+}
+
+// Enabled reports whether generation is configured. Without an API key the
+// server still runs; POST /api/v1/generate responds 503.
+func (g GenAIConfig) Enabled() bool {
+	return strings.TrimSpace(g.APIKey) != ""
+}
+
+func (g GenAIConfig) PairingWarning() string {
+	baseURL := strings.ToLower(strings.TrimSpace(g.BaseURL))
+	model := strings.TrimSpace(g.Model)
+	if baseURL == "" || model == "" {
+		return ""
+	}
+
+	modelHasVendorPrefix := strings.Contains(model, "/")
+	switch {
+	case strings.Contains(baseURL, "generativelanguage.googleapis.com") && modelHasVendorPrefix:
+		return "GenAI config mismatch: Google direct OpenAI-compatible base URL expects a bare Gemini model slug such as gemini-flash-latest or gemini-2.5-flash; current model includes a vendor prefix."
+	case strings.Contains(baseURL, "ai-gateway.vercel.sh") && !modelHasVendorPrefix:
+		return "GenAI config mismatch: Vercel AI Gateway base URL expects a vendor-prefixed model slug such as google/gemini-2.5-flash; current model has no vendor prefix."
+	default:
+		return ""
+	}
 }
 
 // Load reads environment variables and returns the effective runtime config.
@@ -30,9 +70,16 @@ func Load() Config {
 		databaseURL = os.Getenv("DATABASE_URL")
 	}
 
+	// CODEGYM_PORT wins, but honor the PORT most PaaS runtimes (Render,
+	// Heroku-style) inject so hosted deploys work without extra config.
+	port := firstEnv("CODEGYM_PORT", "PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 	return Config{
 		Host:           env("CODEGYM_HOST", "127.0.0.1"),
-		Port:           env("CODEGYM_PORT", "8080"),
+		Port:           port,
 		DatabaseURL:    databaseURL,
 		AuthMode:       strings.ToLower(strings.TrimSpace(os.Getenv("CODEGYM_AUTH_MODE"))),
 		Auth0Domain:    firstEnv("CODEGYM_AUTH0_DOMAIN", "AUTH0_DOMAIN"),
@@ -48,6 +95,18 @@ func Load() Config {
 			"http://localhost:5173",
 			"http://127.0.0.1:5173",
 		}),
+		MemoryWorker: WorkerConfig{
+			Disabled: boolEnv("CODEGYM_MEMORY_WORKER_DISABLED", false),
+			Interval: durationEnv(
+				"CODEGYM_MEMORY_WORKER_INTERVAL",
+				24*time.Hour,
+			),
+		},
+		GenAI: GenAIConfig{
+			BaseURL: env("CODEGYM_GENAI_BASE_URL", "https://ai-gateway.vercel.sh/v1"),
+			APIKey:  firstEnv("CODEGYM_GENAI_API_KEY", "AI_GATEWAY_API_KEY"),
+			Model:   env("CODEGYM_GENAI_MODEL", "anthropic/claude-haiku-4.5"),
+		},
 	}
 }
 
@@ -91,6 +150,20 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return duration
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	switch value {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func csvEnv(key string, fallback []string) []string {

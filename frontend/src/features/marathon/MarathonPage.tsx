@@ -3,14 +3,18 @@ import { CircleHelpIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { HelpFlashcard } from './HelpFlashcard';
+import { api } from '../../shared/api/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-/** A single multiple-choice question in the marathon. */
+/** A single multiple-choice question in the marathon. Matches the backend
+ *  MCQQuestion shape returned by POST /api/v1/generate. */
 interface MarathonQuestion {
   id: string;
   text: string;
@@ -20,19 +24,48 @@ interface MarathonQuestion {
   helpContent: string;
 }
 
-/** Result for a single answered question. */
+/** Result for a single answered question. Concept is denormalized so the
+ *  aggregate results screen works across rounds with fresh question sets. */
 interface QuestionResult {
   questionId: string;
+  concept: string;
+  round: number;
   selectedIndex: number;
   correct: boolean;
   timeMs: number;
   usedHelp: boolean;
 }
 
+/** Response envelope data for POST /api/v1/generate with kind "mcq". */
+interface GenerateMcqResponse {
+  kind: string;
+  questions: MarathonQuestion[];
+  provider: string;
+  model: string;
+}
+
+/** How many questions to request per marathon. */
+const QUESTION_COUNT = 5;
+
+/** Fire-and-forget memory event emitter for the mcq source. Event writes must
+ *  never block or break the practice flow, so failures are swallowed. Names
+ *  follow docs/memory-event-naming-guide-v0.md. */
+function emitMcqEvent(type: string, summary: string, payload: Record<string, unknown>) {
+  void api
+    .post('/memory/events', {
+      source: 'mcq',
+      type,
+      summary,
+      payload: { ...payload, schema_version: 1 },
+    })
+    .catch(() => {});
+}
+
 // ── Mock data ────────────────────────────────────────────────────────────────
 
-/** Sample questions for the marathon demo. In production, these come from
- *  POST /api/v1/marathon/generate which reads the user's memory file. */
+/** Fallback questions when generation is unavailable (no backend, no GenAI key,
+ *  or a provider error). The real set comes from POST /api/v1/generate, which
+ *  reads the user's memory profile. */
 const MOCK_QUESTIONS: MarathonQuestion[] = [
   {
     id: 'mq1',
@@ -117,14 +150,15 @@ function SuccessCheck() {
 /**
  * MarathonPage — timed multiple-choice question marathon.
  *
- * Three states:
+ * Four states:
  * - idle: start screen (select topic, see previous scores)
+ * - loading: generating a personalized set via POST /api/v1/generate
  * - active: question display with timer + options + help button
  * - results: score summary + time breakdown + recommendations
  */
 export function MarathonPage() {
   // Which phase the marathon is in.
-  const [phase, setPhase] = useState<'idle' | 'active' | 'results'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'loading' | 'active' | 'results'>('idle');
 
   // Guard: prevents accidental option selection when Next button unmounts
   // and mouseup lands on an option button underneath.
@@ -151,7 +185,27 @@ export function MarathonPage() {
   // Whether help was used on the current question.
   const [helpUsed, setHelpUsed] = useState(false);
 
-  const questions = MOCK_QUESTIONS;
+  // The question set for the CURRENT round: generated when the backend +
+  // GenAI are available, otherwise the built-in practice set.
+  const [questions, setQuestions] = useState<MarathonQuestion[]>(MOCK_QUESTIONS);
+
+  // True when this round fell back to the built-in practice set.
+  const [usingFallback, setUsingFallback] = useState(false);
+
+  // The user's free-text "what do you want to study?" ask; inserted into the
+  // MCQ generation spec each round.
+  const [studyPrompt, setStudyPrompt] = useState('');
+
+  // 1-based round number in the continuous marathon loop.
+  const [round, setRound] = useState(1);
+
+  // Base id for the marathon run; each round derives `${base}_r${round}` so
+  // the post-round reflection digests exactly one round of events.
+  const baseIdRef = useRef('');
+
+  // Session id for the current round's memory events.
+  const sessionIdRef = useRef('');
+
   const currentQ = questions[questionIndex];
 
   // ── Timer logic ──────────────────────────────────────────────────────────
@@ -162,15 +216,101 @@ export function MarathonPage() {
     return () => clearInterval(interval);
   }, [phase, confirmed]);
 
-  /** Start the marathon. */
-  const handleStart = () => {
-    setPhase('active');
+  /** Generate one round's question set; falls back to the built-in practice
+   *  set when generation is unavailable. */
+  const generateRound = async (roundNumber: number) => {
+    let nextQuestions = MOCK_QUESTIONS;
+    let fallback = true;
+    try {
+      const generated = await api.post<GenerateMcqResponse>('/generate', {
+        kind: 'mcq',
+        spec: { topic: '', prompt: studyPrompt.trim(), count: QUESTION_COUNT, round: roundNumber },
+      });
+      if (generated.questions?.length) {
+        nextQuestions = generated.questions;
+        fallback = false;
+      }
+    } catch (err) {
+      console.warn('MCQ generation unavailable; using the built-in practice set.', err);
+    }
+    return { nextQuestions, fallback };
+  };
+
+  /** Enter a round: reset per-question state and emit session_started. */
+  const beginRound = (roundNumber: number, nextQuestions: MarathonQuestion[], fallback: boolean) => {
+    sessionIdRef.current = `${baseIdRef.current}_r${roundNumber}`;
+    setRound(roundNumber);
+    setQuestions(nextQuestions);
+    setUsingFallback(fallback);
     setQuestionIndex(0);
-    setResults([]);
     setElapsed(0);
     setSelectedIndex(null);
     setConfirmed(false);
     setHelpUsed(false);
+    setShowHelp(false);
+    emitMcqEvent('session_started', `Started round ${roundNumber} of an MCQ marathon.`, {
+      session_id: sessionIdRef.current,
+      question_count: nextQuestions.length,
+      generated: !fallback,
+      round: roundNumber,
+    });
+    setPhase('active');
+  };
+
+  /** Record the just-finished round: session_completed event, then the
+   *  memory reflection pass (deterministic refresh + LLM note CRUD). Awaited
+   *  so the next round's generation reads the updated notes. */
+  const reflectOnRound = async () => {
+    const roundResults = results.filter((r) => r.round === round);
+    const correctCount = roundResults.filter((r) => r.correct).length;
+    try {
+      await api.post('/memory/events', {
+        source: 'mcq',
+        type: 'session_completed',
+        summary: `Finished round ${round} with ${correctCount} of ${roundResults.length} correct.`,
+        payload: {
+          session_id: sessionIdRef.current,
+          question_count: roundResults.length,
+          correct_count: correctCount,
+          round,
+          schema_version: 1,
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
+    try {
+      await api.post('/memory/notes/maintain', { session_id: sessionIdRef.current });
+    } catch {
+      /* best-effort */
+    }
+  };
+
+  /** Start the marathon at round 1. */
+  const handleStart = async () => {
+    setPhase('loading');
+    setResults([]);
+    baseIdRef.current = `mcq_${Date.now().toString(36)}`;
+    setRound(1);
+    const { nextQuestions, fallback } = await generateRound(1);
+    beginRound(1, nextQuestions, fallback);
+  };
+
+  /** Round finished, user wants more: reflect (memory update), then build the
+   *  next round from the just-updated notes. */
+  const handleNextRound = async () => {
+    setPhase('loading');
+    await reflectOnRound();
+    const nextRound = round + 1;
+    const { nextQuestions, fallback } = await generateRound(nextRound);
+    beginRound(nextRound, nextQuestions, fallback);
+  };
+
+  /** User clicked Finished: run the final memory update in the background and
+   *  show aggregate results immediately. */
+  const handleFinish = () => {
+    void reflectOnRound();
+    setPhase('results');
   };
 
   /** User selects an answer option (radio-style, can change before confirming). */
@@ -185,15 +325,38 @@ export function MarathonPage() {
     setConfirmed(true);
     const result: QuestionResult = {
       questionId: currentQ.id,
+      concept: currentQ.concept,
+      round,
       selectedIndex,
       correct: selectedIndex === currentQ.correctIndex,
       timeMs: elapsed * 1000,
       usedHelp: helpUsed,
     };
     setResults((prev) => [...prev, result]);
+
+    // question_answered for correct answers; answer_incorrect feeds growth
+    // edges for misses (one event per answer, per the naming guide).
+    if (result.correct) {
+      emitMcqEvent('question_answered', `Answered a ${currentQ.concept} question correctly.`, {
+        session_id: sessionIdRef.current,
+        topic: currentQ.concept,
+        correct: true,
+        duration_ms: result.timeMs,
+        used_help: result.usedHelp,
+      });
+    } else {
+      emitMcqEvent('answer_incorrect', `Missed a ${currentQ.concept} question.`, {
+        session_id: sessionIdRef.current,
+        topic: currentQ.concept,
+        correct: false,
+        duration_ms: result.timeMs,
+        used_help: result.usedHelp,
+      });
+    }
   };
 
-  /** Advance to the next question or show results. */
+  /** Advance to the next question within the round. The last question's
+   *  controls are Next Round / Finished instead (see the footer). */
   const handleNext = () => {
     // Block option clicks until the next frame to prevent the mouseup
     // from the disappearing Next button from selecting an option.
@@ -209,8 +372,6 @@ export function MarathonPage() {
       setConfirmed(false);
       setShowHelp(false);
       setHelpUsed(false);
-    } else {
-      setPhase('results');
     }
   };
 
@@ -228,15 +389,60 @@ export function MarathonPage() {
           <h1 className="mb-4 text-[48px] font-semibold leading-[56px] tracking-[-2.88px]">
             MCQ Marathon
           </h1>
-          <p className="text-muted-foreground mx-auto mb-10 max-w-sm text-sm leading-6">
-            Timed multiple-choice reps. The AI adapts by reinforcing what you know, stretching where
-            you don't.
+          <p className="text-muted-foreground mx-auto mb-8 max-w-sm text-sm leading-6">
+            Rounds of {QUESTION_COUNT} timed questions. After every round the AI updates its notes on
+            you and builds the next round from what it learned — keep going until you hit Finished.
           </p>
+          <div className="mx-auto mb-8 w-full max-w-sm text-left">
+            <label
+              htmlFor="study-prompt"
+              className="text-muted-foreground mb-2 block text-xs font-semibold uppercase tracking-wide"
+            >
+              What do you want to study?
+            </label>
+            <Input
+              id="study-prompt"
+              value={studyPrompt}
+              onChange={(e) => setStudyPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleStart();
+              }}
+              placeholder="e.g. SQL joins, Go concurrency, caching patterns"
+              maxLength={500}
+            />
+            <p className="text-muted-foreground/70 mt-2 text-xs">
+              Optional — leave empty to drill your current growth edges.
+            </p>
+          </div>
           <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="inline-block">
             <Button size="lg" onClick={handleStart}>
-              Start Marathon ({questions.length} questions)
+              Start Marathon
             </Button>
           </motion.div>
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Loading state: memory reflection + next round generation ─────────────
+  if (phase === 'loading') {
+    const firstRound = round === 1 && results.length === 0;
+    return (
+      <div className="mx-auto mt-12 max-w-lg">
+        <Card className="gap-0 px-6 py-16 text-center">
+          <div className="mx-auto mb-6 flex size-10 items-center justify-center">
+            <Spinner className="text-muted-foreground size-8" />
+          </div>
+          <h1 className="mb-3 text-2xl font-semibold tracking-tight">
+            {firstRound ? 'Building your set' : 'Updating memory'}
+          </h1>
+          <p className="text-muted-foreground mx-auto max-w-sm text-sm leading-6">
+            {firstRound
+              ? studyPrompt.trim()
+                ? `Writing ${QUESTION_COUNT} questions on “${studyPrompt.trim()}”…`
+                : `Picking ${QUESTION_COUNT} questions from your growth edges…`
+              : `Reflecting on round ${round}, then building round ${round + 1} from the updated notes…`}
+          </p>
         </Card>
       </div>
     );
@@ -250,9 +456,13 @@ export function MarathonPage() {
 
     return (
       <div className="mx-auto max-w-lg px-6 py-24">
-        <h1 className="mb-8 text-center text-[40px] font-semibold leading-[48px] tracking-[-2.4px]">
+        <h1 className="mb-2 text-center text-[40px] font-semibold leading-[48px] tracking-[-2.4px]">
           Results
         </h1>
+        <p className="text-muted-foreground mb-8 text-center text-sm">
+          {round} {round === 1 ? 'round' : 'rounds'}
+          {studyPrompt.trim() ? ` · “${studyPrompt.trim()}”` : ''} · memory notes updated
+        </p>
 
         <motion.div
           initial={{ opacity: 0, y: 20, scale: 0.96 }}
@@ -279,7 +489,7 @@ export function MarathonPage() {
 
             <div className="mt-4 flex flex-col gap-2 border-t pt-4">
               {results.map((r, i) => (
-                <div key={r.questionId} className="flex items-center gap-3 text-xs">
+                <div key={`${r.round}-${r.questionId}`} className="flex items-center gap-3 text-xs">
                   <span className="text-muted-foreground w-4">{i + 1}.</span>
                   <span
                     className={cn(
@@ -289,9 +499,7 @@ export function MarathonPage() {
                   >
                     {r.correct ? '✓' : '✗'}
                   </span>
-                  <span className="text-muted-foreground flex-1 truncate">
-                    {questions.find((q) => q.id === r.questionId)?.concept}
-                  </span>
+                  <span className="text-muted-foreground flex-1 truncate">{r.concept}</span>
                   <span className="text-muted-foreground">{Math.round(r.timeMs / 1000)}s</span>
                   {r.usedHelp && (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
@@ -319,7 +527,12 @@ export function MarathonPage() {
     <div className="mx-auto max-w-lg px-6 py-12">
       <div className="mb-8 flex items-center justify-between">
         <span className="text-muted-foreground text-sm font-medium">
-          {questionIndex + 1} of {questions.length}
+          Round {round} · {questionIndex + 1} of {questions.length}
+          {usingFallback && (
+            <span className="text-muted-foreground/70 ml-2 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+              practice set
+            </span>
+          )}
         </span>
         <div className="flex items-center gap-4">
           <span className="text-muted-foreground font-mono text-sm tabular-nums">{elapsed}s</span>
@@ -420,13 +633,27 @@ export function MarathonPage() {
             <Button onClick={handleConfirm}>Confirm</Button>
           </motion.div>
         )}
-        {confirmed && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-            <Button onClick={handleNext} className="bg-blue-700 text-white hover:bg-blue-800">
-              {questionIndex < questions.length - 1 ? 'Next' : 'See Results'}
-            </Button>
-          </motion.div>
-        )}
+        {confirmed &&
+          (questionIndex < questions.length - 1 ? (
+            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+              <Button onClick={handleNext} className="bg-blue-700 text-white hover:bg-blue-800">
+                Next
+              </Button>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-3"
+            >
+              <Button variant="outline" onClick={handleFinish}>
+                Finished
+              </Button>
+              <Button onClick={handleNextRound} className="bg-blue-700 text-white hover:bg-blue-800">
+                Next Round
+              </Button>
+            </motion.div>
+          ))}
       </div>
 
       {/* Help flashcard modal */}

@@ -135,6 +135,236 @@ paths:
         "403":
           $ref: "#/components/responses/TenantForbidden"
 
+  /api/v1/sessions:
+    get:
+      operationId: listSessions
+      summary: List practice sessions for the authenticated user and workspace scope.
+      description: Returns history summaries only; state snapshots and draft files are excluded.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SessionKind"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SessionStatus"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: RFC3339 last_activity_at cursor; returns sessions before this timestamp.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Session summaries loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSummariesEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createSession
+      summary: Create a resumable practice session.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionInput"
+      responses:
+        "201":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/sessions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      operationId: getSession
+      summary: Get one practice session for resume.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Session detail loaded. Workspace sessions include draft files.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updateSession
+      summary: Update a practice session title, status, or resume state.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSessionInput"
+      responses:
+        "200":
+          description: Session updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/sessions/{id}/files:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    put:
+      operationId: upsertSessionFiles
+      summary: Batch upsert draft files for a workspace session.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertSessionFilesInput"
+      responses:
+        "200":
+          description: Session files updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/generate:
+    post:
+      operationId: generateContent
+      summary: Generate practice content (MCQ sets today; problems and interviews later) personalized by the caller's memory profile.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateInput"
+      responses:
+        "200":
+          description: Content generated and validated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateMCQEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "501":
+          description: The requested generation kind is not implemented yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "502":
+          description: The model provider failed or returned unusable output after the retry budget.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Generation is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/memory/notes/maintain:
+    post:
+      operationId: maintainMemoryNotes
+      summary: Run the post-round memory reflection pass — deterministic profile refresh plus a best-effort LLM CRUD pass over memory notes.
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintainNotesInput"
+      responses:
+        "200":
+          description: Profile refreshed; note maintenance applied when the model produced usable actions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TenantForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -155,6 +385,13 @@ components:
       schema:
         type: string
         example: personal-kevin
+    SessionID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        example: sess_0123456789abcdef
 
   responses:
     BadRequest:
@@ -171,6 +408,12 @@ components:
             $ref: "#/components/schemas/ErrorEnvelope"
     TenantForbidden:
       description: Authenticated user does not have access to the requested workspace scope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Requested resource was not found in the authenticated workspace scope.
       content:
         application/json:
           schema:
@@ -267,6 +510,26 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/MemoryEvent"
+        error:
+          type: "null"
+
+    SessionSummariesEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionSummary"
+        error:
+          type: "null"
+
+    SessionEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/Session"
         error:
           type: "null"
 
@@ -407,6 +670,219 @@ components:
           type: string
           format: date-time
           description: Defaults to server time when omitted or zero.
+
+    SessionKind:
+      type: string
+      enum: [workspace, mcq, interview]
+
+    SessionStatus:
+      type: string
+      enum: [active, completed, abandoned]
+
+    SessionSummary:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - user_id
+        - kind
+        - status
+        - title
+        - created_at
+        - updated_at
+        - last_activity_at
+      properties:
+        id:
+          type: string
+          example: sess_0123456789abcdef
+        tenant_id:
+          type: string
+          description: Internal workspace-scope ID. Legacy field name.
+        user_id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/SessionKind"
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        title:
+          type: string
+        problem_id:
+          type: string
+        generation_job_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_activity_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    Session:
+      allOf:
+        - $ref: "#/components/schemas/SessionSummary"
+        - type: object
+          required: [state]
+          properties:
+            state:
+              $ref: "#/components/schemas/JsonValue"
+            files:
+              type: array
+              items:
+                $ref: "#/components/schemas/SessionFile"
+
+    SessionFile:
+      type: object
+      required: [file_path, content, updated_at]
+      properties:
+        file_path:
+          type: string
+          example: main.go
+        content:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateSessionInput:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          $ref: "#/components/schemas/SessionKind"
+        title:
+          type: string
+        problem_id:
+          type: string
+        generation_job_id:
+          type: string
+        state:
+          $ref: "#/components/schemas/JsonValue"
+
+    UpdateSessionInput:
+      type: object
+      properties:
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        state:
+          $ref: "#/components/schemas/JsonValue"
+
+    UpsertSessionFilesInput:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items:
+            type: object
+            required: [file_path, content]
+            properties:
+              file_path:
+                type: string
+              content:
+                type: string
+
+    GenerateInput:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [mcq, problem, interview]
+          description: Generation kind. Only "mcq" is implemented today.
+        spec:
+          $ref: "#/components/schemas/MCQSpec"
+
+    MCQSpec:
+      type: object
+      properties:
+        topic:
+          type: string
+          description: Coarse topic; empty spreads questions across growth edges.
+          example: hash tables
+        prompt:
+          type: string
+          maxLength: 500
+          description: The user's free-text "what do you want to study?" ask; steers concept selection together with memory notes.
+          example: I want to drill Go concurrency patterns
+        count:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+        difficulty:
+          type: string
+          example: medium
+        round:
+          type: integer
+          minimum: 0
+          description: Round number in a continuous marathon; later rounds avoid repeating earlier questions.
+
+    MaintainNotesInput:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: Scopes the reflection digest to one practice round; empty uses the most recent round in the event log.
+          example: mcq_abc123_r2
+
+    MCQQuestion:
+      type: object
+      required: [id, text, options, correctIndex, concept, helpContent]
+      properties:
+        id:
+          type: string
+          example: mq1
+        text:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+          minItems: 4
+          maxItems: 4
+        correctIndex:
+          type: integer
+          minimum: 0
+          maximum: 3
+        concept:
+          type: string
+        helpContent:
+          type: string
+
+    GenerateMCQResult:
+      type: object
+      required: [kind, questions, provider, model]
+      properties:
+        kind:
+          type: string
+          example: mcq
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MCQQuestion"
+        provider:
+          type: string
+          example: openai_compat
+        model:
+          type: string
+          example: anthropic/claude-haiku-4.5
+
+    GenerateMCQEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/GenerateMCQResult"
+        error:
+          type: "null"
 
     JsonValue:
       oneOf:

@@ -9,6 +9,19 @@ This is the single source of truth for recurring CodeGym agent work. Read this
 before changing code, issues, or the project board. Update it when product scope,
 architecture, workflow, validation, or durable gotchas change.
 
+## Live Project Memory Rule
+
+Treat this skill as living project memory. When a code, docs, board, or
+deployment change introduces or changes a durable repo fact, operational gotcha,
+vendor setup assumption, architecture decision, validation rule, risk, or
+debugging pattern, update this skill before finishing the task.
+
+Keep updates concise and remove stale or contradictory guidance rather than
+layering caveats. Do not record transient branch status, one-off command output,
+or momentary CI failures unless they change the durable workflow. When this
+skill conflicts with current code, live GitHub issues/PRs, or the project board,
+trust the current implementation and live planning state, then repair this skill.
+
 ## Branch Default
 
 `codegym-v2` is the default working branch for now.
@@ -19,12 +32,38 @@ the memory service v0 are in scope. Legacy execution infrastructure, Docker
 runners, problem-pack fixtures, organization/team tenancy, and deploy automation
 should still stay out unless the user explicitly asks to reintroduce them.
 
-## Current State (Last Updated: 2026-06-26)
+## Publishing and PR Discipline
+
+Do not leave completed repo work only in the local checkout. Branches are
+temporary PR heads, not the deliverable. Unless Kevin explicitly asks for
+local-only exploration, every code, docs, process, or project-helper change that
+should persist in the repository must end the session committed, pushed to the
+remote, and attached to a GitHub PR.
+
+Use this publish flow:
+1. Check `git status --short --branch` and inspect the diff before staging.
+2. Keep unrelated local/user changes out of the commit.
+3. Commit the scoped changes with a terse message.
+4. Push the active branch to `origin` and set upstream to the matching remote
+   branch.
+5. Open a draft PR against `codegym-v2`, or push updates to the existing PR for
+   the branch if one already exists.
+6. Move linked board work to `In review` once the PR exists. Move it to `Done`
+   only after merge/landing and validation evidence.
+
+If publishing is blocked by auth, network, failing validation, missing owner
+approval, or mixed unrelated work, say exactly what is blocked and what must
+happen next. Do not present local-only work as finished repository work.
+
+## Current State (Last Updated: 2026-07-09)
 
 - Branch: `codegym-v2`.
-- Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes.
-- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, memory profile/event APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
-- Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`.
+- Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes. MarathonPage is a continuous round loop: a "what do you want to study?" prompt feeds `POST /api/v1/generate` (kind `mcq`, per-round `session_id` = `<base>_r<round>`), each round end awaits `POST /api/v1/memory/notes/maintain` before generating the next round, and a Finished button ends the loop with a final reflection. Emits `mcq.*` memory events; falls back to a built-in practice set when generation is unavailable.
+- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, memory profile/event APIs, session APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
+- Generation: `generation.Orchestrator` composes the scoped memory profile with the provider-neutral `Generator` seam. `generation/openaicompat` is the first adapter (OpenAI chat-completions wire format; default base URL is the Vercel AI Gateway). `POST /api/v1/generate` serves MCQ sets with structural validation and one bounded repair retry; it answers 503 when `CODEGYM_GENAI_API_KEY` is unset. MCQ prompt text mirrors `docs/ai-prompts/05-mcq-marathon.md` — keep them in sync.
+- Memory notes are the LLM-curated slice of the profile (agentic CRUD, like editing a living project doc): `POST /api/v1/memory/notes/maintain` runs deterministic profile refresh, then a best-effort LLM pass (`generation.MaintainNotes`, prompt mirrors `docs/ai-prompts/08-memory-notes.md`) that creates/updates/prunes notes from the round's events and emits `memory.note_created/updated/pruned` audit events. The deterministic `memory.Summarize` preserves notes by ID, so worker/cron refreshes never clobber LLM curation. The user-level summary stays deterministic until the daily cron work (#41) lands.
+- Deploy: backend runs on Render (`https://codegym.onrender.com`); `render.yaml` is the blueprint and `docs/render-deploy.md` documents applying it. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render.
+- Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`. GenAI: `CODEGYM_GENAI_BASE_URL` / `CODEGYM_GENAI_API_KEY` (alias `AI_GATEWAY_API_KEY`) / `CODEGYM_GENAI_MODEL`.
 - CI: `.github/workflows/ci.yml` runs frontend `npm ci`, lint, build, and backend `go test ./...` on PRs/pushes to `codegym-v2`. `.github/workflows/openapi-lint.yml` runs `npm run api:lint` (Redocly) when `api/**` changes.
 - Project board: GitHub Projects v2 project `#2` (`CodeGym v2`) is the active kanban unless the user says otherwise.
 
@@ -107,7 +146,191 @@ Recommended backend path:
 - Add `govulncheck ./...` as an advisory dependency/security check; treat it as
   vulnerability reachability analysis, not a style linter.
 
+## Validation Matrix
+
+Use the narrowest validation path that covers the changed behavior. Record the
+commands and results in the issue/PR when the work maps to the board.
+
+| Surface | Blocking check | Advisory or situational check | Notes |
+| --- | --- | --- | --- |
+| Frontend route, component, or API consumption | `cd frontend && npm run lint`; `cd frontend && npm run build` | Storybook local review for visible component work | Add or update a `.stories.tsx` file for new page components. |
+| Storybook-only work | `cd frontend && npm run storybook` long enough to load the changed story | Screenshot or browser check for visual regressions | Storybook is not a substitute for `npm run build` when app code changes. |
+| Backend API/auth/workspace/memory code | `cd backend && go test ./...` | `go vet ./...`, `golangci-lint`, `govulncheck ./...` when the issue targets static/security checks | Go cache sandbox failures are environmental; rerun with an allowed cache path or approved escalation before calling tests broken. |
+| OpenAPI or HTTP contract change | `npm run api:lint` when `api/**` changes | Compare backend routes, OpenAPI, and typed frontend helpers for drift | Do not mark API work done when docs/spec changed but handlers or client helpers did not. |
+| Auth0 or external auth setup | Backend tests plus config/doc review | Owner verification in Auth0, Render, Vercel, and deployed preview/prod envs | External console work belongs in `agency:external-blocked` until Kevin or a permitted agent confirms it. |
+| Memory worker/scheduling | Backend tests plus route/worker boundary review | Manual worker start/schedule check once worker runtime exists | Request paths append raw events; derived profiles and summaries belong behind `memory.Service.RefreshProfile` or the worker boundary. |
+| Generation-memory orchestration | Backend tests and prompt/context unit coverage when available | Manual generated-problem flow check when wired end to end | GenAI provider adapters should not fetch memory directly. Orchestration composes memory with provider calls. |
+
+## Operational Readiness / External Setup
+
+Auth0 readiness requires the app's callback/logout URLs, allowed web origins,
+frontend Auth0 envs, backend issuer/audience envs, and the Auth0 API Identifier
+to agree. Auth0 `sub` is the durable user ID; `email` and `name` are metadata
+only and must not drive authorization or workspace selection.
+
+Render readiness for the Go backend means the service has the expected branch,
+start command, health check, Auth0 envs, database envs, and secret source wired.
+Deployment is not complete just because `.env.example` or docs list the values.
+
+Vercel/frontend readiness means preview and production environments have the
+matching Auth0 domain/client/audience values and point at the intended backend
+base URL. If frontend and backend are on different origins, confirm CORS and
+Auth0 allowed origins together.
+
+Doppler and Neon are the preferred local secret and Postgres targets. Prefer
+`NEON_CONNECTION_STRING` over `DATABASE_URL` when both exist. Never print or
+commit secret values while documenting setup.
+
+Preprod and prod should stay distinguishable. Safe preprod can share code and
+schema shape, but should use separate Auth0/Vercel/Render/Neon resources or
+explicitly safe config. Do not mark external setup issues `Done` without a
+comment that names the environment verified and the validation performed.
+
+## Current Risk Register
+
+Verified from the codebase and board reconciliation work around 2026-07-02.
+Updated during the backend/session/generation implementation pass on 2026-07-06.
+Treat exact PR/check status as time-sensitive, but keep the risk categories
+current as implementation lands.
+
+### Critical Open Risks
+
+- Auth/backend completion still depends on external Auth0 and hosting setup; the
+  repo can document expected envs, but owner/vendor-console actions may remain.
+- The memory worker is scheduled from the API server with configurable interval,
+  but production readiness still needs deployed schedule/env validation and
+  observability for refresh failures.
+- Session/resume now has backend schema/store and protected `/api/v1/sessions`
+  routes, but frontend resume/history is still incomplete until typed client
+  wiring and #74 land.
+- Frontend memory/profile rendering does not finish typed API infrastructure.
+  Shared API errors still need typed handling and memory-specific helpers before
+  memory UX can rely on them broadly.
+- Memory-aware generation has a provider-neutral interface and memory-aware
+  orchestration scaffold, but provider adapters, HTTP routes, and frontend
+  flows still need follow-on implementation.
+
+### Medium Risks
+
+- Project board state can drift from PR state and code reality, especially when
+  draft/conflicting PRs or docs-only spikes are moved too far right.
+- OpenAPI drift can appear when backend routes, `api/**`, and frontend helpers
+  are changed independently.
+- The internal `tenant` naming still represents personal workspace scope. It can
+  confuse agents into designing organization/team SaaS tenancy that is out of
+  scope.
+- Deployment/env drift can hide behind passing local tests because Auth0,
+  Render, Vercel, Doppler, and Neon readiness depends on external state.
+
+### Already Mitigated / Guardrails
+
+- Auth0 validation is behind `auth.Authenticator`, with `DevAuthenticator` kept
+  for local fallback and tests.
+- Auth0 `sub` is the durable user identifier; optional email/name metadata is
+  explicitly not an authorization boundary.
+- Memory event names have a canonical naming guide. New event source/type names
+  should be added there before emitters write new shapes.
+- Session history uses `practice_sessions` plus `session_files`; memory events
+  carry compact learning signals only and are not a resume data store.
+- Generation provider adapters implement the provider-neutral `Generator`
+  interface; the orchestration layer composes memory context before adapter
+  calls.
+- The GitHub Project helper can create/upsert/import issues, set Project fields,
+  link sub-issues, verify field writes, and warn about sparse process metadata.
+
+## Stale Docs / Source Of Truth
+
+Docs in `docs/` are valuable for contracts and decisions, but implementation
+truth is the current code plus live GitHub issue/PR/project-board state. A doc
+or spike proves intent; it does not prove the feature is implemented.
+
+When docs, board state, and code disagree:
+- Trust the current code for runtime behavior.
+- Trust live PR/issue state for review/merge status.
+- Trust the project board for current planning only after checking the linked
+  issue/PR and repairing obvious drift.
+- Update stale docs or this skill when the mismatch is durable.
+
+Session-history/resume docs do not mean session storage, sessions HTTP routes,
+OpenAPI coverage, or frontend resume/history UX are complete. Auth0 setup docs
+do not mean vendor-console configuration is complete. Memory architecture docs
+do not mean the worker is scheduled or running.
+
+## Common Pitfalls
+
+1. Treating docs-only work as implementation completion.
+2. Moving cards to `Done` because a PR exists, before merge/landing and
+   validation evidence.
+3. Using Auth0 `email` or `name` for authorization, identity durability, or
+   workspace selection instead of Auth0 `sub`.
+4. Expanding internal `tenant` names into organization/team tenancy without an
+   explicit product-scope change.
+5. Mixing raw memory events with derived profiles/notes; raw facts are written
+   quickly, derived understanding belongs behind service/worker refresh.
+6. Letting provider adapters fetch memory directly instead of composing memory
+   in generation/chat orchestration.
+7. Updating backend routes, OpenAPI, or frontend typed helpers without checking
+   the other two surfaces for drift.
+8. Assuming local tests prove Auth0/Render/Vercel/Doppler/Neon readiness.
+
 ## Task Workflows
+
+### Run an Implementation Goal Loop
+
+Use this process when Kevin asks to "set a goal", "start a loop", reconcile a
+track until complete, or run a multi-issue implementation cycle. The coordinator
+agent owns the loop state, board truth, issue sequencing, validation evidence,
+and pause/resume decisions.
+
+Loop shape:
+1. Read this skill, inspect the relevant GitHub issues/project fields, open PRs,
+   and current code before editing.
+2. Reconcile drift first: separate landed code, open PRs, board status, and
+   docs-only artifacts. Repair obvious board/status mismatches before starting
+   new implementation work.
+3. Build or refresh a dependency-ordered issue sequence. Keep spikes and
+   owner/architecture decisions ahead of stories that depend on them.
+4. Move the active issue to `In progress`, implement only that issue's
+   acceptance criteria, run the narrow validation path, and leave an issue
+   comment with outcome, validation, links, and blockers.
+5. Move work to `In review` when a PR exists or to `Done` only when the work is
+   actually merged/landed and validated, with any validation gap documented.
+6. Pick the next unblocked issue and repeat until the goal is complete or a
+   real pause condition is hit.
+
+Pause conditions:
+- External setup is required in Auth0, Render, Vercel, Doppler, Neon, GitHub
+  settings, or another vendor console.
+- Kevin must make a product, academic-scope, risk, launch, or architecture
+  decision before implementation would be meaningful.
+- The coordinator needs explicit permission for a write action outside normal
+  repo edits, such as merging clean PRs, pushing branches, modifying secrets, or
+  changing production/preprod settings.
+
+Parallel-agent rules:
+- Spawn subagents only after the coordinator has a current board/code/PR read
+  and has assigned each subagent one issue or one narrow review task.
+- Do not parallelize issues that modify the same API contract, generated client,
+  migration/schema boundary, auth middleware path, or memory service boundary
+  unless one branch is explicitly the base for the other.
+- Good parallel lanes are: PR/CI closeout, isolated docs/process updates,
+  backend worker scheduling, frontend memory UX, and session-store spike work
+  after its architecture doc is accepted.
+- The coordinator remains the only agent that reconciles the board globally,
+  declares the goal complete, or pauses for Kevin.
+- Each subagent must report issue number, files changed, validation command and
+  result, branch/PR if any, and remaining blockers. The coordinator folds that
+  into issue comments and board moves.
+
+For auth/backend/memory completion loops, keep the tracks distinct:
+- Auth/backend foundation: Auth0 config/docs, external Auth0/hosting setup,
+  backend static checks, OpenAPI drift checks, and lint baseline.
+- Memory services: typed frontend API helpers, memory UI/backend wiring, product
+  flow memory events, worker scheduling/backfill, and memory-aware generation
+  orchestration.
+- Session/resume backend: session schema/store, sessions API/OpenAPI, then
+  frontend resume/history integration. Do not treat session docs as
+  implementation completion.
 
 ### Manage the GitHub Project Board
 
@@ -143,6 +366,19 @@ Requirements:
   5. Move the issue to `Done` only after the requested work is genuinely complete and validation has run or the validation gap is documented.
 - Repopulate the board during normal work. If an agent discovers real follow-up work outside the current scope, create a new GitHub Issue instead of expanding the task: production bugs, missing tests, product ambiguity, architecture decisions, external setup, retrospective "what remains" items, AI/generation incidents, or refactors too large for the current change. Do not create issues for tiny fixes that can be safely included in the active task.
 - New agent-created issues should include context/source, acceptance criteria, likely starting files, risk or user impact, `Status`, `Category`, `Priority`, `Size`, `Source`, one primary `agency:*` label, one `agent:*` label, and `output:plan-only` when the expected next step is a memo rather than code.
+- CodeGym uses Project fields, not `category:*` or `priority:*` labels, as the
+  durable source for category and priority. Do not copy another repo's label
+  taxonomy blindly. Add optional type labels such as `bug`, `enhancement`,
+  `documentation`, or `technical-debt` only when the issue text supports them
+  and those labels exist in this repository.
+- Do not pad issues with inaccurate labels or fields to silence tooling, but do
+  avoid sparse issue metadata when the title/body clearly gives enough evidence
+  to set routing, category, priority, size, source, and expected output.
+- The board helper emits non-blocking warnings when issue creation/import/upsert
+  metadata is missing a primary agency route, agent route, decision
+  `output:plan-only`, or required Project fields. Treat warnings as a prompt to
+  improve issue metadata before dispatching agents, not as a reason to invent
+  inaccurate labels or fields.
 - Draft Project cards are inbox items. Convert durable work to real GitHub Issues when it needs labels, comments, links, or agent routing; leave rough brainstorms as drafts until they are actionable.
 - Model large capabilities as **epics with sub-issues** (GitHub-native parent/child, with a `subIssuesSummary` rollup). An epic is a parent issue (title prefix `Epic:`) that opens with a gating **spike** wherever uncertainty is real, then **stories**. Spikes carry `agency:investigate` or `agency:needs-architecture-decision` + `output:plan-only`, and their Definition of Done is *"the implementation stories now exist, each with acceptance criteria"* — progressive elaboration: do not pre-write story acceptance criteria a spike will change. Stories carry `agency:ready`. Link children with `create-issue --parent <#>` or `add-sub-issue <parent> <child>`; `list`/`show` surface the rollup and parent/child. The M2 scope features are tracked as epics #35 (generation), #36 (execution sandbox), #38 (verification), #40 (personalization & memory), and #42 (MCQ).
 - Do not use `M1:` as an active kanban bucket. M1 is historical/foundation scope; active work should be named as `Week N: ...` issues under the relevant epic, while the academic M1/M2/M3/M4 milestone language stays in scope docs and presentation planning.

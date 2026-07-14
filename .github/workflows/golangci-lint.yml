@@ -1,0 +1,41 @@
+name: golangci-lint
+
+# Advisory backend static analysis. Lint findings use --issues-exit-code=0
+# until the baseline is triaged; remove that arg to make findings blocking.
+
+on:
+  push:
+    branches: [codegym-v2]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/golangci-lint.yml'
+      - 'backend/.golangci.yml'
+  pull_request:
+    branches: [codegym-v2]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/golangci-lint.yml'
+      - 'backend/.golangci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: golangci-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golangci:
+    name: Backend (golangci-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: golangci-lint
+        working-directory: backend
+        run: go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run --issues-exit-code=0

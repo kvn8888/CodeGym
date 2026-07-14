@@ -67,16 +67,45 @@ Required development secrets:
 | Name | Required | Purpose |
 | --- | --- | --- |
 | `NEON_CONNECTION_STRING` | Yes for durable memory | Neon/Postgres connection string. |
-| `CODEGYM_AUTH_MODE` | Optional | Set to `auth0` to require Auth0 configuration. Defaults to dev auth unless Auth0 issuer/audience are present. |
-| `AUTH0_DOMAIN` / `CODEGYM_AUTH0_DOMAIN` | Yes for Auth0 | Auth0 domain, e.g. `your-auth0-domain.us.auth0.com`. |
-| `AUTH0_AUDIENCE` / `CODEGYM_AUTH0_AUDIENCE` | Yes for Auth0 | API audience expected in Auth0 access tokens. |
-| `CODEGYM_AUTH0_ISSUER_URL` | Optional | Explicit issuer URL override when domain is not enough. |
+| `CODEGYM_AUTH_MODE` | Optional | Set to `auth0` to require Auth0 configuration at startup. Defaults to dev auth unless Auth0 issuer/audience are present. |
+| `CODEGYM_AUTH0_DOMAIN` / `AUTH0_DOMAIN` | Yes for Auth0 | Auth0 domain, e.g. `your-auth0-domain.us.auth0.com`. Prefer the `CODEGYM_` name in Doppler. |
+| `CODEGYM_AUTH0_AUDIENCE` / `AUTH0_AUDIENCE` | Yes for Auth0 | API audience expected in Auth0 access tokens. This must match the Auth0 API Identifier. |
+| `CODEGYM_AUTH0_ISSUER_URL` / `AUTH0_ISSUER_URL` | Optional | Explicit issuer URL override when domain is not enough. |
 | `CODEGYM_AUTH0_CLOCK_SKEW` | Optional | Go duration for token time skew, e.g. `30s`. Defaults to no skew. |
 | `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for local protected routes. |
 | `CODEGYM_DEV_USER_ID` | Optional | Default dev user for static-token auth. |
 | `CODEGYM_DEV_TENANT_ID` | Optional | Default personal workspace ID for static-token auth. Legacy env name. |
 | `CODEGYM_HOST` | Optional | Backend listen host. |
 | `CODEGYM_PORT` | Optional | Backend listen port. |
+| `CODEGYM_MEMORY_WORKER_DISABLED` | Optional | Set to `true` to disable the scheduled profile refresh worker. Defaults to `false`. |
+| `CODEGYM_MEMORY_WORKER_INTERVAL` | Optional | Go duration for the profile refresh schedule. Defaults to `24h`. |
+
+Auth0 frontend values are public app configuration, not backend secrets:
+
+| Name | Required | Purpose |
+| --- | --- | --- |
+| `VITE_AUTH0_DOMAIN` | Yes for frontend Auth0 login | Same Auth0 domain the backend validates, without `https://`. |
+| `VITE_AUTH0_CLIENT_ID` | Yes for frontend Auth0 login | Auth0 Single Page Application client ID. This is safe to expose to the browser. |
+| `VITE_AUTH0_AUDIENCE` | Yes for API access tokens | Same value as `CODEGYM_AUTH0_AUDIENCE`, so Auth0 issues access tokens for the backend API. |
+
+Do not put an Auth0 client secret in the frontend or in local Vite env files.
+The current browser app should use an Auth0 SPA application with Authorization
+Code + PKCE, not a confidential client flow.
+
+Minimal Doppler setup once Kevin/Alec have created the Auth0 API and SPA app:
+
+```bash
+doppler secrets set CODEGYM_AUTH_MODE=auth0
+doppler secrets set CODEGYM_AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
+doppler secrets set CODEGYM_AUTH0_AUDIENCE=https://api.codegym.example
+doppler secrets set VITE_AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
+doppler secrets set VITE_AUTH0_CLIENT_ID=your-spa-client-id
+doppler secrets set VITE_AUTH0_AUDIENCE=https://api.codegym.example
+```
+
+Use `CODEGYM_AUTH0_ISSUER_URL` only when the issuer differs from
+`https://<domain>/`. The backend normalizes a bare domain into an HTTPS issuer
+URL with a trailing slash.
 
 ## Memory smoke test
 

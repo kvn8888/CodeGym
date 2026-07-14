@@ -27,6 +27,29 @@ cd backend
 doppler run -p codegym -c dev -- go run ./cmd/server
 ```
 
+What this command does, exactly:
+
+- `doppler run`: fetches secrets from Doppler and starts a child process.
+- `-p codegym`: selects the Doppler project named `codegym`.
+- `-c dev`: selects the Doppler config named `dev` (`-c` means config).
+- `--`: everything after this is the command Doppler should run.
+- `go run ./cmd/server`: starts the Go backend using the injected env vars.
+
+How secret injection works:
+
+- `doppler login` authenticates your machine/user with Doppler.
+- `doppler setup --project codegym --config dev` stores your local project/config binding.
+- `doppler run ...` fetches that shared config's secrets and injects them into the started process environment.
+- The Go app reads those values via `os.Getenv(...)` in `config.Load()`.
+
+Important scope note:
+
+- In memory, attached to that running process.
+- Not written to your repo files.
+- Not automatically set globally for all terminals forever.
+
+Think of it as a temporary backpack handed to that one running program. When the process exits, that injected environment is gone.
+
 To run the Neon-backed schema integration test:
 
 ```bash

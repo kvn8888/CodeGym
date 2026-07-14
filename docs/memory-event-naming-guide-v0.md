@@ -230,6 +230,13 @@ v0 is designed to evolve without a schema migration:
 6. Breaking semantic changes should get a future
    `memory-event-naming-guide-v1.md` rather than rewriting history.
 
+## Frontend Contract
+
+- Build frontend events through `frontend/src/shared/api/memoryEvents.ts`.
+- Prefer the source-specific builders for generate, chat, workspace, MCQ,
+  memory, and system flows.
+- Add new names here and in the shared helper before using them in UI code.
+
 ## Related Docs
 
 - [auth-identity-tenant.md](./auth-identity-tenant.md) documents request scoping

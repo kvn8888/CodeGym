@@ -2,8 +2,7 @@ package identity
 
 import "context"
 
-// PersonalTenant defines the minimum fields required to ensure a personal
-// tenant membership for an authenticated user.
+// PersonalTenant defines the minimum fields required to ensure a personal tenant membership for an authenticated user.
 type PersonalTenant struct {
 	UserID      string
 	TenantID    string

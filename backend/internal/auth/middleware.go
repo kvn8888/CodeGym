@@ -8,8 +8,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/api/response"
 )
 
-// Middleware enforces bearer-token authentication and writes the authenticated
-// principal into request context.
+// Middleware enforces bearer-token authentication and writes the authenticated principal into request context.
 func Middleware(authenticator Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

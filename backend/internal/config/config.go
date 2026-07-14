@@ -63,7 +63,6 @@ func (g GenAIConfig) PairingWarning() string {
 }
 
 // Load reads environment variables and returns the effective runtime config.
-//
 // If both NEON_CONNECTION_STRING and DATABASE_URL are set, Neon is preferred.
 func Load() Config {
 	databaseURL := os.Getenv("NEON_CONNECTION_STRING")

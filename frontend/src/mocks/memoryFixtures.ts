@@ -1,4 +1,5 @@
-import type { UserMemoryProfile } from '../shared/api/types';
+import type { MemoryEvent, UserMemoryProfile } from '../shared/api/types';
+import { memoryEventSources, memoryEventTypes } from '../shared/api/memoryEvents';
 
 export const mockMemoryProfile: UserMemoryProfile = {
   summary:
@@ -86,3 +87,50 @@ export const mockMemoryProfile: UserMemoryProfile = {
     },
   ],
 };
+
+export const mockMemoryEvents: MemoryEvent[] = [
+  {
+    id: 'mem_evt_01',
+    tenant_id: 'workspace_kevin',
+    user_id: 'user_kevin',
+    source: memoryEventSources.generate,
+    type: memoryEventTypes.problemGenerated,
+    summary: 'Generated an API design challenge focused on pagination and cache invalidation.',
+    payload: {
+      problem_id: 'pagination-api-cache',
+      difficulty: 3,
+      topic: 'api-design',
+    },
+    occurred_at: '2026-06-10T16:30:00.000Z',
+    created_at: '2026-06-10T16:30:01.000Z',
+  },
+  {
+    id: 'mem_evt_02',
+    tenant_id: 'workspace_kevin',
+    user_id: 'user_kevin',
+    source: memoryEventSources.workspace,
+    type: memoryEventTypes.problemAttempted,
+    summary: 'Attempted goroutine fan-in collector and missed channel close ownership.',
+    payload: {
+      problem_id: 'goroutine-fan-in',
+      result: 'partial',
+      language: 'go',
+    },
+    occurred_at: '2026-06-09T20:10:00.000Z',
+    created_at: '2026-06-09T20:10:03.000Z',
+  },
+  {
+    id: 'mem_evt_03',
+    tenant_id: 'workspace_kevin',
+    user_id: 'user_kevin',
+    source: memoryEventSources.memory,
+    type: memoryEventTypes.memoryNoteCreated,
+    summary: 'Captured a review note for sliding-window timestamp eviction ordering.',
+    payload: {
+      note_id: 'note-rate-limit',
+      action: 'review',
+    },
+    occurred_at: '2026-06-08T13:18:00.000Z',
+    created_at: '2026-06-08T13:18:00.000Z',
+  },
+];

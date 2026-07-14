@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 
 import { api } from '../../shared/api/client';
-import type { UserMemoryProfile } from '../../shared/api/types';
+import type { MemoryEvent, UserMemoryProfile } from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 import {
   Accordion,
@@ -42,22 +42,62 @@ function trendLabel(trend: string) {
   return 'Stable';
 }
 
+function formatEventType(value: string) {
+  return value
+    .split('_')
+    .filter(Boolean)
+    .map((chunk) => `${chunk[0]?.toUpperCase() ?? ''}${chunk.slice(1)}`)
+    .join(' ');
+}
+
 export function MemoryPage() {
   const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
+  const [events, setEvents] = useState<MemoryEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .get<UserMemoryProfile>('/memory/profile')
-      .then((data) => {
-        setProfile(data);
+    let cancelled = false;
+
+    const loadMemory = async () => {
+      setLoading(true);
+
+      const [profileResult, eventsResult] = await Promise.allSettled([
+        api.memory.getProfile(),
+        api.memory.listEvents(),
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (profileResult.status === 'fulfilled') {
+        setProfile(profileResult.value);
         setError(null);
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Could not load memory profile.');
-      })
-      .finally(() => setLoading(false));
+      } else {
+        setError( profileResult.reason instanceof Error ? profileResult.reason.message : 'Could not load memory profile.', );
+      }
+
+      if (eventsResult.status === 'fulfilled') {
+        const sorted = [...eventsResult.value].sort(
+          (a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime(),
+        );
+        setEvents(sorted);
+        setEventsError(null);
+      } else {
+        setEvents([]);
+        setEventsError( eventsResult.reason instanceof Error ? eventsResult.reason.message : 'Could not load memory events.', );
+      }
+
+      setLoading(false);
+    };
+
+    loadMemory();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loading) {
@@ -184,6 +224,45 @@ export function MemoryPage() {
               </Accordion>
             </Card>
           ))}
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-1000">Recent Memory Events</h2>
+          <span className="text-xs text-gray-700">{events.length} events</span>
+        </div>
+
+        {eventsError ? (
+          <div className="mb-3 rounded-xl border border-amber-400 bg-amber-100 px-4 py-3 text-xs text-amber-900">
+            {eventsError}
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-3">
+          {events.map((event) => (
+            <article
+              key={event.id}
+              className="rounded-xl border border-gray-alpha-200 bg-background-100 px-5 py-4"
+              style={{ boxShadow: 'var(--cg-card-shadow)' }}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-1000">{event.summary}</h3>
+                  <p className="mt-2 text-xs text-gray-700">
+                    {event.source} • {formatEventType(event.type)}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs text-gray-700">{formatDate(event.occurred_at)}</span>
+              </div>
+            </article>
+          ))}
+
+          {!events.length && !eventsError ? (
+            <div className="rounded-xl border border-gray-alpha-200 bg-background-100 px-5 py-4 text-sm text-gray-900" style={{ boxShadow: 'var(--cg-card-shadow)' }}>
+              No events yet. New attempts and memory updates will appear here.
+            </div>
+          ) : null}
         </div>
       </section>
     </div>

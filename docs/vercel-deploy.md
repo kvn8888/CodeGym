@@ -45,13 +45,15 @@ same token/config unless you add a separate `stg_frontend` token later):
 | --- | --- |
 | `VITE_AUTH0_DOMAIN` | Auth0 SPA domain |
 | `VITE_AUTH0_CLIENT_ID` | Auth0 SPA client id (public) |
-| `VITE_AUTH0_AUDIENCE` | API audience (must match backend) |
+| `VITE_AUTH0_AUDIENCE` | **API Identifier** of the CodeGym Auth0 API (must match `CODEGYM_AUTH0_AUDIENCE`). Not the Management API (`…/api/v2/`). |
 | `VITE_API_BASE_URL` | Leave empty for rewrite proxy |
 | `VITE_APP_ORIGIN` | Canonical frontend origin (production Vercel URL) |
 
 Auth0 login mounts when `VITE_AUTH0_DOMAIN` and `VITE_AUTH0_CLIENT_ID` are both
-set. Add the Vercel production and preview URLs to the Auth0 app's allowed
-callback, logout, and web-origin lists.
+set. API calls still need a matching audience: if login works but Settings
+shows `Invalid bearer token`, fix the API Identifier on both Doppler configs
+and redeploy (see `backend/README.md`). Add the Vercel production and preview
+URLs to the Auth0 app's allowed callback, logout, and web-origin lists.
 
 Without Auth0 values, the app can fall back to a localStorage bearer token for
 manual testing:

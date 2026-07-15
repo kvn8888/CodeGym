@@ -87,11 +87,15 @@ Keep browser-visible values prefixed with `VITE_`.
 
 ## Production: Doppler-only deploys
 
+Full runbooks: [render-deploy.md](./render-deploy.md) and
+[vercel-deploy.md](./vercel-deploy.md). Blueprint: [render.yaml](../render.yaml).
+
 ### Render (backend)
 
 - Service env: **only** `DOPPLER_TOKEN` (service token for `codegym` / `prd`).
 - Build installs the Doppler CLI into `./bin`, then compiles the Go binary.
 - Start: `./bin/doppler run -- env CODEGYM_HOST=0.0.0.0 CODEGYM_PORT=$PORT ./bin/codegym`.
+- Live URL: `https://codegym.onrender.com`.
 
 Rotate the token in Doppler (`prd` → Access → Service Tokens), then update
 `DOPPLER_TOKEN` on Render.
@@ -102,6 +106,9 @@ Rotate the token in Doppler (`prd` → Access → Service Tokens), then update
   on Production and Preview.
 - Build command: `curl -Ls https://cli.doppler.com/install.sh | sh && doppler run -- npm run build`
   (also recorded in `frontend/vercel.json`).
+- `frontend/vercel.json` rewrites `/api/*` → `https://codegym.onrender.com/api/*`
+  and falls back SPA routes to `index.html`. Leave `VITE_API_BASE_URL` empty so
+  the browser uses same-origin `/api/v1`.
 
 Rotate the token in Doppler (`prd_frontend` → Access → Service Tokens), then
 update `DOPPLER_TOKEN` on Vercel.

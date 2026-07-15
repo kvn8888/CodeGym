@@ -1,76 +1,79 @@
 # Deploying the backend to Render
 
-The repo root includes a Render Blueprint (`render.yaml`) that codifies the
-backend API service already running manually at
-[codegym.onrender.com](https://codegym.onrender.com), so it can be
-reproduced or re-created without clicking through the dashboard by hand.
+Production backend: [codegym.onrender.com](https://codegym.onrender.com).
 
-## What the blueprint defines
+Secrets come from **Doppler only**. Render holds a single `DOPPLER_TOKEN`
+service token (project `codegym`, config `prd`) and injects everything else
+via `doppler run` at process start. Do not paste Neon, Auth0, or GenAI secrets
+into the Render dashboard.
 
-- One `web` service, `codegym-backend`, using Render's native Go runtime
-  (`runtime: go`), built from `backend/` (`rootDir: backend`).
-- Build: `go build -o app ./cmd/server`; start: `./app`.
-- `plan: free` (spins down after 15 min idle; cold start on next request).
-  Upgrade to `starter` or higher for an always-on instance.
-- Auto-deploy tracks the `codegym-v2` branch.
-- `healthCheckPath: /health`, used by Render to gate deploy promotion.
-- `CODEGYM_HOST=0.0.0.0` (required — the app's default, `127.0.0.1`, is not
-  reachable from Render's edge/proxy layer).
-- Port: not set explicitly. The app reads `CODEGYM_PORT` and falls back to
-  Render's injected `PORT`, so Render's own port assignment is honored.
-- `CODEGYM_AUTH_MODE=auth0` and non-secret GenAI values
-  (`CODEGYM_GENAI_BASE_URL`, `CODEGYM_GENAI_MODEL`) are set with defaults.
-- All secrets are declared with `sync: false`, meaning Render will prompt
-  for a value on first apply and will not overwrite it on later syncs.
+See also [secrets-and-local-env.md](./secrets-and-local-env.md).
 
-## How to apply it
+## Live service shape
 
-1. Push this branch (or merge it) so `render.yaml` is on the branch Render
-   will build from.
-2. In the Render Dashboard: **New** -> **Blueprint** -> connect the
-   `codegym` GitHub repo -> Render detects `render.yaml` at the repo root.
-3. Render will propose creating a *new* service, `codegym-backend`. Review
-   the plan, then click **Apply**.
-4. Fill in the `sync: false` env vars when prompted (or after creation, in
-   the service's **Environment** tab — see list below).
-5. Trigger a deploy (or wait for the first automatic one).
+The production web service is already configured as:
 
-## Env vars you must set by hand (`sync: false`)
+| Setting | Value |
+| --- | --- |
+| Root directory | `backend` |
+| Branch | `codegym-v2` (auto-deploy on commit) |
+| Plan | `starter` (always-on; free plan cold-starts after idle) |
+| Build | Install Doppler CLI into `./bin`, then `go build -o ./bin/codegym ./cmd/server` |
+| Start | `./bin/doppler run -- env CODEGYM_HOST=0.0.0.0 CODEGYM_PORT=$PORT ./bin/codegym` |
+| Env on Render | **only** `DOPPLER_TOKEN` |
 
-| Key | Where it comes from |
-|---|---|
-| `NEON_CONNECTION_STRING` | Neon Postgres connection string (already set on the existing manual service — copy it over). |
-| `CODEGYM_AUTH0_DOMAIN` | Auth0 tenant domain, e.g. `your-tenant.us.auth0.com`. |
-| `CODEGYM_AUTH0_AUDIENCE` | Auth0 API identifier/audience. |
-| `CODEGYM_GENAI_API_KEY` | Vercel AI Gateway (or provider) API key. |
+`CODEGYM_HOST=0.0.0.0` is required so the process is reachable from Render's
+proxy. Port comes from Render's injected `PORT` (mapped to `CODEGYM_PORT`).
 
-Also review/replace the placeholder value for `CODEGYM_CORS_ALLOWED_ORIGINS`
-(defaults to a placeholder Vercel URL) with the real frontend origin(s),
-comma-separated.
+App secrets (`NEON_CONNECTION_STRING`, Auth0, GenAI, CORS, memory worker, etc.)
+live in Doppler config `prd` — edit them there, then redeploy/restart Render.
 
-Optional, not set in the blueprint (leave unset unless needed):
-`CODEGYM_MEMORY_WORKER_DISABLED` (`true` to disable the background memory
-worker) and `CODEGYM_MEMORY_WORKER_INTERVAL` (Go duration, e.g. `1h`).
+## Blueprint (`render.yaml`)
+
+The repo-root [render.yaml](../render.yaml) codifies the same Doppler-only
+shape for new environments (or Blueprint re-creates). It is **not**
+automatically bound to the existing dashboard service; Render does not adopt
+pre-existing services into a Blueprint.
+
+### Apply a new Blueprint service
+
+1. Ensure `render.yaml` is on the branch you will deploy from.
+2. Render Dashboard → **New** → **Blueprint** → connect the CodeGym repo.
+3. Review the plan, then **Apply**.
+4. When prompted, set `DOPPLER_TOKEN` to a **service token** for
+   `codegym` / `prd` (Doppler → Access → Service Tokens).
+5. Wait for the first deploy.
+
+### Env vars on Render
+
+| Key | Required | Notes |
+| --- | --- | --- |
+| `DOPPLER_TOKEN` | Yes | Service token for `codegym` / `prd` only. |
+
+Do **not** also set `NEON_CONNECTION_STRING`, Auth0, or GenAI keys on Render
+when using Doppler — that duplicates secrets and drifts from the source of
+truth.
+
+## Rotate `DOPPLER_TOKEN`
+
+1. Create a new service token in Doppler (`prd` → Access → Service Tokens).
+2. Update `DOPPLER_TOKEN` on the Render service Environment tab.
+3. Redeploy or restart the service.
+4. Revoke the old token in Doppler.
 
 ## Verifying the deploy
 
 ```sh
-curl https://codegym-backend.onrender.com/health   # liveness only
-curl https://codegym-backend.onrender.com/ready    # liveness + DB check
+curl https://codegym.onrender.com/health   # liveness
+curl https://codegym.onrender.com/ready    # liveness + DB (postgres mode when Neon is set)
 ```
 
-Both should return a 2xx response. `/ready` will fail if
-`NEON_CONNECTION_STRING` is missing or the database is unreachable.
+Both should return 2xx. `/ready` fails if Doppler did not supply a working
+database URL or Neon is unreachable.
 
-## Note on the existing manual service
+## Existing production service
 
-The service already running at `codegym.onrender.com` was created by hand
-in the dashboard and is **not** retroactively managed by this blueprint —
-Render does not adopt pre-existing services into a Blueprint automatically.
-You have two options:
-
-- **Keep it as-is**: leave the manual service running unmanaged, and use
-  this blueprint only for new environments (e.g. a staging service).
-- **Adopt the blueprint**: delete/rename the manual service and let the
-  blueprint create `codegym-backend` fresh, then repoint DNS/frontend
-  config at the new service URL if it differs.
+The live service at `codegym.onrender.com` was created in the dashboard and is
+already on the Doppler-only build/start commands above. Use the blueprint for
+new environments, or only after deliberately replacing the manual service and
+repointing the Vercel `/api` rewrite destination if the hostname changes.

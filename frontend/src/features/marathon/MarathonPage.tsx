@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { CircleHelpIcon, LogOutIcon, SkipForwardIcon } from 'lucide-react';
-import { motion } from 'motion/react';
+import {
+  CheckCircle2Icon,
+  CircleAlertIcon,
+  CircleHelpIcon,
+  LoaderCircleIcon,
+  LogOutIcon,
+  SkipForwardIcon,
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { HelpFlashcard } from './HelpFlashcard';
@@ -80,6 +87,13 @@ interface MarathonLocationState {
   };
 }
 
+type MemoryUpdateStatus = 'updating' | 'updated' | 'failed' | null;
+
+interface PendingMemoryEvent {
+  write: () => Promise<void>;
+  promise: Promise<void>;
+}
+
 const DEFAULT_CONFIG: NewPracticeConfig = {
   prompt: '',
   difficulty: 'medium',
@@ -126,18 +140,17 @@ function normalizeMarathonSessionState(value: unknown): MarathonSessionState | n
   };
 }
 
-/** Fire-and-forget memory event emitter for the mcq source. Event writes must
- *  never block or break the practice flow, so failures are swallowed. Names
- *  follow docs/memory-event-naming-guide-v0.md. */
+/** Memory event writer for the mcq source. Product interactions queue these
+ *  without blocking; round completion flushes the queue before maintenance. */
 function emitMcqEvent(type: string, summary: string, payload: Record<string, unknown>) {
-  void api
+  return api
     .post('/memory/events', {
       source: 'mcq',
       type,
       summary,
       payload: { ...payload, schema_version: 1 },
     })
-    .catch(() => {});
+    .then(() => undefined);
 }
 
 // ── Mock data ────────────────────────────────────────────────────────────────
@@ -224,6 +237,53 @@ function SuccessCheck() {
   );
 }
 
+function MemoryUpdateToast({ status }: { status: MemoryUpdateStatus }) {
+  const content =
+    status === 'updating'
+      ? {
+          label: 'Updating memory',
+          description: 'Saving this question set before continuing.',
+          icon: <LoaderCircleIcon className="text-muted-foreground size-4 animate-spin" />,
+        }
+      : status === 'updated'
+        ? {
+            label: 'Memory updated',
+            description: 'The next question set will use your latest progress.',
+            icon: <CheckCircle2Icon className="size-4 text-green-700" />,
+          }
+        : status === 'failed'
+          ? {
+              label: 'Memory update failed',
+              description: 'Retry before creating the next question set.',
+              icon: <CircleAlertIcon className="text-destructive size-4" />,
+            }
+          : null;
+
+  return (
+    <AnimatePresence>
+      {content && (
+        <motion.div
+          role="status"
+          aria-live="polite"
+          initial={{ opacity: 0, y: -8, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -6, scale: 0.98 }}
+          transition={{ duration: 0.18 }}
+          className="bg-popover text-popover-foreground fixed top-4 right-4 z-70 flex w-[min(22rem,calc(100vw-2rem))] items-start gap-3 rounded-lg border px-4 py-3 shadow-lg"
+        >
+          <span className="mt-0.5 shrink-0">{content.icon}</span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">{content.label}</span>
+            <span className="text-muted-foreground mt-0.5 block text-xs leading-4">
+              {content.description}
+            </span>
+          </span>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -284,6 +344,8 @@ export function MarathonPage() {
 
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isExiting, setIsExiting] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [memoryUpdateStatus, setMemoryUpdateStatus] = useState<MemoryUpdateStatus>(null);
 
   // The user's free-text "what do you want to study?" ask; inserted into the
   // MCQ generation spec each round.
@@ -312,10 +374,58 @@ export function MarathonPage() {
   // older timer/selection write already in flight.
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
+  const memoryToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Answer/start events remain non-blocking during a question, but every write
+  // must settle successfully before the round-level memory refresh can run.
+  const pendingMemoryEventsRef = useRef<PendingMemoryEvent[]>([]);
+  const completionEventRoundsRef = useRef(new Set<number>());
+
   // Session id for the current round's memory events.
   const sessionIdRef = useRef('');
 
   const currentQ = questions[questionIndex];
+
+  const showMemoryUpdateStatus = (status: MemoryUpdateStatus) => {
+    if (memoryToastTimerRef.current) clearTimeout(memoryToastTimerRef.current);
+    setMemoryUpdateStatus(status);
+    if (status === 'updated' || status === 'failed') {
+      memoryToastTimerRef.current = setTimeout(
+        () => setMemoryUpdateStatus(null),
+        status === 'updated' ? 3000 : 5000,
+      );
+    }
+  };
+
+  const trackMcqEvent = (type: string, summary: string, payload: Record<string, unknown>) => {
+    const write = () => emitMcqEvent(type, summary, payload);
+    const event: PendingMemoryEvent = { write, promise: write() };
+    pendingMemoryEventsRef.current.push(event);
+    void event.promise.catch(() => {});
+  };
+
+  const flushPendingMemoryEvents = async () => {
+    const pending = [...pendingMemoryEventsRef.current];
+    const outcomes = await Promise.allSettled(pending.map((event) => event.promise));
+    const failed = pending.filter((_, index) => outcomes[index].status === 'rejected');
+    if (failed.length > 0) {
+      for (const event of failed) {
+        event.promise = event.write();
+        void event.promise.catch(() => {});
+      }
+      throw new Error('Could not save all question activity. Retry the memory update.');
+    }
+    pendingMemoryEventsRef.current = pendingMemoryEventsRef.current.filter(
+      (event) => !pending.includes(event),
+    );
+  };
+
+  useEffect(
+    () => () => {
+      if (memoryToastTimerRef.current) clearTimeout(memoryToastTimerRef.current);
+    },
+    [],
+  );
 
   // ── Timer logic ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -366,7 +476,7 @@ export function MarathonPage() {
     setConfirmed(false);
     setHelpUsed(false);
     setShowHelp(false);
-    emitMcqEvent('session_started', `Started round ${roundNumber} of an MCQ marathon.`, {
+    trackMcqEvent('session_started', `Started round ${roundNumber} of an MCQ marathon.`, {
       session_id: sessionIdRef.current,
       question_count: nextQuestions.length,
       generated: !fallback,
@@ -442,28 +552,29 @@ export function MarathonPage() {
     const roundResults = results.filter((r) => r.round === round);
     const roundSkips = skippedQuestions.filter((item) => item.round === round);
     const correctCount = roundResults.filter((r) => r.correct).length;
+    showMemoryUpdateStatus('updating');
     try {
-      await api.post('/memory/events', {
-        source: 'mcq',
-        type: 'session_completed',
-        summary: `Finished round ${round} with ${correctCount} of ${roundResults.length} answered correctly and ${roundSkips.length} skipped.`,
-        payload: {
+      if (!completionEventRoundsRef.current.has(round)) {
+        trackMcqEvent(
+          'session_completed',
+          `Finished round ${round} with ${correctCount} of ${roundResults.length} answered correctly and ${roundSkips.length} skipped.`,
+          {
           session_id: sessionIdRef.current,
           question_count: roundResults.length + roundSkips.length,
           answered_count: roundResults.length,
           skipped_count: roundSkips.length,
           correct_count: correctCount,
           round,
-          schema_version: 1,
-        },
-      });
-    } catch {
-      /* best-effort */
-    }
-    try {
+          },
+        );
+        completionEventRoundsRef.current.add(round);
+      }
+      await flushPendingMemoryEvents();
       await api.post('/memory/notes/maintain', { session_id: sessionIdRef.current });
-    } catch {
-      /* best-effort */
+      showMemoryUpdateStatus('updated');
+    } catch (err) {
+      showMemoryUpdateStatus('failed');
+      throw err;
     }
   };
 
@@ -471,7 +582,11 @@ export function MarathonPage() {
   const handleStart = async (config?: NewPracticeConfig) => {
     const nextConfig = config ?? { prompt: studyPrompt, difficulty, count: questionCount };
     setPhase('loading');
+    setIsFinishing(false);
     setSessionError(null);
+    showMemoryUpdateStatus(null);
+    pendingMemoryEventsRef.current = [];
+    completionEventRoundsRef.current.clear();
     setResults([]);
     setSkippedQuestions([]);
     setStudyPrompt(nextConfig.prompt);
@@ -574,28 +689,60 @@ export function MarathonPage() {
   /** Round finished, user wants more: reflect (memory update), then build the
    *  next round from the just-updated notes. */
   const handleNextRound = async () => {
+    setIsFinishing(false);
     setPhase('loading');
-    await reflectOnRound();
-    const nextRound = round + 1;
-    const { nextQuestions, fallback } = await generateRound(nextRound);
-    beginRound(nextRound, nextQuestions, fallback);
-    void persistSession({
-      round: nextRound,
-      question_index: 0,
-      elapsed: 0,
-      selected_index: null,
-      confirmed: false,
-      using_fallback: fallback,
-      questions: nextQuestions,
-    }).catch(() => {});
+    setSessionError(null);
+    try {
+      await reflectOnRound();
+      const nextRound = round + 1;
+      const { nextQuestions, fallback } = await generateRound(nextRound);
+      beginRound(nextRound, nextQuestions, fallback);
+      void persistSession({
+        round: nextRound,
+        question_index: 0,
+        elapsed: 0,
+        selected_index: null,
+        confirmed: false,
+        using_fallback: fallback,
+        questions: nextQuestions,
+      }).catch(() => {});
+    } catch (err) {
+      setSessionError(
+        err instanceof Error
+          ? err.message
+          : 'Could not update memory. Retry before creating the next question set.',
+      );
+      setPhase('active');
+    }
   };
 
-  /** User clicked Finished: run the final memory update in the background and
-   *  show aggregate results immediately. */
-  const handleFinish = () => {
-    void reflectOnRound();
-    void persistSession({}, 'completed').catch(() => {});
-    setPhase('results');
+  /** Finish only after the final round is reflected into memory. */
+  const handleFinish = async () => {
+    setIsFinishing(true);
+    setPhase('loading');
+    setSessionError(null);
+    try {
+      await reflectOnRound();
+    } catch (err) {
+      setSessionError(
+        err instanceof Error
+          ? err.message
+          : 'Could not update memory. Retry before finishing this run.',
+      );
+      setIsFinishing(false);
+      setPhase('active');
+      return;
+    }
+
+    try {
+      await persistSession({}, 'completed');
+      setPhase('results');
+    } catch (err) {
+      setSessionError(err instanceof Error ? err.message : 'Could not save the completed run.');
+      setPhase('active');
+    } finally {
+      setIsFinishing(false);
+    }
   };
 
   /** User selects an answer option (radio-style, can change before confirming). */
@@ -629,7 +776,7 @@ export function MarathonPage() {
     // question_answered for correct answers; answer_incorrect feeds growth
     // edges for misses (one event per answer, per the naming guide).
     if (result.correct) {
-      emitMcqEvent('question_answered', `Answered a ${currentQ.concept} question correctly.`, {
+      trackMcqEvent('question_answered', `Answered a ${currentQ.concept} question correctly.`, {
         session_id: sessionIdRef.current,
         topic: currentQ.concept,
         correct: true,
@@ -637,7 +784,7 @@ export function MarathonPage() {
         used_help: result.usedHelp,
       });
     } else {
-      emitMcqEvent('answer_incorrect', `Missed a ${currentQ.concept} question.`, {
+      trackMcqEvent('answer_incorrect', `Missed a ${currentQ.concept} question.`, {
         session_id: sessionIdRef.current,
         topic: currentQ.concept,
         correct: false,
@@ -775,6 +922,7 @@ export function MarathonPage() {
     const firstRound = round === 1 && results.length === 0;
     return (
       <WorkspacePage>
+        <MemoryUpdateToast status={memoryUpdateStatus} />
         <Card className="mx-auto max-w-xl gap-0 px-6 py-8 text-center">
           <div className="mx-auto mb-6 flex size-10 items-center justify-center">
             <Spinner className="text-muted-foreground size-8" />
@@ -787,6 +935,8 @@ export function MarathonPage() {
               ? studyPrompt.trim()
                 ? `Writing ${questionCount} questions on “${studyPrompt.trim()}”…`
                 : `Picking ${questionCount} questions from your growth edges…`
+              : isFinishing
+                ? `Reflecting on round ${round} before showing your results…`
               : `Reflecting on round ${round}, then building round ${round + 1} from the updated notes…`}
           </p>
         </Card>
@@ -803,6 +953,7 @@ export function MarathonPage() {
 
     return (
       <div className="mx-auto max-w-xl px-4 py-8 sm:px-6">
+        <MemoryUpdateToast status={memoryUpdateStatus} />
         <h1 className="mb-1 text-center text-[28px] leading-9 font-semibold">
           Results
         </h1>
@@ -897,6 +1048,7 @@ export function MarathonPage() {
   // ── Active state: question display ───────────────────────────────────────
   return (
     <div className="mx-auto max-w-xl px-4 py-8 sm:px-6">
+      <MemoryUpdateToast status={memoryUpdateStatus} />
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <span className="text-muted-foreground text-sm font-medium">
           Round {round} · {questionIndex + 1} of {questions.length}
@@ -1049,7 +1201,7 @@ export function MarathonPage() {
               animate={{ opacity: 1, y: 0 }}
               className="flex items-center gap-3"
             >
-              <Button variant="outline" onClick={handleFinish}>
+              <Button variant="outline" onClick={() => void handleFinish()}>
                 Finished
               </Button>
               <Button onClick={handleNextRound}>

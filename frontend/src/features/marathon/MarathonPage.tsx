@@ -3,7 +3,9 @@ import { CircleHelpIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { HelpFlashcard } from './HelpFlashcard';
-import { api } from '../../shared/api/client';
+import { api, createMemoryEvent } from '../../shared/api/client';
+import { buildMcqEvent, memoryEventTypes } from '../../shared/api/memoryEvents';
+import type { MemoryEventType } from '../../shared/api/memoryEvents';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -50,15 +52,14 @@ const QUESTION_COUNT = 5;
 /** Fire-and-forget memory event emitter for the mcq source. Event writes must
  *  never block or break the practice flow, so failures are swallowed. Names
  *  follow docs/memory-event-naming-guide-v0.md. */
-function emitMcqEvent(type: string, summary: string, payload: Record<string, unknown>) {
-  void api
-    .post('/memory/events', {
-      source: 'mcq',
+function emitMcqEvent(type: MemoryEventType, summary: string, payload: Record<string, unknown>) {
+  void createMemoryEvent(
+    buildMcqEvent({
       type,
       summary,
       payload: { ...payload, schema_version: 1 },
-    })
-    .catch(() => {});
+    }),
+  ).catch(() => {});
 }
 
 // ── Mock data ────────────────────────────────────────────────────────────────
@@ -216,8 +217,7 @@ export function MarathonPage() {
     return () => clearInterval(interval);
   }, [phase, confirmed]);
 
-  /** Generate one round's question set; falls back to the built-in practice
-   *  set when generation is unavailable. */
+  /** Generate one round's question set; falls back to the built-in practice set when generation is unavailable. */
   const generateRound = async (roundNumber: number) => {
     let nextQuestions = MOCK_QUESTIONS;
     let fallback = true;
@@ -248,7 +248,7 @@ export function MarathonPage() {
     setConfirmed(false);
     setHelpUsed(false);
     setShowHelp(false);
-    emitMcqEvent('session_started', `Started round ${roundNumber} of an MCQ marathon.`, {
+    emitMcqEvent(memoryEventTypes.sessionStarted, `Started round ${roundNumber} of an MCQ marathon.`, {
       session_id: sessionIdRef.current,
       question_count: nextQuestions.length,
       generated: !fallback,
@@ -264,18 +264,19 @@ export function MarathonPage() {
     const roundResults = results.filter((r) => r.round === round);
     const correctCount = roundResults.filter((r) => r.correct).length;
     try {
-      await api.post('/memory/events', {
-        source: 'mcq',
-        type: 'session_completed',
-        summary: `Finished round ${round} with ${correctCount} of ${roundResults.length} correct.`,
-        payload: {
-          session_id: sessionIdRef.current,
-          question_count: roundResults.length,
-          correct_count: correctCount,
-          round,
-          schema_version: 1,
-        },
-      });
+      await createMemoryEvent(
+        buildMcqEvent({
+          type: memoryEventTypes.sessionCompleted,
+          summary: `Finished round ${round} with ${correctCount} of ${roundResults.length} correct.`,
+          payload: {
+            session_id: sessionIdRef.current,
+            question_count: roundResults.length,
+            correct_count: correctCount,
+            round,
+            schema_version: 1,
+          },
+        }),
+      );
     } catch {
       /* best-effort */
     }
@@ -337,7 +338,7 @@ export function MarathonPage() {
     // question_answered for correct answers; answer_incorrect feeds growth
     // edges for misses (one event per answer, per the naming guide).
     if (result.correct) {
-      emitMcqEvent('question_answered', `Answered a ${currentQ.concept} question correctly.`, {
+      emitMcqEvent(memoryEventTypes.questionAnswered, `Answered a ${currentQ.concept} question correctly.`, {
         session_id: sessionIdRef.current,
         topic: currentQ.concept,
         correct: true,
@@ -345,7 +346,7 @@ export function MarathonPage() {
         used_help: result.usedHelp,
       });
     } else {
-      emitMcqEvent('answer_incorrect', `Missed a ${currentQ.concept} question.`, {
+      emitMcqEvent(memoryEventTypes.answerIncorrect, `Missed a ${currentQ.concept} question.`, {
         session_id: sessionIdRef.current,
         topic: currentQ.concept,
         correct: false,

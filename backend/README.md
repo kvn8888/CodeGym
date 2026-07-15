@@ -184,6 +184,10 @@ Memory event `source` and `type` names for emitters are documented in
 GET  /health
 GET  /ready
 
+GET  /api/v1/me
+PATCH /api/v1/me
+GET  /api/v1/cost
+
 GET  /api/v1/memory/profile
 POST /api/v1/memory/profile/refresh
 GET  /api/v1/memory/events
@@ -194,7 +198,31 @@ POST  /api/v1/sessions
 GET   /api/v1/sessions/{id}
 PATCH /api/v1/sessions/{id}
 PUT   /api/v1/sessions/{id}/files
+
+POST /api/v1/generate
+POST /api/v1/memory/notes/maintain
 ```
+
+## GenAI usage and cost
+
+Every successful model call (MCQ generate, note maintenance, etc.) records
+`tokens_in`, `tokens_out`, provider, model, and an estimated USD cost. Totals
+for the authenticated workspace user are exposed at:
+
+```text
+GET /api/v1/cost
+```
+
+Costs use a built-in rate card (USD per million tokens, as of 2026-07-15):
+
+| Provider / model | Input / 1M | Output / 1M |
+| --- | --- | --- |
+| Meta Muse Spark 1.1 | $1.25 | $4.25 |
+| Azure / OpenAI GPT-5.6 Terra | $2.50 | $15.00 |
+| Gemini Flash-class | $0.30 | $2.50 |
+
+Rates are estimates for product visibility, not invoices. Persist to Postgres
+when `NEON_CONNECTION_STRING` is set (`genai_usage` table).
 
 ## Memory Profile Fields
 

@@ -18,6 +18,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/usage"
 )
 
 // main wires configuration, persistence adapters, services, and the HTTP router,
@@ -36,6 +37,7 @@ func main() {
 	var memoryStore memory.Store = memory.NewInMemoryStore()
 	var identityStore identity.Store = identity.NewInMemoryStore()
 	var sessionStore session.Store = session.NewInMemoryStore()
+	var usageStore usage.Store = usage.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -51,6 +53,7 @@ func main() {
 		postgresIdentityStore := identity.NewPostgresStore(pool)
 		postgresMemoryStore := memory.NewPostgresStore(pool)
 		postgresSessionStore := session.NewPostgresStore(pool)
+		postgresUsageStore := usage.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -60,18 +63,23 @@ func main() {
 		if err := postgresSessionStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap session schema: %v", err)
 		}
+		if err := postgresUsageStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap genai usage schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
 		sessionStore = postgresSessionStore
-		log.Print("CodeGym API using Postgres identity, memory, and session stores")
+		usageStore = postgresUsageStore
+		log.Print("CodeGym API using Postgres identity, memory, session, and genai usage stores")
 	} else {
-		log.Print("CodeGym API using in-memory identity, memory, and session stores; set NEON_CONNECTION_STRING to enable Postgres")
+		log.Print("CodeGym API using in-memory identity, memory, session, and genai usage stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
 
 	identityService := identity.NewService(identityStore)
 	memoryService := memory.NewService(memoryStore, nil)
 	sessionService := session.NewService(sessionStore, nil)
+	usageService := usage.NewService(usageStore, nil)
 
 	var generationOrchestrator *generation.Orchestrator
 	if cfg.AnyGenAIEnabled() {
@@ -103,7 +111,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("could not configure GenAI router: %v", err)
 		}
-		generationOrchestrator = generation.NewOrchestrator(memoryService, routerGenerator)
+		generationOrchestrator = generation.NewOrchestrator(memoryService, routerGenerator).WithUsage(usageService)
 		log.Printf("CodeGym generation enabled providers=%v order=%v", names, cfg.GenAIProviderOrder)
 	} else {
 		log.Print("CodeGym generation disabled; set META_MUSE_SPARK_API, CODEGYM_GENAI_AZURE_API_KEY, or CODEGYM_GEMINI_API_KEY to enable POST /api/v1/generate")
@@ -123,6 +131,7 @@ func main() {
 		Memory:             memoryService,
 		Sessions:           sessionService,
 		Generation:         generationOrchestrator,
+		Usage:              usageService,
 		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
 		DatabaseURL:        cfg.DatabaseURL,
 	})

@@ -89,6 +89,29 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/cost:
+    get:
+      operationId: getGenAICost
+      summary: Aggregate GenAI token usage and estimated USD cost for the authenticated workspace user.
+      description: |
+        Totals tokens_in / tokens_out and estimated cost from recorded generation
+        calls (MCQ generate, note maintenance, etc.). Costs use a built-in rate
+        card (USD per million tokens) last reviewed 2026-07-15 for Meta Muse Spark,
+        Azure/OpenAI GPT-5.6 Terra family, and Gemini Flash-class models.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "200":
+          description: Cost aggregate loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostAggregateEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/v1/memory/profile:
     get:
       operationId: getMemoryProfile
@@ -530,6 +553,113 @@ components:
           $ref: "#/components/schemas/UserProfile"
         error:
           type: "null"
+
+    CostAggregateEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/CostAggregate"
+        error:
+          type: "null"
+
+    CostAggregate:
+      type: object
+      required:
+        - currency
+        - pricing_as_of
+        - total_tokens_in
+        - total_tokens_out
+        - total_cost_usd
+        - call_count
+        - by_provider
+        - by_model
+        - rates
+      properties:
+        currency:
+          type: string
+          example: USD
+        pricing_as_of:
+          type: string
+          example: "2026-07-15"
+        total_tokens_in:
+          type: integer
+          format: int64
+        total_tokens_out:
+          type: integer
+          format: int64
+        total_cost_usd:
+          type: number
+          format: double
+        call_count:
+          type: integer
+        by_provider:
+          type: array
+          items:
+            $ref: "#/components/schemas/CostProviderSlice"
+        by_model:
+          type: array
+          items:
+            $ref: "#/components/schemas/CostModelSlice"
+        rates:
+          type: array
+          items:
+            $ref: "#/components/schemas/CostRate"
+
+    CostProviderSlice:
+      type: object
+      required: [provider, tokens_in, tokens_out, cost_usd, call_count]
+      properties:
+        provider:
+          type: string
+        tokens_in:
+          type: integer
+          format: int64
+        tokens_out:
+          type: integer
+          format: int64
+        cost_usd:
+          type: number
+          format: double
+        call_count:
+          type: integer
+
+    CostModelSlice:
+      type: object
+      required: [provider, model, tokens_in, tokens_out, cost_usd, call_count]
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        tokens_in:
+          type: integer
+          format: int64
+        tokens_out:
+          type: integer
+          format: int64
+        cost_usd:
+          type: number
+          format: double
+        call_count:
+          type: integer
+
+    CostRate:
+      type: object
+      required: [provider, input_usd_per_mtok, output_usd_per_mtok]
+      properties:
+        provider:
+          type: string
+        model_match:
+          type: string
+        input_usd_per_mtok:
+          type: number
+          format: double
+        output_usd_per_mtok:
+          type: number
+          format: double
+        source:
+          type: string
 
     UserProfile:
       type: object

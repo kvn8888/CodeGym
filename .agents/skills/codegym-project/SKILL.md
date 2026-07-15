@@ -55,11 +55,11 @@ If publishing is blocked by auth, network, failing validation, missing owner
 approval, or mixed unrelated work, say exactly what is blocked and what must
 happen next. Do not present local-only work as finished repository work.
 
-## Current State (Last Updated: 2026-07-11)
+## Current State (Last Updated: 2026-07-15)
 
 - Branch: `codegym-v2`.
 - Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, and mock-friendly app routes. The visual system is a quiet operational workspace: 24px routine page titles, flat border-led surfaces, compact rows, a 216px desktop sidebar, and a dedicated mobile navigation sheet. Dashboard composes active/recent sessions with memory-derived recommendations; Memory composes the profile, event history, focus queue, skills, and notes; `/generate` is labeled New Practice and lets users select practice format (multiple choice vs DSA-style coding problem). MCQ starts a marathon session; coding opens the problem workspace shell (AI coding generation still partial). New Practice creates a durable session and hands it to Marathon, which restores session snapshots, persists timer/answer/progress state, and completes the session while preserving the continuous round reflection flow. Floating chat is limited to active Marathon and problem-detail contexts. Settings exposes `/api/v1/me` and lets users save a custom display name.
-- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, `/api/v1/me` account profile APIs, memory profile/event APIs, session APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh. Auth0/Google `name` seeds `app_users.display_name` with `display_name_source=oauth`; Settings updates set `display_name_source=user`, and future OAuth metadata must not overwrite user-edited names. Hosted Auth0 sign-in across the Vercel frontend and Render backend was owner-verified on 2026-07-10; the external setup blocker in #21 is resolved.
+- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, `/api/v1/me` account profile APIs, memory profile/event APIs, session APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh. Auth0/Google `name` seeds `app_users.display_name` with `display_name_source=oauth`; Settings updates set `display_name_source=user`, and future OAuth metadata must not overwrite user-edited names. Production Auth0 uses the custom API Identifier `https://codegym.onrender.com` (not the Auth0 Management API audience) in matching backend/frontend Doppler configs. The CodeGym SPA requires a `subject_type: user` client grant for that API. Render and Vercel were redeployed with this corrected setup on 2026-07-15.
 - Generation: `generation.Orchestrator` composes the scoped memory profile with the provider-neutral `Generator` seam. `generation/openaicompat` is the first adapter (OpenAI chat-completions wire format; default base URL is the Vercel AI Gateway). `POST /api/v1/generate` serves MCQ sets with structural validation and one bounded repair retry; it answers 503 when `CODEGYM_GENAI_API_KEY` is unset. MCQ prompt text mirrors `docs/ai-prompts/05-mcq-marathon.md` — keep them in sync.
 - Memory notes are the LLM-curated slice of the profile (agentic CRUD, like editing a living project doc): `POST /api/v1/memory/notes/maintain` runs deterministic profile refresh, then a best-effort LLM pass (`generation.MaintainNotes`, prompt mirrors `docs/ai-prompts/08-memory-notes.md`) that creates/updates/prunes notes from the round's events and emits `memory.note_created/updated/pruned` audit events. The deterministic `memory.Summarize` preserves notes by ID, so worker/cron refreshes never clobber LLM curation. The user-level summary stays deterministic until the daily cron work (#41) lands.
 - Deploy: backend runs on Render (`https://codegym.onrender.com`); `render.yaml` is the blueprint and `docs/render-deploy.md` documents applying it. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render.
@@ -168,6 +168,13 @@ frontend Auth0 envs, backend issuer/audience envs, and the Auth0 API Identifier
 to agree. Auth0 `sub` is the durable user ID; `email` and `name` are metadata
 only and must not drive authorization or workspace selection.
 
+For the current Auth0 tenant, the CodeGym API Identifier is
+`https://codegym.onrender.com`. Never use the tenant Management API audience
+ending in `/api/v2/` for CodeGym access tokens. Because the API's user access
+policy is `require_client_grant`, authorize the SPA with a user-delegated
+client grant (`subject_type: user`); a machine grant (`subject_type: client`)
+does not authorize logged-in SPA users.
+
 Render readiness for the Go backend means the service has the expected branch,
 start command, health check, Auth0 envs, database envs, and secret source wired.
 Deployment is not complete just because `.env.example` or docs list the values.
@@ -272,6 +279,8 @@ do not mean the worker is scheduled or running.
 7. Updating backend routes, OpenAPI, or frontend typed helpers without checking
    the other two surfaces for drift.
 8. Assuming local tests prove Auth0/Render/Vercel/Doppler/Neon readiness.
+9. Using the Auth0 Management API audience or a machine client grant for the
+   SPA instead of the CodeGym API Identifier plus a user-delegated grant.
 
 ## Task Workflows
 

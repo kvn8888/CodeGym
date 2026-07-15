@@ -242,7 +242,7 @@ export function ProblemDetailPage() {
         className="shrink-0 min-w-0 overflow-y-auto bg-background-100 p-6"
         style={{ width: `${descriptionWidth}%` }}
       >
-        <h1 className="mb-3 text-2xl font-semibold leading-8 tracking-[-0.96px] text-gray-1000">{problem.title}</h1>
+        <h1 className="mb-3 text-2xl leading-8 font-semibold text-gray-1000">{problem.title}</h1>
         <div className="mb-5 flex gap-2 font-mono text-xs">
           <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.language.toUpperCase()}</span>
           {problem.framework && (

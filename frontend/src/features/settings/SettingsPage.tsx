@@ -73,10 +73,12 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-12">
-      <h1 className="mb-8 text-[40px] font-semibold leading-[48px] tracking-[-2.4px]">Settings</h1>
+    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 lg:py-8">
+      <div className="mb-6 border-b pb-5">
+        <h1 className="text-2xl leading-8 font-semibold">Settings</h1>
+      </div>
 
-      <Card className="gap-0 px-6 py-6">
+      <Card className="gap-0 px-5 py-5">
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <Label htmlFor="display-name">Display name</Label>

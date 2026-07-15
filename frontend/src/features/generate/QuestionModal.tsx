@@ -122,7 +122,7 @@ export function QuestionModal({ questions, onComplete, onClose }: QuestionModalP
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
         <DialogHeader className="px-6 pt-5 pb-3 text-left">
-          <DialogTitle className="text-xl tracking-[-0.4px]">Tailor Your Problem</DialogTitle>
+          <DialogTitle className="text-xl">Tailor Your Problem</DialogTitle>
         </DialogHeader>
 
         {/* Progress dots */}

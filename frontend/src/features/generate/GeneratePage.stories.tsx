@@ -14,8 +14,15 @@ export default meta;
 type Story = StoryObj<typeof GeneratePage>;
 
 export const Default: Story = {
-  name: 'Empty Prompt',
+  name: 'Personalized',
 };
 
-// To see the UI after clicking an example prompt, interact in Storybook directly.
-// No additional stories needed — state is local to the component.
+export const FirstSession: Story = {
+  parameters: { mockApiScenario: 'empty' },
+};
+
+export const Prefilled: Story = {
+  parameters: {
+    initialPath: '/generate?prompt=Go%20concurrency%20and%20channel%20ownership',
+  },
+};

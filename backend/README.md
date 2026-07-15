@@ -151,8 +151,56 @@ issuer, audience, expiry, and not-before checks before they reach
 identity/workspace scope middleware. The backend does not use Auth0 client IDs
 or client secrets; those belong to the frontend SPA login setup.
 
-See [../docs/auth-identity-workspace.md](../docs/auth-identity-workspace.md) for the
-full auth -> identity -> personal workspace scope request flow.
+### Auth0 API (audience) setup — required for Settings / protected APIs
+
+Protected routes (`GET /api/v1/me`, `/api/v1/cost`, memory, generate, …) expect
+an **Auth0 access token** whose `aud` claim matches `CODEGYM_AUTH0_AUDIENCE`
+exactly. Login can succeed in the SPA while API calls fail with
+`Invalid bearer token` if audience is wrong.
+
+**Do this in the Auth0 dashboard:**
+
+1. **Applications → APIs → Create API** (or open the existing CodeGym API).
+   - **Name:** e.g. `CodeGym API`
+   - **Identifier:** a stable URI you invent, e.g. `https://api.codegym.app`
+     (does not need to be a real HTTP endpoint — it is the JWT audience).
+   - Signing algorithm: **RS256**
+2. **Applications → your SPA app**
+   - Authorize the SPA for that API (enable the API for the application).
+   - **Allowed Callback URLs / Logout URLs / Web Origins** include the Vercel
+     origin(s), e.g. `https://code-gym-rho.vercel.app` (and preview URLs if needed).
+3. Put the **same Identifier** in Doppler on both sides:
+   - Backend (`dev` / `prd`): `CODEGYM_AUTH0_AUDIENCE=<API Identifier>`
+   - Frontend (`dev_frontend` / `prd_frontend`): `VITE_AUTH0_AUDIENCE=<API Identifier>`
+   - Frontend also needs `VITE_AUTH0_DOMAIN` and `VITE_AUTH0_CLIENT_ID` (SPA
+     Application → Settings → Client ID).
+4. Redeploy **Render** (backend reloads audience) and **Vercel** (Vite inlines
+   `VITE_*` at build time). Log out and log in again so Auth0 issues a token
+   for the new audience.
+
+**Do not use** the Management API as audience:
+
+```text
+# WRONG — causes Invalid bearer token on /api/v1/*
+https://YOUR_TENANT.us.auth0.com/api/v2/
+```
+
+That is Auth0’s admin Management API, not the CodeGym backend API. SPA access
+tokens for user APIs should use your **API Identifier** from step 1.
+
+**Quick check after login:** decode the access token (jwt.io, payload only):
+
+| Claim | Expected |
+| --- | --- |
+| `iss` | `https://YOUR_TENANT.us.auth0.com/` |
+| `aud` | Exactly `CODEGYM_AUTH0_AUDIENCE` / `VITE_AUTH0_AUDIENCE` |
+| `sub` | Auth0 user id (becomes CodeGym `user_id`) |
+
+If `aud` is the SPA client id or `/api/v2/`, the backend will reject the token.
+
+Frontend env names and deploy notes: [../docs/secrets-and-local-env.md](../docs/secrets-and-local-env.md),
+[../docs/vercel-deploy.md](../docs/vercel-deploy.md). Full auth pipeline:
+[../docs/auth-identity-workspace.md](../docs/auth-identity-workspace.md).
 
 ## Architecture: Principal and Personal Workspace Scope
 

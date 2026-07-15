@@ -61,8 +61,8 @@ Vite proxies `/api` to `http://localhost:8080`.
 | --- | --- | --- |
 | `NEON_CONNECTION_STRING` | Yes for durable memory | Neon/Postgres connection string. |
 | `CODEGYM_AUTH_MODE` | Production | Auth mode (`auth0` or dev). |
-| `CODEGYM_AUTH0_DOMAIN` | When Auth0 | Auth0 tenant domain. |
-| `CODEGYM_AUTH0_AUDIENCE` | When Auth0 | Auth0 API audience. |
+| `CODEGYM_AUTH0_DOMAIN` | When Auth0 | Auth0 tenant domain (e.g. `dev-….us.auth0.com`). |
+| `CODEGYM_AUTH0_AUDIENCE` | When Auth0 | **Auth0 API Identifier** for the CodeGym API (e.g. `https://api.codegym.app`). Must match `VITE_AUTH0_AUDIENCE`. **Not** `https://…auth0.com/api/v2/` (Management API). |
 | `CODEGYM_CORS_ALLOWED_ORIGINS` | Production | Allowed browser origins (Vercel URL). |
 | `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for protected routes. |
 | `CODEGYM_DEV_TENANT_ID` | Optional | Default personal tenant for static-token auth. |
@@ -98,12 +98,26 @@ and tries Meta first.
 | Name | Purpose |
 | --- | --- |
 | `VITE_AUTH0_DOMAIN` | Auth0 SPA domain (mirrors `CODEGYM_AUTH0_DOMAIN`). |
-| `VITE_AUTH0_AUDIENCE` | Auth0 SPA audience (mirrors `CODEGYM_AUTH0_AUDIENCE`). |
-| `VITE_AUTH0_CLIENT_ID` | Auth0 SPA client id — paste from the Auth0 dashboard. |
+| `VITE_AUTH0_AUDIENCE` | Same **API Identifier** as `CODEGYM_AUTH0_AUDIENCE` so `getAccessTokenSilently` requests a backend-valid access token. |
+| `VITE_AUTH0_CLIENT_ID` | Auth0 SPA Application Client ID (required for Auth0 UI; empty falls back to “dev auth”). |
 | `VITE_API_BASE_URL` | Optional API origin; leave empty for same-origin / rewrites. |
 | `VITE_APP_ORIGIN` | Canonical frontend origin (Vercel production URL). |
 
 Keep browser-visible values prefixed with `VITE_`.
+
+### Auth0 API Identifier (avoids `Invalid bearer token`)
+
+Settings, memory, generate, and cost all need a Bearer **access token**. If
+the SPA can sign in but `/api/v1/me` returns `Invalid bearer token`, the token
+`aud` almost certainly does not match the backend audience.
+
+1. Auth0 → **APIs** → create/select CodeGym API → copy **Identifier**.
+2. Set that Identifier as both `CODEGYM_AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE`.
+3. Authorize the SPA application for that API; set callback/logout/web origins.
+4. Redeploy Render + Vercel; log out and back in.
+
+Never set audience to `https://YOUR_TENANT.us.auth0.com/api/v2/` (Management
+API). Step-by-step: [../backend/README.md](../backend/README.md) (Auth0 API setup).
 
 ## Production: Doppler-only deploys
 

@@ -1,13 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { ProblemListPage } from './ProblemListPage';
-import type { ProblemSummary } from '../../shared/api/types';
+import type { PracticeSessionSummary, ProblemSummary } from '../../shared/api/types';
 
 const meta: Meta<typeof ProblemListPage> = {
   title: 'Pages/ProblemList',
   component: ProblemListPage,
   parameters: {
-    initialPath: '/',
-    routePath: '/',
+    initialPath: '/problems',
+    routePath: '/problems',
   },
 };
 
@@ -80,54 +80,124 @@ const sampleProblems: ProblemSummary[] = [
   },
 ];
 
-function makeFetchMock(problems: ProblemSummary[]) {
-  return (url: string) => {
-    void url;
-    return Promise.resolve(
-      new Response(
-        JSON.stringify({ data: { problems, total: problems.length }, error: null }),
-        { headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+const workspaceId = 'personal-storybook-user';
+const userId = 'auth0|storybook-user';
+
+const sampleSessions: PracticeSessionSummary[] = [
+  {
+    id: 'sess_go_concurrency',
+    workspace_id: workspaceId,
+    user_id: userId,
+    kind: 'mcq',
+    status: 'active',
+    title: 'Go concurrency and channel ownership',
+    created_at: '2026-07-15T12:18:00.000Z',
+    updated_at: '2026-07-15T13:42:00.000Z',
+    last_activity_at: '2026-07-15T13:42:00.000Z',
+  },
+  {
+    id: 'sess_distributed_systems',
+    workspace_id: workspaceId,
+    user_id: userId,
+    kind: 'mcq',
+    status: 'active',
+    title: 'Distributed systems failure modes',
+    created_at: '2026-07-13T18:05:00.000Z',
+    updated_at: '2026-07-13T18:19:00.000Z',
+    last_activity_at: '2026-07-13T18:19:00.000Z',
+  },
+  {
+    id: 'sess_rate_limiting',
+    workspace_id: workspaceId,
+    user_id: userId,
+    kind: 'mcq',
+    status: 'completed',
+    title: 'Sliding-window rate limiting',
+    created_at: '2026-07-14T20:03:00.000Z',
+    updated_at: '2026-07-14T20:21:00.000Z',
+    last_activity_at: '2026-07-14T20:21:00.000Z',
+    completed_at: '2026-07-14T20:21:00.000Z',
+  },
+  {
+    id: 'sess_sql_planning',
+    workspace_id: workspaceId,
+    user_id: userId,
+    kind: 'mcq',
+    status: 'abandoned',
+    title: 'SQL joins and query planning',
+    created_at: '2026-07-12T16:42:00.000Z',
+    updated_at: '2026-07-12T16:51:00.000Z',
+    last_activity_at: '2026-07-12T16:51:00.000Z',
+  },
+];
+
+interface FetchScenario {
+  problems?: ProblemSummary[];
+  sessions?: PracticeSessionSummary[];
+  loading?: boolean;
+  sessionsError?: boolean;
+}
+
+function apiResponse(data: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify({ data, error: null }), {
+    status: init?.status ?? 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function makeFetchMock({
+  problems = sampleProblems,
+  sessions = sampleSessions,
+  loading = false,
+  sessionsError = false,
+}: FetchScenario = {}) {
+  return (input: RequestInfo | URL) => {
+    if (loading) return new Promise<Response>(() => {});
+
+    const url = new URL(input.toString(), window.location.origin);
+    if (url.pathname.endsWith('/sessions') && sessionsError) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: null,
+            error: { code: 'mock_unavailable', message: 'Practice data could not be loaded.' },
+          }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    }
+
+    if (url.pathname.endsWith('/sessions')) return Promise.resolve(apiResponse(sessions));
+    if (url.pathname.endsWith('/problems')) {
+      return Promise.resolve(apiResponse({ problems, total: problems.length }));
+    }
+    return Promise.resolve(apiResponse(null));
   };
 }
 
-export const ManyProblems: Story = {
-  name: 'With Problems',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetchMock(sampleProblems) as typeof fetch;
-      return <Story />;
-    },
-  ],
+function withFetchMock(scenario?: FetchScenario) {
+  return (Story: () => React.JSX.Element) => {
+    globalThis.fetch = makeFetchMock(scenario) as typeof fetch;
+    return <Story />;
+  };
+}
+
+export const Populated: Story = {
+  decorators: [withFetchMock()],
 };
 
 export const Empty: Story = {
-  name: 'No Problems Yet',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetchMock([]) as typeof fetch;
-      return <Story />;
-    },
-  ],
-};
-
-export const GoOnly: Story = {
-  name: 'Go Problems Only',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetchMock(sampleProblems.filter((p) => p.language === 'go')) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  parameters: { mockApiScenario: 'empty' },
+  decorators: [withFetchMock({ sessions: [] })],
 };
 
 export const Loading: Story = {
-  name: 'Loading State',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = (() => new Promise(() => {})) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  parameters: { mockApiScenario: 'loading' },
+  decorators: [withFetchMock({ loading: true })],
+};
+
+export const ErrorState: Story = {
+  name: 'Error',
+  parameters: { mockApiScenario: 'error' },
+  decorators: [withFetchMock({ sessionsError: true })],
 };

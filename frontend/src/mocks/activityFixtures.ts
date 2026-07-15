@@ -26,6 +26,7 @@ function completedMcqState(prompt: string, round = 1) {
       timeMs: (16 + index * 2) * 1000,
       usedHelp: index === 1,
     })),
+    skipped_questions: [],
   };
 }
 
@@ -72,6 +73,7 @@ export const mockSessions: PracticeSession[] = [
           usedHelp: true,
         },
       ],
+      skipped_questions: [],
     },
   },
   {

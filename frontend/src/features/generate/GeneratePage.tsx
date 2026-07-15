@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Brain, Check, Clock3, Code2, ListChecks } from 'lucide-react';
 
 import { api } from '../../shared/api/client';
@@ -145,7 +145,12 @@ export function GeneratePage() {
             round: 1,
             question_index: 0,
             elapsed: 0,
+            selected_index: null,
+            confirmed: false,
+            using_fallback: false,
+            questions: [],
             results: [],
+            skipped_questions: [],
           },
         });
         navigate(`/marathon?session=${encodeURIComponent(session.id)}`, {
@@ -331,23 +336,50 @@ export function GeneratePage() {
               <section className="mt-7">
                 <WorkspaceSectionHeader
                   title="Recent topics"
-                  description="Reuse a previous focus without rebuilding the setup."
+                  description={
+                    format === 'mcq'
+                      ? 'Resume active runs or review completed results.'
+                      : 'Reuse a previous focus without rebuilding the setup.'
+                  }
                 />
                 <div className="overflow-hidden rounded-lg border">
-                  {recentForFormat.map((session) => (
-                    <button
-                      key={session.id}
-                      type="button"
-                      onClick={() => setPrompt(session.title)}
-                      className="hover:bg-muted/35 flex min-h-11 w-full items-center gap-3 border-b px-3 py-2 text-left last:border-b-0"
-                    >
-                      <Clock3 className="text-muted-foreground shrink-0" size={15} strokeWidth={1.8} />
-                      <span className="min-w-0 flex-1 truncate text-sm">{session.title}</span>
-                      <span className="text-muted-foreground shrink-0 text-xs">
-                        {formatRelativeDate(session.last_activity_at)}
-                      </span>
-                    </button>
-                  ))}
+                  {recentForFormat.map((session) =>
+                    format === 'mcq' ? (
+                      <Link
+                        key={session.id}
+                        to={`/marathon?session=${encodeURIComponent(session.id)}`}
+                        className="hover:bg-muted/35 flex min-h-11 w-full items-center gap-3 border-b px-3 py-2 text-left last:border-b-0"
+                      >
+                        <Clock3
+                          className="text-muted-foreground shrink-0"
+                          size={15}
+                          strokeWidth={1.8}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm">{session.title}</span>
+                        <span className="text-muted-foreground shrink-0 text-xs">
+                          {session.status === 'active' ? 'Resume' : 'Results'}
+                        </span>
+                        <ArrowRight className="text-muted-foreground shrink-0" size={14} />
+                      </Link>
+                    ) : (
+                      <button
+                        key={session.id}
+                        type="button"
+                        onClick={() => setPrompt(session.title)}
+                        className="hover:bg-muted/35 flex min-h-11 w-full items-center gap-3 border-b px-3 py-2 text-left last:border-b-0"
+                      >
+                        <Clock3
+                          className="text-muted-foreground shrink-0"
+                          size={15}
+                          strokeWidth={1.8}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm">{session.title}</span>
+                        <span className="text-muted-foreground shrink-0 text-xs">
+                          {formatRelativeDate(session.last_activity_at)}
+                        </span>
+                      </button>
+                    ),
+                  )}
                 </div>
               </section>
             )}

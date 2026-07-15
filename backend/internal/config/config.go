@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,7 +22,13 @@ type Config struct {
 	DevWorkspaceID     string
 	CORSAllowedOrigins []string
 	MemoryWorker       WorkerConfig
-	GenAI              GenAIConfig
+	// GenAI is the legacy single-provider view (Gemini / CODEGYM_GENAI_*).
+	// Prefer GenAIProviders for multi-provider routing.
+	GenAI          GenAIConfig
+	GenAIProviders []GenAIProviderConfig
+	// GenAIProviderOrder is the configured priority list (may include names
+	// that are not currently enabled).
+	GenAIProviderOrder []string
 }
 
 type WorkerConfig struct {
@@ -29,13 +36,22 @@ type WorkerConfig struct {
 	Interval time.Duration
 }
 
-// GenAIConfig configures the OpenAI-compatible generation provider adapter.
-// The default base URL targets the Vercel AI Gateway, which fronts Claude and
-// Gemini behind the OpenAI chat-completions wire format.
+// GenAIConfig is the legacy single OpenAI-compatible provider (Gemini path).
 type GenAIConfig struct {
 	BaseURL string
 	APIKey  string
 	Model   string
+}
+
+// GenAIProviderConfig is one named backend in the multi-provider registry.
+type GenAIProviderConfig struct {
+	Name             string
+	BaseURL          string
+	APIKey           string
+	Model            string
+	AuthStyle        string // "bearer" (default) or "azure_api_key"
+	APIVersion       string // Azure api-version query
+	DefaultMaxTokens int
 }
 
 // Enabled reports whether generation is configured. Without an API key the
@@ -44,9 +60,22 @@ func (g GenAIConfig) Enabled() bool {
 	return strings.TrimSpace(g.APIKey) != ""
 }
 
+// AnyGenAIEnabled is true when at least one multi-provider entry has a key.
+func (c Config) AnyGenAIEnabled() bool {
+	return len(c.GenAIProviders) > 0
+}
+
 func (g GenAIConfig) PairingWarning() string {
-	baseURL := strings.ToLower(strings.TrimSpace(g.BaseURL))
-	model := strings.TrimSpace(g.Model)
+	return pairingWarning(g.BaseURL, g.Model)
+}
+
+func (p GenAIProviderConfig) PairingWarning() string {
+	return pairingWarning(p.BaseURL, p.Model)
+}
+
+func pairingWarning(baseURL, model string) string {
+	baseURL = strings.ToLower(strings.TrimSpace(baseURL))
+	model = strings.TrimSpace(model)
 	if baseURL == "" || model == "" {
 		return ""
 	}
@@ -61,6 +90,9 @@ func (g GenAIConfig) PairingWarning() string {
 		return ""
 	}
 }
+
+// DefaultGenAIProviderOrder spends Meta and Azure credits before Gemini.
+var DefaultGenAIProviderOrder = []string{"meta", "azure", "gemini"}
 
 // Load reads environment variables and returns the effective runtime config.
 //
@@ -77,6 +109,28 @@ func Load() Config {
 	if port == "" {
 		port = "8080"
 	}
+
+	// Gemini hop (renamed from CODEGYM_GENAI_*). Legacy CODEGYM_GENAI_* /
+	// AI_GATEWAY_API_KEY still accepted as fallbacks during transition.
+	legacyGenAI := GenAIConfig{
+		BaseURL: firstNonEmpty(
+			strings.TrimSpace(os.Getenv("CODEGYM_GEMINI_BASE_URL")),
+			env("CODEGYM_GENAI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"),
+		),
+		APIKey: firstEnv(
+			"CODEGYM_GEMINI_API_KEY",
+			"CODEGYM_GENAI_GEMINI_API_KEY",
+			"CODEGYM_GENAI_API_KEY",
+			"AI_GATEWAY_API_KEY",
+		),
+		Model: firstNonEmpty(
+			strings.TrimSpace(os.Getenv("CODEGYM_GEMINI_MODEL")),
+			env("CODEGYM_GENAI_MODEL", "gemini-flash-latest"),
+		),
+	}
+
+	order := csvEnv("CODEGYM_GENAI_PROVIDER_ORDER", DefaultGenAIProviderOrder)
+	providers := loadGenAIProviders(order, legacyGenAI)
 
 	return Config{
 		Host:           env("CODEGYM_HOST", "127.0.0.1"),
@@ -104,12 +158,117 @@ func Load() Config {
 				24*time.Hour,
 			),
 		},
-		GenAI: GenAIConfig{
-			BaseURL: env("CODEGYM_GENAI_BASE_URL", "https://ai-gateway.vercel.sh/v1"),
-			APIKey:  firstEnv("CODEGYM_GENAI_API_KEY", "AI_GATEWAY_API_KEY"),
-			Model:   env("CODEGYM_GENAI_MODEL", "anthropic/claude-haiku-4.5"),
+		GenAI:              legacyGenAI,
+		GenAIProviders:     providers,
+		GenAIProviderOrder: order,
+	}
+}
+
+func loadGenAIProviders(order []string, legacy GenAIConfig) []GenAIProviderConfig {
+	// Candidate configs keyed by name (may lack API keys).
+	candidates := map[string]GenAIProviderConfig{
+		"meta": {
+			Name:             "meta",
+			BaseURL:          env("CODEGYM_GENAI_META_BASE_URL", "https://api.meta.ai/v1"),
+			APIKey:           firstEnv("CODEGYM_GENAI_META_API_KEY", "META_MUSE_SPARK_API"),
+			Model:            env("CODEGYM_GENAI_META_MODEL", "muse-spark-1.1"),
+			AuthStyle:        "bearer",
+			DefaultMaxTokens: intEnv("CODEGYM_GENAI_META_MAX_TOKENS", 4096),
+		},
+		"azure": {
+			Name:             "azure",
+			BaseURL:          strings.TrimSpace(os.Getenv("CODEGYM_GENAI_AZURE_BASE_URL")),
+			APIKey:           strings.TrimSpace(os.Getenv("CODEGYM_GENAI_AZURE_API_KEY")),
+			Model:            env("CODEGYM_GENAI_AZURE_MODEL", ""),
+			AuthStyle:        "azure_api_key",
+			APIVersion:       env("CODEGYM_GENAI_AZURE_API_VERSION", "2024-10-21-preview"),
+			DefaultMaxTokens: intEnv("CODEGYM_GENAI_AZURE_MAX_TOKENS", 4096),
+		},
+		"gemini": {
+			Name: "gemini",
+			BaseURL: firstNonEmpty(
+				strings.TrimSpace(os.Getenv("CODEGYM_GEMINI_BASE_URL")),
+				strings.TrimSpace(os.Getenv("CODEGYM_GENAI_GEMINI_BASE_URL")),
+				legacy.BaseURL,
+			),
+			APIKey: firstNonEmpty(
+				firstEnv(
+					"CODEGYM_GEMINI_API_KEY",
+					"CODEGYM_GENAI_GEMINI_API_KEY",
+					"CODEGYM_GENAI_API_KEY",
+					"AI_GATEWAY_API_KEY",
+				),
+				legacy.APIKey,
+			),
+			Model: firstNonEmpty(
+				strings.TrimSpace(os.Getenv("CODEGYM_GEMINI_MODEL")),
+				strings.TrimSpace(os.Getenv("CODEGYM_GENAI_GEMINI_MODEL")),
+				legacy.Model,
+			),
+			AuthStyle:        "bearer",
+			DefaultMaxTokens: intEnv("CODEGYM_GEMINI_MAX_TOKENS", 2048),
 		},
 	}
+
+	// Azure model defaults to last path segment of deployment URL when unset.
+	if azure := candidates["azure"]; azure.APIKey != "" && azure.Model == "" && azure.BaseURL != "" {
+		azure.Model = lastPathSegment(azure.BaseURL)
+		candidates["azure"] = azure
+	}
+
+	out := make([]GenAIProviderConfig, 0, len(order))
+	seen := map[string]bool{}
+	for _, name := range order {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		candidate, ok := candidates[name]
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(candidate.APIKey) == "" {
+			continue
+		}
+		if strings.TrimSpace(candidate.BaseURL) == "" || strings.TrimSpace(candidate.Model) == "" {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	return out
+}
+
+func lastPathSegment(raw string) string {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	if raw == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(raw, "/"); idx >= 0 && idx+1 < len(raw) {
+		return raw[idx+1:]
+	}
+	return raw
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func intEnv(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
 }
 
 // Addr returns the listen address in host:port form.

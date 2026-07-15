@@ -61,6 +61,7 @@ Each element:
 }
 
 Rules:
+- Return a top-level JSON **array** of questions only. Do not wrap the array in an object, schema document, or {"type":"array","items":...} envelope.
 - Generate exactly the requested count of questions. The spec's "prompt" field is the user's own ask ("what do you want to study?") — treat it as the primary topic directive when present; fall back to "topic", then to a spread across the user's growth edges.
 - The personalization context includes memory NOTES — the user's living study journal. Notes with action "review" are known gaps: prioritize questions that probe those concepts. Notes with action "keep" are mastered techniques: avoid re-testing them unless the user's prompt asks for them.
 - Exactly 4 options each; exactly one correct. Distractors must be plausible common misconceptions, not filler.
@@ -111,16 +112,9 @@ func NormalizeMCQSpec(spec MCQSpec) (MCQSpec, error) {
 
 // ValidateMCQSet parses and structurally validates a generated MCQ payload.
 func ValidateMCQSet(raw json.RawMessage, expectedCount int) ([]MCQQuestion, error) {
-	var questions []MCQQuestion
-	if err := json.Unmarshal(raw, &questions); err != nil {
-		// Tolerate models that wrap the array in {"questions": [...]}.
-		var wrapped struct {
-			Questions []MCQQuestion `json:"questions"`
-		}
-		if wrapErr := json.Unmarshal(raw, &wrapped); wrapErr != nil || len(wrapped.Questions) == 0 {
-			return nil, fmt.Errorf("output is not a JSON array of questions: %w", err)
-		}
-		questions = wrapped.Questions
+	questions, err := parseMCQQuestions(raw)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(questions) == 0 {
@@ -160,6 +154,42 @@ func ValidateMCQSet(raw json.RawMessage, expectedCount int) ([]MCQQuestion, erro
 	return questions, nil
 }
 
+func parseMCQQuestions(raw json.RawMessage) ([]MCQQuestion, error) {
+	var questions []MCQQuestion
+	if err := json.Unmarshal(raw, &questions); err == nil {
+		return questions, nil
+	} else {
+		// Tolerate models that wrap the array in {"questions": [...]}.
+		var wrapped struct {
+			Questions []MCQQuestion `json:"questions"`
+		}
+		if wrapErr := json.Unmarshal(raw, &wrapped); wrapErr == nil && len(wrapped.Questions) > 0 {
+			return wrapped.Questions, nil
+		}
+		// Muse Spark sometimes emits a JSON-Schema-shaped envelope:
+		// {"type":"array","items":[...questions...]}.
+		var schemaWrap struct {
+			Type  string        `json:"type"`
+			Items []MCQQuestion `json:"items"`
+		}
+		if wrapErr := json.Unmarshal(raw, &schemaWrap); wrapErr == nil &&
+			strings.EqualFold(schemaWrap.Type, "array") && len(schemaWrap.Items) > 0 {
+			return schemaWrap.Items, nil
+		}
+		// Single question object (common when providers force json_object).
+		var single MCQQuestion
+		if wrapErr := json.Unmarshal(raw, &single); wrapErr == nil &&
+			strings.TrimSpace(single.Text) != "" && len(single.Options) > 0 {
+			return []MCQQuestion{single}, nil
+		}
+		return nil, fmt.Errorf("output is not a JSON array of questions: %w", err)
+	}
+}
+
+// mcqDefaultMaxTokens leaves headroom for reasoning models (Meta Muse Spark)
+// while remaining reasonable for non-reasoning providers.
+const mcqDefaultMaxTokens = 4096
+
 // GenerateMCQSet runs the memory-aware orchestration for an MCQ set with a
 // bounded validate/repair loop: an invalid payload gets one retry carrying the
 // validation error back to the model; a second failure surfaces an error
@@ -186,6 +216,9 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 				Name:       "mcq_set",
 				Version:    "1",
 				JSONSchema: mcqJSONSchema,
+			},
+			ModelPolicy: ModelPolicy{
+				MaxTokens: mcqDefaultMaxTokens,
 			},
 			Instructions: instructions,
 		})

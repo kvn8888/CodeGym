@@ -181,6 +181,8 @@ func TestValidateMCQSet(t *testing.T) {
 	}{
 		{"valid", string(validMCQJSON(2)), 2, false},
 		{"wrapped object", `{"questions":` + string(validMCQJSON(2)) + `}`, 2, false},
+		{"schema items envelope", `{"type":"array","items":` + string(validMCQJSON(2)) + `}`, 2, false},
+		{"single question object", `{"id":"mq1","text":"Q?","options":["a","b","c","d"],"correctIndex":0,"concept":"C","helpContent":"H"}`, 1, false},
 		{"wrong count", string(validMCQJSON(3)), 2, true},
 		{"bad correctIndex", `[{"id":"mq1","text":"Q?","options":["a","b","c","d"],"correctIndex":4,"concept":"C","helpContent":"H"}]`, 1, true},
 		{"three options", `[{"id":"mq1","text":"Q?","options":["a","b","c"],"correctIndex":0,"concept":"C","helpContent":"H"}]`, 1, true},

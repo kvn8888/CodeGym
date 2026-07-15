@@ -74,22 +74,39 @@ func main() {
 	sessionService := session.NewService(sessionStore, nil)
 
 	var generationOrchestrator *generation.Orchestrator
-	if cfg.GenAI.Enabled() {
-		if warning := cfg.GenAI.PairingWarning(); warning != "" {
-			log.Printf("WARNING: %s base_url=%s model=%s", warning, cfg.GenAI.BaseURL, cfg.GenAI.Model)
+	if cfg.AnyGenAIEnabled() {
+		named := make([]generation.NamedGenerator, 0, len(cfg.GenAIProviders))
+		names := make([]string, 0, len(cfg.GenAIProviders))
+		for _, provider := range cfg.GenAIProviders {
+			if warning := provider.PairingWarning(); warning != "" {
+				log.Printf("WARNING: provider=%s %s base_url=%s model=%s",
+					provider.Name, warning, provider.BaseURL, provider.Model)
+			}
+			adapter, err := openaicompat.New(openaicompat.Config{
+				Name:             provider.Name,
+				BaseURL:          provider.BaseURL,
+				APIKey:           provider.APIKey,
+				Model:            provider.Model,
+				AuthStyle:        provider.AuthStyle,
+				APIVersion:       provider.APIVersion,
+				DefaultMaxTokens: provider.DefaultMaxTokens,
+			})
+			if err != nil {
+				log.Fatalf("could not configure GenAI provider %s: %v", provider.Name, err)
+			}
+			named = append(named, generation.NamedGenerator{Name: provider.Name, Generator: adapter})
+			names = append(names, provider.Name)
+			log.Printf("CodeGym GenAI provider registered name=%s base_url=%s model=%s",
+				provider.Name, provider.BaseURL, provider.Model)
 		}
-		generator, err := openaicompat.New(openaicompat.Config{
-			BaseURL: cfg.GenAI.BaseURL,
-			APIKey:  cfg.GenAI.APIKey,
-			Model:   cfg.GenAI.Model,
-		})
+		routerGenerator, err := generation.NewRouter(named)
 		if err != nil {
-			log.Fatalf("could not configure GenAI adapter: %v", err)
+			log.Fatalf("could not configure GenAI router: %v", err)
 		}
-		generationOrchestrator = generation.NewOrchestrator(memoryService, generator)
-		log.Printf("CodeGym generation enabled via %s (model %s)", cfg.GenAI.BaseURL, cfg.GenAI.Model)
+		generationOrchestrator = generation.NewOrchestrator(memoryService, routerGenerator)
+		log.Printf("CodeGym generation enabled providers=%v order=%v", names, cfg.GenAIProviderOrder)
 	} else {
-		log.Print("CodeGym generation disabled; set CODEGYM_GENAI_API_KEY to enable POST /api/v1/generate")
+		log.Print("CodeGym generation disabled; set META_MUSE_SPARK_API, CODEGYM_GENAI_AZURE_API_KEY, or CODEGYM_GEMINI_API_KEY to enable POST /api/v1/generate")
 	}
 
 	if !cfg.MemoryWorker.Disabled {

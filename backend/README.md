@@ -63,6 +63,18 @@ the shared secret contract. Production Render/Vercel use a single
 `DOPPLER_TOKEN` and `doppler run` — app secrets are not stored in those
 dashboards.
 
+## GenAI multi-provider routing
+
+`POST /api/v1/generate` goes through an in-process **provider router**. Each
+enabled platform is one OpenAI-compatible adapter (`meta`, `azure`, `gemini`).
+Default priority: **Meta → Azure → Gemini** (override with
+`CODEGYM_GENAI_PROVIDER_ORDER`). On provider/HTTP failures the router falls
+through to the next hop; MCQ validate/repair stays on the same provider so a
+bad JSON shape does not burn every credit pool.
+
+Register a hop by setting its API key (and Azure base URL). Missing keys are
+skipped. Startup logs list registered providers and their base URLs (never keys).
+
 To validate the Neon-backed memory flow against a running local backend:
 
 ```bash

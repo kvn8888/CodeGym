@@ -64,14 +64,34 @@ Vite proxies `/api` to `http://localhost:8080`.
 | `CODEGYM_AUTH0_DOMAIN` | When Auth0 | Auth0 tenant domain. |
 | `CODEGYM_AUTH0_AUDIENCE` | When Auth0 | Auth0 API audience. |
 | `CODEGYM_CORS_ALLOWED_ORIGINS` | Production | Allowed browser origins (Vercel URL). |
-| `CODEGYM_GENAI_API_KEY` | For generation | Gemini / GenAI API key. |
-| `CODEGYM_GENAI_BASE_URL` | For generation | GenAI OpenAI-compatible base URL. |
-| `CODEGYM_GENAI_MODEL` | For generation | Model id (e.g. `gemini-flash-latest`). |
 | `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for protected routes. |
 | `CODEGYM_DEV_TENANT_ID` | Optional | Default personal tenant for static-token auth. |
 | `DAYTONA_API_KEY` / `DAYTONA_API_URL` | Spikes | Daytona sandbox access. |
-| `VERCEL_API_GATEWAY` | Optional | Vercel AI Gateway key. |
-| `META_MUSE_SPARK_API` | Optional | Legacy / spike API key. |
+| `VERCEL_API_GATEWAY` | Optional | Vercel AI Gateway key (not used by the multi-provider router today). |
+
+### GenAI multi-provider registry
+
+The backend registers every provider that has an API key and tries them in
+priority order (default **meta → azure → gemini**). Failover hops on
+provider/transport errors only — not on MCQ schema validate/repair.
+
+| Name | Required for that hop | Purpose |
+| --- | --- | --- |
+| `CODEGYM_GENAI_PROVIDER_ORDER` | Optional | Comma list, default `meta,azure,gemini`. |
+| `META_MUSE_SPARK_API` or `CODEGYM_GENAI_META_API_KEY` | Meta hop | Meta Model API key (Muse Spark). |
+| `CODEGYM_GENAI_META_BASE_URL` | Optional | Default `https://api.meta.ai/v1`. |
+| `CODEGYM_GENAI_META_MODEL` | Optional | Default `muse-spark-1.1`. |
+| `CODEGYM_GENAI_META_MAX_TOKENS` | Optional | Default `4096` (reasoning budget). |
+| `CODEGYM_GENAI_AZURE_API_KEY` | Azure hop | Azure OpenAI key (`api-key` header). |
+| `CODEGYM_GENAI_AZURE_BASE_URL` | Azure hop | `https://{resource}.openai.azure.com/openai/deployments/{deployment}`. |
+| `CODEGYM_GENAI_AZURE_MODEL` | Optional | Deployment name; defaults to last URL path segment. |
+| `CODEGYM_GENAI_AZURE_API_VERSION` | Optional | Default `2024-10-21-preview`. |
+| `CODEGYM_GEMINI_API_KEY` | Gemini hop | Last-resort Gemini key (omit from order to park). |
+| `CODEGYM_GEMINI_BASE_URL` | Optional | Gemini OpenAI-compat base URL. |
+| `CODEGYM_GEMINI_MODEL` | Optional | Gemini model slug (e.g. `gemini-flash-latest`). |
+
+Providers without a key are skipped. Example: Meta + Gemini only still works
+and tries Meta first.
 
 ## Frontend secrets (`*_frontend`)
 

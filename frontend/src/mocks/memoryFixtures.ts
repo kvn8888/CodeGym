@@ -109,7 +109,7 @@ export const mockMemoryEvents: MemoryEvent[] = [
     tenant_id: 'workspace_kevin',
     user_id: 'user_kevin',
     source: memoryEventSources.workspace,
-    type: memoryEventTypes.problemAttempted,
+    type: memoryEventTypes.attemptFailed,
     summary: 'Attempted goroutine fan-in collector and missed channel close ownership.',
     payload: {
       problem_id: 'goroutine-fan-in',
@@ -124,7 +124,7 @@ export const mockMemoryEvents: MemoryEvent[] = [
     tenant_id: 'workspace_kevin',
     user_id: 'user_kevin',
     source: memoryEventSources.memory,
-    type: memoryEventTypes.memoryNoteCreated,
+    type: memoryEventTypes.noteCreated,
     summary: 'Captured a review note for sliding-window timestamp eviction ordering.',
     payload: {
       note_id: 'note-rate-limit',

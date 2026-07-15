@@ -83,8 +83,8 @@ func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, ra
 		response.Error(w, http.StatusBadGateway, "generation_failed",
 			"The model did not return a usable MCQ set. Try again or adjust the topic.")
 		h.recordEvent(r, memory.RecordEventInput{
-			Source:  "generate",
-			Type:    "generation_failed",
+			Source:  memory.SourceGenerate,
+			Type:    memory.TypeGenerationFailed,
 			Summary: "MCQ set generation failed.",
 			Payload: mustJSON(map[string]any{
 				"format":         "mcq",
@@ -96,8 +96,8 @@ func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, ra
 	}
 
 	h.recordEvent(r, memory.RecordEventInput{
-		Source:  "generate",
-		Type:    "mcq_set_generated",
+		Source:  memory.SourceGenerate,
+		Type:    memory.TypeMCQSetGenerated,
 		Summary: fmt.Sprintf("Generated a %d-question MCQ set.", len(questions)),
 		Payload: mustJSON(map[string]any{
 			"format":         "mcq",
@@ -156,15 +156,15 @@ func (h *GenerateHandler) MaintainNotes(w http.ResponseWriter, r *http.Request) 
 	// page shows the model editing its own notes.
 	for _, action := range result.AppliedActions {
 		eventType := map[string]string{
-			"create": "note_created",
-			"update": "note_updated",
-			"prune":  "note_pruned",
+			"create": memory.TypeNoteCreated,
+			"update": memory.TypeNoteUpdated,
+			"prune":  memory.TypeNotePruned,
 		}[action.Op]
 		if eventType == "" {
 			continue
 		}
 		h.recordEvent(r, memory.RecordEventInput{
-			Source:  "memory",
+			Source:  memory.SourceMemory,
 			Type:    eventType,
 			Summary: fmt.Sprintf("Model %sd note %q after a practice round.", action.Op, firstNonEmptyString(action.Note.Title, action.Note.ID)),
 			Payload: mustJSON(map[string]any{

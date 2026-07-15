@@ -24,6 +24,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
+import { createMemoryEvent } from '../../shared/api/client';
+import { buildGenerateEvent, memoryEventTypes } from '../../shared/api/memoryEvents';
 import { QuestionModal, type Question, type Answer } from './QuestionModal';
 
 type GenerateView = 'command' | 'spotlight';
@@ -123,6 +125,14 @@ export function GeneratePage() {
   const [showQuestions, setShowQuestions] = useState(false);
   const [agentQuestions, setAgentQuestions] = useState<Question[]>([]);
 
+  const recordGenerateEvent = async (input: Parameters<typeof buildGenerateEvent>[0]) => {
+    try {
+      await createMemoryEvent(buildGenerateEvent(input));
+    } catch (error) {
+      console.warn('[generate] failed to record memory event', error);
+    }
+  };
+
   const handleGenerate = async () => {
     if (!prompt.trim() || generating) return;
     setGenerating(true);
@@ -135,6 +145,19 @@ export function GeneratePage() {
       difficulty,
       view,
     };
+
+    void recordGenerateEvent({
+      type: memoryEventTypes.intakeStarted,
+      summary: `Started a ${difficulty} ${language} ${format} generation request.`,
+      payload: {
+        prompt: requestContext.prompt,
+        format,
+        language,
+        difficulty,
+        view,
+        schema_version: 1,
+      },
+    });
 
     // TODO: Call /api/v1/generate/questions with requestContext to get real questions.
     console.log('[generate]', requestContext);
@@ -166,6 +189,21 @@ export function GeneratePage() {
     setShowQuestions(false);
     setGenerating(true);
     console.log('[generate] answers:', answers);
+
+    void recordGenerateEvent({
+      type: memoryEventTypes.clarifyingQuestionsAnswered,
+      summary: `Answered ${answers.length} clarifying questions for ${format} generation.`,
+      payload: {
+        format,
+        language,
+        difficulty,
+        view,
+        answer_count: answers.length,
+        question_ids: answers.map((answer) => answer.questionId),
+        schema_version: 1,
+      },
+    });
+
     // TODO: Call POST /api/v1/generate with prompt + answers + view context.
     setTimeout(() => {
       setStatus('Generation endpoint not yet implemented');
@@ -315,7 +353,7 @@ function CommandGenerateView({
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
             <Tabs
               value={format}
-              onValueChange={(value) => onFormatChange(value as GenerateFormat)}
+              onValueChange={(value: string) => onFormatChange(value as GenerateFormat)}
             >
               <TabsList aria-label="Problem format">
                 {(['problem', 'mcq', 'interview'] as GenerateFormat[]).map((item) => (
@@ -360,7 +398,7 @@ function CommandGenerateView({
                 size="lg"
                 spacing={0}
                 value={difficulty}
-                onValueChange={(value) => {
+                onValueChange={(value: string) => {
                   if (value) onDifficultyChange(value as Difficulty);
                 }}
               >

@@ -94,6 +94,118 @@ rules. If the emitter is the same, prefer a new `type` under an existing source.
 | `worker_profile_refreshed` | Background worker refreshed a profile. |
 | `memory_api_checked` | Operational smoke test or API validation touched memory. |
 
+## Emitter Ownership Policy
+
+Events may be emitted from frontend, backend, or both surfaces, but ownership
+must be explicit per event type.
+
+Default ownership split:
+
+- Frontend owns user-intent and UI-interaction events.
+  - Examples: `intake_started`, `clarifying_questions_answered`,
+    `thread_opened`, `profile_viewed`.
+- Backend owns authoritative outcomes and automation events.
+  - Examples: `mcq_set_generated`, `generation_failed`, `note_created`,
+    `note_updated`, `note_pruned`, `worker_profile_refreshed`.
+
+When one side can own both:
+
+- Backend-only flow: when the action is server-triggered or server-truth
+  (workers, maintenance, model results, retries, failures after async work).
+- Frontend-only flow: when the action is UI-only and no backend endpoint is
+  involved (open/close panels, local UX milestones).
+
+Dual-surface emission is allowed only when the two events represent different
+stages (for example, user intent vs backend outcome). Do not emit the same
+semantic event twice for the same lifecycle stage.
+
+## Naming Governance
+
+The naming system is intentionally simple and robust:
+
+1. This document is the policy reference for approved source and type names.
+2. `api/memory-events.registry.json` is the canonical machine-readable
+  registry used to generate code artifacts.
+3. `frontend/src/shared/api/memoryEvents.ts` and
+  `backend/internal/memory/event_names.go` are generated from that registry and
+  should not be hand-edited.
+4. Backend emitters and frontend emitters should use those generated names.
+5. Additive evolution only: add names, avoid renaming persisted historical
+   names.
+6. If a semantic break is unavoidable, create a new v1 guide rather than
+   rewriting v0 data.
+
+Generation commands:
+
+- `npm run memory-events:generate`
+- `npm run memory-events:check`
+
+### How the Generator Works
+
+`scripts/generate-memory-event-registry.mjs` is the code generator for memory
+event naming artifacts.
+
+Its job is to read the canonical registry in
+`api/memory-events.registry.json` and produce the language-specific enforcement
+files used by the app:
+
+- `frontend/src/shared/api/memoryEvents.ts`
+- `backend/internal/memory/event_names.go`
+
+What it generates:
+
+- Frontend source constants and type constants
+- Frontend source-specific event builders
+- Frontend compatibility aliases when older caller names still need to map to
+  approved names
+- Backend source constants and type constants
+- Backend source-to-type allow-list map
+- Backend `ValidateEventName(...)` helper
+
+Operational modes:
+
+- Normal mode: writes the generated files to disk.
+- `--check` mode: compares expected generated output against the checked-in
+  files and fails if they are out of date.
+
+Expected workflow:
+
+1. Edit `api/memory-events.registry.json`.
+2. Run `npm run memory-events:generate`.
+3. Review the generated diffs in frontend and backend.
+4. Run `npm run memory-events:check` in CI or before merge.
+
+The `.mjs` file is not itself the runtime enforcement layer. It is the build
+step that produces the enforcement-layer files for TypeScript and Go from one
+shared registry.
+
+## Justification
+
+Why it is justified here:
+
+1. These event names are not cosmetic. They drive memory/profile derivation and
+  eventually shape LLM behavior.
+2. Naming drift would silently degrade personalization rather than fail loudly.
+3. You have both frontend and backend emitters, which is exactly where
+  stringly-typed conventions rot if left informal.
+4. A single registry plus generated artifacts is a pragmatic middle ground:
+  stronger than docs-only, much lighter than a full schema platform.
+
+Why it is not too heavy:
+
+1. The registry is small.
+2. The generator is simple.
+3. The runtime behavior barely changed.
+4. Review burden goes down because people edit one canonical file instead of
+  remembering two systems.
+
+Review checklist for any new event:
+
+- Is ownership clear (frontend, backend, or staged split)?
+- Is the name listed in this guide before merge?
+- Is `frontend/src/shared/api/memoryEvents.ts` updated if frontend emits it?
+- Is payload compact and safe per Payload Hygiene?
+
 ## Example Payloads
 
 ### Generate: Problem Created
@@ -232,10 +344,12 @@ v0 is designed to evolve without a schema migration:
 
 ## Frontend Contract
 
-- Build frontend events through `frontend/src/shared/api/memoryEvents.ts`.
+- Build frontend events through the generated helper in
+  `frontend/src/shared/api/memoryEvents.ts`.
 - Prefer the source-specific builders for generate, chat, workspace, MCQ,
   memory, and system flows.
-- Add new names here and in the shared helper before using them in UI code.
+- Add new names in `api/memory-events.registry.json`, regenerate artifacts, and
+  then use them in UI code.
 
 ## Related Docs
 

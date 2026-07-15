@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Brain, Check, Clock3, ListChecks } from 'lucide-react';
+import { ArrowRight, Brain, Check, Clock3, Code2, ListChecks } from 'lucide-react';
 
 import { api } from '../../shared/api/client';
 import type {
   NewPracticeConfig,
+  PracticeFormat,
   PracticeSession,
   PracticeSessionSummary,
   UserMemoryProfile,
@@ -16,6 +17,13 @@ import {
 } from '../../shared/components/WorkspacePage';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -26,9 +34,34 @@ const difficulties: Array<{ value: NewPracticeConfig['difficulty']; label: strin
   { value: 'hard', label: 'Hard' },
 ];
 
-function sessionTitle(prompt: string) {
+const practiceFormats: Array<{
+  value: PracticeFormat;
+  label: string;
+  shortLabel: string;
+  description: string;
+  icon: typeof ListChecks;
+}> = [
+  {
+    value: 'mcq',
+    label: 'Multiple choice',
+    shortLabel: 'MCQ',
+    description: 'Timed concept checks with explanations after each answer.',
+    icon: ListChecks,
+  },
+  {
+    value: 'coding',
+    label: 'Coding problem',
+    shortLabel: 'DSA',
+    description: 'LeetCode / HackerRank-style problem with an editor and test cases.',
+    icon: Code2,
+  },
+];
+
+function sessionTitle(format: PracticeFormat, prompt: string) {
   const normalized = prompt.trim().replace(/\s+/g, ' ');
-  if (!normalized) return 'Personalized MCQ practice';
+  if (!normalized) {
+    return format === 'coding' ? 'Personalized coding practice' : 'Personalized MCQ practice';
+  }
   return normalized.length > 64 ? `${normalized.slice(0, 61)}...` : normalized;
 }
 
@@ -44,6 +77,7 @@ function formatRelativeDate(value: string) {
 export function GeneratePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [format, setFormat] = useState<PracticeFormat>('mcq');
   const [prompt, setPrompt] = useState(() => searchParams.get('prompt') ?? '');
   const [difficulty, setDifficulty] = useState<NewPracticeConfig['difficulty']>('medium');
   const [count, setCount] = useState(5);
@@ -52,11 +86,14 @@ export function GeneratePage() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const selectedFormat = practiceFormats.find((item) => item.value === format) ?? practiceFormats[0];
+  const FormatIcon = selectedFormat.icon;
+
   useEffect(() => {
     let cancelled = false;
     void Promise.allSettled([
       api.get<UserMemoryProfile>('/memory/profile'),
-      api.get<PracticeSessionSummary[]>('/sessions?kind=mcq&limit=5'),
+      api.get<PracticeSessionSummary[]>('/sessions?limit=8'),
     ]).then(([profileResult, sessionsResult]) => {
       if (cancelled) return;
       if (profileResult.status === 'fulfilled') setProfile(profileResult.value);
@@ -78,34 +115,68 @@ export function GeneratePage() {
     ].slice(0, 4);
   }, [profile]);
 
+  const recentForFormat = useMemo(() => {
+    return recentSessions
+      .filter((session) => (format === 'mcq' ? session.kind === 'mcq' : session.kind === 'workspace'))
+      .slice(0, 4);
+  }, [format, recentSessions]);
+
   const startPractice = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (starting) return;
 
     const config: NewPracticeConfig = {
+      format,
       prompt: prompt.trim(),
       difficulty,
-      count,
+      count: format === 'mcq' ? count : 1,
     };
 
     setStarting(true);
     setError(null);
     try {
+      if (format === 'mcq') {
+        const session = await api.post<PracticeSession>('/sessions', {
+          kind: 'mcq',
+          title: sessionTitle('mcq', config.prompt),
+          state: {
+            schema_version: 1,
+            ...config,
+            round: 1,
+            question_index: 0,
+            elapsed: 0,
+            results: [],
+          },
+        });
+        navigate(`/marathon?session=${encodeURIComponent(session.id)}`, {
+          state: { newPractice: { sessionId: session.id, config } },
+        });
+        return;
+      }
+
+      // DSA / LeetCode-style coding session. Full AI problem generation is still
+      // landing; we open the coding workspace shell with a practice problem and
+      // persist a workspace session for history/resume.
       const session = await api.post<PracticeSession>('/sessions', {
-        kind: 'mcq',
-        title: sessionTitle(config.prompt),
+        kind: 'workspace',
+        title: sessionTitle('coding', config.prompt),
+        problem_id: 'two-sum',
         state: {
           schema_version: 1,
-          ...config,
-          round: 1,
-          question_index: 0,
-          elapsed: 0,
-          results: [],
+          format: 'coding',
+          prompt: config.prompt,
+          difficulty: config.difficulty,
+          problem_id: 'two-sum',
         },
       });
-      navigate(`/marathon?session=${encodeURIComponent(session.id)}`, {
-        state: { newPractice: { sessionId: session.id, config } },
-      });
+      navigate(
+        `/problems/two-sum?session=${encodeURIComponent(session.id)}&from=generate`,
+        {
+          state: {
+            newPractice: { sessionId: session.id, config },
+          },
+        },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start practice.');
       setStarting(false);
@@ -116,22 +187,59 @@ export function GeneratePage() {
     <WorkspacePage>
       <WorkspacePageHeader
         title="New practice"
-        description="Set the focus for a personalized multiple-choice session."
+        description={
+          format === 'coding'
+            ? 'Generate a LeetCode-style coding problem personalized from your memory.'
+            : 'Set the focus for a personalized multiple-choice session.'
+        }
       />
 
       <form onSubmit={(event) => void startPractice(event)}>
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0">
             <section className="overflow-hidden rounded-lg border">
-              <div className="bg-muted/25 flex items-center justify-between border-b px-4 py-3">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <ListChecks size={16} strokeWidth={1.8} />
-                  Multiple choice
+              <div className="bg-muted/25 flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <FormatIcon className="text-muted-foreground shrink-0" size={16} strokeWidth={1.8} />
+                  <div className="min-w-0 flex-1">
+                    <Label htmlFor="practice-format" className="sr-only">
+                      Practice format
+                    </Label>
+                    <Select
+                      value={format}
+                      onValueChange={(value) => setFormat(value as PracticeFormat)}
+                    >
+                      <SelectTrigger
+                        id="practice-format"
+                        size="sm"
+                        className="h-8 w-full max-w-xs border-transparent bg-transparent px-2 text-sm font-medium shadow-none hover:bg-muted/50 sm:w-56"
+                        aria-label="Practice format"
+                      >
+                        <SelectValue placeholder="Choose format" />
+                      </SelectTrigger>
+                      <SelectContent align="start">
+                        {practiceFormats.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            <span className="flex flex-col gap-0.5 py-0.5 text-left">
+                              <span>{item.label}</span>
+                              <span className="text-muted-foreground text-xs font-normal">
+                                {item.shortLabel} · {item.description}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
                   <Check size={14} strokeWidth={2} />
                   Available
                 </span>
+              </div>
+
+              <div className="text-muted-foreground border-b px-4 py-2 text-xs leading-5 sm:px-5">
+                {selectedFormat.description}
               </div>
 
               <div className="p-4 sm:p-5">
@@ -142,7 +250,11 @@ export function GeneratePage() {
                   id="practice-prompt"
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Go concurrency patterns, channel ownership, and cancellation..."
+                  placeholder={
+                    format === 'coding'
+                      ? 'Two-pointer array problems, hash maps, or graph BFS in Go...'
+                      : 'Go concurrency patterns, channel ownership, and cancellation...'
+                  }
                   maxLength={500}
                   rows={5}
                   className="mt-2 min-h-32 resize-none text-sm leading-5"
@@ -154,31 +266,35 @@ export function GeneratePage() {
                 </div>
               </div>
 
-              <div className="grid border-t sm:grid-cols-2">
-                <fieldset className="border-b p-4 sm:border-r sm:border-b-0 sm:p-5">
-                  <legend className="mb-2 text-sm font-medium">Questions</legend>
-                  <ToggleGroup
-                    type="single"
-                    value={String(count)}
-                    onValueChange={(value) => value && setCount(Number(value))}
-                    variant="outline"
-                    className="justify-start"
-                    aria-label="Question count"
-                  >
-                    {questionCounts.map((value) => (
-                      <ToggleGroupItem key={value} value={String(value)} className="min-w-11">
-                        {value}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </fieldset>
+              <div className={`grid border-t ${format === 'mcq' ? 'sm:grid-cols-2' : ''}`}>
+                {format === 'mcq' && (
+                  <fieldset className="border-b p-4 sm:border-r sm:border-b-0 sm:p-5">
+                    <legend className="mb-2 text-sm font-medium">Questions</legend>
+                    <ToggleGroup
+                      type="single"
+                      value={String(count)}
+                      onValueChange={(value) => value && setCount(Number(value))}
+                      variant="outline"
+                      className="justify-start"
+                      aria-label="Question count"
+                    >
+                      {questionCounts.map((value) => (
+                        <ToggleGroupItem key={value} value={String(value)} className="min-w-11">
+                          {value}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </fieldset>
+                )}
 
                 <fieldset className="p-4 sm:p-5">
                   <legend className="mb-2 text-sm font-medium">Difficulty</legend>
                   <ToggleGroup
                     type="single"
                     value={difficulty}
-                    onValueChange={(value) => value && setDifficulty(value as NewPracticeConfig['difficulty'])}
+                    onValueChange={(value) =>
+                      value && setDifficulty(value as NewPracticeConfig['difficulty'])
+                    }
                     variant="outline"
                     className="justify-start"
                     aria-label="Difficulty"
@@ -194,10 +310,12 @@ export function GeneratePage() {
 
               <div className="bg-muted/20 flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-muted-foreground text-xs">
-                  Progress is saved after every answer.
+                  {format === 'coding'
+                    ? 'Opens the coding workspace with an editor and tests.'
+                    : 'Progress is saved after every answer.'}
                 </div>
                 <Button type="submit" disabled={starting} className="sm:min-w-36">
-                  {starting ? 'Starting' : 'Start practice'}
+                  {starting ? 'Starting' : format === 'coding' ? 'Start coding' : 'Start practice'}
                   {!starting && <ArrowRight data-icon="inline-end" />}
                 </Button>
               </div>
@@ -209,14 +327,14 @@ export function GeneratePage() {
               </div>
             )}
 
-            {recentSessions.length > 0 && (
+            {recentForFormat.length > 0 && (
               <section className="mt-7">
                 <WorkspaceSectionHeader
                   title="Recent topics"
                   description="Reuse a previous focus without rebuilding the setup."
                 />
                 <div className="overflow-hidden rounded-lg border">
-                  {recentSessions.slice(0, 4).map((session) => (
+                  {recentForFormat.map((session) => (
                     <button
                       key={session.id}
                       type="button"
@@ -270,7 +388,9 @@ export function GeneratePage() {
 
             <div className="mt-5 border-t pt-4">
               <div className="text-muted-foreground text-xs leading-5">
-                Difficulty and question count steer this session. Your learning history determines which concepts receive emphasis.
+                {format === 'coding'
+                  ? 'Difficulty steers problem selection. Memory notes decide which algorithms and data structures to emphasize.'
+                  : 'Difficulty and question count steer this session. Your learning history determines which concepts receive emphasis.'}
               </div>
             </div>
           </aside>

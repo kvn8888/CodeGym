@@ -159,7 +159,12 @@ export interface PracticeSession extends PracticeSessionSummary {
   }>;
 }
 
+/** Practice format chosen on New practice. */
+export type PracticeFormat = 'mcq' | 'coding';
+
 export interface NewPracticeConfig {
+  /** `mcq` = multiple-choice marathon; `coding` = DSA / LeetCode-style workspace problem. */
+  format?: PracticeFormat;
   prompt: string;
   difficulty: 'easy' | 'medium' | 'hard';
   count: number;

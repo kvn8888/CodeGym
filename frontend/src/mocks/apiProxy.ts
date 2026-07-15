@@ -83,6 +83,34 @@ export async function mockApiFetch(
     return json(mockUserProfile);
   }
 
+  if (method === 'GET' && path === '/cost') {
+    return json({
+      currency: 'USD',
+      pricing_as_of: '2026-07-15',
+      total_tokens_in: 12400,
+      total_tokens_out: 6100,
+      total_cost_usd: 0.0421,
+      call_count: 8,
+      by_provider: [
+        {
+          provider: 'azure',
+          tokens_in: 8000,
+          tokens_out: 4000,
+          cost_usd: 0.08,
+          call_count: 5,
+        },
+        {
+          provider: 'meta',
+          tokens_in: 4400,
+          tokens_out: 2100,
+          cost_usd: 0.0145,
+          call_count: 3,
+        },
+      ],
+      by_model: [],
+    });
+  }
+
   if (method === 'PATCH' && path === '/me') {
     const rawBody = typeof init?.body === 'string' ? init.body : '{}';
     const body = JSON.parse(rawBody) as { display_name?: string };

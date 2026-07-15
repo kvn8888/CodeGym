@@ -164,3 +164,28 @@ export interface NewPracticeConfig {
   difficulty: 'easy' | 'medium' | 'hard';
   count: number;
 }
+
+/** Aggregate from GET /api/v1/cost — estimated GenAI spend for this workspace user. */
+export interface GenAICostAggregate {
+  currency: string;
+  pricing_as_of: string;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_cost_usd: number;
+  call_count: number;
+  by_provider: Array<{
+    provider: string;
+    tokens_in: number;
+    tokens_out: number;
+    cost_usd: number;
+    call_count: number;
+  }>;
+  by_model: Array<{
+    provider: string;
+    model: string;
+    tokens_in: number;
+    tokens_out: number;
+    cost_usd: number;
+    call_count: number;
+  }>;
+}

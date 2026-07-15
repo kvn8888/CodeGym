@@ -1,7 +1,13 @@
 import { mockApiFetch } from '../../mocks/apiProxy';
 
 const DEFAULT_API_BASE = '/api/v1';
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE).replace(/\/$/, '');
+// Empty string must fall through — Doppler often sets VITE_API_BASE_URL="" for
+// "use same-origin", and `??` only replaces null/undefined. An empty base makes
+// requests hit SPA routes (e.g. /memory/profile) and res.json() fails on HTML.
+const API_BASE = ((import.meta.env.VITE_API_BASE_URL ?? '').trim() || DEFAULT_API_BASE).replace(
+  /\/$/,
+  '',
+);
 const USE_MOCK_API = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API !== 'false';
 
 type AccessTokenProvider = () => Promise<string | null>;

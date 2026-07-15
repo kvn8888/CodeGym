@@ -279,6 +279,7 @@ export async function mockApiFetch(
   // Post-round reflection (deterministic refresh + LLM note CRUD); the mock
   // just returns the profile so the round loop keeps moving without a backend.
   if (method === 'POST' && path === '/memory/notes/maintain') {
+    await new Promise((resolve) => setTimeout(resolve, 500));
     return json(mockMemoryProfile);
   }
 

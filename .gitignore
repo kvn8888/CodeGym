@@ -22,6 +22,9 @@ frontend/dist/
 .env
 .env.local
 
+# Vercel CLI link metadata (local only)
+.vercel/
+
 # IDE
 .idea/
 .vscode/

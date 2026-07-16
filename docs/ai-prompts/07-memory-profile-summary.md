@@ -95,8 +95,15 @@ Rules:
 - strengths and growth_edges contain at most 5 concise concepts each.
 - skills contain at most 30 evidence-backed skills. level is 1..5, confidence
   is 0..100, and trend is up|flat|down.
-- notes are durable, specific study observations, not a transcript. Prefer
-  updating an existing note id over creating duplicates. Return at most 20.
+- `question_skipped` and outcome `skipped` are neutral coverage signals, never
+  correct or incorrect answers. The UI reveals the correct answer after a skip;
+  that reveal is not learner performance. Do not create or retain a growth edge
+  or review note from skips alone. Later correct evidence resolves skip-only
+  uncertainty unless actual incorrect evidence remains.
+- notes are a CRUD-managed desired state, not an append-only log. Keep an
+  unchanged note's existing id, update the same semantic concept in place,
+  omit stale notes to prune them, and never create a second note for the same
+  concept. Return at most 20.
 - action is internal maintenance metadata: review for an active gap, keep for a
   durable useful observation, prune only when the returned note should be
   removed. Normally omit pruned notes from the returned list.
@@ -112,6 +119,26 @@ Rules:
   malformed JSON reject the entire candidate.
 - Existing note IDs retain their server-owned creation timestamp.
 - Provider or validation failure preserves an existing profile exactly.
-- Cold start without a usable provider persists the deterministic v0 fallback.
+- Cold start without a usable provider stays unpersisted. Deterministic signals
+  are evidence for synthesis, never durable user-facing conclusions.
 - Successful profiles record schema version, trigger, provider/model,
   synthesis time, evidence-through time, and event count as provenance.
+
+## Field ownership
+
+| Data | Owner | Persistence behavior |
+|---|---|---|
+| Raw events, outcomes, skips, counts, and event times | Product code | Append-only deterministic evidence |
+| Summary, strengths, Focus next, skill labels/areas/levels/confidence/trends | LLM profile synthesizer | Replaced atomically after validated output |
+| Memory note title, summary, tags, and disposition | LLM profile synthesizer | CRUD-managed desired state; stable concept identity is enforced server-side |
+| Skill `last_practiced`, note `created_at`, profile refresh times, and provenance | Server | Derived or stamped deterministically |
+| Evidence allowlisting, bounds, digests, and skill-support checks | Server | Deterministic validation and token-control guardrails |
+
+The deterministic skill signal is not the displayed Skill profile. It limits
+which skills the model may claim and supplies factual practice timestamps. The
+model still decides the learner-facing skill assessment.
+
+Legacy rows created before model provenance can be removed with
+`backend/scripts/purge_deterministic_memory_profiles.sql` after this behavior is
+deployed. The cleanup deletes profile rows only and preserves `memory_events`,
+so a later successful synthesis can rebuild the profile from evidence.

@@ -2,6 +2,7 @@ package generation
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -101,10 +102,11 @@ func TestProfileSynthesizerPreservesPersistedProfileOnInvalidOutput(t *testing.T
 	}
 }
 
-func TestProfileSynthesizerUsesDeterministicFallbackForFirstProfile(t *testing.T) {
+func TestProfileSynthesizerDoesNotPersistDeterministicFallbackForFirstProfile(t *testing.T) {
 	ctx := scopedContext()
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
-	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	store := memory.NewInMemoryStore()
+	service := memory.NewService(store, func() time.Time { return now })
 	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
 		Source: "mcq", Type: "answer_incorrect", Summary: "Missed graphs.",
 		Payload: json.RawMessage(`{"topic":"Graphs","correct":false}`),
@@ -116,12 +118,45 @@ func TestProfileSynthesizerUsesDeterministicFallbackForFirstProfile(t *testing.T
 	if err != nil {
 		t.Fatalf("RefreshProfile: %v", err)
 	}
-	if result.Skipped == "" || len(result.Profile.GrowthEdges) == 0 {
+	if result.Skipped == "" || result.Changed || len(result.Profile.GrowthEdges) != 0 {
 		t.Fatalf("fallback result = %#v", result)
 	}
-	persisted, _ := service.GetProfile(ctx)
-	if persisted.Summary != result.Profile.Summary {
-		t.Fatal("first deterministic fallback was not persisted")
+	if _, err := store.GetProfile(ctx, "workspace-1", "user-1"); !errors.Is(err, memory.ErrProfileNotFound) {
+		t.Fatalf("deterministic fallback was persisted: %v", err)
+	}
+}
+
+func TestParseCuratedProfileReusesExistingNoteForDuplicateConcept(t *testing.T) {
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	createdAt := now.Add(-48 * time.Hour)
+	current := memory.Profile{Notes: []memory.Note{{
+		ID: "note_sql_original", ProblemID: "problem-sql-1", Title: "SQL joins",
+		Summary: "Old summary.", CreatedAt: createdAt, Action: "review",
+	}}}
+	fallback := memory.Profile{Skills: []memory.SkillProficiency{{
+		ID: "sql-joins", Label: "SQL Joins", LastPracticed: now.Add(-time.Hour),
+	}}}
+	raw := json.RawMessage(`{
+		"summary":"Join direction needs another pass.","strengths":[],"growth_edges":["SQL joins"],
+		"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":60,"trend":"flat"}],
+		"notes":[
+			{"id":"note_new_id","problem_id":"problem-sql-1","title":"SQL joins","summary":"Updated summary.","tags":["sql"],"action":"review"},
+			{"id":"note_duplicate","title":"SQL joins","summary":"Duplicate summary.","tags":["sql"],"action":"review"}
+		]
+	}`)
+
+	profile, err := ParseCuratedProfile(raw, current, fallback, now)
+	if err != nil {
+		t.Fatalf("ParseCuratedProfile: %v", err)
+	}
+	if len(profile.Notes) != 1 {
+		t.Fatalf("notes = %#v", profile.Notes)
+	}
+	if profile.Notes[0].ID != "note_sql_original" || profile.Notes[0].Summary != "Updated summary." {
+		t.Fatalf("note = %#v", profile.Notes[0])
+	}
+	if !profile.Notes[0].CreatedAt.Equal(createdAt) {
+		t.Fatalf("created_at = %s", profile.Notes[0].CreatedAt)
 	}
 }
 
@@ -218,5 +253,49 @@ func TestProfileEvidenceExcludesAuditEventsAndSessionMarkersFromSignals(t *testi
 	profile := memory.Summarize(memory.Profile{}, signals, now)
 	if len(profile.Skills) != 1 || profile.Skills[0].Label != "Queues" {
 		t.Fatalf("skills = %#v", profile.Skills)
+	}
+}
+
+func TestProfileEvidenceCanonicalizesSkipAndSuppressesRevealCorrectness(t *testing.T) {
+	now := time.Date(2026, 7, 16, 3, 0, 0, 0, time.UTC)
+	events := []memory.Event{
+		{
+			Source: "mcq", Type: "answer_incorrect", Summary: "Skipped Spring profiles.",
+			Payload:    json.RawMessage(`{"session_id":"round-1","question_id":"q1","topic":"Spring Profiles","correct":false,"skipped":true}`),
+			OccurredAt: now,
+		},
+		{
+			Source: "mcq", Type: "question_answered", Summary: "UI revealed the correct answer.",
+			Payload:    json.RawMessage(`{"session_id":"round-1","question_id":"q1","topic":"Spring Profiles","correct":true}`),
+			OccurredAt: now.Add(time.Second),
+		},
+		{
+			Source: "mcq", Type: "question_answered", Summary: "Answered a later Spring profiles question correctly.",
+			Payload:    json.RawMessage(`{"session_id":"round-1","question_id":"q2","topic":"Spring Profiles","correct":true}`),
+			OccurredAt: now.Add(2 * time.Second),
+		},
+	}
+
+	evidenceEvents := profileEvidenceEvents(events)
+	if len(evidenceEvents) != 2 {
+		t.Fatalf("evidence events = %#v", evidenceEvents)
+	}
+	if evidenceEvents[0].Type != "question_skipped" {
+		t.Fatalf("legacy skip type = %q", evidenceEvents[0].Type)
+	}
+	var skipPayload map[string]any
+	if err := json.Unmarshal(evidenceEvents[0].Payload, &skipPayload); err != nil {
+		t.Fatalf("decode skip payload: %v", err)
+	}
+	if skipPayload["skipped"] != true || skipPayload["answer_revealed"] != true {
+		t.Fatalf("skip payload = %#v", skipPayload)
+	}
+	if _, exists := skipPayload["correct"]; exists {
+		t.Fatalf("skip retained correctness: %#v", skipPayload)
+	}
+
+	evidence := buildProfileEvidence(evidenceEvents, memory.Profile{}, "round-1")
+	if len(evidence.Recent) != 2 || evidence.Recent[0].Outcome != "skipped" || evidence.Recent[1].Outcome != "correct" {
+		t.Fatalf("outcomes = %#v", evidence.Recent)
 	}
 }

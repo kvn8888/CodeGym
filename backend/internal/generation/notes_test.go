@@ -220,3 +220,30 @@ func TestApplyNoteActionsCRUDAndCap(t *testing.T) {
 		t.Fatalf("capped = %d, want %d", len(capped), maxNotes)
 	}
 }
+
+func TestApplyNoteActionsUpdatesMatchingConceptInsteadOfAppending(t *testing.T) {
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	createdAt := now.Add(-24 * time.Hour)
+	existing := []memory.Note{{
+		ID: "note_sql_original", ProblemID: "problem-sql-1", Title: "SQL joins",
+		Summary: "Old summary.", CreatedAt: createdAt, Action: "review",
+	}}
+	actions := []NoteAction{{
+		Op: "create",
+		Note: NoteChange{
+			ID: "note_sql_duplicate", ProblemID: "problem-sql-1", Title: "SQL joins",
+			Summary: "Updated summary.", Action: "keep",
+		},
+	}}
+
+	next := ApplyNoteActions(existing, actions, now)
+	if len(next) != 1 {
+		t.Fatalf("notes = %#v", next)
+	}
+	if next[0].ID != "note_sql_original" || next[0].Summary != "Updated summary." || next[0].Action != "keep" {
+		t.Fatalf("note = %#v", next[0])
+	}
+	if !next[0].CreatedAt.Equal(createdAt) {
+		t.Fatalf("created_at = %s", next[0].CreatedAt)
+	}
+}

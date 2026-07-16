@@ -46,6 +46,9 @@ func TestServiceRecordsEventForScopedUser(t *testing.T) {
 	if event.WorkspaceID != "tenant-1" || event.UserID != "user-1" {
 		t.Fatalf("unexpected scope: %s/%s", event.WorkspaceID, event.UserID)
 	}
+	if !event.OccurredAt.Equal(now) || !event.CreatedAt.Equal(now) || event.OccurredAt.Location() != time.UTC {
+		t.Fatalf("default timestamps = occurred %s created %s, want UTC %s", event.OccurredAt, event.CreatedAt, now)
+	}
 
 	events, err := service.ListEvents(scopedContext())
 	if err != nil {
@@ -147,7 +150,7 @@ func TestWorkerRunOnceRefreshesActiveProfiles(t *testing.T) {
 func scopedContext() context.Context {
 	ctx := context.Background()
 	ctx = auth.WithPrincipal(ctx, auth.Principal{
-		UserID:          "user-1",
+		UserID:             "user-1",
 		DefaultWorkspaceID: "tenant-1",
 		WorkspaceIDs:       []string{"tenant-1"},
 	})

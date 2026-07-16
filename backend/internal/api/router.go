@@ -21,10 +21,12 @@ type Dependencies struct {
 	Sessions      *session.Service
 	// Generation is nil when no GenAI provider is configured; the generate
 	// route stays registered and answers 503 so clients can fall back.
-	Generation         *generation.Orchestrator
-	Usage              *usage.Service
-	CORSAllowedOrigins []string
-	DatabaseURL        string
+	Generation           *generation.Orchestrator
+	MemoryProfiles       *generation.ProfileSynthesizer
+	MemoryRefreshTrigger string
+	Usage                *usage.Service
+	CORSAllowedOrigins   []string
+	DatabaseURL          string
 }
 
 // NewRouter builds the top-level HTTP handler tree for public and protected
@@ -46,7 +48,13 @@ func NewRouter(deps Dependencies) http.Handler {
 	profileHandler := handlers.NewProfileHandler(deps.Identity)
 	protected.HandleFunc("GET /api/v1/me", profileHandler.Me)
 	protected.HandleFunc("PATCH /api/v1/me", profileHandler.UpdateMe)
-	memoryHandler := handlers.NewMemoryHandler(deps.Memory)
+	profiles := deps.MemoryProfiles
+	if profiles == nil {
+		profiles = generation.NewProfileSynthesizer(deps.Generation, deps.Memory)
+	}
+	refreshOnSetCompletion := deps.MemoryRefreshTrigger == "" ||
+		deps.MemoryRefreshTrigger == "both" || deps.MemoryRefreshTrigger == "set-completion"
+	memoryHandler := handlers.NewMemoryHandler(deps.Memory, profiles)
 	protected.HandleFunc("GET /api/v1/memory/profile", memoryHandler.Profile)
 	protected.HandleFunc("POST /api/v1/memory/profile/refresh", memoryHandler.RefreshProfile)
 	protected.HandleFunc("GET /api/v1/memory/events", memoryHandler.ListEvents)
@@ -57,9 +65,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("GET /api/v1/sessions/{id}", sessionHandler.Get)
 	protected.HandleFunc("PATCH /api/v1/sessions/{id}", sessionHandler.Patch)
 	protected.HandleFunc("PUT /api/v1/sessions/{id}/files", sessionHandler.UpsertFiles)
-	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory)
+	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion)
 	protected.HandleFunc("POST /api/v1/generate", generateHandler.Generate)
-	protected.HandleFunc("POST /api/v1/memory/notes/maintain", generateHandler.MaintainNotes)
+	protected.HandleFunc("POST /api/v1/memory/profile/maintain", generateHandler.MaintainProfile)
+	// Compatibility alias for clients deployed before full-profile synthesis.
+	protected.HandleFunc("POST /api/v1/memory/notes/maintain", generateHandler.MaintainProfile)
 	costHandler := handlers.NewCostHandler(deps.Usage)
 	protected.HandleFunc("GET /api/v1/cost", costHandler.Cost)
 

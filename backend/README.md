@@ -93,10 +93,12 @@ in [../docs/openapi-contract.md](../docs/openapi-contract.md).
 
 ## Memory Worker
 
-The API server starts the memory profile refresh worker by default. The request
-path appends raw memory events quickly; the worker periodically calls
-`memory.Service.RefreshAllProfiles` off the request path so derived profiles can
-be refreshed without blocking event recording.
+The API server starts the LLM memory-profile worker by default. Request paths
+append deterministic events quickly; the worker periodically builds a bounded
+evidence digest and synthesizes the summary, strengths, growth edges, skills,
+and notes off the event-recording path. Invalid provider output preserves an
+existing profile. A first refresh can still use the deterministic v0 profile
+when generation is unavailable.
 
 Default interval: `24h`.
 
@@ -105,6 +107,16 @@ Override with:
 ```bash
 CODEGYM_MEMORY_WORKER_INTERVAL=1h
 ```
+
+Choose when profile synthesis runs with:
+
+```bash
+# daily | set-completion | both (default)
+CODEGYM_MEMORY_REFRESH_TRIGGER=both
+```
+
+`set-completion` is awaited before the next generated practice set reads
+memory. `daily` uses the worker interval. `both` enables both paths.
 
 Disable the worker for local debugging with:
 
@@ -238,6 +250,7 @@ GET  /api/v1/cost
 
 GET  /api/v1/memory/profile
 POST /api/v1/memory/profile/refresh
+POST /api/v1/memory/profile/maintain
 GET  /api/v1/memory/events
 POST /api/v1/memory/events
 
@@ -248,12 +261,12 @@ PATCH /api/v1/sessions/{id}
 PUT   /api/v1/sessions/{id}/files
 
 POST /api/v1/generate
-POST /api/v1/memory/notes/maintain
+POST /api/v1/memory/notes/maintain # deprecated compatibility alias
 ```
 
 ## GenAI usage and cost
 
-Every successful model call (MCQ generate, note maintenance, etc.) records
+Every successful model call (MCQ generation, memory-profile synthesis, etc.) records
 `tokens_in`, `tokens_out`, provider, model, and an estimated USD cost. Totals
 for the authenticated workspace user are exposed at:
 

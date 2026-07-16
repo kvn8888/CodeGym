@@ -74,7 +74,9 @@ rules. If the emitter is the same, prefer a new `type` under an existing source.
 | --- | --- |
 | `session_started` | User started an MCQ or marathon session. |
 | `question_answered` | User answered one question. |
+| `question_skipped` | User deliberately skipped a question; this is neutral evidence, not an incorrect answer. |
 | `session_completed` | User finished the session. |
+| `session_exited` | User left an unfinished session after its durable state was saved. |
 | `answer_incorrect` | User missed a question worth tracking for growth edges. |
 
 ### `memory`

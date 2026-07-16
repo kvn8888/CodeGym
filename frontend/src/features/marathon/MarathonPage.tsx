@@ -141,13 +141,19 @@ function normalizeMarathonSessionState(value: unknown): MarathonSessionState | n
 
 /** Memory event writer for the mcq source. Product interactions queue these
  *  without blocking; round completion flushes the queue before maintenance. */
-function emitMcqEvent(type: string, summary: string, payload: Record<string, unknown>) {
+function emitMcqEvent(
+  type: string,
+  summary: string,
+  payload: Record<string, unknown>,
+  occurredAt: string,
+) {
   return api
     .post('/memory/events', {
       source: 'mcq',
       type,
       summary,
       payload: { ...payload, schema_version: 1 },
+      occurred_at: occurredAt,
     })
     .then(() => undefined);
 }
@@ -379,6 +385,7 @@ export function MarathonPage() {
   // must settle successfully before the round-level memory refresh can run.
   const pendingMemoryEventsRef = useRef<PendingMemoryEvent[]>([]);
   const completionEventRoundsRef = useRef(new Set<number>());
+  const exitEventQueuedRef = useRef(false);
 
   // Session id for the current round's memory events.
   const sessionIdRef = useRef('');
@@ -397,7 +404,8 @@ export function MarathonPage() {
   };
 
   const trackMcqEvent = (type: string, summary: string, payload: Record<string, unknown>) => {
-    const write = () => emitMcqEvent(type, summary, payload);
+    const occurredAt = new Date().toISOString();
+    const write = () => emitMcqEvent(type, summary, payload, occurredAt);
     const event: PendingMemoryEvent = { write, promise: write() };
     pendingMemoryEventsRef.current.push(event);
     void event.promise.catch(() => {});
@@ -544,9 +552,8 @@ export function MarathonPage() {
     return session.id;
   };
 
-  /** Record the just-finished round: session_completed event, then the
-   *  memory reflection pass (deterministic refresh + LLM note CRUD). Awaited
-   *  so the next round's generation reads the updated notes. */
+  /** Record the just-finished round, then await full profile synthesis so the
+   *  next round reads the updated summary, skills, focus areas, and notes. */
   const reflectOnRound = async () => {
     const roundResults = results.filter((r) => r.round === round);
     const roundSkips = skippedQuestions.filter((item) => item.round === round);
@@ -569,7 +576,7 @@ export function MarathonPage() {
         completionEventRoundsRef.current.add(round);
       }
       await flushPendingMemoryEvents();
-      await api.post('/memory/notes/maintain', { session_id: sessionIdRef.current });
+      await api.post('/memory/profile/maintain', { session_id: sessionIdRef.current });
       showMemoryUpdateStatus('updated');
     } catch (err) {
       showMemoryUpdateStatus('failed');
@@ -586,6 +593,7 @@ export function MarathonPage() {
     showMemoryUpdateStatus(null);
     pendingMemoryEventsRef.current = [];
     completionEventRoundsRef.current.clear();
+    exitEventQueuedRef.current = false;
     setResults([]);
     setSkippedQuestions([]);
     setStudyPrompt(nextConfig.prompt);
@@ -806,6 +814,14 @@ export function MarathonPage() {
     setSelectedIndex(null);
     setConfirmed(true);
     setSkippedQuestions(nextSkippedQuestions);
+    trackMcqEvent('question_skipped', `Skipped a ${currentQ.concept} question.`, {
+      session_id: sessionIdRef.current,
+      question_id: currentQ.id,
+      topic: currentQ.concept,
+      duration_ms: skipped.timeMs,
+      used_help: skipped.usedHelp,
+      round,
+    });
     void persistSession({
       selected_index: null,
       confirmed: true,
@@ -818,8 +834,18 @@ export function MarathonPage() {
     if (isExiting) return;
     setIsExiting(true);
     setSessionError(null);
+    if (!exitEventQueuedRef.current) {
+      trackMcqEvent('session_exited', `Exited round ${round} of an MCQ marathon.`, {
+        session_id: sessionIdRef.current,
+        round,
+        question_index: questionIndex,
+        duration_ms: elapsed * 1000,
+      });
+      exitEventQueuedRef.current = true;
+    }
     try {
       await persistSession({}, 'active');
+      await flushPendingMemoryEvents();
       navigate('/');
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : 'Could not save this run before exiting.');

@@ -59,6 +59,29 @@ export interface paths {
         patch: operations["updateCurrentUser"];
         trace?: never;
     };
+    "/api/v1/cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Aggregate GenAI token usage and estimated USD cost for the authenticated workspace user.
+         * @description Totals tokens_in / tokens_out and estimated cost from recorded generation
+         *     calls (MCQ generate, note maintenance, etc.). Costs use a built-in rate
+         *     card (USD per million tokens) last reviewed 2026-07-15 for Meta Muse Spark,
+         *     Azure/OpenAI GPT-5.6 Terra family, and Gemini Flash-class models.
+         */
+        get: operations["getGenAICost"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/profile": {
         parameters: {
             query?: never;
@@ -85,7 +108,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rebuild and persist the authenticated user's memory profile from events. */
+        /** Synthesize and persist the authenticated user's memory profile from deterministic event evidence. */
         post: operations["refreshMemoryProfile"];
         delete?: never;
         options?: never;
@@ -100,7 +123,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List append-only memory events for the authenticated user and workspace scope. */
+        /**
+         * List append-only memory events for the authenticated user and workspace scope.
+         * @description Returns events newest-first by occurrence time. All timestamps include an explicit UTC offset.
+         */
         get: operations["listMemoryEvents"];
         put?: never;
         /** Append a memory event for the authenticated user and workspace scope. */
@@ -188,6 +214,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/memory/profile/maintain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run structured LLM profile synthesis after a completed practice set.
+         * @description Interprets bounded deterministic event evidence into the summary, strengths, growth edges, skills, and durable notes used by subsequent generation.
+         */
+        post: operations["maintainMemoryProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/notes/maintain": {
         parameters: {
             query?: never;
@@ -197,7 +243,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run the post-round memory reflection pass — deterministic profile refresh plus a best-effort LLM CRUD pass over memory notes. */
+        /**
+         * Compatibility alias for full memory profile maintenance.
+         * @deprecated
+         */
         post: operations["maintainMemoryNotes"];
         delete?: never;
         options?: never;
@@ -243,6 +292,56 @@ export interface components {
         UserProfileEnvelope: {
             data: components["schemas"]["UserProfile"];
             error: null;
+        };
+        CostAggregateEnvelope: {
+            data: components["schemas"]["CostAggregate"];
+            error: null;
+        };
+        CostAggregate: {
+            /** @example USD */
+            currency: string;
+            /** @example 2026-07-15 */
+            pricing_as_of: string;
+            /** Format: int64 */
+            total_tokens_in: number;
+            /** Format: int64 */
+            total_tokens_out: number;
+            /** Format: double */
+            total_cost_usd: number;
+            call_count: number;
+            by_provider: components["schemas"]["CostProviderSlice"][];
+            by_model: components["schemas"]["CostModelSlice"][];
+            rates: components["schemas"]["CostRate"][];
+        };
+        CostProviderSlice: {
+            provider: string;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /** Format: double */
+            cost_usd: number;
+            call_count: number;
+        };
+        CostModelSlice: {
+            provider: string;
+            model: string;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /** Format: double */
+            cost_usd: number;
+            call_count: number;
+        };
+        CostRate: {
+            provider: string;
+            model_match?: string;
+            /** Format: double */
+            input_usd_per_mtok: number;
+            /** Format: double */
+            output_usd_per_mtok: number;
+            source?: string;
         };
         UserProfile: {
             /** @example auth0|user_123 */
@@ -296,6 +395,19 @@ export interface components {
             growth_edges: string[];
             skills: components["schemas"]["SkillProficiency"][];
             notes: components["schemas"]["MemoryNote"][];
+            provenance?: components["schemas"]["MemoryProfileProvenance"];
+        };
+        MemoryProfileProvenance: {
+            schema_version: number;
+            /** @enum {string} */
+            trigger: "manual" | "daily" | "set-completion";
+            provider: string;
+            model: string;
+            /** Format: date-time */
+            synthesized_at: string;
+            /** Format: date-time */
+            evidence_through: string;
+            event_count: number;
         };
         SkillProficiency: {
             id: string;
@@ -331,9 +443,15 @@ export interface components {
             type: string;
             summary: string;
             payload?: components["schemas"]["JsonValue"];
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description Actual event occurrence time, serialized with an explicit UTC offset.
+             */
             occurred_at: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description Persistence time, serialized with an explicit UTC offset.
+             */
             created_at: string;
         };
         RecordMemoryEventInput: {
@@ -428,9 +546,9 @@ export interface components {
             /** @description Round number in a continuous marathon; later rounds avoid repeating earlier questions. */
             round?: number;
         };
-        MaintainNotesInput: {
+        MaintainProfileInput: {
             /**
-             * @description Scopes the reflection digest to one practice round; empty uses the most recent round in the event log.
+             * @description Highlights the just-completed practice set inside the bounded cross-session evidence digest.
              * @example mcq_abc123_r2
              */
             session_id?: string;
@@ -613,6 +731,31 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getGenAICost: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cost aggregate loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostAggregateEnvelope"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             500: components["responses"]["InternalError"];
         };
@@ -943,6 +1086,37 @@ export interface operations {
             };
         };
     };
+    maintainMemoryProfile: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["MaintainProfileInput"];
+            };
+        };
+        responses: {
+            /** @description The latest successfully synthesized profile, or the preserved fallback profile when generation is unavailable or invalid. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryProfileEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     maintainMemoryNotes: {
         parameters: {
             query?: never;
@@ -955,11 +1129,11 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["MaintainNotesInput"];
+                "application/json": components["schemas"]["MaintainProfileInput"];
             };
         };
         responses: {
-            /** @description Profile refreshed; note maintenance applied when the model produced usable actions. */
+            /** @description Latest memory profile. */
             200: {
                 headers: {
                     [name: string]: unknown;

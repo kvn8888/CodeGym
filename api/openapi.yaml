@@ -95,7 +95,7 @@ paths:
       summary: Aggregate GenAI token usage and estimated USD cost for the authenticated workspace user.
       description: |
         Totals tokens_in / tokens_out and estimated cost from recorded generation
-        calls (MCQ generate, note maintenance, etc.). Costs use a built-in rate
+        calls (MCQ generation, memory profile synthesis, etc.). Costs use a built-in rate
         card (USD per million tokens) last reviewed 2026-07-15 for Meta Muse Spark,
         Azure/OpenAI GPT-5.6 Terra family, and Gemini Flash-class models.
       parameters:
@@ -135,7 +135,7 @@ paths:
   /api/v1/memory/profile/refresh:
     post:
       operationId: refreshMemoryProfile
-      summary: Rebuild and persist the authenticated user's memory profile from events.
+      summary: Synthesize and persist the authenticated user's memory profile from deterministic event evidence.
       parameters:
         - $ref: "#/components/parameters/WorkspaceHeader"
       responses:
@@ -156,6 +156,7 @@ paths:
     get:
       operationId: listMemoryEvents
       summary: List append-only memory events for the authenticated user and workspace scope.
+      description: Returns events newest-first by occurrence time. All timestamps include an explicit UTC offset.
       parameters:
         - $ref: "#/components/parameters/WorkspaceHeader"
       responses:
@@ -398,10 +399,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
-  /api/v1/memory/notes/maintain:
+  /api/v1/memory/profile/maintain:
     post:
-      operationId: maintainMemoryNotes
-      summary: Run the post-round memory reflection pass — deterministic profile refresh plus a best-effort LLM CRUD pass over memory notes.
+      operationId: maintainMemoryProfile
+      summary: Run structured LLM profile synthesis after a completed practice set.
+      description: Interprets bounded deterministic event evidence into the summary, strengths, growth edges, skills, and durable notes used by subsequent generation.
       parameters:
         - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
@@ -409,10 +411,39 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MaintainNotesInput"
+              $ref: "#/components/schemas/MaintainProfileInput"
       responses:
         "200":
-          description: Profile refreshed; note maintenance applied when the model produced usable actions.
+          description: The latest successfully synthesized profile, or the preserved fallback profile when generation is unavailable or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/memory/notes/maintain:
+    post:
+      deprecated: true
+      operationId: maintainMemoryNotes
+      summary: Compatibility alias for full memory profile maintenance.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintainProfileInput"
+      responses:
+        "200":
+          description: Latest memory profile.
           content:
             application/json:
               schema:
@@ -785,6 +816,31 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MemoryNote"
+        provenance:
+          $ref: "#/components/schemas/MemoryProfileProvenance"
+
+    MemoryProfileProvenance:
+      type: object
+      required: [schema_version, trigger, provider, model, synthesized_at, evidence_through, event_count]
+      properties:
+        schema_version:
+          type: integer
+        trigger:
+          type: string
+          enum: [manual, daily, set-completion]
+        provider:
+          type: string
+        model:
+          type: string
+        synthesized_at:
+          type: string
+          format: date-time
+        evidence_through:
+          type: string
+          format: date-time
+        event_count:
+          type: integer
+          minimum: 0
 
     SkillProficiency:
       type: object
@@ -863,9 +919,11 @@ components:
         occurred_at:
           type: string
           format: date-time
+          description: Actual event occurrence time, serialized with an explicit UTC offset.
         created_at:
           type: string
           format: date-time
+          description: Persistence time, serialized with an explicit UTC offset.
 
     RecordMemoryEventInput:
       type: object
@@ -1042,12 +1100,12 @@ components:
           minimum: 0
           description: Round number in a continuous marathon; later rounds avoid repeating earlier questions.
 
-    MaintainNotesInput:
+    MaintainProfileInput:
       type: object
       properties:
         session_id:
           type: string
-          description: Scopes the reflection digest to one practice round; empty uses the most recent round in the event log.
+          description: Highlights the just-completed practice set inside the bounded cross-session evidence digest.
           example: mcq_abc123_r2
 
     MCQQuestion:

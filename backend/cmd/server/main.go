@@ -116,24 +116,27 @@ func main() {
 	} else {
 		log.Print("CodeGym generation disabled; set META_MUSE_SPARK_API, CODEGYM_GENAI_AZURE_API_KEY, or CODEGYM_GEMINI_API_KEY to enable POST /api/v1/generate")
 	}
+	profileSynthesizer := generation.NewProfileSynthesizer(generationOrchestrator, memoryService)
 
-	if !cfg.MemoryWorker.Disabled {
-		worker := memory.NewWorker(memoryService, cfg.MemoryWorker.Interval)
+	if cfg.MemoryWorker.DailyEnabled() {
+		worker := memory.NewWorker(profileSynthesizer, cfg.MemoryWorker.Interval)
 		go worker.Run(ctx)
-		log.Printf("CodeGym memory worker scheduled every %s", cfg.MemoryWorker.Interval)
+		log.Printf("CodeGym LLM memory profile worker scheduled every %s trigger=%s", cfg.MemoryWorker.Interval, cfg.MemoryWorker.Trigger)
 	} else {
-		log.Print("CodeGym memory worker disabled")
+		log.Printf("CodeGym daily memory worker disabled trigger=%s", cfg.MemoryWorker.Trigger)
 	}
 
 	router := api.NewRouter(api.Dependencies{
-		Authenticator:      authenticator,
-		Identity:           identityService,
-		Memory:             memoryService,
-		Sessions:           sessionService,
-		Generation:         generationOrchestrator,
-		Usage:              usageService,
-		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
-		DatabaseURL:        cfg.DatabaseURL,
+		Authenticator:        authenticator,
+		Identity:             identityService,
+		Memory:               memoryService,
+		Sessions:             sessionService,
+		Generation:           generationOrchestrator,
+		MemoryProfiles:       profileSynthesizer,
+		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,
+		Usage:                usageService,
+		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
+		DatabaseURL:          cfg.DatabaseURL,
 	})
 
 	log.Printf("CodeGym API listening on %s", cfg.Addr())
@@ -169,8 +172,8 @@ func buildAuthenticator(cfg config.Config) (auth.Authenticator, error) {
 
 	log.Print("CodeGym API using dev bearer token authentication")
 	return auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{
-		StaticToken:     cfg.DevAuthToken,
-		DefaultUserID:   cfg.DevUserID,
+		StaticToken:        cfg.DevAuthToken,
+		DefaultUserID:      cfg.DevUserID,
 		DefaultWorkspaceID: cfg.DevWorkspaceID,
 	}), nil
 }

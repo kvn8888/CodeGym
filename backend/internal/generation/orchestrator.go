@@ -45,6 +45,16 @@ func (o *Orchestrator) Generate(ctx context.Context, input GenerateInput) (Gener
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	return o.GenerateWithProfile(ctx, input, profile)
+}
+
+// GenerateWithProfile runs a provider call with an explicitly supplied memory
+// context. Background profile synthesis uses this to avoid recursively reading
+// the profile it is currently replacing.
+func (o *Orchestrator) GenerateWithProfile(ctx context.Context, input GenerateInput, profile memory.Profile) (GenerateResult, error) {
+	if o == nil || o.generator == nil {
+		return GenerateResult{}, errors.New("generation orchestrator requires a generator")
+	}
 
 	result, err := o.generator.Generate(ctx, GenerateRequest{
 		Kind:          input.Kind,
@@ -97,6 +107,7 @@ func MemoryContextFromProfile(profile memory.Profile) MemoryContext {
 			Title:     note.Title,
 			Summary:   note.Summary,
 			Tags:      append([]string(nil), note.Tags...),
+			Action:    note.Action,
 		})
 	}
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -127,11 +128,11 @@ func (s *sequencedGenerator) Generate(_ context.Context, request generation.Gene
 	}, nil
 }
 
-func TestMaintainNotesRouteAppliesActionsAndAuditsEvents(t *testing.T) {
+func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
 	generator := &sequencedGenerator{payloads: []string{
-		`{"actions":[{"op":"create","note":{"id":"note_sql-joins","title":"SQL joins","summary":"Missed LEFT JOIN semantics.","tags":["sql"],"action":"review"}}],"reason":"missed sql"}`,
+		`{"summary":"SQL joins need another pass; two-pointer fundamentals are progressing.","strengths":["Two Pointers"],"growth_edges":["SQL Joins"],"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":55,"trend":"down"},{"id":"two-pointers","label":"Two Pointers","area":"DSA","level":3,"confidence":70,"trend":"up"}],"notes":[{"id":"note_sql-joins","title":"SQL joins","summary":"Missed LEFT JOIN semantics.","tags":["sql"],"action":"review"}]}`,
 	}}
 	orchestrator := generation.NewOrchestrator(memoryService, generator)
 	router := newGenerateTestRouter(t, orchestrator, memoryService)
@@ -154,7 +155,7 @@ func TestMaintainNotesRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 		}
 	}
 
-	maintain := authed(http.MethodPost, "/api/v1/memory/notes/maintain", `{"session_id":"mcq_r1"}`)
+	maintain := authed(http.MethodPost, "/api/v1/memory/profile/maintain", `{"session_id":"mcq_r1"}`)
 	if maintain.Code != http.StatusOK {
 		t.Fatalf("maintain status = %d: %s", maintain.Code, maintain.Body.String())
 	}
@@ -192,7 +193,7 @@ func TestMaintainNotesRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	}
 }
 
-func TestMaintainNotesRouteWorksWithoutOrchestrator(t *testing.T) {
+func TestMaintainProfileCompatibilityRouteWorksWithoutOrchestrator(t *testing.T) {
 	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
 	router := newGenerateTestRouter(t, nil, memoryService)
 
@@ -203,6 +204,44 @@ func TestMaintainNotesRouteWorksWithoutOrchestrator(t *testing.T) {
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (refresh-only fallback): %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMemoryEventsRouteReturnsOccurrenceNewestFirstInUTC(t *testing.T) {
+	now := time.Date(2026, 7, 15, 20, 0, 0, 0, time.UTC)
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	router := newGenerateTestRouter(t, nil, memoryService)
+
+	post := func(body string) {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/memory/events", strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("POST event status = %d: %s", recorder.Code, recorder.Body.String())
+		}
+	}
+	post(`{"source":"mcq","type":"question_answered","summary":"older","occurred_at":"2026-07-15T13:00:00-04:00"}`)
+	post(`{"source":"mcq","type":"question_skipped","summary":"newer","occurred_at":"2026-07-15T18:30:00Z"}`)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/memory/events", nil)
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET events status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var envelope struct {
+		Data []memory.Event `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode events: %v", err)
+	}
+	if len(envelope.Data) != 2 || envelope.Data[0].Summary != "newer" || envelope.Data[1].Summary != "older" {
+		t.Fatalf("event order = %#v", envelope.Data)
+	}
+	if envelope.Data[1].OccurredAt.Location() != time.UTC || !strings.Contains(recorder.Body.String(), "2026-07-15T17:00:00Z") {
+		t.Fatalf("timestamps were not normalized to UTC: %s", recorder.Body.String())
 	}
 }
 

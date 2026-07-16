@@ -44,6 +44,31 @@ func (s *Service) GetProfile(ctx context.Context) (Profile, error) {
 	return profile, err
 }
 
+// ProfileInputs returns the current profile and its append-only evidence for a
+// model-backed synthesis pass. The boolean reports whether the profile was
+// already persisted, allowing callers to preserve a known-good profile when a
+// provider is unavailable while still using deterministic fallback on first
+// refresh.
+func (s *Service) ProfileInputs(ctx context.Context) (Profile, []Event, bool, error) {
+	identity, err := identityFromContext(ctx)
+	if err != nil {
+		return Profile{}, nil, false, err
+	}
+
+	events, err := s.store.ListEvents(ctx, identity.workspaceID, identity.userID)
+	if err != nil {
+		return Profile{}, nil, false, err
+	}
+	profile, err := s.store.GetProfile(ctx, identity.workspaceID, identity.userID)
+	if errors.Is(err, ErrProfileNotFound) {
+		return s.defaultProfile(), events, false, nil
+	}
+	if err != nil {
+		return Profile{}, nil, false, err
+	}
+	return profile, events, true, nil
+}
+
 // RecordEvent validates and appends a scoped memory event.
 func (s *Service) RecordEvent(ctx context.Context, input RecordEventInput) (Event, error) {
 	identity, err := identityFromContext(ctx)
@@ -64,15 +89,15 @@ func (s *Service) RecordEvent(ctx context.Context, input RecordEventInput) (Even
 	}
 
 	event := Event{
-		ID:         newID("mem_evt"),
-		WorkspaceID:   identity.workspaceID,
-		UserID:     identity.userID,
-		Source:     source,
-		Type:       eventType,
-		Summary:    strings.TrimSpace(input.Summary),
-		Payload:    input.Payload,
-		OccurredAt: occurredAt,
-		CreatedAt:  now,
+		ID:          newID("mem_evt"),
+		WorkspaceID: identity.workspaceID,
+		UserID:      identity.userID,
+		Source:      source,
+		Type:        eventType,
+		Summary:     strings.TrimSpace(input.Summary),
+		Payload:     input.Payload,
+		OccurredAt:  occurredAt,
+		CreatedAt:   now,
 	}
 
 	if err := s.store.AppendEvent(ctx, event); err != nil {
@@ -130,6 +155,20 @@ func (s *Service) ReplaceNotes(ctx context.Context, notes []Note) (Profile, erro
 	return profile, nil
 }
 
+// ReplaceProfile atomically persists a fully curated profile for the scoped
+// user. Profile synthesis owns validation and server timestamps; this method
+// only enforces scope and persistence.
+func (s *Service) ReplaceProfile(ctx context.Context, profile Profile) (Profile, error) {
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+	if err := s.store.UpsertProfile(ctx, id.workspaceID, id.userID, profile); err != nil {
+		return Profile{}, err
+	}
+	return profile, nil
+}
+
 // RefreshProfileFor is the explicit-scope version of RefreshProfile. Use this
 // outside HTTP request handling — workers, smoke tests, or GenAI orchestration
 // code should not have to fabricate auth/workspace middleware context just to
@@ -164,7 +203,7 @@ func (s *Service) RefreshProfileFor(ctx context.Context, workspaceID, userID str
 // memory events. It is intentionally small: the worker owns scheduling, while
 // this service owns the memory semantics.
 func (s *Service) RefreshAllProfiles(ctx context.Context) (int, error) {
-	scopes, err := s.store.ListEventScopes(ctx)
+	scopes, err := s.ListEventScopes(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -174,6 +213,13 @@ func (s *Service) RefreshAllProfiles(ctx context.Context) (int, error) {
 		}
 	}
 	return len(scopes), nil
+}
+
+// ListEventScopes returns every workspace/user pair with memory evidence. It is
+// used by background synthesis workers, which do not have request middleware
+// to establish a scope for them.
+func (s *Service) ListEventScopes(ctx context.Context) ([]Scope, error) {
+	return s.store.ListEventScopes(ctx)
 }
 
 func (s *Service) ListEvents(ctx context.Context) ([]Event, error) {
@@ -199,7 +245,7 @@ func (s *Service) defaultProfile() Profile {
 
 type identity struct {
 	workspaceID string
-	userID   string
+	userID      string
 }
 
 func identityFromContext(ctx context.Context) (identity, error) {

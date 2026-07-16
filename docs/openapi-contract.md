@@ -26,8 +26,9 @@ Current routes:
 | `GET` | `/health` | No | Lightweight liveness check. |
 | `GET` | `/ready` | No | Readiness check; pings Postgres when a database URL is configured. |
 | `GET` | `/api/v1/memory/profile` | Yes | Fetch the scoped user's derived memory profile. |
-| `POST` | `/api/v1/memory/profile/refresh` | Yes | Rebuild and persist the scoped user's profile from memory events. |
-| `GET` | `/api/v1/memory/events` | Yes | List append-only memory events for the scoped user. |
+| `POST` | `/api/v1/memory/profile/refresh` | Yes | Manually synthesize and persist the scoped user's profile from bounded event evidence. |
+| `POST` | `/api/v1/memory/profile/maintain` | Yes | Run set-completion profile synthesis before the next generated set. |
+| `GET` | `/api/v1/memory/events` | Yes | List append-only memory events newest-first with explicit UTC timestamps. |
 | `POST` | `/api/v1/memory/events` | Yes | Record one append-only memory event. |
 | `GET` | `/api/v1/sessions` | Yes | List resumable practice session summaries. |
 | `POST` | `/api/v1/sessions` | Yes | Create a generated-problem, MCQ, or interview practice session. |
@@ -129,8 +130,10 @@ Create event response data:
 ```
 
 Profile response data includes `summary`, `updated_at`, `next_review_at`,
-`strengths`, `growth_edges`, `skills`, and `notes`. Profile refresh is currently
-synchronous; the service boundary is the same one the future worker can call.
+`strengths`, `growth_edges`, `skills`, `notes`, and optional synthesis
+`provenance`. The same validated synthesis operation serves manual refresh,
+set-completion refresh, and the scheduled worker. `/memory/notes/maintain`
+remains a deprecated compatibility alias for `/memory/profile/maintain`.
 
 ## Curl Examples
 

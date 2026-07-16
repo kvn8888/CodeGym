@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   Brain,
   CheckCircle2,
   Clock3,
-  MoreHorizontal,
   RefreshCw,
   RotateCcw,
   TrendingDown,
@@ -15,7 +14,6 @@ import {
 import { api } from '../../shared/api/client';
 import type {
   MemoryEvent,
-  MemoryNote,
   SkillProficiency,
   UserMemoryProfile,
 } from '../../shared/api/types';
@@ -28,30 +26,8 @@ import {
 } from '../../shared/components/WorkspacePage';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-
-type NoteFilter = 'all' | MemoryNote['action'];
-
-const actionLabels: Record<MemoryNote['action'], string> = {
-  keep: 'Keep',
-  review: 'Review',
-  prune: 'Prune',
-};
-
-const actionDots: Record<MemoryNote['action'], string> = {
-  keep: 'bg-green-700',
-  review: 'bg-amber-700',
-  prune: 'bg-red-700',
-};
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('en', {
@@ -91,7 +67,6 @@ export function MemoryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [noteFilter, setNoteFilter] = useState<NoteFilter>('all');
 
   const loadMemory = useCallback(async () => {
     setLoading(true);
@@ -146,12 +121,6 @@ export function MemoryPage() {
       setRefreshing(false);
     }
   };
-
-  const filteredNotes = useMemo(() => {
-    if (!profile) return [];
-    if (noteFilter === 'all') return profile.notes;
-    return profile.notes.filter((note) => note.action === noteFilter);
-  }, [noteFilter, profile]);
 
   if (loading) {
     return (
@@ -297,26 +266,16 @@ export function MemoryPage() {
             <WorkspaceSectionHeader
               title="Memory notes"
               description="Durable observations CodeGym carries into future practice."
-              actions={
-                <Tabs value={noteFilter} onValueChange={(value) => setNoteFilter(value as NoteFilter)}>
-                  <TabsList className="h-8" aria-label="Filter memory notes">
-                    <TabsTrigger value="all" className="px-2.5 text-xs">All</TabsTrigger>
-                    <TabsTrigger value="review" className="px-2.5 text-xs">Review</TabsTrigger>
-                    <TabsTrigger value="keep" className="px-2.5 text-xs">Keep</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              }
             />
-            {filteredNotes.length > 0 ? (
+            {profile.notes.length > 0 ? (
               <div className="overflow-hidden rounded-lg border">
-                {filteredNotes.map((note) => (
-                  <div key={note.id} className="flex gap-3 border-b px-3 py-3 last:border-b-0">
-                    <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', actionDots[note.action])} />
+                {profile.notes.map((note) => (
+                  <div
+                    key={note.id}
+                    className="flex flex-col gap-3 border-b px-3 py-3 last:border-b-0 sm:flex-row sm:items-start"
+                  >
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <h3 className="text-sm font-medium">{note.title}</h3>
-                        <span className="text-muted-foreground text-xs">{actionLabels[note.action]}</span>
-                      </div>
+                      <h3 className="text-sm font-medium">{note.title}</h3>
                       <p className="text-muted-foreground mt-1 text-sm leading-5">{note.summary}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         {note.tags.map((tag) => (
@@ -324,35 +283,40 @@ export function MemoryPage() {
                             {tag}
                           </Badge>
                         ))}
-                        <span className="text-muted-foreground ml-1 text-xs">{formatDate(note.created_at)}</span>
+                        <span className="text-muted-foreground ml-1 text-xs">
+                          Observed {formatDate(note.created_at)}
+                          {note.problem_id ? ' from a source problem' : ''}
+                        </span>
                       </div>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label={`Actions for ${note.title}`}>
-                          <MoreHorizontal />
+                    <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+                      {note.problem_id && (
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to={`/problems/${note.problem_id}`}>Source problem</Link>
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuGroup>
-                          <DropdownMenuItem asChild>
-                            <Link to={`/generate?prompt=${encodeURIComponent(note.title)}`}>Practice this</Link>
-                          </DropdownMenuItem>
-                          {note.problem_id && (
-                            <DropdownMenuItem asChild>
-                              <Link to={`/problems/${note.problem_id}`}>Open source problem</Link>
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      )}
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link to={`/generate?prompt=${encodeURIComponent(note.title)}`}>
+                          Practice
+                          <ArrowRight data-icon="inline-end" />
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
               <WorkspaceEmptyState
-                title="No notes in this view"
-                description="Choose another filter or finish more practice to grow your memory."
+                title="No memory notes yet"
+                description="Complete a practice session and CodeGym will save useful observations here."
+                action={
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/generate">
+                      Start practice
+                      <ArrowRight data-icon="inline-end" />
+                    </Link>
+                  </Button>
+                }
                 className="min-h-32"
               />
             )}
@@ -361,27 +325,9 @@ export function MemoryPage() {
 
         <aside className="min-w-0 lg:border-l lg:pl-7">
           <section>
-            <WorkspaceSectionHeader title="What is working" />
-            {profile.strengths.length > 0 ? (
-              <div className="flex flex-col divide-y rounded-lg border">
-                {profile.strengths.map((strength) => (
-                  <div key={strength} className="flex gap-2.5 px-3 py-3 text-sm leading-5">
-                    <CheckCircle2 className="mt-0.5 shrink-0 text-green-800" size={15} strokeWidth={1.8} />
-                    <span>{strength}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm leading-5">
-                Strengths appear after CodeGym observes repeated success.
-              </p>
-            )}
-          </section>
-
-          <section className="mt-7">
             <WorkspaceSectionHeader
               title="Recent activity"
-              description={`Next review ${formatRelativeDate(profile.next_review_at)}`}
+              description="Profile-shaping signals from your recent practice."
             />
             {events.length > 0 ? (
               <div className="flex flex-col">

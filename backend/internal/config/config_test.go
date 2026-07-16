@@ -104,9 +104,16 @@ func TestLoadMemoryWorkerConfig(t *testing.T) {
 	if cfg.MemoryWorker.Interval != 24*time.Hour {
 		t.Fatalf("MemoryWorker.Interval default = %s, want 24h", cfg.MemoryWorker.Interval)
 	}
+	if cfg.MemoryWorker.Trigger != MemoryRefreshBoth {
+		t.Fatalf("MemoryWorker.Trigger default = %q, want both", cfg.MemoryWorker.Trigger)
+	}
+	if !cfg.MemoryWorker.DailyEnabled() || !cfg.MemoryWorker.SetCompletionEnabled() {
+		t.Fatal("default memory refresh trigger should enable daily and set completion")
+	}
 
 	t.Setenv("CODEGYM_MEMORY_WORKER_DISABLED", "true")
 	t.Setenv("CODEGYM_MEMORY_WORKER_INTERVAL", "15m")
+	t.Setenv("CODEGYM_MEMORY_REFRESH_TRIGGER", "set-completion")
 
 	cfg = Load()
 	if !cfg.MemoryWorker.Disabled {
@@ -114,6 +121,38 @@ func TestLoadMemoryWorkerConfig(t *testing.T) {
 	}
 	if cfg.MemoryWorker.Interval != 15*time.Minute {
 		t.Fatalf("MemoryWorker.Interval = %s, want 15m", cfg.MemoryWorker.Interval)
+	}
+	if cfg.MemoryWorker.Trigger != MemoryRefreshSetCompletion || !cfg.MemoryWorker.SetCompletionEnabled() {
+		t.Fatalf("MemoryWorker.Trigger = %q, want set-completion", cfg.MemoryWorker.Trigger)
+	}
+	if cfg.MemoryWorker.DailyEnabled() {
+		t.Fatal("disabled worker must not enable daily refresh")
+	}
+
+	t.Setenv("CODEGYM_MEMORY_WORKER_DISABLED", "false")
+	t.Setenv("CODEGYM_MEMORY_REFRESH_TRIGGER", "invalid")
+	if got := Load().MemoryWorker.Trigger; got != MemoryRefreshBoth {
+		t.Fatalf("invalid MemoryWorker.Trigger = %q, want both fallback", got)
+	}
+}
+
+func TestMemoryRefreshTriggerModes(t *testing.T) {
+	tests := []struct {
+		trigger        string
+		wantDaily      bool
+		wantCompletion bool
+	}{
+		{trigger: MemoryRefreshDaily, wantDaily: true},
+		{trigger: MemoryRefreshSetCompletion, wantCompletion: true},
+		{trigger: MemoryRefreshBoth, wantDaily: true, wantCompletion: true},
+	}
+	for _, test := range tests {
+		t.Run(test.trigger, func(t *testing.T) {
+			cfg := WorkerConfig{Trigger: test.trigger}
+			if cfg.DailyEnabled() != test.wantDaily || cfg.SetCompletionEnabled() != test.wantCompletion {
+				t.Fatalf("daily=%t completion=%t", cfg.DailyEnabled(), cfg.SetCompletionEnabled())
+			}
+		})
 	}
 }
 
@@ -140,6 +179,7 @@ func clearConfigEnv(t *testing.T) {
 		"CODEGYM_CORS_ALLOWED_ORIGINS",
 		"CODEGYM_MEMORY_WORKER_DISABLED",
 		"CODEGYM_MEMORY_WORKER_INTERVAL",
+		"CODEGYM_MEMORY_REFRESH_TRIGGER",
 		"CODEGYM_GENAI_BASE_URL",
 		"CODEGYM_GENAI_API_KEY",
 		"AI_GATEWAY_API_KEY",

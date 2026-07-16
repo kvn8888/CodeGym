@@ -14,6 +14,19 @@ type Profile struct {
 	GrowthEdges  []string           `json:"growth_edges"`
 	Skills       []SkillProficiency `json:"skills"`
 	Notes        []Note             `json:"notes"`
+	Provenance   *ProfileProvenance `json:"provenance,omitempty"`
+}
+
+// ProfileProvenance records how a curated profile was produced without making
+// operational metadata part of the learner-facing UI.
+type ProfileProvenance struct {
+	SchemaVersion   int       `json:"schema_version"`
+	Trigger         string    `json:"trigger"`
+	Provider        string    `json:"provider"`
+	Model           string    `json:"model"`
+	SynthesizedAt   time.Time `json:"synthesized_at"`
+	EvidenceThrough time.Time `json:"evidence_through"`
+	EventCount      int       `json:"event_count"`
 }
 
 // SkillProficiency captures skill-level observations in the user profile.
@@ -40,15 +53,15 @@ type Note struct {
 
 // Event is an append-only memory event emitted from product surfaces.
 type Event struct {
-	ID         string          `json:"id"`
-	WorkspaceID   string          `json:"workspace_id"`
-	UserID     string          `json:"user_id"`
-	Source     string          `json:"source"`
-	Type       string          `json:"type"`
-	Summary    string          `json:"summary"`
-	Payload    json.RawMessage `json:"payload,omitempty"`
-	OccurredAt time.Time       `json:"occurred_at"`
-	CreatedAt  time.Time       `json:"created_at"`
+	ID          string          `json:"id"`
+	WorkspaceID string          `json:"workspace_id"`
+	UserID      string          `json:"user_id"`
+	Source      string          `json:"source"`
+	Type        string          `json:"type"`
+	Summary     string          `json:"summary"`
+	Payload     json.RawMessage `json:"payload,omitempty"`
+	OccurredAt  time.Time       `json:"occurred_at"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 // RecordEventInput is the HTTP/service input payload for appending events.

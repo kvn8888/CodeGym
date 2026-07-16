@@ -13,7 +13,7 @@ import (
 
 func TestOrchestratorInjectsMemoryContext(t *testing.T) {
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
-		UserID:          "kevin",
+		UserID:             "kevin",
 		DefaultWorkspaceID: "personal-kevin",
 		WorkspaceIDs:       []string{"personal-kevin"},
 	})
@@ -31,7 +31,7 @@ func TestOrchestratorInjectsMemoryContext(t *testing.T) {
 			{Label: "Graphs", Area: "DSA", Level: 2, Confidence: 60, Trend: "up"},
 		},
 		Notes: []memory.Note{
-			{ProblemID: "prob_graph", Title: "DFS", Summary: "Missed visited set", Tags: []string{"graphs"}},
+			{ProblemID: "prob_graph", Title: "DFS", Summary: "Missed visited set", Tags: []string{"graphs"}, Action: "review"},
 		},
 	})
 	if err != nil {
@@ -72,6 +72,9 @@ func TestOrchestratorInjectsMemoryContext(t *testing.T) {
 	}
 	if len(fake.request.MemoryContext.Notes) != 1 || fake.request.MemoryContext.Notes[0].ProblemID != "prob_graph" {
 		t.Fatalf("memory notes = %#v", fake.request.MemoryContext.Notes)
+	}
+	if fake.request.MemoryContext.Notes[0].Action != "review" {
+		t.Fatalf("memory note action = %q", fake.request.MemoryContext.Notes[0].Action)
 	}
 }
 

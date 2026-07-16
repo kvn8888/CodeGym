@@ -47,8 +47,8 @@ func (s *Service) GetProfile(ctx context.Context) (Profile, error) {
 // ProfileInputs returns the current profile and its append-only evidence for a
 // model-backed synthesis pass. The boolean reports whether the profile was
 // already persisted, allowing callers to preserve a known-good profile when a
-// provider is unavailable while still using deterministic fallback on first
-// refresh.
+// provider is unavailable without persisting deterministic conclusions on a
+// first refresh.
 func (s *Service) ProfileInputs(ctx context.Context) (Profile, []Event, bool, error) {
 	identity, err := identityFromContext(ctx)
 	if err != nil {
@@ -233,7 +233,7 @@ func (s *Service) ListEvents(ctx context.Context) ([]Event, error) {
 func (s *Service) defaultProfile() Profile {
 	now := s.now().UTC()
 	return Profile{
-		Summary:      "No durable memory profile has been built yet. New chat, generation, marathon, and attempt events will update this profile once the summarizer worker is connected.",
+		Summary:      "No memory summary yet. Complete a practice set to build one from your learning activity.",
 		UpdatedAt:    now,
 		NextReviewAt: now.Add(24 * time.Hour),
 		Strengths:    []string{},

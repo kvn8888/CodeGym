@@ -153,7 +153,6 @@ export function MemoryPage() {
     <WorkspacePage>
       <WorkspacePageHeader
         title="Memory"
-        description={profile.summary}
         actions={
           <>
             <span className="text-muted-foreground hidden text-xs sm:inline">
@@ -172,6 +171,26 @@ export function MemoryPage() {
           {error}
         </div>
       )}
+
+      <section
+        aria-labelledby="memory-summary-title"
+        className="mb-7 overflow-hidden rounded-lg border bg-card"
+      >
+        <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Brain className="text-muted-foreground shrink-0" size={17} strokeWidth={1.8} />
+            <h2 id="memory-summary-title" className="text-sm font-semibold">
+              Memory summary
+            </h2>
+          </div>
+          <span className="text-muted-foreground shrink-0 text-xs sm:hidden">
+            {formatRelativeDate(profile.updated_at)}
+          </span>
+        </div>
+        <p className="max-w-4xl px-4 py-4 text-sm leading-6 text-foreground">
+          {profile.summary}
+        </p>
+      </section>
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0">

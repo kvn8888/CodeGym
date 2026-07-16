@@ -97,8 +97,9 @@ The API server starts the LLM memory-profile worker by default. Request paths
 append deterministic events quickly; the worker periodically builds a bounded
 evidence digest and synthesizes the summary, strengths, growth edges, skills,
 and notes off the event-recording path. Invalid provider output preserves an
-existing profile. A first refresh can still use the deterministic v0 profile
-when generation is unavailable.
+existing profile. A first refresh without a usable provider remains an
+unpersisted empty state; deterministic evidence is never stored as if it were
+a curated user profile.
 
 Before a daily synthesis, the worker computes a SHA-256 digest of the filtered,
 bounded learning evidence. If that digest matches the profile's persisted

@@ -981,6 +981,8 @@ export function MarathonPage() {
       question_id: currentQ.id,
       topic: currentQ.concept,
       question_type: currentQuestionType,
+      skipped: true,
+      answer_revealed: true,
       duration_ms: skipped.timeMs,
       used_help: skipped.usedHelp,
       round,

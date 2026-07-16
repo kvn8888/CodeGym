@@ -158,7 +158,7 @@ export function DashboardPage() {
           <Button size="sm" asChild>
             <Link to="/generate">
               <Plus data-icon="inline-start" />
-              New practice
+              New
             </Link>
           </Button>
         }

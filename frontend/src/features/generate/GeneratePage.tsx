@@ -5,7 +5,6 @@ import { ArrowRight, Brain, Check, Clock3, Code2, ListChecks } from 'lucide-reac
 import { api } from '../../shared/api/client';
 import type {
   NewPracticeConfig,
-  MCQQuestionType,
   PracticeFormat,
   PracticeSession,
   PracticeSessionSummary,
@@ -29,11 +28,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 const questionCounts = [5, 10, 15];
-const questionTypeOptions: Array<{ value: MCQQuestionType; label: string }> = [
-  { value: 'single_select', label: 'Single' },
-  { value: 'multi_select', label: 'Multi' },
-  { value: 'free_response', label: 'Written' },
-];
 const difficulties: Array<{ value: NewPracticeConfig['difficulty']; label: string }> = [
   { value: 'easy', label: 'Easy' },
   { value: 'medium', label: 'Medium' },
@@ -49,7 +43,7 @@ const practiceFormats: Array<{
 }> = [
   {
     value: 'mcq',
-    label: 'Multiple choice',
+    label: 'Question set',
     shortLabel: 'MCQ',
     description: 'Timed concept checks with explanations after each answer.',
     icon: ListChecks,
@@ -87,7 +81,6 @@ export function GeneratePage() {
   const [prompt, setPrompt] = useState(() => searchParams.get('prompt') ?? '');
   const [difficulty, setDifficulty] = useState<NewPracticeConfig['difficulty']>('medium');
   const [count, setCount] = useState(5);
-  const [questionTypes, setQuestionTypes] = useState<MCQQuestionType[]>(['single_select']);
   const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
   const [recentSessions, setRecentSessions] = useState<PracticeSessionSummary[]>([]);
   const [starting, setStarting] = useState(false);
@@ -137,7 +130,6 @@ export function GeneratePage() {
       prompt: prompt.trim(),
       difficulty,
       count: format === 'mcq' ? count : 1,
-      ...(format === 'mcq' ? { questionTypes } : {}),
     };
 
     setStarting(true);
@@ -152,7 +144,6 @@ export function GeneratePage() {
             prompt: config.prompt,
             difficulty: config.difficulty,
             count: config.count,
-            question_types: config.questionTypes ?? ['single_select'],
             round: 1,
             question_index: 0,
             elapsed: 0,
@@ -209,7 +200,7 @@ export function GeneratePage() {
         description={
           format === 'coding'
             ? 'Generate a LeetCode-style coding problem personalized from your memory.'
-            : 'Set the focus for a personalized multiple-choice session.'
+            : 'Set the focus for a personalized question session.'
         }
       />
 
@@ -284,28 +275,6 @@ export function GeneratePage() {
                   <span className="font-mono tabular-nums">{prompt.length}/500</span>
                 </div>
               </div>
-
-              {format === 'mcq' && (
-                <fieldset className="border-t p-4 sm:p-5">
-                  <legend className="mb-2 text-sm font-medium">Question types</legend>
-                  <ToggleGroup
-                    type="multiple"
-                    value={questionTypes}
-                    onValueChange={(values) => {
-                      if (values.length > 0) setQuestionTypes(values as MCQQuestionType[]);
-                    }}
-                    variant="outline"
-                    className="justify-start"
-                    aria-label="Question types"
-                  >
-                    {questionTypeOptions.map((item) => (
-                      <ToggleGroupItem key={item.value} value={item.value} className="px-3">
-                        {item.label}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </fieldset>
-              )}
 
               <div className={`grid border-t ${format === 'mcq' ? 'sm:grid-cols-2' : ''}`}>
                 {format === 'mcq' && (

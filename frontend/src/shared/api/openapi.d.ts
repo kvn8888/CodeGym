@@ -547,6 +547,7 @@ export interface components {
             kind: "mcq" | "problem" | "interview";
             spec?: components["schemas"]["MCQSpec"];
         };
+        /** @description The model chooses single-select, multi-select, or free-response independently for each generated question. */
         MCQSpec: {
             /**
              * @description Coarse topic; empty spreads questions across growth edges.
@@ -564,13 +565,6 @@ export interface components {
             difficulty?: string;
             /** @description Round number in a continuous marathon; later rounds avoid repeating earlier questions. */
             round?: number;
-            /**
-             * @description Enabled question types for the generated set. Multiple values produce a mixed set.
-             * @default [
-             *       "single_select"
-             *     ]
-             */
-            question_types: ("single_select" | "multi_select" | "free_response")[];
         };
         MaintainProfileInput: {
             /**

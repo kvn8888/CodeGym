@@ -97,6 +97,9 @@ func TestGenerateMCQSetHappyPath(t *testing.T) {
 	if !strings.Contains(request.Instructions, "mixed-question marathon generator") {
 		t.Error("instructions are missing the MCQ system prompt")
 	}
+	if !strings.Contains(request.Instructions, "choose the type that best tests") {
+		t.Error("instructions do not delegate question-type selection to the model")
+	}
 	if request.Schema.Name != "mcq_set" {
 		t.Errorf("schema name = %q", request.Schema.Name)
 	}
@@ -121,6 +124,21 @@ func TestGenerateMCQSetRetriesOnceOnInvalidOutput(t *testing.T) {
 	}
 	if !strings.Contains(generator.requests[1].Instructions, "previous output was rejected") {
 		t.Error("retry instructions do not carry the validation error back")
+	}
+}
+
+func TestGenerateMCQSetAcceptsModelSelectedQuestionTypes(t *testing.T) {
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`[
+		{"id":"mq1","type":"multi_select","text":"Select all","options":["a","b","c","d"],"correctIndices":[0,2],"concept":"C","helpContent":"H"},
+		{"id":"mq2","type":"free_response","text":"Explain","expectedAnswer":"A","rubric":"R","concept":"C","helpContent":"H"}
+	]`)}}
+
+	questions, _, err := GenerateMCQSet(scopedContext(), newTestOrchestrator(generator), MCQSpec{Count: 2})
+	if err != nil {
+		t.Fatalf("GenerateMCQSet: %v", err)
+	}
+	if questions[0].Type != MCQMultiSelect || questions[1].Type != MCQFreeResponse {
+		t.Fatalf("model-selected types = %#v", questions)
 	}
 }
 
@@ -204,20 +222,6 @@ func TestValidateMCQSet(t *testing.T) {
 				t.Errorf("err = %v, wantErr = %v", err, testCase.wantErr)
 			}
 		})
-	}
-}
-
-func TestNormalizeMCQSpecQuestionTypes(t *testing.T) {
-	defaulted, err := NormalizeMCQSpec(MCQSpec{Count: 2})
-	if err != nil || len(defaulted.QuestionTypes) != 1 || defaulted.QuestionTypes[0] != MCQSingleSelect {
-		t.Fatalf("defaulted spec = %#v, err=%v", defaulted, err)
-	}
-	mixed, err := NormalizeMCQSpec(MCQSpec{Count: 2, QuestionTypes: []MCQQuestionType{MCQMultiSelect, MCQFreeResponse, MCQMultiSelect}})
-	if err != nil || len(mixed.QuestionTypes) != 2 {
-		t.Fatalf("mixed spec = %#v, err=%v", mixed, err)
-	}
-	if _, err := NormalizeMCQSpec(MCQSpec{Count: 2, QuestionTypes: []MCQQuestionType{"essay"}}); err == nil {
-		t.Fatal("expected unsupported type error")
 	}
 }
 

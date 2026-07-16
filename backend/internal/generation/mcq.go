@@ -21,8 +21,7 @@ type MCQSpec struct {
 	Difficulty string `json:"difficulty,omitempty"`
 	// Round distinguishes successive rounds of a continuous marathon so the
 	// model can avoid repeating earlier questions verbatim.
-	Round         int               `json:"round,omitempty"`
-	QuestionTypes []MCQQuestionType `json:"question_types,omitempty"`
+	Round int `json:"round,omitempty"`
 }
 
 type MCQQuestionType string
@@ -61,7 +60,7 @@ const (
 
 // mcqSystemPrompt is the kind-specific instruction block. It mirrors
 // docs/ai-prompts/05-mcq-marathon.md; keep the two in sync when tuning.
-const mcqSystemPrompt = `You are the mixed-question marathon generator for CodeGym, an interview-practice tool. Produce ONE JSON array containing only the question types enabled by spec.question_types.
+const mcqSystemPrompt = `You are the mixed-question marathon generator for CodeGym, an interview-practice tool. Produce ONE JSON array of questions. For each question, choose the type that best tests that specific concept: single_select, multi_select, or free_response.
 
 Single select:
 {
@@ -89,7 +88,8 @@ Free response:
 Rules:
 - Return a top-level JSON **array** of questions only. Do not wrap the array in an object, schema document, or {"type":"array","items":...} envelope.
 - Generate exactly the requested count of questions. The spec's "prompt" field is the user's own ask ("what do you want to study?") — treat it as the primary topic directive when present; fall back to "topic", then to a spread across the user's growth edges.
-- Use only spec.question_types. If more than one type is enabled, distribute them as evenly as practical across the set.
+- Choose each question's type independently based on pedagogical fit. Use single_select for one clearly best option, multi_select when recognizing a complete set matters, and free_response when the learner should explain or recall an idea without answer cues.
+- Do not force an even quota or a particular mix. A set may use one type repeatedly when that is genuinely the best fit, but vary formats when the concepts support it.
 - The personalization context includes memory NOTES — the user's living study journal. Notes with action "review" are known gaps: prioritize questions that probe those concepts. Notes with action "keep" are mastered techniques: avoid re-testing them unless the user's prompt asks for them.
 - Single-select and multi-select items have exactly 4 plausible options. Single-select has exactly one correctIndex. Multi-select has 1-3 unique correctIndices and must require selecting the complete set.
 - Free-response items have no options or correct indices. expectedAnswer and rubric must be concise and objective. helpContent must not reveal expectedAnswer.
@@ -139,24 +139,6 @@ func NormalizeMCQSpec(spec MCQSpec) (MCQSpec, error) {
 	if spec.Count < mcqMinCount || spec.Count > mcqMaxCount {
 		return spec, fmt.Errorf("count must be between %d and %d", mcqMinCount, mcqMaxCount)
 	}
-	if len(spec.QuestionTypes) == 0 {
-		spec.QuestionTypes = []MCQQuestionType{MCQSingleSelect}
-	}
-	seenTypes := map[MCQQuestionType]bool{}
-	normalizedTypes := make([]MCQQuestionType, 0, len(spec.QuestionTypes))
-	for _, questionType := range spec.QuestionTypes {
-		questionType = MCQQuestionType(strings.ToLower(strings.TrimSpace(string(questionType))))
-		switch questionType {
-		case MCQSingleSelect, MCQMultiSelect, MCQFreeResponse:
-		default:
-			return spec, fmt.Errorf("unsupported question type %q", questionType)
-		}
-		if !seenTypes[questionType] {
-			seenTypes[questionType] = true
-			normalizedTypes = append(normalizedTypes, questionType)
-		}
-	}
-	spec.QuestionTypes = normalizedTypes
 	return spec, nil
 }
 
@@ -320,9 +302,6 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 
 		questions, validateErr := ValidateMCQSet(result.Object, spec.Count)
 		if validateErr == nil {
-			validateErr = validateMCQQuestionTypes(questions, spec.QuestionTypes)
-		}
-		if validateErr == nil {
 			return questions, result, nil
 		}
 
@@ -344,17 +323,4 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 		RawOutput: lastRawOutput,
 		Err:       lastErr,
 	}
-}
-
-func validateMCQQuestionTypes(questions []MCQQuestion, allowed []MCQQuestionType) error {
-	allowedSet := map[MCQQuestionType]bool{}
-	for _, questionType := range allowed {
-		allowedSet[questionType] = true
-	}
-	for index, question := range questions {
-		if !allowedSet[question.Type] {
-			return fmt.Errorf("question %d uses disabled type %q", index+1, question.Type)
-		}
-	}
-	return nil
 }

@@ -29,7 +29,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/generate', label: 'New practice', icon: Plus },
+  { path: '/generate', label: 'New', icon: Plus },
   {
     path: '/',
     label: 'History',

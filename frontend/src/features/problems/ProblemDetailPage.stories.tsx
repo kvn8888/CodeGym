@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { expect, userEvent, within } from 'storybook/test';
 import { ProblemDetailPage } from './ProblemDetailPage';
 import type { Problem, SubmissionFile, TestResult } from '../../shared/api/types';
 
@@ -182,84 +183,41 @@ const compileErrorResult: TestResult = {
 ./solution.go:6:1: syntax error: non-declaration statement outside function body`,
 };
 
-function makeFetch(problem: Problem, skeleton: { files: SubmissionFile[] }, result?: TestResult) {
-  return (url: string, options?: RequestInit) => {
-    const u = String(url);
-    if (u.includes('/skeleton')) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ data: skeleton, error: null }), {
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    if (u.includes('/submissions') && options?.method === 'POST') {
-      return Promise.resolve(
-        new Response(JSON.stringify({ data: { submission_id: 'sub-123' }, error: null }), {
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    if (u.includes('/submissions')) {
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({ data: { status: result ? 'pass' : 'pending', result }, error: null }),
-          { headers: { 'Content-Type': 'application/json' } },
-        ),
-      );
-    }
-    if (u.includes('/problems')) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ data: problem, error: null }), {
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    return Promise.resolve(
-      new Response(JSON.stringify({ data: null, error: { code: 'NOT_FOUND', message: 'Not found' } }), {
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
-  };
+function problemFixture(
+  problem: Problem,
+  skeleton: { files: SubmissionFile[] },
+  result?: TestResult,
+) {
+  return { problem, files: skeleton.files, result };
+}
+
+async function runAndExpect(canvasElement: HTMLElement, resultLabel: string) {
+  const canvas = within(canvasElement);
+  await userEvent.click(await canvas.findByRole('button', { name: 'Run' }));
+  await expect(await canvas.findByText(resultLabel)).toBeInTheDocument();
 }
 
 export const GoTwoSum: Story = {
   name: 'Go – Two Sum (editor)',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(twoSum, goSkeleton) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  parameters: { mockProblemFixture: problemFixture(twoSum, goSkeleton) },
 };
 
 export const GoTwoSumPassed: Story = {
   name: 'Go – All Tests Passed',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(twoSum, goSkeleton, passedResult) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  parameters: { mockProblemFixture: problemFixture(twoSum, goSkeleton, passedResult) },
+  play: ({ canvasElement }) => runAndExpect(canvasElement, 'Accepted'),
 };
 
 export const GoTwoSumFailed: Story = {
   name: 'Go – Tests Failed',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(twoSum, goSkeleton, failedResult) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  parameters: { mockProblemFixture: problemFixture(twoSum, goSkeleton, failedResult) },
+  play: ({ canvasElement }) => runAndExpect(canvasElement, 'Tests failed'),
 };
 
 export const GoTwoSumCompileError: Story = {
   name: 'Go – Compile Error',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(twoSum, goSkeleton, compileErrorResult) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  parameters: { mockProblemFixture: problemFixture(twoSum, goSkeleton, compileErrorResult) },
+  play: ({ canvasElement }) => runAndExpect(canvasElement, 'Tests failed'),
 };
 
 export const ExpressPagination: Story = {
@@ -267,11 +225,6 @@ export const ExpressPagination: Story = {
   parameters: {
     initialPath: '/problems/express-pagination',
     routePath: '/problems/:id',
+    mockProblemFixture: problemFixture(expressePagination, expressSkeletonFiles),
   },
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(expressePagination, expressSkeletonFiles) as typeof fetch;
-      return <Story />;
-    },
-  ],
 };

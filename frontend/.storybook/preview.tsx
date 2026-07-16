@@ -1,7 +1,12 @@
 import type { Preview } from '@storybook/react-vite';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import '../src/index.css';
-import { setMockApiScenario, type MockApiScenario } from '../src/mocks/apiProxy';
+import {
+  setMockApiScenario,
+  setMockProblemFixture,
+  type MockApiScenario,
+  type MockProblemFixture,
+} from '../src/mocks/apiProxy';
 
 const preview: Preview = {
   decorators: [
@@ -9,6 +14,9 @@ const preview: Preview = {
       const initialPath = context.parameters.initialPath ?? '/';
       const routePath = context.parameters.routePath ?? '*';
       setMockApiScenario((context.parameters.mockApiScenario ?? 'default') as MockApiScenario);
+      setMockProblemFixture(
+        (context.parameters.mockProblemFixture as MockProblemFixture | undefined) ?? null,
+      );
       return (
         <MemoryRouter initialEntries={[initialPath]}>
           <Routes>

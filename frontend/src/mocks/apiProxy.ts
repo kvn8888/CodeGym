@@ -5,6 +5,9 @@ import { mockMemoryEvents, mockSessions } from './activityFixtures';
 import type {
   MemoryEvent,
   PracticeSession,
+  Problem,
+  SubmissionFile,
+  TestResult,
   UserProfile,
 } from '../shared/api/types';
 
@@ -47,10 +50,22 @@ export type MockApiScenario = 'default' | 'empty' | 'error' | 'loading';
 
 let mockApiScenario: MockApiScenario = 'default';
 
+export interface MockProblemFixture {
+  problem: Problem;
+  files: SubmissionFile[];
+  result?: TestResult;
+}
+
+let mockProblemFixture: MockProblemFixture | null = null;
+
 export function setMockApiScenario(scenario: MockApiScenario) {
   mockApiScenario = scenario;
   sessions = structuredClone(mockSessions);
   memoryEvents = scenario === 'empty' ? [] : createMemoryEventSeed();
+}
+
+export function setMockProblemFixture(fixture: MockProblemFixture | null) {
+  mockProblemFixture = fixture ? structuredClone(fixture) : null;
 }
 
 function json<T>(data: T, init?: ResponseInit): Response {
@@ -256,7 +271,10 @@ export async function mockApiFetch(
   const problemSkeletonMatch = path.match(/^\/problems\/([^/]+)\/skeleton$/);
   if (method === 'GET' && problemSkeletonMatch) {
     const problemId = problemSkeletonMatch[1];
-    const files = mockSkeletons[problemId];
+    const files =
+      mockProblemFixture?.problem.id === problemId
+        ? mockProblemFixture.files
+        : mockSkeletons[problemId];
 
     if (!files) {
       return error('not_found', `No mock skeleton found for ${problemId}`);
@@ -268,7 +286,10 @@ export async function mockApiFetch(
   const problemMatch = path.match(/^\/problems\/([^/]+)$/);
   if (method === 'GET' && problemMatch) {
     const problemId = problemMatch[1];
-    const problem = mockProblems.find((candidate) => candidate.id === problemId);
+    const problem =
+      mockProblemFixture?.problem.id === problemId
+        ? mockProblemFixture.problem
+        : mockProblems.find((candidate) => candidate.id === problemId);
 
     if (!problem) {
       return error('not_found', `No mock problem found for ${problemId}`);
@@ -283,6 +304,13 @@ export async function mockApiFetch(
 
   const submissionMatch = path.match(/^\/submissions\/([^/]+)$/);
   if (method === 'GET' && submissionMatch) {
+    if (mockProblemFixture) {
+      return json({
+        status: mockProblemFixture.result ? 'completed' : 'pending',
+        ...(mockProblemFixture.result ? { result: mockProblemFixture.result } : {}),
+      });
+    }
+
     return json({
       status: 'completed',
       result: mockPassingResult,

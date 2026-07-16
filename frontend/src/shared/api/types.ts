@@ -169,7 +169,6 @@ export interface NewPracticeConfig {
   prompt: string;
   difficulty: 'easy' | 'medium' | 'hard';
   count: number;
-  questionTypes?: MCQQuestionType[];
 }
 
 /** Aggregate from GET /api/v1/cost — estimated GenAI spend for this workspace user. */

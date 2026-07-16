@@ -1118,6 +1118,7 @@ components:
 
     MCQSpec:
       type: object
+      description: The model chooses single-select, multi-select, or free-response independently for each generated question.
       properties:
         topic:
           type: string
@@ -1140,16 +1141,6 @@ components:
           type: integer
           minimum: 0
           description: Round number in a continuous marathon; later rounds avoid repeating earlier questions.
-        question_types:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          default: [single_select]
-          description: Enabled question types for the generated set. Multiple values produce a mixed set.
-          items:
-            type: string
-            enum: [single_select, multi_select, free_response]
-
     MaintainProfileInput:
       type: object
       properties:

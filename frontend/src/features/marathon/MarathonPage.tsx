@@ -84,7 +84,6 @@ interface MarathonSessionState {
   prompt: string;
   difficulty: NewPracticeConfig['difficulty'];
   count: number;
-  question_types: MCQQuestionType[];
   round: number;
   question_index: number;
   elapsed: number;
@@ -117,7 +116,6 @@ const DEFAULT_CONFIG: NewPracticeConfig = {
   prompt: '',
   difficulty: 'medium',
   count: 5,
-  questionTypes: ['single_select'],
 };
 
 function normalizeMarathonSessionState(value: unknown): MarathonSessionState | null {
@@ -143,9 +141,6 @@ function normalizeMarathonSessionState(value: unknown): MarathonSessionState | n
     prompt: candidate.prompt,
     difficulty: candidate.difficulty,
     count: candidate.count,
-    question_types: Array.isArray(candidate.question_types) && candidate.question_types.length > 0
-      ? candidate.question_types
-      : ['single_select'],
     round: candidate.round,
     question_index: candidate.question_index,
     elapsed: candidate.elapsed,
@@ -267,10 +262,8 @@ const MOCK_QUESTIONS: MarathonQuestion[] = [
   },
 ];
 
-function buildFallbackQuestions(questionTypes: MCQQuestionType[] | undefined, count: number) {
-  const enabled = new Set(questionTypes?.length ? questionTypes : ['single_select']);
-  const candidates = MOCK_QUESTIONS.filter((question) => enabled.has(questionTypeOf(question)));
-  const source = candidates.length > 0 ? candidates : MOCK_QUESTIONS.filter((question) => questionTypeOf(question) === 'single_select');
+function buildFallbackQuestions(count: number) {
+  const source = MOCK_QUESTIONS;
   return Array.from({ length: count }, (_, index) => ({
     ...source[index % source.length],
     id: `fallback-${index + 1}`,
@@ -421,10 +414,6 @@ export function MarathonPage() {
   );
 
   const [questionCount, setQuestionCount] = useState(launch?.config.count ?? DEFAULT_CONFIG.count);
-  const [questionTypes, setQuestionTypes] = useState<MCQQuestionType[]>(
-    launch?.config.questionTypes?.length ? launch.config.questionTypes : ['single_select'],
-  );
-
   // 1-based round number in the continuous marathon loop.
   const [round, setRound] = useState(1);
 
@@ -516,9 +505,9 @@ export function MarathonPage() {
    *  set when generation is unavailable. */
   const generateRound = async (
     roundNumber: number,
-    config: NewPracticeConfig = { prompt: studyPrompt, difficulty, count: questionCount, questionTypes },
+    config: NewPracticeConfig = { prompt: studyPrompt, difficulty, count: questionCount },
   ) => {
-    let nextQuestions = buildFallbackQuestions(config.questionTypes, config.count);
+    let nextQuestions = buildFallbackQuestions(config.count);
     let fallback = true;
     try {
       const generated = await api.post<GenerateMcqResponse>('/generate', {
@@ -529,7 +518,6 @@ export function MarathonPage() {
           count: config.count,
           difficulty: config.difficulty,
           round: roundNumber,
-          question_types: config.questionTypes?.length ? config.questionTypes : ['single_select'],
         },
       });
       if (generated.questions?.length) {
@@ -574,7 +562,6 @@ export function MarathonPage() {
     prompt: studyPrompt,
     difficulty,
     count: questionCount,
-    question_types: questionTypes,
     round,
     question_index: questionIndex,
     elapsed,
@@ -619,7 +606,6 @@ export function MarathonPage() {
         prompt: config.prompt,
         difficulty: config.difficulty,
         count: config.count,
-        question_types: config.questionTypes?.length ? config.questionTypes : ['single_select'],
         round: 1,
         question_index: 0,
         elapsed: 0,
@@ -672,7 +658,7 @@ export function MarathonPage() {
 
   /** Start the marathon at round 1. */
   const handleStart = async (config?: NewPracticeConfig) => {
-    const nextConfig = config ?? { prompt: studyPrompt, difficulty, count: questionCount, questionTypes };
+    const nextConfig = config ?? { prompt: studyPrompt, difficulty, count: questionCount };
     setPhase('loading');
     setIsFinishing(false);
     setSessionError(null);
@@ -685,7 +671,6 @@ export function MarathonPage() {
     setStudyPrompt(nextConfig.prompt);
     setDifficulty(nextConfig.difficulty);
     setQuestionCount(nextConfig.count);
-    setQuestionTypes(nextConfig.questionTypes?.length ? nextConfig.questionTypes : ['single_select']);
     try {
       const durableSessionId = await ensurePracticeSession(nextConfig);
       baseIdRef.current = durableSessionId;
@@ -696,7 +681,6 @@ export function MarathonPage() {
         prompt: nextConfig.prompt,
         difficulty: nextConfig.difficulty,
         count: nextConfig.count,
-        question_types: nextConfig.questionTypes?.length ? nextConfig.questionTypes : ['single_select'],
         round: 1,
         question_index: 0,
         elapsed: 0,
@@ -737,7 +721,6 @@ export function MarathonPage() {
             setStudyPrompt(snapshot.prompt);
             setDifficulty(snapshot.difficulty);
             setQuestionCount(snapshot.count);
-            setQuestionTypes(snapshot.question_types);
             setRound(snapshot.round);
             setQuestions(snapshot.questions.length > 0 ? snapshot.questions : MOCK_QUESTIONS);
             setResults(snapshot.results);
@@ -750,7 +733,6 @@ export function MarathonPage() {
           setStudyPrompt(snapshot.prompt);
           setDifficulty(snapshot.difficulty);
           setQuestionCount(snapshot.count);
-          setQuestionTypes(snapshot.question_types);
           setRound(snapshot.round);
           setQuestionIndex(Math.min(snapshot.question_index, snapshot.questions.length - 1));
           setElapsed(snapshot.elapsed);
@@ -773,7 +755,6 @@ export function MarathonPage() {
               prompt: snapshot.prompt,
               difficulty: snapshot.difficulty,
               count: snapshot.count,
-              questionTypes: snapshot.question_types,
             }
           : DEFAULT_CONFIG;
         await handleStart(fallbackConfig);

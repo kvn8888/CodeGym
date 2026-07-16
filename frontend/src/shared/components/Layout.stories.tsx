@@ -13,7 +13,7 @@ const meta: Meta<typeof Layout> = {
 export default meta;
 type Story = StoryObj<typeof Layout>;
 
-export const OnProblems: Story = {
+export const OnHistory: Story = {
   parameters: { initialPath: '/' },
 };
 

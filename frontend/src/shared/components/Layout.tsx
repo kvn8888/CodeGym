@@ -3,13 +3,12 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   Brain,
-  Grid2X2,
+  History,
   LayoutDashboard,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Rows3,
   Settings,
   X,
   type LucideIcon,
@@ -33,11 +32,10 @@ const navItems: NavItem[] = [
   { path: '/generate', label: 'New practice', icon: Plus },
   {
     path: '/',
-    label: 'Problems',
-    icon: Grid2X2,
+    label: 'History',
+    icon: History,
     match: (pathname: string) => pathname === '/' || pathname.startsWith('/problems'),
   },
-  { path: '/marathon', label: 'Marathon', icon: Rows3 },
   { path: '/memory', label: 'Memory', icon: Brain },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];

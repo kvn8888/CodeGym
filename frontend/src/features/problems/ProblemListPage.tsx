@@ -152,7 +152,7 @@ export function ProblemListPage() {
   return (
     <WorkspacePage>
       <WorkspacePageHeader
-        title="Problems"
+        title="History"
         description="Resume multiple-choice practice or open a coding problem."
       />
 

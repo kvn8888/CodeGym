@@ -8,7 +8,7 @@ import {
   SkipForwardIcon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { HelpFlashcard } from './HelpFlashcard';
 import { api } from '../../shared/api/client';
@@ -16,7 +16,6 @@ import type { NewPracticeConfig, PracticeSession } from '../../shared/api/types'
 import { WorkspacePage } from '../../shared/components/WorkspacePage';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
@@ -289,8 +288,10 @@ function MemoryUpdateToast({ status }: { status: MemoryUpdateStatus }) {
 /**
  * MarathonPage — timed multiple-choice question marathon.
  *
- * Four states:
- * - idle: start screen (select topic, see previous scores)
+ * Entry is only via New Practice launch state or `?session=` resume.
+ * Bare `/marathon` redirects to `/generate`.
+ *
+ * States:
  * - loading: generating a personalized set via POST /api/v1/generate
  * - active: question display with timer + options + help button
  * - results: score summary + time breakdown + recommendations
@@ -303,9 +304,7 @@ export function MarathonPage() {
   const requestedSessionId = searchParams.get('session') ?? '';
 
   // Which phase the marathon is in.
-  const [phase, setPhase] = useState<'idle' | 'loading' | 'active' | 'results'>(
-    launch || requestedSessionId ? 'loading' : 'idle',
-  );
+  const [phase, setPhase] = useState<'loading' | 'active' | 'results'>('loading');
 
   // Guard: prevents accidental option selection when Next button unmounts
   // and mouseup lands on an option button underneath.
@@ -614,7 +613,7 @@ export function MarathonPage() {
       });
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : 'Could not start the practice session.');
-      setPhase('idle');
+      navigate('/generate', { replace: true });
     }
   };
 
@@ -673,11 +672,10 @@ export function MarathonPage() {
             }
           : DEFAULT_CONFIG;
         await handleStart(fallbackConfig);
-      } catch (err) {
+      } catch {
         practiceSessionIdRef.current = '';
         baseIdRef.current = '';
-        setSessionError(err instanceof Error ? err.message : 'Could not restore this practice session.');
-        setPhase('idle');
+        navigate('/generate', { replace: true });
       }
     };
 
@@ -869,52 +867,8 @@ export function MarathonPage() {
     setHelpUsed(true);
   };
 
-  // ── Idle state: start screen ─────────────────────────────────────────────
-  if (phase === 'idle') {
-    return (
-      <WorkspacePage>
-        <Card className="mx-auto max-w-xl gap-0 px-6 py-8 text-center">
-          <h1 className="mb-3 text-[28px] leading-9 font-semibold">
-            MCQ Marathon
-          </h1>
-          <p className="text-muted-foreground mx-auto mb-6 max-w-md text-sm leading-5">
-            Rounds of {questionCount} timed questions. After every round the AI updates its notes on
-            you and builds the next round from what it learned — keep going until you hit Finished.
-          </p>
-          <div className="mx-auto mb-6 w-full max-w-md text-left">
-            <label
-              htmlFor="study-prompt"
-              className="text-muted-foreground mb-2 block text-xs font-semibold uppercase tracking-wide"
-            >
-              What do you want to study?
-            </label>
-            <Input
-              id="study-prompt"
-              value={studyPrompt}
-              onChange={(e) => setStudyPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleStart();
-              }}
-              placeholder="e.g. SQL joins, Go concurrency, caching patterns"
-              maxLength={500}
-            />
-            <p className="text-muted-foreground/70 mt-2 text-xs">
-              Optional — leave empty to drill your current growth edges.
-            </p>
-            {sessionError && (
-              <p className="text-destructive mt-3 text-sm" role="alert">
-                {sessionError}
-              </p>
-            )}
-          </div>
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="inline-block">
-            <Button size="lg" onClick={() => void handleStart()}>
-              Start Marathon
-            </Button>
-          </motion.div>
-        </Card>
-      </WorkspacePage>
-    );
+  if (!launch && !requestedSessionId) {
+    return <Navigate to="/generate" replace />;
   }
 
   // ── Loading state: memory reflection + next round generation ─────────────
@@ -1037,8 +991,8 @@ export function MarathonPage() {
           >
             Try Again
           </Button>
-          <Button variant="outline" onClick={() => setPhase('idle')}>
-            Back
+          <Button variant="outline" onClick={() => navigate('/generate')}>
+            New practice
           </Button>
         </div>
       </div>

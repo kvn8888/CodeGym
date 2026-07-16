@@ -35,11 +35,6 @@ export function HelpFlashcard({ concept, explanation, onClose }: HelpFlashcardPr
 
         <div className="px-6 pt-4 pb-6">
           <p className="text-muted-foreground text-sm leading-6">{explanation}</p>
-
-          <div className="text-muted-foreground mt-4 flex items-center gap-1.5 text-xs">
-            <InfoIcon className="size-3" />
-            This explains the concept — it won't give away the answer.
-          </div>
         </div>
       </DialogContent>
     </Dialog>

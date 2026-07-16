@@ -81,7 +81,7 @@ naming guide: additive, readers tolerant of missing fields).
     "last_run": { "passed": 2, "total": 5 } }
   ```
 
-- `mcq`: full progress inline — answer and neutral skip records are small.
+- `mcq`: full progress inline — answer and skip records are small.
 
   ```json
   { "schema_version": 1, "question_index": 4, "selected_index": null,
@@ -93,8 +93,9 @@ naming guide: additive, readers tolerant of missing fields).
   The active question index, timer, draft selection or written response,
   completed AI evaluation, generated questions, answer
   results, and skips are persisted so the run can reopen exactly where it left
-  off. A skip is continuity data only: it is excluded from answer results and
-  does not emit `question_answered` or `answer_incorrect` memory events.
+  off. A skip is continuity data in the session snapshot (separate from answer
+  results for UI), and memory treats it like a miss via `answer_incorrect`
+  with `skipped: true`.
 
 - `interview`: pointer state only; the transcript needs an append-only
   `session_messages` table (`id`, `session_id`, `role`, `content`,

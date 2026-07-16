@@ -54,8 +54,9 @@ interface QuestionResult {
   usedHelp: boolean;
 }
 
-/** A skipped question is persisted for resume/history without becoming an
- *  answer result or a correctness signal for memory. */
+/** A skipped question is persisted for resume/history. Memory treats skips
+ *  like misses (`answer_incorrect`); they stay out of answer `results` so the
+ *  UI can still show them as skipped. */
 interface SkippedQuestion {
   questionId: string;
   concept: string;
@@ -371,7 +372,7 @@ export function MarathonPage() {
   // Accumulated results for each answered question.
   const [results, setResults] = useState<QuestionResult[]>([]);
 
-  // Skips are continuity data only and never count as correct/incorrect answers.
+  // Skips stay out of answer `results` for UI, but emit `answer_incorrect` for memory.
   const [skippedQuestions, setSkippedQuestions] = useState<SkippedQuestion[]>([]);
 
   // Timer: seconds elapsed on the current question.
@@ -959,7 +960,7 @@ export function MarathonPage() {
     }
   };
 
-  /** Advance without producing answer correctness data. */
+  /** Advance without an answer selection. Memory treats this like a miss. */
   const handleSkip = () => {
     if (confirmed) return;
     const skipped: SkippedQuestion = {
@@ -976,11 +977,12 @@ export function MarathonPage() {
     setEvaluationResult(null);
     setConfirmed(true);
     setSkippedQuestions(nextSkippedQuestions);
-    trackMcqEvent('question_skipped', `Skipped a ${currentQ.concept} question.`, {
+    trackMcqEvent('answer_incorrect', `Skipped a ${currentQ.concept} question.`, {
       session_id: sessionIdRef.current,
       question_id: currentQ.id,
       topic: currentQ.concept,
       question_type: currentQuestionType,
+      correct: false,
       skipped: true,
       answer_revealed: true,
       duration_ms: skipped.timeMs,

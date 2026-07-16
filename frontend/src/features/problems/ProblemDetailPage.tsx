@@ -7,11 +7,16 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { useParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
 import Editor from '@monaco-editor/react';
 import { api } from '../../shared/api/client';
-import type { Problem, SubmissionFile, TestResult, TestCaseResult } from '../../shared/api/types';
+import type { Problem, SubmissionFile, TestResult } from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
+import {
+  ProblemFileToolbar,
+  ProblemHeader,
+  ProblemStatement,
+  ProblemTestResults,
+} from './components/ProblemWorkspaceComponents';
 
 const languageMap: Record<string, string> = {
   go: 'go',
@@ -46,7 +51,6 @@ export function ProblemDetailPage() {
   const [activeFile, setActiveFile] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
-  const [hintsRevealed, setHintsRevealed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [descriptionWidth, setDescriptionWidth] = useState(DEFAULT_DESCRIPTION_WIDTH);
   const [resultsHeight, setResultsHeight] = useState(DEFAULT_RESULTS_HEIGHT);
@@ -242,47 +246,8 @@ export function ProblemDetailPage() {
         className="shrink-0 min-w-0 overflow-y-auto bg-background-100 p-6"
         style={{ width: `${descriptionWidth}%` }}
       >
-        <h1 className="mb-3 text-2xl leading-8 font-semibold text-gray-1000">{problem.title}</h1>
-        <div className="mb-5 flex gap-2 font-mono text-xs">
-          <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.language.toUpperCase()}</span>
-          {problem.framework && (
-            <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.framework.toUpperCase()}</span>
-          )}
-          <span className="rounded-md bg-amber-100 px-2 py-1 text-amber-900">
-            {problem.estimated_minutes} MIN
-          </span>
-        </div>
-        <div className="prose-geist text-sm text-gray-900">
-          <ReactMarkdown>{problem.description}</ReactMarkdown>
-        </div>
-
-        {/* Hints */}
-        {problem.hints && problem.hints.length > 0 && (
-          <div className="mt-6 border-t border-gray-alpha-200 pt-4">
-            <h3 className="mb-3 text-sm font-semibold text-gray-1000">
-              Hints
-            </h3>
-            {problem.hints.map((hint, i) => (
-              <div key={i} className="mb-2">
-                {i < hintsRevealed ? (
-                  <p
-                    className="rounded-xl border border-gray-alpha-200 bg-gray-100 px-4 py-3 text-sm leading-6 text-gray-900"
-                  >
-                    {hint.text}
-                  </p>
-                ) : (
-                  <button
-                    onClick={() => setHintsRevealed(i + 1)}
-                    className="text-sm font-medium text-blue-700 transition-colors hover:text-blue-800"
-                  >
-                    {'\u2192'} Reveal hint {i + 1}{' '}
-                    {hint.cost > 0 ? `(${hint.cost} credit)` : ''}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        <ProblemHeader problem={problem} />
+        <ProblemStatement description={problem.description} hints={problem.hints} />
       </div>
 
       <button
@@ -306,31 +271,13 @@ export function ProblemDetailPage() {
 
       {/* Right: Editor + Results */}
       <div ref={rightPaneRef} className="min-w-0 flex-1 flex flex-col bg-[#1e1e1e]">
-        {/* File tabs */}
-        <div className="flex items-center border-b border-[#333] bg-[#252526]">
-          {files.map((file, i) => (
-            <button
-              key={file.path}
-              onClick={() => setActiveFile(i)}
-              className={`px-4 py-2 text-xs border-r border-[#333] transition-colors ${
-                i === activeFile
-                  ? 'bg-[#1e1e1e] text-[#ccc]'
-                  : 'text-[#666] hover:text-[#ccc]'
-              }`}
-            >
-              {file.path}
-            </button>
-          ))}
-          <div className="flex-1" />
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="m-1.5 rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
-            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
-          >
-            {submitting ? 'RUNNING' : 'RUN'}
-          </button>
-        </div>
+        <ProblemFileToolbar
+          files={files}
+          activeFile={activeFile}
+          onActiveFileChange={setActiveFile}
+          onRun={handleSubmit}
+          running={submitting}
+        />
 
         {/* Editor */}
         <div className="flex-1 min-h-0">
@@ -381,62 +328,12 @@ export function ProblemDetailPage() {
               className="shrink-0 min-h-24 overflow-hidden bg-[#1e1e1e]"
               style={{ flexBasis: `${resultsHeight}%` }}
             >
-              {submitting && (
-                <div className="flex h-full items-center justify-center bg-[#252526] p-6">
-                  <GridSpinner size="sm" />
-                </div>
-              )}
-
-              {error && !submitting && (
-                <div className="h-full overflow-y-auto px-4 py-3 text-[10px] text-[#f14c4c]">
-                  {error}
-                </div>
-              )}
-
-              {result && !submitting && !error && (
-                <div className="h-full overflow-y-auto">
-                  <div className="px-4 py-2 border-b border-[#333] flex items-center gap-3">
-                    <span
-                      className={`text-xs font-bold ${
-                        result.status === 'pass' ? 'text-[#4ec9b0]' : 'text-[#f14c4c]'
-                      }`}
-                    >
-                      {result.status === 'pass' ? 'PASS' : 'FAIL'}
-                    </span>
-                    <span className="text-[10px] text-[#666]">
-                      {result.passed}/{result.total} {'\u2014'} {result.duration_ms}ms
-                    </span>
-                  </div>
-                  <div>
-                    {result.test_cases.map((tc: TestCaseResult, i: number) => (
-                      <div
-                        key={i}
-                        className="px-4 py-1.5 flex items-start gap-2 border-b border-[#252526]"
-                      >
-                        <span
-                          className={`text-xs ${tc.status === 'pass' ? 'text-[#4ec9b0]' : 'text-[#f14c4c]'}`}
-                        >
-                          {tc.status === 'pass' ? '\u2713' : '\u2717'}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-xs text-[#ccc]">{tc.name}</span>
-                          {tc.error && (
-                            <pre className="text-[10px] text-[#f14c4c] mt-1 whitespace-pre-wrap">
-                              {tc.error}
-                            </pre>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-[#555]">{tc.duration_ms}ms</span>
-                      </div>
-                    ))}
-                  </div>
-                  {result.compile_error && (
-                    <pre className="p-3 text-[10px] text-[#f14c4c] whitespace-pre-wrap">
-                      {result.compile_error}
-                    </pre>
-                  )}
-                </div>
-              )}
+              <ProblemTestResults
+                state={submitting ? 'running' : error ? 'error' : result ? 'complete' : 'idle'}
+                result={result}
+                error={error}
+                onRetry={handleSubmit}
+              />
             </div>
           </>
         )}

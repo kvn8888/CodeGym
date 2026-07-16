@@ -95,7 +95,7 @@ paths:
       summary: Aggregate GenAI token usage and estimated USD cost for the authenticated workspace user.
       description: |
         Totals tokens_in / tokens_out and estimated cost from recorded generation
-        calls (MCQ generate, note maintenance, etc.). Costs use a built-in rate
+        calls (MCQ generation, memory profile synthesis, etc.). Costs use a built-in rate
         card (USD per million tokens) last reviewed 2026-07-15 for Meta Muse Spark,
         Azure/OpenAI GPT-5.6 Terra family, and Gemini Flash-class models.
       parameters:
@@ -135,7 +135,7 @@ paths:
   /api/v1/memory/profile/refresh:
     post:
       operationId: refreshMemoryProfile
-      summary: Rebuild and persist the authenticated user's memory profile from events.
+      summary: Synthesize and persist the authenticated user's memory profile from deterministic event evidence.
       parameters:
         - $ref: "#/components/parameters/WorkspaceHeader"
       responses:
@@ -156,6 +156,7 @@ paths:
     get:
       operationId: listMemoryEvents
       summary: List append-only memory events for the authenticated user and workspace scope.
+      description: Returns events newest-first by occurrence time. All timestamps include an explicit UTC offset.
       parameters:
         - $ref: "#/components/parameters/WorkspaceHeader"
       responses:
@@ -398,10 +399,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
-  /api/v1/memory/notes/maintain:
+  /api/v1/mcq/evaluate:
     post:
-      operationId: maintainMemoryNotes
-      summary: Run the post-round memory reflection pass — deterministic profile refresh plus a best-effort LLM CRUD pass over memory notes.
+      operationId: evaluateMCQFreeResponse
+      summary: Grade one short free-response practice answer with the configured AI evaluator.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FreeResponseEvaluationInput"
+      responses:
+        "200":
+          description: Binary correctness and concise evaluator feedback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FreeResponseEvaluationEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "502":
+          description: The evaluator provider failed or returned unusable output; the answer remains unconfirmed and retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: AI evaluation is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/memory/profile/maintain:
+    post:
+      operationId: maintainMemoryProfile
+      summary: Run structured LLM profile synthesis after a completed practice set.
+      description: Interprets bounded deterministic event evidence into the summary, strengths, growth edges, skills, and durable notes used by subsequent generation.
       parameters:
         - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
@@ -409,10 +449,39 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MaintainNotesInput"
+              $ref: "#/components/schemas/MaintainProfileInput"
       responses:
         "200":
-          description: Profile refreshed; note maintenance applied when the model produced usable actions.
+          description: The latest successfully synthesized profile, or the preserved fallback profile when generation is unavailable or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/memory/notes/maintain:
+    post:
+      deprecated: true
+      operationId: maintainMemoryNotes
+      summary: Compatibility alias for full memory profile maintenance.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintainProfileInput"
+      responses:
+        "200":
+          description: Latest memory profile.
           content:
             application/json:
               schema:
@@ -785,6 +854,34 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MemoryNote"
+        provenance:
+          $ref: "#/components/schemas/MemoryProfileProvenance"
+
+    MemoryProfileProvenance:
+      type: object
+      required: [schema_version, trigger, provider, model, synthesized_at, evidence_through, event_count]
+      properties:
+        schema_version:
+          type: integer
+        trigger:
+          type: string
+          enum: [manual, daily, set-completion]
+        provider:
+          type: string
+        model:
+          type: string
+        synthesized_at:
+          type: string
+          format: date-time
+        evidence_through:
+          type: string
+          format: date-time
+        event_count:
+          type: integer
+          minimum: 0
+        evidence_digest:
+          type: string
+          description: Stable digest of filtered profile evidence. Unchanged daily ticks skip the model call when this digest still matches.
 
     SkillProficiency:
       type: object
@@ -863,9 +960,11 @@ components:
         occurred_at:
           type: string
           format: date-time
+          description: Actual event occurrence time, serialized with an explicit UTC offset.
         created_at:
           type: string
           format: date-time
+          description: Persistence time, serialized with an explicit UTC offset.
 
     RecordMemoryEventInput:
       type: object
@@ -1041,38 +1140,108 @@ components:
           type: integer
           minimum: 0
           description: Round number in a continuous marathon; later rounds avoid repeating earlier questions.
+        question_types:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          default: [single_select]
+          description: Enabled question types for the generated set. Multiple values produce a mixed set.
+          items:
+            type: string
+            enum: [single_select, multi_select, free_response]
 
-    MaintainNotesInput:
+    MaintainProfileInput:
       type: object
       properties:
         session_id:
           type: string
-          description: Scopes the reflection digest to one practice round; empty uses the most recent round in the event log.
+          description: Highlights the just-completed practice set inside the bounded cross-session evidence digest.
           example: mcq_abc123_r2
 
     MCQQuestion:
       type: object
-      required: [id, text, options, correctIndex, concept, helpContent]
+      required: [id, type, text, concept, helpContent]
       properties:
         id:
           type: string
           example: mq1
+        type:
+          type: string
+          enum: [single_select, multi_select, free_response]
         text:
           type: string
         options:
           type: array
           items:
             type: string
-          minItems: 4
           maxItems: 4
+          description: Exactly four options for single-select and multi-select; omitted for free response.
         correctIndex:
           type: integer
           minimum: 0
           maximum: 3
+          description: Required only for single-select.
+        correctIndices:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 0
+            maximum: 3
+          description: Required only for multi-select; grading requires an exact set match.
+        expectedAnswer:
+          type: string
+          description: Concise evaluator reference answer for free-response items.
+        rubric:
+          type: string
+          description: Objective binary grading criteria for free-response items.
         concept:
           type: string
         helpContent:
           type: string
+
+    FreeResponseEvaluationInput:
+      type: object
+      required: [question, expected_answer, rubric, answer]
+      properties:
+        question_id:
+          type: string
+        question:
+          type: string
+        concept:
+          type: string
+        expected_answer:
+          type: string
+        rubric:
+          type: string
+        answer:
+          type: string
+          maxLength: 2000
+
+    FreeResponseEvaluation:
+      type: object
+      required: [correct, feedback]
+      properties:
+        correct:
+          type: boolean
+        feedback:
+          type: string
+          maxLength: 400
+        provider:
+          type: string
+        model:
+          type: string
+
+    FreeResponseEvaluationEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/FreeResponseEvaluation"
+        error:
+          type: "null"
 
     GenerateMCQResult:
       type: object

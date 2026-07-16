@@ -12,12 +12,13 @@ import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-route
 
 import { HelpFlashcard } from './HelpFlashcard';
 import { api } from '../../shared/api/client';
-import type { NewPracticeConfig, PracticeSession } from '../../shared/api/types';
+import type { MCQQuestionType, NewPracticeConfig, PracticeSession } from '../../shared/api/types';
 import { WorkspacePage } from '../../shared/components/WorkspacePage';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -26,9 +27,13 @@ import { cn } from '@/lib/utils';
  *  MCQQuestion shape returned by POST /api/v1/generate. */
 interface MarathonQuestion {
   id: string;
+  type?: MCQQuestionType;
   text: string;
-  options: string[];
-  correctIndex: number;
+  options?: string[];
+  correctIndex?: number;
+  correctIndices?: number[];
+  expectedAnswer?: string;
+  rubric?: string;
   concept: string;
   helpContent: string;
 }
@@ -39,7 +44,11 @@ interface QuestionResult {
   questionId: string;
   concept: string;
   round: number;
-  selectedIndex: number;
+  questionType: MCQQuestionType;
+  selectedIndex?: number;
+  selectedIndices?: number[];
+  responseText?: string;
+  feedback?: string;
   correct: boolean;
   timeMs: number;
   usedHelp: boolean;
@@ -63,15 +72,26 @@ interface GenerateMcqResponse {
   model: string;
 }
 
+interface FreeResponseEvaluation {
+  correct: boolean;
+  feedback: string;
+  provider?: string;
+  model?: string;
+}
+
 interface MarathonSessionState {
   schema_version: 1;
   prompt: string;
   difficulty: NewPracticeConfig['difficulty'];
   count: number;
+  question_types: MCQQuestionType[];
   round: number;
   question_index: number;
   elapsed: number;
   selected_index: number | null;
+  selected_indices: number[];
+  response_text: string;
+  evaluation_result: FreeResponseEvaluation | null;
   confirmed: boolean;
   using_fallback: boolean;
   questions: MarathonQuestion[];
@@ -97,6 +117,7 @@ const DEFAULT_CONFIG: NewPracticeConfig = {
   prompt: '',
   difficulty: 'medium',
   count: 5,
+  questionTypes: ['single_select'],
 };
 
 function normalizeMarathonSessionState(value: unknown): MarathonSessionState | null {
@@ -122,12 +143,25 @@ function normalizeMarathonSessionState(value: unknown): MarathonSessionState | n
     prompt: candidate.prompt,
     difficulty: candidate.difficulty,
     count: candidate.count,
+    question_types: Array.isArray(candidate.question_types) && candidate.question_types.length > 0
+      ? candidate.question_types
+      : ['single_select'],
     round: candidate.round,
     question_index: candidate.question_index,
     elapsed: candidate.elapsed,
     selected_index:
       candidate.selected_index === null || typeof candidate.selected_index === 'number'
         ? candidate.selected_index
+        : null,
+    selected_indices: Array.isArray(candidate.selected_indices)
+      ? candidate.selected_indices.filter((value): value is number => typeof value === 'number')
+      : [],
+    response_text: typeof candidate.response_text === 'string' ? candidate.response_text : '',
+    evaluation_result:
+      candidate.evaluation_result &&
+      typeof candidate.evaluation_result.correct === 'boolean' &&
+      typeof candidate.evaluation_result.feedback === 'string'
+        ? candidate.evaluation_result
         : null,
     confirmed: candidate.confirmed ?? false,
     using_fallback: candidate.using_fallback ?? false,
@@ -139,15 +173,31 @@ function normalizeMarathonSessionState(value: unknown): MarathonSessionState | n
   };
 }
 
+function questionTypeOf(question: MarathonQuestion): MCQQuestionType {
+  return question.type ?? 'single_select';
+}
+
+function sameIndexSet(left: number[], right: number[]) {
+  if (left.length !== right.length) return false;
+  const expected = new Set(right);
+  return left.every((value) => expected.has(value));
+}
+
 /** Memory event writer for the mcq source. Product interactions queue these
  *  without blocking; round completion flushes the queue before maintenance. */
-function emitMcqEvent(type: string, summary: string, payload: Record<string, unknown>) {
+function emitMcqEvent(
+  type: string,
+  summary: string,
+  payload: Record<string, unknown>,
+  occurredAt: string,
+) {
   return api
     .post('/memory/events', {
       source: 'mcq',
       type,
       summary,
       payload: { ...payload, schema_version: 1 },
+      occurred_at: occurredAt,
     })
     .then(() => undefined);
 }
@@ -192,28 +242,40 @@ const MOCK_QUESTIONS: MarathonQuestion[] = [
   },
   {
     id: 'mq4',
-    text: 'In a hash table, what is a collision?',
+    type: 'multi_select',
+    text: 'Which strategies can resolve hash-table collisions?',
     options: [
-      'When two keys produce the same hash',
-      'When the table runs out of space',
-      'When a key is deleted',
-      'When lookup takes O(n)',
+      'Separate chaining',
+      'Binary search',
+      'Open addressing',
+      'Topological sorting',
     ],
-    correctIndex: 0,
+    correctIndices: [0, 2],
     concept: 'Hash Collisions',
     helpContent:
-      'A collision occurs when two different keys are mapped to the same index by the hash function. Common resolution strategies include chaining (linked lists at each bucket) and open addressing (probing for the next open slot).',
+      'Collision strategies either store multiple entries at a bucket or probe for another available bucket.',
   },
   {
     id: 'mq5',
-    text: 'What traversal order does BFS use?',
-    options: ['Depth-first', 'Level-order', 'In-order', 'Post-order'],
-    correctIndex: 1,
+    type: 'free_response',
+    text: 'Why does breadth-first search find a shortest path in an unweighted graph?',
+    expectedAnswer: 'BFS explores vertices in increasing distance from the source, level by level.',
+    rubric: 'Must explain that BFS processes nodes by nondecreasing edge distance or levels.',
     concept: 'Breadth-First Search',
     helpContent:
-      'BFS explores nodes level by level, visiting all neighbors of a node before moving to the next depth. It uses a queue to track the frontier and is ideal for finding the shortest path in unweighted graphs.',
+      'Consider the order in which a queue exposes vertices at distance 1, then distance 2, and so on.',
   },
 ];
+
+function buildFallbackQuestions(questionTypes: MCQQuestionType[] | undefined, count: number) {
+  const enabled = new Set(questionTypes?.length ? questionTypes : ['single_select']);
+  const candidates = MOCK_QUESTIONS.filter((question) => enabled.has(questionTypeOf(question)));
+  const source = candidates.length > 0 ? candidates : MOCK_QUESTIONS.filter((question) => questionTypeOf(question) === 'single_select');
+  return Array.from({ length: count }, (_, index) => ({
+    ...source[index % source.length],
+    id: `fallback-${index + 1}`,
+  }));
+}
 
 // ── Success check (transitions-dev 10) ───────────────────────────────────────
 
@@ -286,7 +348,7 @@ function MemoryUpdateToast({ status }: { status: MemoryUpdateStatus }) {
 // ── Component ────────────────────────────────────────────────────────────────
 
 /**
- * MarathonPage — timed multiple-choice question marathon.
+ * MarathonPage - timed mixed-question practice marathon.
  *
  * Entry is only via New Practice launch state or `?session=` resume.
  * Bare `/marathon` redirects to `/generate`.
@@ -324,6 +386,10 @@ export function MarathonPage() {
 
   // Which option the user has selected (before confirming). null = none.
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
+  const [responseText, setResponseText] = useState('');
+  const [evaluationResult, setEvaluationResult] = useState<FreeResponseEvaluation | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
 
   // Whether the user has confirmed their answer (locks in + shows feedback).
   const [confirmed, setConfirmed] = useState(false);
@@ -355,6 +421,9 @@ export function MarathonPage() {
   );
 
   const [questionCount, setQuestionCount] = useState(launch?.config.count ?? DEFAULT_CONFIG.count);
+  const [questionTypes, setQuestionTypes] = useState<MCQQuestionType[]>(
+    launch?.config.questionTypes?.length ? launch.config.questionTypes : ['single_select'],
+  );
 
   // 1-based round number in the continuous marathon loop.
   const [round, setRound] = useState(1);
@@ -379,11 +448,19 @@ export function MarathonPage() {
   // must settle successfully before the round-level memory refresh can run.
   const pendingMemoryEventsRef = useRef<PendingMemoryEvent[]>([]);
   const completionEventRoundsRef = useRef(new Set<number>());
+  const exitEventQueuedRef = useRef(false);
 
   // Session id for the current round's memory events.
   const sessionIdRef = useRef('');
 
   const currentQ = questions[questionIndex];
+  const currentQuestionType = questionTypeOf(currentQ);
+  const canConfirm =
+    currentQuestionType === 'single_select'
+      ? selectedIndex !== null
+      : currentQuestionType === 'multi_select'
+        ? selectedIndices.length > 0
+        : responseText.trim().length > 0;
 
   const showMemoryUpdateStatus = (status: MemoryUpdateStatus) => {
     if (memoryToastTimerRef.current) clearTimeout(memoryToastTimerRef.current);
@@ -397,7 +474,8 @@ export function MarathonPage() {
   };
 
   const trackMcqEvent = (type: string, summary: string, payload: Record<string, unknown>) => {
-    const write = () => emitMcqEvent(type, summary, payload);
+    const occurredAt = new Date().toISOString();
+    const write = () => emitMcqEvent(type, summary, payload, occurredAt);
     const event: PendingMemoryEvent = { write, promise: write() };
     pendingMemoryEventsRef.current.push(event);
     void event.promise.catch(() => {});
@@ -429,18 +507,18 @@ export function MarathonPage() {
   // ── Timer logic ──────────────────────────────────────────────────────────
   useEffect(() => {
     // Timer runs only while the question is active and not yet confirmed.
-    if (phase !== 'active' || confirmed) return;
+    if (phase !== 'active' || confirmed || evaluating) return;
     const interval = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(interval);
-  }, [phase, confirmed]);
+  }, [phase, confirmed, evaluating]);
 
   /** Generate one round's question set; falls back to the built-in practice
    *  set when generation is unavailable. */
   const generateRound = async (
     roundNumber: number,
-    config: NewPracticeConfig = { prompt: studyPrompt, difficulty, count: questionCount },
+    config: NewPracticeConfig = { prompt: studyPrompt, difficulty, count: questionCount, questionTypes },
   ) => {
-    let nextQuestions = MOCK_QUESTIONS;
+    let nextQuestions = buildFallbackQuestions(config.questionTypes, config.count);
     let fallback = true;
     try {
       const generated = await api.post<GenerateMcqResponse>('/generate', {
@@ -451,6 +529,7 @@ export function MarathonPage() {
           count: config.count,
           difficulty: config.difficulty,
           round: roundNumber,
+          question_types: config.questionTypes?.length ? config.questionTypes : ['single_select'],
         },
       });
       if (generated.questions?.length) {
@@ -472,6 +551,10 @@ export function MarathonPage() {
     setQuestionIndex(0);
     setElapsed(0);
     setSelectedIndex(null);
+    setSelectedIndices([]);
+    setResponseText('');
+    setEvaluationResult(null);
+    setEvaluating(false);
     setConfirmed(false);
     setHelpUsed(false);
     setShowHelp(false);
@@ -491,10 +574,14 @@ export function MarathonPage() {
     prompt: studyPrompt,
     difficulty,
     count: questionCount,
+    question_types: questionTypes,
     round,
     question_index: questionIndex,
     elapsed,
     selected_index: selectedIndex,
+    selected_indices: selectedIndices,
+    response_text: responseText,
+    evaluation_result: evaluationResult,
     confirmed,
     using_fallback: usingFallback,
     questions,
@@ -528,11 +615,18 @@ export function MarathonPage() {
       title: config.prompt.trim() || 'Personalized MCQ practice',
       state: {
         schema_version: 1,
-        ...config,
+        format: config.format,
+        prompt: config.prompt,
+        difficulty: config.difficulty,
+        count: config.count,
+        question_types: config.questionTypes?.length ? config.questionTypes : ['single_select'],
         round: 1,
         question_index: 0,
         elapsed: 0,
         selected_index: null,
+        selected_indices: [],
+        response_text: '',
+        evaluation_result: null,
         confirmed: false,
         using_fallback: false,
         questions: [],
@@ -544,9 +638,8 @@ export function MarathonPage() {
     return session.id;
   };
 
-  /** Record the just-finished round: session_completed event, then the
-   *  memory reflection pass (deterministic refresh + LLM note CRUD). Awaited
-   *  so the next round's generation reads the updated notes. */
+  /** Record the just-finished round, then await full profile synthesis so the
+   *  next round reads the updated summary, skills, focus areas, and notes. */
   const reflectOnRound = async () => {
     const roundResults = results.filter((r) => r.round === round);
     const roundSkips = skippedQuestions.filter((item) => item.round === round);
@@ -558,18 +651,18 @@ export function MarathonPage() {
           'session_completed',
           `Finished round ${round} with ${correctCount} of ${roundResults.length} answered correctly and ${roundSkips.length} skipped.`,
           {
-          session_id: sessionIdRef.current,
-          question_count: roundResults.length + roundSkips.length,
-          answered_count: roundResults.length,
-          skipped_count: roundSkips.length,
-          correct_count: correctCount,
-          round,
+            session_id: sessionIdRef.current,
+            question_count: roundResults.length + roundSkips.length,
+            answered_count: roundResults.length,
+            skipped_count: roundSkips.length,
+            correct_count: correctCount,
+            round,
           },
         );
         completionEventRoundsRef.current.add(round);
       }
       await flushPendingMemoryEvents();
-      await api.post('/memory/notes/maintain', { session_id: sessionIdRef.current });
+      await api.post('/memory/profile/maintain', { session_id: sessionIdRef.current });
       showMemoryUpdateStatus('updated');
     } catch (err) {
       showMemoryUpdateStatus('failed');
@@ -579,18 +672,20 @@ export function MarathonPage() {
 
   /** Start the marathon at round 1. */
   const handleStart = async (config?: NewPracticeConfig) => {
-    const nextConfig = config ?? { prompt: studyPrompt, difficulty, count: questionCount };
+    const nextConfig = config ?? { prompt: studyPrompt, difficulty, count: questionCount, questionTypes };
     setPhase('loading');
     setIsFinishing(false);
     setSessionError(null);
     showMemoryUpdateStatus(null);
     pendingMemoryEventsRef.current = [];
     completionEventRoundsRef.current.clear();
+    exitEventQueuedRef.current = false;
     setResults([]);
     setSkippedQuestions([]);
     setStudyPrompt(nextConfig.prompt);
     setDifficulty(nextConfig.difficulty);
     setQuestionCount(nextConfig.count);
+    setQuestionTypes(nextConfig.questionTypes?.length ? nextConfig.questionTypes : ['single_select']);
     try {
       const durableSessionId = await ensurePracticeSession(nextConfig);
       baseIdRef.current = durableSessionId;
@@ -601,10 +696,14 @@ export function MarathonPage() {
         prompt: nextConfig.prompt,
         difficulty: nextConfig.difficulty,
         count: nextConfig.count,
+        question_types: nextConfig.questionTypes?.length ? nextConfig.questionTypes : ['single_select'],
         round: 1,
         question_index: 0,
         elapsed: 0,
         selected_index: null,
+        selected_indices: [],
+        response_text: '',
+        evaluation_result: null,
         confirmed: false,
         using_fallback: fallback,
         questions: nextQuestions,
@@ -638,6 +737,7 @@ export function MarathonPage() {
             setStudyPrompt(snapshot.prompt);
             setDifficulty(snapshot.difficulty);
             setQuestionCount(snapshot.count);
+            setQuestionTypes(snapshot.question_types);
             setRound(snapshot.round);
             setQuestions(snapshot.questions.length > 0 ? snapshot.questions : MOCK_QUESTIONS);
             setResults(snapshot.results);
@@ -650,10 +750,14 @@ export function MarathonPage() {
           setStudyPrompt(snapshot.prompt);
           setDifficulty(snapshot.difficulty);
           setQuestionCount(snapshot.count);
+          setQuestionTypes(snapshot.question_types);
           setRound(snapshot.round);
           setQuestionIndex(Math.min(snapshot.question_index, snapshot.questions.length - 1));
           setElapsed(snapshot.elapsed);
           setSelectedIndex(snapshot.selected_index);
+          setSelectedIndices(snapshot.selected_indices);
+          setResponseText(snapshot.response_text);
+          setEvaluationResult(snapshot.evaluation_result);
           setConfirmed(snapshot.confirmed);
           setUsingFallback(snapshot.using_fallback);
           setQuestions(snapshot.questions);
@@ -669,6 +773,7 @@ export function MarathonPage() {
               prompt: snapshot.prompt,
               difficulty: snapshot.difficulty,
               count: snapshot.count,
+              questionTypes: snapshot.question_types,
             }
           : DEFAULT_CONFIG;
         await handleStart(fallbackConfig);
@@ -700,6 +805,9 @@ export function MarathonPage() {
         question_index: 0,
         elapsed: 0,
         selected_index: null,
+        selected_indices: [],
+        response_text: '',
+        evaluation_result: null,
         confirmed: false,
         using_fallback: fallback,
         questions: nextQuestions,
@@ -743,52 +851,130 @@ export function MarathonPage() {
     }
   };
 
-  /** User selects an answer option (radio-style, can change before confirming). */
+  /** Select one option or toggle an exact-set multi-select choice. */
   const handleSelect = (index: number) => {
     if (confirmed || advancingRef.current) return; // locked or transitioning
+
+    if (currentQuestionType === 'multi_select') {
+      const next = selectedIndices.includes(index)
+        ? selectedIndices.filter((value) => value !== index)
+        : [...selectedIndices, index].sort((left, right) => left - right);
+      setSelectedIndices(next);
+      void persistSession({ selected_indices: next }).catch(() => {});
+      return;
+    }
     setSelectedIndex(index);
     void persistSession({ selected_index: index }).catch(() => {});
   };
 
-  /** User confirms their selection — locks in the answer and shows feedback. */
-  const handleConfirm = () => {
-    if (selectedIndex === null || confirmed) return;
-    setConfirmed(true);
+  /** Confirm deterministic selections or await AI grading for free response. */
+  const handleConfirm = async () => {
+    if (confirmed || evaluating) return;
+    if (currentQuestionType === 'single_select' && selectedIndex === null) return;
+    if (currentQuestionType === 'multi_select' && selectedIndices.length === 0) return;
+    if (currentQuestionType === 'free_response' && responseText.trim() === '') return;
+
+    setSessionError(null);
+    let correct = false;
+    let evaluation: FreeResponseEvaluation | null = null;
+
+    if (currentQuestionType === 'single_select') {
+      correct = selectedIndex === currentQ.correctIndex;
+    } else if (currentQuestionType === 'multi_select') {
+      correct = sameIndexSet(selectedIndices, currentQ.correctIndices ?? []);
+    } else {
+      setEvaluating(true);
+      try {
+        evaluation = await api.post<FreeResponseEvaluation>('/mcq/evaluate', {
+          question_id: currentQ.id,
+          question: currentQ.text,
+          concept: currentQ.concept,
+          expected_answer: currentQ.expectedAnswer ?? '',
+          rubric: currentQ.rubric ?? '',
+          answer: responseText.trim(),
+        });
+        correct = evaluation.correct;
+      } catch (err) {
+        setSessionError(
+          err instanceof Error
+            ? err.message
+            : 'Could not evaluate this answer. Retry or skip the question.',
+        );
+        setEvaluating(false);
+        return;
+      }
+      setEvaluating(false);
+      setEvaluationResult(evaluation);
+    }
+
     const result: QuestionResult = {
       questionId: currentQ.id,
       concept: currentQ.concept,
       round,
-      selectedIndex,
-      correct: selectedIndex === currentQ.correctIndex,
+      questionType: currentQuestionType,
+      ...(currentQuestionType === 'single_select' && selectedIndex !== null
+        ? { selectedIndex }
+        : {}),
+      ...(currentQuestionType === 'multi_select'
+        ? { selectedIndices: [...selectedIndices] }
+        : {}),
+      ...(currentQuestionType === 'free_response'
+        ? { responseText: responseText.trim(), feedback: evaluation?.feedback }
+        : {}),
+      correct,
       timeMs: elapsed * 1000,
       usedHelp: helpUsed,
     };
     const nextResults = [...results, result];
+    setConfirmed(true);
     setResults(nextResults);
     void persistSession({
       selected_index: selectedIndex,
+      selected_indices: selectedIndices,
+      response_text: responseText,
+      evaluation_result: evaluation,
       confirmed: true,
       results: nextResults,
     }).catch(() => {});
 
-    // question_answered for correct answers; answer_incorrect feeds growth
-    // edges for misses (one event per answer, per the naming guide).
-    if (result.correct) {
-      trackMcqEvent('question_answered', `Answered a ${currentQ.concept} question correctly.`, {
-        session_id: sessionIdRef.current,
-        topic: currentQ.concept,
-        correct: true,
-        duration_ms: result.timeMs,
-        used_help: result.usedHelp,
-      });
+    const commonPayload = {
+      session_id: sessionIdRef.current,
+      question_id: currentQ.id,
+      topic: currentQ.concept,
+      question_type: currentQuestionType,
+      correct: result.correct,
+      duration_ms: result.timeMs,
+      used_help: result.usedHelp,
+      round,
+    };
+    if (currentQuestionType === 'free_response') {
+      trackMcqEvent(
+        'free_response_evaluated',
+        `Evaluated a ${currentQ.concept} written response as ${result.correct ? 'correct' : 'incorrect'}.`,
+        {
+          ...commonPayload,
+          answer_length: responseText.trim().length,
+          evaluation_provider: evaluation?.provider,
+          evaluation_model: evaluation?.model,
+        },
+      );
     } else {
-      trackMcqEvent('answer_incorrect', `Missed a ${currentQ.concept} question.`, {
-        session_id: sessionIdRef.current,
-        topic: currentQ.concept,
-        correct: false,
-        duration_ms: result.timeMs,
-        used_help: result.usedHelp,
-      });
+      trackMcqEvent(
+        result.correct ? 'question_answered' : 'answer_incorrect',
+        result.correct
+          ? `Answered a ${currentQ.concept} question correctly.`
+          : `Missed a ${currentQ.concept} question.`,
+        {
+          ...commonPayload,
+          ...(currentQuestionType === 'single_select'
+            ? { selected_index: selectedIndex }
+            : {
+                selected_indices: selectedIndices,
+                selected_count: selectedIndices.length,
+                correct_option_count: currentQ.correctIndices?.length ?? 0,
+              }),
+        },
+      );
     }
   };
 
@@ -804,10 +990,25 @@ export function MarathonPage() {
     };
     const nextSkippedQuestions = [...skippedQuestions, skipped];
     setSelectedIndex(null);
+    setSelectedIndices([]);
+    setResponseText('');
+    setEvaluationResult(null);
     setConfirmed(true);
     setSkippedQuestions(nextSkippedQuestions);
+    trackMcqEvent('question_skipped', `Skipped a ${currentQ.concept} question.`, {
+      session_id: sessionIdRef.current,
+      question_id: currentQ.id,
+      topic: currentQ.concept,
+      question_type: currentQuestionType,
+      duration_ms: skipped.timeMs,
+      used_help: skipped.usedHelp,
+      round,
+    });
     void persistSession({
       selected_index: null,
+      selected_indices: [],
+      response_text: '',
+      evaluation_result: null,
       confirmed: true,
       skipped_questions: nextSkippedQuestions,
     }).catch(() => {});
@@ -818,8 +1019,18 @@ export function MarathonPage() {
     if (isExiting) return;
     setIsExiting(true);
     setSessionError(null);
+    if (!exitEventQueuedRef.current) {
+      trackMcqEvent('session_exited', `Exited round ${round} of an MCQ marathon.`, {
+        session_id: sessionIdRef.current,
+        round,
+        question_index: questionIndex,
+        duration_ms: elapsed * 1000,
+      });
+      exitEventQueuedRef.current = true;
+    }
     try {
       await persistSession({}, 'active');
+      await flushPendingMemoryEvents();
       navigate('/');
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : 'Could not save this run before exiting.');
@@ -842,6 +1053,10 @@ export function MarathonPage() {
       setQuestionIndex(nextQuestionIndex);
       setElapsed(0);
       setSelectedIndex(null);
+      setSelectedIndices([]);
+      setResponseText('');
+      setEvaluationResult(null);
+      setEvaluating(false);
       setConfirmed(false);
       setShowHelp(false);
       setHelpUsed(false);
@@ -849,6 +1064,9 @@ export function MarathonPage() {
         question_index: nextQuestionIndex,
         elapsed: 0,
         selected_index: null,
+        selected_indices: [],
+        response_text: '',
+        evaluation_result: null,
         confirmed: false,
       }).catch(() => {});
     }
@@ -1022,7 +1240,7 @@ export function MarathonPage() {
             variant="outline"
             size="sm"
             onClick={() => void handleExit()}
-            disabled={isExiting}
+            disabled={isExiting || evaluating}
           >
             <LogOutIcon />
             {isExiting ? 'Saving' : 'Exit'}
@@ -1041,76 +1259,124 @@ export function MarathonPage() {
 
       <Progress value={((questionIndex + 1) / questions.length) * 100} className="mb-6" />
 
+      <div className="text-muted-foreground mb-2 text-xs font-medium">
+        {currentQuestionType === 'multi_select'
+          ? 'Select all that apply'
+          : currentQuestionType === 'free_response'
+            ? 'Written response'
+            : 'Single answer'}
+      </div>
       <h2 className="mb-5 text-xl leading-7 font-semibold">{currentQ.text}</h2>
 
-      {/* Option buttons — radio-style selection */}
-      <div className="mb-6 flex flex-col gap-2.5">
-        {currentQ.options.map((option, i) => {
-          const isSelected = selectedIndex === i;
-          const isCorrect = i === currentQ.correctIndex;
-
-          let stateClasses =
-            'border bg-background text-muted-foreground hover:bg-accent/50';
-          if (confirmed) {
-            if (isCorrect) stateClasses = 'border-green-400 bg-green-100 text-green-900';
-            else if (isSelected) stateClasses = 'border-red-400 bg-red-100 text-red-900';
-            else stateClasses = 'border bg-background text-muted-foreground';
-          } else if (isSelected) {
-            stateClasses = 'border-primary bg-accent text-foreground font-medium';
-          }
-
-          return (
-            <button
-              key={i}
-              onClick={() => handleSelect(i)}
-              disabled={confirmed}
+      {currentQuestionType === 'free_response' ? (
+        <div className="mb-6">
+          <Textarea
+            value={responseText}
+            onChange={(event) => setResponseText(event.target.value)}
+            onBlur={() => void persistSession({ response_text: responseText }).catch(() => {})}
+            disabled={confirmed || evaluating}
+            maxLength={2000}
+            rows={6}
+            aria-label="Written answer"
+            className="min-h-36 resize-y text-sm leading-5"
+          />
+          <div className="text-muted-foreground mt-1.5 text-right font-mono text-xs tabular-nums">
+            {responseText.length}/2000
+          </div>
+          {evaluationResult && (
+            <div
               className={cn(
-                'w-full rounded-lg border px-4 py-3 text-left text-sm transition-all duration-150',
-                stateClasses,
+                'mt-3 rounded-lg border px-4 py-3 text-sm leading-5',
+                evaluationResult.correct
+                  ? 'border-green-400 bg-green-100 text-green-900'
+                  : 'border-red-400 bg-red-100 text-red-900',
               )}
+              role="status"
             >
-              <div className="flex items-center gap-3">
-                <div
-                  className={cn(
-                    'flex size-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-                    confirmed
-                      ? isCorrect
-                        ? 'border-green-700'
+              <div className="font-medium">{evaluationResult.correct ? 'Correct' : 'Not yet'}</div>
+              <p className="mt-1">{evaluationResult.feedback}</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mb-6 flex flex-col gap-2.5">
+          {(currentQ.options ?? []).map((option, i) => {
+            const isSelected =
+              currentQuestionType === 'multi_select'
+                ? selectedIndices.includes(i)
+                : selectedIndex === i;
+            const isCorrect =
+              currentQuestionType === 'multi_select'
+                ? (currentQ.correctIndices ?? []).includes(i)
+                : i === currentQ.correctIndex;
+
+            let stateClasses =
+              'border bg-background text-muted-foreground hover:bg-accent/50';
+            if (confirmed) {
+              if (isCorrect) stateClasses = 'border-green-400 bg-green-100 text-green-900';
+              else if (isSelected) stateClasses = 'border-red-400 bg-red-100 text-red-900';
+              else stateClasses = 'border bg-background text-muted-foreground';
+            } else if (isSelected) {
+              stateClasses = 'border-primary bg-accent text-foreground font-medium';
+            }
+
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => handleSelect(i)}
+                disabled={confirmed}
+                aria-pressed={isSelected}
+                className={cn(
+                  'w-full rounded-lg border px-4 py-3 text-left text-sm transition-all duration-150',
+                  stateClasses,
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={cn(
+                      'flex size-4 shrink-0 items-center justify-center border-2 transition-colors',
+                      currentQuestionType === 'multi_select' ? 'rounded-sm' : 'rounded-full',
+                      confirmed
+                        ? isCorrect
+                          ? 'border-green-700'
+                          : isSelected
+                            ? 'border-red-800'
+                            : 'border-input'
                         : isSelected
-                          ? 'border-red-800'
-                          : 'border-input'
-                      : isSelected
-                        ? 'border-primary'
-                        : 'border-input',
+                          ? 'border-primary'
+                          : 'border-input',
+                    )}
+                  >
+                    {(isSelected || (confirmed && isCorrect)) && (
+                      <div
+                        className={cn(
+                          'size-2',
+                          currentQuestionType === 'multi_select' ? 'rounded-[2px]' : 'rounded-full',
+                          confirmed
+                            ? isCorrect
+                              ? 'bg-green-700'
+                              : 'bg-red-800'
+                            : 'bg-primary',
+                        )}
+                      />
+                    )}
+                  </div>
+                  {option}
+                  {confirmed && isCorrect && (
+                    <span className="ml-auto flex items-center gap-1 text-xs font-semibold text-green-700">
+                      <SuccessCheck /> Correct
+                    </span>
                   )}
-                >
-                  {(isSelected || (confirmed && isCorrect)) && (
-                    <div
-                      className={cn(
-                        'size-2 rounded-full',
-                        confirmed
-                          ? isCorrect
-                            ? 'bg-green-700'
-                            : 'bg-red-800'
-                          : 'bg-primary',
-                      )}
-                    />
+                  {confirmed && isSelected && !isCorrect && (
+                    <span className="ml-auto text-xs font-semibold text-red-900">✗ Wrong</span>
                   )}
                 </div>
-                {option}
-                {confirmed && isCorrect && (
-                  <span className="ml-auto flex items-center gap-1 text-xs font-semibold text-green-700">
-                    <SuccessCheck /> Correct
-                  </span>
-                )}
-                {confirmed && isSelected && !isCorrect && (
-                  <span className="ml-auto text-xs font-semibold text-red-900">✗ Wrong</span>
-                )}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Footer: Help/Skip + Confirm/Next */}
       <div className="flex items-center justify-between">
@@ -1119,7 +1385,7 @@ export function MarathonPage() {
             variant="ghost"
             size="sm"
             onClick={handleHelp}
-            disabled={confirmed}
+            disabled={confirmed || evaluating}
             className="text-muted-foreground hover:text-foreground"
           >
             <CircleHelpIcon />
@@ -1129,7 +1395,7 @@ export function MarathonPage() {
             variant="ghost"
             size="sm"
             onClick={handleSkip}
-            disabled={confirmed}
+            disabled={confirmed || evaluating}
             className="text-muted-foreground hover:text-foreground"
           >
             <SkipForwardIcon />
@@ -1137,9 +1403,12 @@ export function MarathonPage() {
           </Button>
         </div>
 
-        {!confirmed && selectedIndex !== null && (
+        {!confirmed && canConfirm && (
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-            <Button onClick={handleConfirm}>Confirm</Button>
+            <Button onClick={() => void handleConfirm()} disabled={evaluating}>
+              {evaluating && <LoaderCircleIcon className="animate-spin" />}
+              {currentQuestionType === 'free_response' ? 'Evaluate' : 'Confirm'}
+            </Button>
           </motion.div>
         )}
         {confirmed &&

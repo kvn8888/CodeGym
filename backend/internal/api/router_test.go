@@ -46,18 +46,20 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 	}
 
 	required := map[string][]string{
-		"/health":                        {http.MethodGet},
-		"/ready":                         {http.MethodGet},
-		"/api/v1/me":                     {http.MethodGet, http.MethodPatch},
-		"/api/v1/cost":                   {http.MethodGet},
-		"/api/v1/memory/profile":         {http.MethodGet},
-		"/api/v1/memory/profile/refresh": {http.MethodPost},
-		"/api/v1/memory/events":          {http.MethodGet, http.MethodPost},
-		"/api/v1/sessions":               {http.MethodGet, http.MethodPost},
-		"/api/v1/sessions/{id}":          {http.MethodGet, http.MethodPatch},
-		"/api/v1/sessions/{id}/files":    {http.MethodPut},
-		"/api/v1/generate":               {http.MethodPost},
-		"/api/v1/memory/notes/maintain":  {http.MethodPost},
+		"/health":                         {http.MethodGet},
+		"/ready":                          {http.MethodGet},
+		"/api/v1/me":                      {http.MethodGet, http.MethodPatch},
+		"/api/v1/cost":                    {http.MethodGet},
+		"/api/v1/memory/profile":          {http.MethodGet},
+		"/api/v1/memory/profile/refresh":  {http.MethodPost},
+		"/api/v1/memory/profile/maintain": {http.MethodPost},
+		"/api/v1/memory/events":           {http.MethodGet, http.MethodPost},
+		"/api/v1/sessions":                {http.MethodGet, http.MethodPost},
+		"/api/v1/sessions/{id}":           {http.MethodGet, http.MethodPatch},
+		"/api/v1/sessions/{id}/files":     {http.MethodPut},
+		"/api/v1/generate":                {http.MethodPost},
+		"/api/v1/mcq/evaluate":            {http.MethodPost},
+		"/api/v1/memory/notes/maintain":   {http.MethodPost},
 	}
 
 	for path, methods := range required {

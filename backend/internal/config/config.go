@@ -34,6 +34,21 @@ type Config struct {
 type WorkerConfig struct {
 	Disabled bool
 	Interval time.Duration
+	Trigger  string
+}
+
+const (
+	MemoryRefreshDaily         = "daily"
+	MemoryRefreshSetCompletion = "set-completion"
+	MemoryRefreshBoth          = "both"
+)
+
+func (w WorkerConfig) DailyEnabled() bool {
+	return !w.Disabled && (w.Trigger == MemoryRefreshDaily || w.Trigger == MemoryRefreshBoth)
+}
+
+func (w WorkerConfig) SetCompletionEnabled() bool {
+	return w.Trigger == MemoryRefreshSetCompletion || w.Trigger == MemoryRefreshBoth
 }
 
 // GenAIConfig is the legacy single OpenAI-compatible provider (Gemini path).
@@ -157,10 +172,21 @@ func Load() Config {
 				"CODEGYM_MEMORY_WORKER_INTERVAL",
 				24*time.Hour,
 			),
+			Trigger: memoryRefreshTriggerEnv(),
 		},
 		GenAI:              legacyGenAI,
 		GenAIProviders:     providers,
 		GenAIProviderOrder: order,
+	}
+}
+
+func memoryRefreshTriggerEnv() string {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("CODEGYM_MEMORY_REFRESH_TRIGGER")))
+	switch value {
+	case MemoryRefreshDaily, MemoryRefreshSetCompletion, MemoryRefreshBoth:
+		return value
+	default:
+		return MemoryRefreshBoth
 	}
 }
 

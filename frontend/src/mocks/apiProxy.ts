@@ -2,7 +2,12 @@ import { mockPassingResult, mockProblems, mockProblemSummaries, mockSkeletons } 
 import { mockMcqQuestions } from './mcqFixtures';
 import { mockMemoryProfile } from './memoryFixtures';
 import { mockMemoryEvents, mockSessions } from './activityFixtures';
-import type { PracticeSession, UserProfile } from '../shared/api/types';
+import type {
+  MCQQuestionType,
+  MemoryEvent,
+  PracticeSession,
+  UserProfile,
+} from '../shared/api/types';
 
 interface MockApiResponse<T> {
   data: T;
@@ -21,6 +26,24 @@ let mockUserProfile: UserProfile = {
 
 let sessions: PracticeSession[] = structuredClone(mockSessions);
 
+const mockEventAges = [2 * 60_000, 18 * 60_000, 26 * 60 * 60_000, 2 * 24 * 60 * 60_000];
+
+function createMemoryEventSeed(): MemoryEvent[] {
+  const now = Date.now();
+  return structuredClone(mockMemoryEvents).map((event, index) => {
+    const occurredAt = new Date(
+      now - (mockEventAges[index] ?? index * 24 * 60 * 60_000),
+    ).toISOString();
+    return {
+      ...event,
+      occurred_at: occurredAt,
+      created_at: new Date(new Date(occurredAt).getTime() + 1_000).toISOString(),
+    };
+  });
+}
+
+let memoryEvents: MemoryEvent[] = createMemoryEventSeed();
+
 export type MockApiScenario = 'default' | 'empty' | 'error' | 'loading';
 
 let mockApiScenario: MockApiScenario = 'default';
@@ -28,6 +51,7 @@ let mockApiScenario: MockApiScenario = 'default';
 export function setMockApiScenario(scenario: MockApiScenario) {
   mockApiScenario = scenario;
   sessions = structuredClone(mockSessions);
+  memoryEvents = scenario === 'empty' ? [] : createMemoryEventSeed();
 }
 
 function json<T>(data: T, init?: ResponseInit): Response {
@@ -143,7 +167,7 @@ export async function mockApiFetch(
   }
 
   if (method === 'GET' && path === '/memory/events') {
-    return json(mockApiScenario === 'empty' ? [] : mockMemoryEvents);
+    return json([...memoryEvents].sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)));
   }
 
   if (method === 'GET' && path === '/sessions') {
@@ -266,9 +290,24 @@ export async function mockApiFetch(
     });
   }
 
-  // Memory event writes are fire-and-forget from product flows; accept and echo.
+  // Memory event writes are retained for the lifetime of the mock scenario.
   if (method === 'POST' && path === '/memory/events') {
-    return json({ id: `mock-event-${Date.now()}`, created_at: new Date().toISOString() }, { status: 201 });
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as Partial<MemoryEvent>;
+    const now = new Date().toISOString();
+    const event: MemoryEvent = {
+      id: `mock-event-${Date.now()}-${memoryEvents.length + 1}`,
+      workspace_id: mockUserProfile.default_workspace_id,
+      user_id: mockUserProfile.user_id,
+      source: body.source ?? 'unknown',
+      type: body.type ?? 'unknown',
+      summary: body.summary ?? 'Recorded practice activity.',
+      ...(body.payload === undefined ? {} : { payload: body.payload }),
+      occurred_at: body.occurred_at ?? now,
+      created_at: now,
+    };
+    memoryEvents.push(event);
+    return json(event, { status: 201 });
   }
 
   // Profile refresh after a completed session; return the mock profile.
@@ -276,9 +315,12 @@ export async function mockApiFetch(
     return json(mockMemoryProfile);
   }
 
-  // Post-round reflection (deterministic refresh + LLM note CRUD); the mock
-  // just returns the profile so the round loop keeps moving without a backend.
-  if (method === 'POST' && path === '/memory/notes/maintain') {
+  // Post-round full-profile synthesis; the mock returns the profile so the
+  // round loop keeps moving without a backend.
+  if (
+    method === 'POST' &&
+    (path === '/memory/profile/maintain' || path === '/memory/notes/maintain')
+  ) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     return json(mockMemoryProfile);
   }
@@ -286,11 +328,41 @@ export async function mockApiFetch(
   // Generation: return a canned MCQ set shaped like the backend response so
   // the marathon flow works without a backend or GenAI key.
   if (method === 'POST' && path === '/generate') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as {
+      spec?: { count?: number; question_types?: MCQQuestionType[] };
+    };
+    const enabled = new Set(
+      body.spec?.question_types?.length ? body.spec.question_types : ['single_select'],
+    );
+    const candidates = mockMcqQuestions.filter((question) =>
+      enabled.has(question.type ?? 'single_select'),
+    );
+    const count = Math.max(1, body.spec?.count ?? 5);
+    const questions = Array.from({ length: count }, (_, index) => ({
+      ...candidates[index % candidates.length],
+      id: `mq${index + 1}`,
+    }));
     return json({
       kind: 'mcq',
       provider: 'mock',
       model: 'mock-model',
-      questions: mockMcqQuestions,
+      questions,
+    });
+  }
+
+  if (method === 'POST' && path === '/mcq/evaluate') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as { answer?: string };
+    const answer = body.answer?.trim() ?? '';
+    const correct = /level|distance|edge|queue/i.test(answer) && answer.length >= 20;
+    return json({
+      correct,
+      feedback: correct
+        ? 'Correct. You connected queue order to increasing path distance.'
+        : 'Explain how queue order processes every vertex at one distance before moving to the next distance.',
+      provider: 'mock',
+      model: 'mock-evaluator',
     });
   }
 

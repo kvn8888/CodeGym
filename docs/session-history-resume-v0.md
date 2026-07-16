@@ -90,7 +90,8 @@ naming guide: additive, readers tolerant of missing fields).
     "skipped_questions": [ { "questionId": "q2", "round": 1 } ] }
   ```
 
-  The active question index, timer, draft selection, generated questions, answer
+  The active question index, timer, draft selection or written response,
+  completed AI evaluation, generated questions, answer
   results, and skips are persisted so the run can reopen exactly where it left
   off. A skip is continuity data only: it is excluded from answer results and
   does not emit `question_answered` or `answer_incorrect` memory events.

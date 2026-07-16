@@ -161,6 +161,7 @@ export interface PracticeSession extends PracticeSessionSummary {
 
 /** Practice format chosen on New practice. */
 export type PracticeFormat = 'mcq' | 'coding';
+export type MCQQuestionType = 'single_select' | 'multi_select' | 'free_response';
 
 export interface NewPracticeConfig {
   /** `mcq` = multiple-choice marathon; `coding` = DSA / LeetCode-style workspace problem. */
@@ -168,6 +169,7 @@ export interface NewPracticeConfig {
   prompt: string;
   difficulty: 'easy' | 'medium' | 'hard';
   count: number;
+  questionTypes?: MCQQuestionType[];
 }
 
 /** Aggregate from GET /api/v1/cost — estimated GenAI spend for this workspace user. */

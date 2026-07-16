@@ -26,8 +26,9 @@ backend:
 | 4 | Problem verification / test repair | [`04-problem-verification.md`](04-problem-verification.md) | Verdict + fixed cases |
 | 5 | MCQ marathon generation | [`05-mcq-marathon.md`](05-mcq-marathon.md) | `MarathonQuestion[]` |
 | 6 | Conversational interview coach | [`06-conversational-interview.md`](06-conversational-interview.md) | Streaming chat |
-| 7 | Memory profile summarizer | [`07-memory-profile-summary.md`](07-memory-profile-summary.md) | `Profile` JSON |
-| 8 | Memory note maintenance | [`08-memory-notes.md`](08-memory-notes.md) | Note actions |
+| 7 | Memory profile synthesizer | [`07-memory-profile-summary.md`](07-memory-profile-summary.md) | Curated `Profile` JSON |
+| 8 | Legacy note-only maintenance reference | [`08-memory-notes.md`](08-memory-notes.md) | Note actions |
+| 9 | MCQ free-response evaluator | [`09-mcq-free-response-evaluation.md`](09-mcq-free-response-evaluation.md) | Binary verdict + concise feedback |
 
 ## How the pipeline fits together
 
@@ -39,7 +40,7 @@ backend:
  user prompt ─► (1) intake ─► answers ─► (2) problem gen ─► (3) test gen ─► (4) verify ─► delivered problem
                                     └───► (5) MCQ marathon
                                     └───► (6) interview coach
- every surface emits events ─────────────────────────────────────────────────► back into memory ─► (8) notes
+ every surface emits deterministic events ───────────────────────────────────► back into (7) profile synthesis
 ```
 
 ## Conventions used in every prompt

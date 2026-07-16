@@ -13,11 +13,10 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/memory"
 )
 
-// Note maintenance is the agentic half of CodeGym memory: after a practice
-// session, an LLM reviews what happened and issues CRUD operations on the
-// user's problem/concept notes — the way an engineer edits a living project
-// doc when reality drifts. The user-level summary stays deterministic
-// (memory.Summarize, future cron); notes are the LLM-curated slice.
+// Note maintenance is the legacy note-only compatibility flow. Runtime profile
+// maintenance now uses ProfileSynthesizer so summary, skills, focus areas, and
+// notes are updated coherently. These action helpers remain useful for note
+// diffs, audit events, and compatibility tests.
 //
 // The prompt mirrors docs/ai-prompts/08-memory-notes.md; keep them in sync.
 
@@ -129,11 +128,9 @@ var notesJSONSchema = json.RawMessage(`{
   }
 }`)
 
-// MaintainNotes runs one reflection pass: deterministic profile refresh first
-// (so the LLM sees up-to-date skills and ordering is guaranteed server-side),
-// then an LLM note-CRUD pass applied to the profile. The LLM half is
-// best-effort: any failure leaves the refreshed profile intact and reports the
-// skip reason instead of erroring.
+// MaintainNotes is retained for legacy callers and tests. New runtime callers
+// must use ProfileSynthesizer so every curated profile field is validated and
+// persisted atomically.
 func MaintainNotes(ctx context.Context, orchestrator *Orchestrator, memoryService NoteMaintenanceMemory, input MaintainNotesInput) (MaintainNotesResult, error) {
 	if memoryService == nil {
 		return MaintainNotesResult{}, errors.New("note maintenance requires memory")

@@ -1,4 +1,4 @@
-import { InfoIcon, LightbulbIcon } from 'lucide-react';
+import { LightbulbIcon } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 

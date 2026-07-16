@@ -156,6 +156,49 @@ func TestProfileSynthesizerRefreshAllProfilesUsesLLM(t *testing.T) {
 	}
 }
 
+func TestProfileSynthesizerSkipsUnchangedDailyEvidence(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: "mcq", Type: "answer_incorrect", Summary: "Missed queues.",
+		Payload: json.RawMessage(`{"topic":"Queues","correct":false}`),
+	}); err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+	payload := json.RawMessage(`{
+		"summary":"Queue ordering needs reinforcement.","strengths":[],"growth_edges":["Queues"],
+		"skills":[{"id":"queues","label":"Queues","area":"DSA","level":2,"confidence":50,"trend":"down"}],
+		"notes":[]
+	}`)
+	generator := &scriptedGenerator{payloads: []json.RawMessage{payload, payload}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	first, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{Trigger: "daily"})
+	if err != nil || !first.Changed || first.Profile.Provenance == nil || first.Profile.Provenance.EvidenceDigest == "" {
+		t.Fatalf("first refresh = %#v, err=%v", first, err)
+	}
+	now = now.Add(24 * time.Hour)
+	second, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{Trigger: "daily"})
+	if err != nil || second.Changed || second.Skipped != "memory evidence is unchanged" {
+		t.Fatalf("second refresh = %#v, err=%v", second, err)
+	}
+	if len(generator.requests) != 1 {
+		t.Fatalf("unchanged daily refresh used model tokens; requests=%d", len(generator.requests))
+	}
+
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: "mcq", Type: "question_answered", Summary: "Practiced queues again.",
+		Payload: json.RawMessage(`{"topic":"Queues","correct":true}`),
+	}); err != nil {
+		t.Fatalf("append evidence: %v", err)
+	}
+	third, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{Trigger: "daily"})
+	if err != nil || !third.Changed || len(generator.requests) != 2 {
+		t.Fatalf("changed refresh = %#v requests=%d err=%v", third, len(generator.requests), err)
+	}
+}
+
 func TestProfileEvidenceExcludesAuditEventsAndSessionMarkersFromSignals(t *testing.T) {
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
 	events := []memory.Event{

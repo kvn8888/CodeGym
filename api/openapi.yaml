@@ -399,6 +399,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /api/v1/mcq/evaluate:
+    post:
+      operationId: evaluateMCQFreeResponse
+      summary: Grade one short free-response practice answer with the configured AI evaluator.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FreeResponseEvaluationInput"
+      responses:
+        "200":
+          description: Binary correctness and concise evaluator feedback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FreeResponseEvaluationEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "502":
+          description: The evaluator provider failed or returned unusable output; the answer remains unconfirmed and retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: AI evaluation is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   /api/v1/memory/profile/maintain:
     post:
       operationId: maintainMemoryProfile
@@ -841,6 +879,9 @@ components:
         event_count:
           type: integer
           minimum: 0
+        evidence_digest:
+          type: string
+          description: Stable digest of filtered profile evidence. Unchanged daily ticks skip the model call when this digest still matches.
 
     SkillProficiency:
       type: object
@@ -1099,6 +1140,15 @@ components:
           type: integer
           minimum: 0
           description: Round number in a continuous marathon; later rounds avoid repeating earlier questions.
+        question_types:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          default: [single_select]
+          description: Enabled question types for the generated set. Multiple values produce a mixed set.
+          items:
+            type: string
+            enum: [single_select, multi_select, free_response]
 
     MaintainProfileInput:
       type: object
@@ -1110,27 +1160,88 @@ components:
 
     MCQQuestion:
       type: object
-      required: [id, text, options, correctIndex, concept, helpContent]
+      required: [id, type, text, concept, helpContent]
       properties:
         id:
           type: string
           example: mq1
+        type:
+          type: string
+          enum: [single_select, multi_select, free_response]
         text:
           type: string
         options:
           type: array
           items:
             type: string
-          minItems: 4
           maxItems: 4
+          description: Exactly four options for single-select and multi-select; omitted for free response.
         correctIndex:
           type: integer
           minimum: 0
           maximum: 3
+          description: Required only for single-select.
+        correctIndices:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 0
+            maximum: 3
+          description: Required only for multi-select; grading requires an exact set match.
+        expectedAnswer:
+          type: string
+          description: Concise evaluator reference answer for free-response items.
+        rubric:
+          type: string
+          description: Objective binary grading criteria for free-response items.
         concept:
           type: string
         helpContent:
           type: string
+
+    FreeResponseEvaluationInput:
+      type: object
+      required: [question, expected_answer, rubric, answer]
+      properties:
+        question_id:
+          type: string
+        question:
+          type: string
+        concept:
+          type: string
+        expected_answer:
+          type: string
+        rubric:
+          type: string
+        answer:
+          type: string
+          maxLength: 2000
+
+    FreeResponseEvaluation:
+      type: object
+      required: [correct, feedback]
+      properties:
+        correct:
+          type: boolean
+        feedback:
+          type: string
+          maxLength: 400
+        provider:
+          type: string
+        model:
+          type: string
+
+    FreeResponseEvaluationEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/FreeResponseEvaluation"
+        error:
+          type: "null"
 
     GenerateMCQResult:
       type: object

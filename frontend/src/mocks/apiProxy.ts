@@ -2,7 +2,12 @@ import { mockPassingResult, mockProblems, mockProblemSummaries, mockSkeletons } 
 import { mockMcqQuestions } from './mcqFixtures';
 import { mockMemoryProfile } from './memoryFixtures';
 import { mockMemoryEvents, mockSessions } from './activityFixtures';
-import type { MemoryEvent, PracticeSession, UserProfile } from '../shared/api/types';
+import type {
+  MCQQuestionType,
+  MemoryEvent,
+  PracticeSession,
+  UserProfile,
+} from '../shared/api/types';
 
 interface MockApiResponse<T> {
   data: T;
@@ -323,11 +328,41 @@ export async function mockApiFetch(
   // Generation: return a canned MCQ set shaped like the backend response so
   // the marathon flow works without a backend or GenAI key.
   if (method === 'POST' && path === '/generate') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as {
+      spec?: { count?: number; question_types?: MCQQuestionType[] };
+    };
+    const enabled = new Set(
+      body.spec?.question_types?.length ? body.spec.question_types : ['single_select'],
+    );
+    const candidates = mockMcqQuestions.filter((question) =>
+      enabled.has(question.type ?? 'single_select'),
+    );
+    const count = Math.max(1, body.spec?.count ?? 5);
+    const questions = Array.from({ length: count }, (_, index) => ({
+      ...candidates[index % candidates.length],
+      id: `mq${index + 1}`,
+    }));
     return json({
       kind: 'mcq',
       provider: 'mock',
       model: 'mock-model',
-      questions: mockMcqQuestions,
+      questions,
+    });
+  }
+
+  if (method === 'POST' && path === '/mcq/evaluate') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as { answer?: string };
+    const answer = body.answer?.trim() ?? '';
+    const correct = /level|distance|edge|queue/i.test(answer) && answer.length >= 20;
+    return json({
+      correct,
+      feedback: correct
+        ? 'Correct. You connected queue order to increasing path distance.'
+        : 'Explain how queue order processes every vertex at one distance before moving to the next distance.',
+      provider: 'mock',
+      model: 'mock-evaluator',
     });
   }
 

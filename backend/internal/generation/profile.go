@@ -2,6 +2,7 @@ package generation
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,6 +57,7 @@ type ProfileRefreshResult struct {
 	Profile        memory.Profile
 	AppliedActions []NoteAction
 	Skipped        string
+	Changed        bool
 }
 
 // RefreshProfile synthesizes one scoped user's profile. Provider and validation
@@ -81,7 +83,17 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		return s.fallback(ctx, current, fallback, persisted, "generation is not configured")
 	}
 
-	evidence, err := json.Marshal(buildProfileEvidence(evidenceEvents, fallback, input.SessionID))
+	evidenceInput := buildProfileEvidence(evidenceEvents, fallback, "")
+	evidenceDigest, err := profileEvidenceDigest(evidenceInput)
+	if err != nil {
+		return ProfileRefreshResult{}, fmt.Errorf("digest profile evidence: %w", err)
+	}
+	if strings.TrimSpace(input.Trigger) == "daily" && persisted && current.Provenance != nil &&
+		current.Provenance.EvidenceDigest != "" && current.Provenance.EvidenceDigest == evidenceDigest {
+		return ProfileRefreshResult{Profile: current, Skipped: "memory evidence is unchanged"}, nil
+	}
+	evidenceInput.SessionID = strings.TrimSpace(input.SessionID)
+	evidence, err := json.Marshal(evidenceInput)
 	if err != nil {
 		return ProfileRefreshResult{}, fmt.Errorf("encode profile evidence: %w", err)
 	}
@@ -107,6 +119,7 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		SynthesizedAt:   now,
 		EvidenceThrough: latestEvidenceTime(evidenceEvents),
 		EventCount:      len(evidenceEvents),
+		EvidenceDigest:  evidenceDigest,
 	}
 	updated, err := s.memory.ReplaceProfile(ctx, next)
 	if err != nil {
@@ -116,6 +129,7 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 	return ProfileRefreshResult{
 		Profile:        updated,
 		AppliedActions: diffNoteActions(current.Notes, updated.Notes),
+		Changed:        true,
 	}, nil
 }
 
@@ -127,7 +141,7 @@ func (s *ProfileSynthesizer) fallback(ctx context.Context, current, fallback mem
 	if err != nil {
 		return ProfileRefreshResult{}, err
 	}
-	return ProfileRefreshResult{Profile: updated, Skipped: reason}, nil
+	return ProfileRefreshResult{Profile: updated, Skipped: reason, Changed: true}, nil
 }
 
 // RefreshAllProfiles is the daily-worker entrypoint. It establishes the same
@@ -141,18 +155,36 @@ func (s *ProfileSynthesizer) RefreshAllProfiles(ctx context.Context) (int, error
 	if err != nil {
 		return 0, err
 	}
-	for index, scope := range scopes {
+	changed := 0
+	for _, scope := range scopes {
 		scoped := auth.WithPrincipal(ctx, auth.Principal{
 			UserID:             scope.UserID,
 			DefaultWorkspaceID: scope.WorkspaceID,
 			WorkspaceIDs:       []string{scope.WorkspaceID},
 		})
 		scoped = workspace.WithScope(scoped, workspace.Scope{WorkspaceID: scope.WorkspaceID})
-		if _, err := s.RefreshProfile(scoped, ProfileRefreshInput{Trigger: "daily"}); err != nil {
-			return index, err
+		result, err := s.RefreshProfile(scoped, ProfileRefreshInput{Trigger: "daily"})
+		if err != nil {
+			return changed, err
+		}
+		if result.Changed {
+			changed++
 		}
 	}
-	return len(scopes), nil
+	return changed, nil
+}
+
+func profileEvidenceDigest(evidence profileEvidence) (string, error) {
+	evidence.SessionID = ""
+	encoded, err := json.Marshal(struct {
+		Version  int             `json:"version"`
+		Evidence profileEvidence `json:"evidence"`
+	}{Version: 1, Evidence: evidence})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(encoded)
+	return fmt.Sprintf("%x", sum[:]), nil
 }
 
 const profileSystemPrompt = `You curate the long-lived learning profile for CodeGym, an interview-practice application. Deterministic events are evidence, not conclusions. Interpret the bounded evidence into one concise, coherent profile that future practice generation can trust.
@@ -284,7 +316,9 @@ var evidencePayloadKeys = map[string]bool{
 	"difficulty": true, "correct": true, "passed": true, "used_help": true,
 	"duration_ms": true, "question_count": true, "answered_count": true,
 	"skipped_count": true, "correct_count": true, "generated": true,
-	"round": true, "problem_id": true, "passed_count": true, "failed_count": true, "total": true,
+	"question_type": true, "answer_length": true, "selected_count": true,
+	"correct_option_count": true,
+	"round":                true, "problem_id": true, "passed_count": true, "failed_count": true, "total": true,
 }
 
 func profileEvidenceEvents(events []memory.Event) []memory.Event {

@@ -28,6 +28,7 @@ backend:
 | 6 | Conversational interview coach | [`06-conversational-interview.md`](06-conversational-interview.md) | Streaming chat |
 | 7 | Memory profile synthesizer | [`07-memory-profile-summary.md`](07-memory-profile-summary.md) | Curated `Profile` JSON |
 | 8 | Legacy note-only maintenance reference | [`08-memory-notes.md`](08-memory-notes.md) | Note actions |
+| 9 | MCQ free-response evaluator | [`09-mcq-free-response-evaluation.md`](09-mcq-free-response-evaluation.md) | Binary verdict + concise feedback |
 
 ## How the pipeline fits together
 

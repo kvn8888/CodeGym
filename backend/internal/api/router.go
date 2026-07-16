@@ -67,6 +67,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("PUT /api/v1/sessions/{id}/files", sessionHandler.UpsertFiles)
 	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion)
 	protected.HandleFunc("POST /api/v1/generate", generateHandler.Generate)
+	protected.HandleFunc("POST /api/v1/mcq/evaluate", generateHandler.EvaluateFreeResponse)
 	protected.HandleFunc("POST /api/v1/memory/profile/maintain", generateHandler.MaintainProfile)
 	// Compatibility alias for clients deployed before full-profile synthesis.
 	protected.HandleFunc("POST /api/v1/memory/notes/maintain", generateHandler.MaintainProfile)

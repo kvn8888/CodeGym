@@ -100,6 +100,13 @@ and notes off the event-recording path. Invalid provider output preserves an
 existing profile. A first refresh can still use the deterministic v0 profile
 when generation is unavailable.
 
+Before a daily synthesis, the worker computes a SHA-256 digest of the filtered,
+bounded learning evidence. If that digest matches the profile's persisted
+provenance, the tick returns without calling the model, consuming tokens, or
+changing profile timestamps. New learning evidence changes the digest and
+causes one normal synthesis attempt. Provider failures preserve the prior
+profile and digest so the next scheduled tick can retry.
+
 Default interval: `24h`.
 
 Override with:
@@ -261,6 +268,7 @@ PATCH /api/v1/sessions/{id}
 PUT   /api/v1/sessions/{id}/files
 
 POST /api/v1/generate
+POST /api/v1/mcq/evaluate
 POST /api/v1/memory/notes/maintain # deprecated compatibility alias
 ```
 

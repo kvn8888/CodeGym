@@ -128,6 +128,28 @@ func (s *sequencedGenerator) Generate(_ context.Context, request generation.Gene
 	}, nil
 }
 
+func TestEvaluateFreeResponseRoute(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	generator := &sequencedGenerator{payloads: []string{`{"correct":true,"feedback":"The answer correctly explains FIFO ordering."}`}}
+	router := newGenerateTestRouter(t, generation.NewOrchestrator(memoryService, generator), memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/mcq/evaluate", strings.NewReader(`{
+		"question_id":"mq1","question":"How does a queue remove items?","concept":"Queues",
+		"expected_answer":"First in, first out.","rubric":"Must identify FIFO ordering.",
+		"answer":"It removes the oldest inserted item first."
+	}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"correct":true`) {
+		t.Fatalf("evaluation status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if len(generator.requests) != 1 || generator.requests[0].Kind != generation.KindMCQEvaluation {
+		t.Fatalf("requests = %#v", generator.requests)
+	}
+}
+
 func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })

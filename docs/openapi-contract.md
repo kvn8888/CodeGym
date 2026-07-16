@@ -28,6 +28,8 @@ Current routes:
 | `GET` | `/api/v1/memory/profile` | Yes | Fetch the scoped user's derived memory profile. |
 | `POST` | `/api/v1/memory/profile/refresh` | Yes | Manually synthesize and persist the scoped user's profile from bounded event evidence. |
 | `POST` | `/api/v1/memory/profile/maintain` | Yes | Run set-completion profile synthesis before the next generated set. |
+| `POST` | `/api/v1/generate` | Yes | Generate a validated single-select, multi-select, free-response, or mixed MCQ set. |
+| `POST` | `/api/v1/mcq/evaluate` | Yes | Evaluate one free-response answer against its reference answer and rubric. |
 | `GET` | `/api/v1/memory/events` | Yes | List append-only memory events newest-first with explicit UTC timestamps. |
 | `POST` | `/api/v1/memory/events` | Yes | Record one append-only memory event. |
 | `GET` | `/api/v1/sessions` | Yes | List resumable practice session summaries. |
@@ -134,6 +136,9 @@ Profile response data includes `summary`, `updated_at`, `next_review_at`,
 `provenance`. The same validated synthesis operation serves manual refresh,
 set-completion refresh, and the scheduled worker. `/memory/notes/maintain`
 remains a deprecated compatibility alias for `/memory/profile/maintain`.
+Daily refresh stores a stable `provenance.evidence_digest`; when the filtered
+learning evidence is unchanged, the worker skips the model call and leaves the
+existing profile and timestamps untouched.
 
 ## Curl Examples
 

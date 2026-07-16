@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/kvn8888/codegym/backend/internal/api/response"
 	"github.com/kvn8888/codegym/backend/internal/generation"
@@ -41,6 +42,15 @@ type generateMCQResponse struct {
 	Questions []generation.MCQQuestion `json:"questions"`
 	Provider  string                   `json:"provider"`
 	Model     string                   `json:"model"`
+}
+
+type evaluateFreeResponseBody struct {
+	QuestionID     string `json:"question_id"`
+	Question       string `json:"question"`
+	Concept        string `json:"concept"`
+	ExpectedAnswer string `json:"expected_answer"`
+	Rubric         string `json:"rubric"`
+	Answer         string `json:"answer"`
 }
 
 // Generate handles POST /api/v1/generate. Only kind "mcq" is implemented;
@@ -121,6 +131,43 @@ func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, ra
 		Provider:  result.Provider,
 		Model:     result.Model,
 	})
+}
+
+// EvaluateFreeResponse grades one short-answer item through the configured
+// provider. Failed evaluation never changes session or memory state; the
+// frontend keeps the draft answer available for retry or skip.
+func (h *GenerateHandler) EvaluateFreeResponse(w http.ResponseWriter, r *http.Request) {
+	if h.orchestrator == nil {
+		response.Error(w, http.StatusServiceUnavailable, "generation_unconfigured", "AI evaluation is not configured on this server.")
+		return
+	}
+	var body evaluateFreeResponseBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid_json", "Request body must be valid JSON.")
+		return
+	}
+	evaluation, err := generation.EvaluateFreeResponse(r.Context(), h.orchestrator, generation.FreeResponseEvaluationInput{
+		QuestionID: body.QuestionID, Question: body.Question, Concept: body.Concept,
+		ExpectedAnswer: body.ExpectedAnswer, Rubric: body.Rubric, Answer: body.Answer,
+	})
+	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+		if generation.DiagnosticClass(err) == "invalid_output" {
+			log.Printf("free-response evaluation failed class=%s detail=%s", generation.DiagnosticClass(err), generation.DiagnosticMessage(err))
+			response.Error(w, http.StatusBadGateway, "evaluation_failed", "The evaluator did not return a usable result. Retry or skip this question.")
+			return
+		}
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "at most") {
+			response.Error(w, http.StatusBadRequest, "invalid_evaluation_input", err.Error())
+			return
+		}
+		log.Printf("free-response evaluation failed class=%s detail=%s", generation.DiagnosticClass(err), generation.DiagnosticMessage(err))
+		response.Error(w, http.StatusBadGateway, "evaluation_failed", "Could not evaluate this answer. Retry or skip this question.")
+		return
+	}
+	response.JSON(w, http.StatusOK, evaluation)
 }
 
 type maintainProfileRequestBody struct {

@@ -1,8 +1,24 @@
+import type { MCQQuestionType } from '../shared/api/types';
+
+export interface MockMcqQuestion {
+  id: string;
+  type?: MCQQuestionType;
+  text: string;
+  options?: string[];
+  correctIndex?: number;
+  correctIndices?: number[];
+  expectedAnswer?: string;
+  rubric?: string;
+  concept: string;
+  helpContent: string;
+}
+
 /** Canned MCQ set for the mock API proxy, shaped like the backend
  *  GenerateMCQResult questions (see POST /api/v1/generate). */
-export const mockMcqQuestions = [
+export const mockMcqQuestions: MockMcqQuestion[] = [
   {
     id: 'mq1',
+    type: 'single_select',
     text: 'What is the amortized time complexity of appending to a dynamic array?',
     options: ['O(n)', 'O(1)', 'O(log n)', 'O(n log n)'],
     correctIndex: 1,
@@ -12,6 +28,7 @@ export const mockMcqQuestions = [
   },
   {
     id: 'mq2',
+    type: 'single_select',
     text: 'Which HTTP status code should a rate limiter return when a client exceeds its quota?',
     options: ['400', '403', '429', '503'],
     correctIndex: 2,
@@ -21,6 +38,7 @@ export const mockMcqQuestions = [
   },
   {
     id: 'mq3',
+    type: 'single_select',
     text: 'In SQL, which JOIN returns rows from the left table even when there is no match on the right?',
     options: ['INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'CROSS JOIN'],
     correctIndex: 1,
@@ -30,25 +48,29 @@ export const mockMcqQuestions = [
   },
   {
     id: 'mq4',
-    text: 'What does an LRU cache evict when it reaches capacity?',
+    type: 'multi_select',
+    text: 'Which operations are commonly O(1) in a well-designed LRU cache?',
     options: [
-      'The largest entry',
-      'The least-recently-used entry',
-      'The oldest inserted entry',
-      'A random entry',
+      'Read an existing key',
+      'Insert or update a key',
+      'Sort every cached key',
+      'Scan every entry for eviction',
     ],
-    correctIndex: 1,
+    correctIndices: [0, 1],
     concept: 'LRU Caching',
     helpContent:
-      'LRU tracks access recency: every get/put marks an entry as recently used, and the entry untouched the longest is evicted first.',
+      'A hash map locates entries while a doubly linked list updates recency and evicts from one end without scanning the cache.',
   },
   {
     id: 'mq5',
-    text: 'Which Go primitive is the idiomatic way to wait for a group of goroutines to finish?',
-    options: ['time.Sleep', 'sync.WaitGroup', 'channel close', 'runtime.Gosched'],
-    correctIndex: 1,
-    concept: 'Go Concurrency',
+    type: 'free_response',
+    text: 'Why does breadth-first search find a shortest path in an unweighted graph?',
+    expectedAnswer:
+      'Breadth-first search explores vertices in nondecreasing distance from the source, one level at a time.',
+    rubric:
+      'The answer must explain that queue order processes every distance-k vertex before any distance-(k+1) vertex.',
+    concept: 'Breadth-First Search',
     helpContent:
-      'sync.WaitGroup counts in-flight goroutines: Add before starting, Done when each finishes, Wait blocks until the count reaches zero.',
+      'Focus on the relationship between queue order and the number of edges from the source.',
   },
 ];

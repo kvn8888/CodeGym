@@ -69,7 +69,7 @@ export interface paths {
         /**
          * Aggregate GenAI token usage and estimated USD cost for the authenticated workspace user.
          * @description Totals tokens_in / tokens_out and estimated cost from recorded generation
-         *     calls (MCQ generate, note maintenance, etc.). Costs use a built-in rate
+         *     calls (MCQ generation, memory profile synthesis, etc.). Costs use a built-in rate
          *     card (USD per million tokens) last reviewed 2026-07-15 for Meta Muse Spark,
          *     Azure/OpenAI GPT-5.6 Terra family, and Gemini Flash-class models.
          */
@@ -208,6 +208,23 @@ export interface paths {
         put?: never;
         /** Generate practice content (MCQ sets today; problems and interviews later) personalized by the caller's memory profile. */
         post: operations["generateContent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcq/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grade one short free-response practice answer with the configured AI evaluator. */
+        post: operations["evaluateMCQFreeResponse"];
         delete?: never;
         options?: never;
         head?: never;
@@ -408,6 +425,8 @@ export interface components {
             /** Format: date-time */
             evidence_through: string;
             event_count: number;
+            /** @description Stable digest of filtered profile evidence. Unchanged daily ticks skip the model call when this digest still matches. */
+            evidence_digest?: string;
         };
         SkillProficiency: {
             id: string;
@@ -545,6 +564,13 @@ export interface components {
             difficulty?: string;
             /** @description Round number in a continuous marathon; later rounds avoid repeating earlier questions. */
             round?: number;
+            /**
+             * @description Enabled question types for the generated set. Multiple values produce a mixed set.
+             * @default [
+             *       "single_select"
+             *     ]
+             */
+            question_types: ("single_select" | "multi_select" | "free_response")[];
         };
         MaintainProfileInput: {
             /**
@@ -556,11 +582,39 @@ export interface components {
         MCQQuestion: {
             /** @example mq1 */
             id: string;
+            /** @enum {string} */
+            type: "single_select" | "multi_select" | "free_response";
             text: string;
-            options: string[];
-            correctIndex: number;
+            /** @description Exactly four options for single-select and multi-select; omitted for free response. */
+            options?: string[];
+            /** @description Required only for single-select. */
+            correctIndex?: number;
+            /** @description Required only for multi-select; grading requires an exact set match. */
+            correctIndices?: number[];
+            /** @description Concise evaluator reference answer for free-response items. */
+            expectedAnswer?: string;
+            /** @description Objective binary grading criteria for free-response items. */
+            rubric?: string;
             concept: string;
             helpContent: string;
+        };
+        FreeResponseEvaluationInput: {
+            question_id?: string;
+            question: string;
+            concept?: string;
+            expected_answer: string;
+            rubric: string;
+            answer: string;
+        };
+        FreeResponseEvaluation: {
+            correct: boolean;
+            feedback: string;
+            provider?: string;
+            model?: string;
+        };
+        FreeResponseEvaluationEnvelope: {
+            data: components["schemas"]["FreeResponseEvaluation"];
+            error: null;
         };
         GenerateMCQResult: {
             /** @example mcq */
@@ -1076,6 +1130,54 @@ export interface operations {
                 };
             };
             /** @description Generation is not configured on this server. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    evaluateMCQFreeResponse: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreeResponseEvaluationInput"];
+            };
+        };
+        responses: {
+            /** @description Binary correctness and concise evaluator feedback. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreeResponseEvaluationEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            /** @description The evaluator provider failed or returned unusable output; the answer remains unconfirmed and retryable. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description AI evaluation is not configured on this server. */
             503: {
                 headers: {
                     [name: string]: unknown;

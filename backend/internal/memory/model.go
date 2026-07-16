@@ -27,6 +27,7 @@ type ProfileProvenance struct {
 	SynthesizedAt   time.Time `json:"synthesized_at"`
 	EvidenceThrough time.Time `json:"evidence_through"`
 	EventCount      int       `json:"event_count"`
+	EvidenceDigest  string    `json:"evidence_digest,omitempty"`
 }
 
 // SkillProficiency captures skill-level observations in the user profile.

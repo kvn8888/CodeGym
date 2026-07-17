@@ -83,8 +83,9 @@ func TestGenerateReturnsParsedObject(t *testing.T) {
 	if captured.body["model"] != "test-model" {
 		t.Errorf("model = %v, want test-model", captured.body["model"])
 	}
-	if format, ok := captured.body["response_format"].(map[string]any); !ok || format["type"] != "json_object" {
-		t.Errorf("response_format = %#v, want json_object", captured.body["response_format"])
+	// testRequest schema is type:array, so json_object must be omitted.
+	if _, ok := captured.body["response_format"]; ok {
+		t.Errorf("response_format = %#v, want omitted for array schema", captured.body["response_format"])
 	}
 
 	messages, ok := captured.body["messages"].([]any)
@@ -103,7 +104,7 @@ func TestGenerateReturnsParsedObject(t *testing.T) {
 		t.Errorf("object = %s", result.Object)
 	}
 	if result.Provider != "openai_compat" {
-		t.Errorf("provider = %q", result.Provider)
+		t.Errorf("provider = %q, want default openai_compat", result.Provider)
 	}
 	if result.TokensIn != 120 || result.TokensOut != 250 {
 		t.Errorf("tokens = %d/%d, want 120/250", result.TokensIn, result.TokensOut)
@@ -136,7 +137,10 @@ func TestGenerateRetriesWithoutResponseFormatWhenProviderRejectsIt(t *testing.T)
 		t.Fatalf("New: %v", err)
 	}
 
-	result, err := adapter.Generate(context.Background(), testRequest())
+	// Object schema triggers json_object response_format (array schemas omit it).
+	request := testRequest()
+	request.Schema.JSONSchema = json.RawMessage(`{"type":"object"}`)
+	result, err := adapter.Generate(context.Background(), request)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -283,5 +287,95 @@ func TestNewRequiresConfig(t *testing.T) {
 	}
 	if _, err := New(Config{BaseURL: "https://x", APIKey: "k"}); err == nil {
 		t.Error("expected error for missing Model")
+	}
+}
+
+func TestGenerateAzureAuthAndAPIVersion(t *testing.T) {
+	var captured struct {
+		apiKey         string
+		auth           string
+		apiVersion     string
+		maxTokens      any
+		maxCompletion  any
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured.apiKey = r.Header.Get("api-key")
+		captured.auth = r.Header.Get("Authorization")
+		captured.apiVersion = r.URL.Query().Get("api-version")
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		captured.maxTokens = body["max_tokens"]
+		captured.maxCompletion = body["max_completion_tokens"]
+		_, _ = w.Write([]byte(chatCompletionBody(t, `{"ok":true}`)))
+	}))
+	defer server.Close()
+
+	adapter, err := New(Config{
+		Name:             "azure",
+		BaseURL:          server.URL + "/openai/deployments/gpt-4o",
+		APIKey:           "azure-secret",
+		Model:            "gpt-4o",
+		AuthStyle:        AuthAzureAPIKey,
+		APIVersion:       "2024-10-21-preview",
+		DefaultMaxTokens: 2048,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := adapter.Generate(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Provider != "azure" {
+		t.Errorf("provider = %q", result.Provider)
+	}
+	if captured.apiKey != "azure-secret" {
+		t.Errorf("api-key = %q", captured.apiKey)
+	}
+	if captured.auth != "" {
+		t.Errorf("Authorization should be empty for azure_api_key, got %q", captured.auth)
+	}
+	if captured.apiVersion != "2024-10-21-preview" {
+		t.Errorf("api-version = %q", captured.apiVersion)
+	}
+	// Azure uses max_completion_tokens, not max_tokens.
+	if captured.maxTokens != nil {
+		t.Errorf("max_tokens = %#v, want omitted for Azure", captured.maxTokens)
+	}
+	if captured.maxCompletion != float64(2048) {
+		t.Errorf("max_completion_tokens = %#v, want default 2048", captured.maxCompletion)
+	}
+}
+
+func TestGenerateNamedProviderAndDefaultMaxTokens(t *testing.T) {
+	var maxTokens any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		maxTokens = body["max_tokens"]
+		_, _ = w.Write([]byte(chatCompletionBody(t, `[]`)))
+	}))
+	defer server.Close()
+
+	adapter, err := New(Config{
+		Name:             "meta",
+		BaseURL:          server.URL,
+		APIKey:           "k",
+		Model:            "muse-spark-1.1",
+		DefaultMaxTokens: 4096,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	result, err := adapter.Generate(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Provider != "meta" {
+		t.Errorf("provider = %q", result.Provider)
+	}
+	if maxTokens != float64(4096) {
+		t.Errorf("max_tokens = %#v", maxTokens)
 	}
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 func TestNeonIdentityAndMemoryBootstrap(t *testing.T) {
@@ -49,33 +49,33 @@ func TestNeonIdentityAndMemoryBootstrap(t *testing.T) {
 
 	suffix := time.Now().UTC().Format("20060102150405.000000000")
 	userID := "test-user-" + suffix
-	tenantID := "test-tenant-" + suffix
-	defer cleanupRows(t, pool, tenantID, userID)
+	workspaceID := "test-tenant-" + suffix
+	defer cleanupRows(t, pool, workspaceID, userID)
 
 	identityService := identity.NewService(identityStore)
 	principal := auth.Principal{
-		UserID:          userID,
-		DefaultTenantID: tenantID,
-		TenantIDs:       []string{tenantID},
+		UserID:             userID,
+		DefaultWorkspaceID: workspaceID,
+		WorkspaceIDs:       []string{workspaceID},
 		UserMetadata: auth.UserMetadata{
 			Email:       userID + "@example.com",
 			DisplayName: "Test User " + suffix,
 		},
 	}
-	if err := identityService.EnsurePersonalTenant(ctx, principal); err != nil {
-		t.Fatalf("ensure personal tenant: %v", err)
+	if err := identityService.EnsurePersonalWorkspace(ctx, principal); err != nil {
+		t.Fatalf("ensure personal workspace: %v", err)
 	}
-	assertIdentityRows(t, ctx, pool, tenantID, userID, principal.UserMetadata.Email, principal.UserMetadata.DisplayName)
+	assertIdentityRows(t, ctx, pool, workspaceID, userID, principal.UserMetadata.Email, principal.UserMetadata.DisplayName)
 
 	repeatedPrincipal := principal
 	repeatedPrincipal.UserMetadata = auth.UserMetadata{}
-	if err := identityService.EnsurePersonalTenant(ctx, repeatedPrincipal); err != nil {
-		t.Fatalf("ensure personal tenant without metadata: %v", err)
+	if err := identityService.EnsurePersonalWorkspace(ctx, repeatedPrincipal); err != nil {
+		t.Fatalf("ensure personal workspace without metadata: %v", err)
 	}
-	assertIdentityRows(t, ctx, pool, tenantID, userID, principal.UserMetadata.Email, principal.UserMetadata.DisplayName)
+	assertIdentityRows(t, ctx, pool, workspaceID, userID, principal.UserMetadata.Email, principal.UserMetadata.DisplayName)
 
 	requestCtx := auth.WithPrincipal(ctx, principal)
-	requestCtx = tenant.WithScope(requestCtx, tenant.Scope{TenantID: tenantID})
+	requestCtx = workspace.WithScope(requestCtx, workspace.Scope{WorkspaceID: workspaceID})
 
 	memoryService := memory.NewService(memoryStore, func() time.Time {
 		return time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
@@ -117,8 +117,9 @@ func assertConstraints(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		name  string
 		table string
 	}{
-		{name: "chk_tenants_tenant_type", table: "tenants"},
-		{name: "chk_tenant_memberships_role", table: "tenant_memberships"},
+		{name: "chk_app_users_display_name_source", table: "app_users"},
+		{name: "chk_workspaces_workspace_type", table: "workspaces"},
+		{name: "chk_workspace_memberships_role", table: "workspace_memberships"},
 		{name: "fk_user_memory_profiles_membership", table: "user_memory_profiles"},
 		{name: "fk_memory_events_membership", table: "memory_events"},
 	} {
@@ -140,27 +141,27 @@ func assertConstraints(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	}
 }
 
-func assertIdentityRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenantID, userID, email, displayName string) {
+func assertIdentityRows(t *testing.T, ctx context.Context, pool *pgxpool.Pool, workspaceID, userID, email, displayName string) {
 	t.Helper()
 
 	var count int
 	err := pool.QueryRow(ctx, `
 		SELECT count(*)
 		FROM app_users u
-		JOIN tenant_memberships m ON m.user_id = u.id
-		JOIN tenants t ON t.id = m.tenant_id
+		JOIN workspace_memberships m ON m.user_id = u.id
+		JOIN workspaces t ON t.id = m.workspace_id
 		WHERE u.id = $1
 			AND t.id = $2
 			AND u.email = $3
 			AND u.display_name = $4
-			AND t.tenant_type = 'personal'
+			AND t.workspace_type = 'personal'
 			AND m.role = 'owner'
-	`, userID, tenantID, email, displayName).Scan(&count)
+	`, userID, workspaceID, email, displayName).Scan(&count)
 	if err != nil {
 		t.Fatalf("query identity rows: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("expected one user/tenant membership row, got %d", count)
+		t.Fatalf("expected one user/workspace membership row, got %d", count)
 	}
 }
 
@@ -170,7 +171,7 @@ func assertMembershipConstraint(t *testing.T, ctx context.Context, pool *pgxpool
 	_, err := pool.Exec(ctx, `
 		INSERT INTO memory_events (
 			id,
-			tenant_id,
+			workspace_id,
 			user_id,
 			source,
 			type,
@@ -195,7 +196,7 @@ func containsEvent(events []memory.Event, id string) bool {
 	return false
 }
 
-func cleanupRows(t *testing.T, pool *pgxpool.Pool, tenantID, userID string) {
+func cleanupRows(t *testing.T, pool *pgxpool.Pool, workspaceID, userID string) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -206,10 +207,10 @@ func cleanupRows(t *testing.T, pool *pgxpool.Pool, tenantID, userID string) {
 		args []any
 	}
 	statements := []cleanupStatement{
-		{sql: `DELETE FROM memory_events WHERE tenant_id = $1 AND user_id = $2`, args: []any{tenantID, userID}},
-		{sql: `DELETE FROM user_memory_profiles WHERE tenant_id = $1 AND user_id = $2`, args: []any{tenantID, userID}},
-		{sql: `DELETE FROM tenant_memberships WHERE tenant_id = $1 AND user_id = $2`, args: []any{tenantID, userID}},
-		{sql: `DELETE FROM tenants WHERE id = $1`, args: []any{tenantID}},
+		{sql: `DELETE FROM memory_events WHERE workspace_id = $1 AND user_id = $2`, args: []any{workspaceID, userID}},
+		{sql: `DELETE FROM user_memory_profiles WHERE workspace_id = $1 AND user_id = $2`, args: []any{workspaceID, userID}},
+		{sql: `DELETE FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2`, args: []any{workspaceID, userID}},
+		{sql: `DELETE FROM workspaces WHERE id = $1`, args: []any{workspaceID}},
 		{sql: `DELETE FROM app_users WHERE id = $1`, args: []any{userID}},
 	}
 	for _, statement := range statements {

@@ -1,10 +1,10 @@
 # 8 · Memory Note Maintenance (Create / Update / Prune)
 
-**Role in the system:** The scope's "problem-specific notes" half of memory:
-"For each solved problem, notes can be generated or pruned." Runs when a user
-finishes engaging with a problem; decides whether to add a new note, update an
-existing one, or prune stale/redundant notes. Complements service 7 (which owns
-the user-level summary and leaves `notes` alone).
+**Role in the system:** Legacy note-only prompt retained for compatibility and
+prompt experiments. Production profile maintenance now uses service 7 to
+synthesize summary, skills, focus areas, and notes in one validated pass.
+`POST /api/v1/memory/notes/maintain` remains an endpoint alias, but it invokes
+the full profile synthesizer rather than this standalone prompt.
 
 **Output contract:** a list of note actions. Applying them yields the `notes`
 array on the `Profile` (`Note` in `model.go` / `MemoryNote` in `types.ts`).

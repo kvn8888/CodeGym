@@ -22,22 +22,22 @@ func NewInMemoryStore() *InMemoryStore {
 	}
 }
 
-func (s *InMemoryStore) GetProfile(_ context.Context, tenantID, userID string) (Profile, error) {
+func (s *InMemoryStore) GetProfile(_ context.Context, workspaceID, userID string) (Profile, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	profile, ok := s.profiles[key(tenantID, userID)]
+	profile, ok := s.profiles[key(workspaceID, userID)]
 	if !ok {
 		return Profile{}, ErrProfileNotFound
 	}
 	return profile, nil
 }
 
-func (s *InMemoryStore) UpsertProfile(_ context.Context, tenantID, userID string, profile Profile) error {
+func (s *InMemoryStore) UpsertProfile(_ context.Context, workspaceID, userID string, profile Profile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.profiles[key(tenantID, userID)] = profile
+	s.profiles[key(workspaceID, userID)] = profile
 	return nil
 }
 
@@ -45,16 +45,16 @@ func (s *InMemoryStore) AppendEvent(_ context.Context, event Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	k := key(event.TenantID, event.UserID)
+	k := key(event.WorkspaceID, event.UserID)
 	s.events[k] = append(s.events[k], event)
 	return nil
 }
 
-func (s *InMemoryStore) ListEvents(_ context.Context, tenantID, userID string) ([]Event, error) {
+func (s *InMemoryStore) ListEvents(_ context.Context, workspaceID, userID string) ([]Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	events := s.events[key(tenantID, userID)]
+	events := s.events[key(workspaceID, userID)]
 	copied := make([]Event, len(events))
 	copy(copied, events)
 	return copied, nil
@@ -69,23 +69,23 @@ func (s *InMemoryStore) ListEventScopes(_ context.Context) ([]Scope, error) {
 		if len(events) == 0 {
 			continue
 		}
-		tenantID, userID, ok := splitKey(k)
+		workspaceID, userID, ok := splitKey(k)
 		if !ok {
 			continue
 		}
-		scopes = append(scopes, Scope{TenantID: tenantID, UserID: userID})
+		scopes = append(scopes, Scope{WorkspaceID: workspaceID, UserID: userID})
 	}
 	sort.Slice(scopes, func(i, j int) bool {
-		if scopes[i].TenantID == scopes[j].TenantID {
+		if scopes[i].WorkspaceID == scopes[j].WorkspaceID {
 			return scopes[i].UserID < scopes[j].UserID
 		}
-		return scopes[i].TenantID < scopes[j].TenantID
+		return scopes[i].WorkspaceID < scopes[j].WorkspaceID
 	})
 	return scopes, nil
 }
 
-func key(tenantID, userID string) string {
-	return tenantID + "\x00" + userID
+func key(workspaceID, userID string) string {
+	return workspaceID + "\x00" + userID
 }
 
 func splitKey(value string) (string, string, bool) {

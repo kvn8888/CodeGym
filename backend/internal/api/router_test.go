@@ -22,7 +22,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/session"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -46,16 +46,20 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 	}
 
 	required := map[string][]string{
-		"/health":                        {http.MethodGet},
-		"/ready":                         {http.MethodGet},
-		"/api/v1/memory/profile":         {http.MethodGet},
-		"/api/v1/memory/profile/refresh": {http.MethodPost},
-		"/api/v1/memory/events":          {http.MethodGet, http.MethodPost},
-		"/api/v1/sessions":               {http.MethodGet, http.MethodPost},
-		"/api/v1/sessions/{id}":          {http.MethodGet, http.MethodPatch},
-		"/api/v1/sessions/{id}/files":    {http.MethodPut},
-		"/api/v1/generate":               {http.MethodPost},
-		"/api/v1/memory/notes/maintain":  {http.MethodPost},
+		"/health":                         {http.MethodGet},
+		"/ready":                          {http.MethodGet},
+		"/api/v1/me":                      {http.MethodGet, http.MethodPatch},
+		"/api/v1/cost":                    {http.MethodGet},
+		"/api/v1/memory/profile":          {http.MethodGet},
+		"/api/v1/memory/profile/refresh":  {http.MethodPost},
+		"/api/v1/memory/profile/maintain": {http.MethodPost},
+		"/api/v1/memory/events":           {http.MethodGet, http.MethodPost},
+		"/api/v1/sessions":                {http.MethodGet, http.MethodPost},
+		"/api/v1/sessions/{id}":           {http.MethodGet, http.MethodPatch},
+		"/api/v1/sessions/{id}/files":     {http.MethodPut},
+		"/api/v1/generate":                {http.MethodPost},
+		"/api/v1/mcq/evaluate":            {http.MethodPost},
+		"/api/v1/memory/notes/maintain":   {http.MethodPost},
 	}
 
 	for path, methods := range required {
@@ -68,6 +72,50 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 				t.Fatalf("OpenAPI contract is missing %s %s", method, path)
 			}
 		}
+	}
+}
+
+func TestRouterUserProfileLifecycle(t *testing.T) {
+	router := NewRouter(Dependencies{
+		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:      identity.NewService(identity.NewInMemoryStore()),
+		Memory:        memory.NewService(memory.NewInMemoryStore(), nil),
+		Sessions:      session.NewService(session.NewInMemoryStore(), nil),
+	})
+
+	getInitial := httptest.NewRecorder()
+	getInitialReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	getInitialReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(getInitial, getInitialReq)
+
+	if getInitial.Code != http.StatusOK {
+		t.Fatalf("initial profile status = %d: %s", getInitial.Code, getInitial.Body.String())
+	}
+	initial := decodeEnvelopeData[identity.UserProfile](t, getInitial)
+	if initial.UserID != "kevin" || initial.DisplayName != "kevin" || initial.DisplayNameSource != "fallback" {
+		t.Fatalf("initial profile = %#v", initial)
+	}
+
+	patch := httptest.NewRecorder()
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/v1/me", strings.NewReader(`{"display_name":"Kevin Chen"}`))
+	patchReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(patch, patchReq)
+
+	if patch.Code != http.StatusOK {
+		t.Fatalf("patch profile status = %d: %s", patch.Code, patch.Body.String())
+	}
+	updated := decodeEnvelopeData[identity.UserProfile](t, patch)
+	if updated.DisplayName != "Kevin Chen" || updated.DisplayNameSource != "user" {
+		t.Fatalf("updated profile = %#v", updated)
+	}
+
+	bad := httptest.NewRecorder()
+	badReq := httptest.NewRequest(http.MethodPatch, "/api/v1/me", strings.NewReader(`{"display_name":"   "}`))
+	badReq.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(bad, badReq)
+
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("blank display name status = %d: %s", bad.Code, bad.Body.String())
 	}
 }
 
@@ -255,8 +303,8 @@ func TestRouterMapsAuth0UserIntoIdentityBootstrap(t *testing.T) {
 	if bootstrapped.UserID != "auth0|user_123" {
 		t.Fatalf("UserID = %q, want auth0|user_123", bootstrapped.UserID)
 	}
-	if bootstrapped.TenantID != "personal-auth0-user-123" {
-		t.Fatalf("TenantID = %q, want personal-auth0-user-123", bootstrapped.TenantID)
+	if bootstrapped.WorkspaceID != "personal-auth0-user-123" {
+		t.Fatalf("WorkspaceID = %q, want personal-auth0-user-123", bootstrapped.WorkspaceID)
 	}
 	if bootstrapped.Email != "kevin@example.com" {
 		t.Fatalf("Email = %q, want kevin@example.com", bootstrapped.Email)
@@ -271,7 +319,7 @@ func TestRouterMapsAuth0UserIntoIdentityBootstrap(t *testing.T) {
 	forbidden := httptest.NewRecorder()
 	forbiddenReq := httptest.NewRequest(http.MethodGet, "/api/v1/memory/profile", nil)
 	forbiddenReq.Header.Set("Authorization", "Bearer "+token)
-	forbiddenReq.Header.Set(tenant.HeaderTenantID, "shared-claimed")
+	forbiddenReq.Header.Set(workspace.HeaderWorkspaceID, "shared-claimed")
 
 	router.ServeHTTP(forbidden, forbiddenReq)
 
@@ -282,26 +330,65 @@ func TestRouterMapsAuth0UserIntoIdentityBootstrap(t *testing.T) {
 
 type recordingIdentityStore struct {
 	mu      sync.RWMutex
-	records map[string]identity.PersonalTenant
+	records map[string]identity.PersonalWorkspace
 }
 
 func newRecordingIdentityStore() *recordingIdentityStore {
-	return &recordingIdentityStore{records: map[string]identity.PersonalTenant{}}
+	return &recordingIdentityStore{records: map[string]identity.PersonalWorkspace{}}
 }
 
-func (s *recordingIdentityStore) EnsurePersonalTenant(_ context.Context, personalTenant identity.PersonalTenant) error {
+func (s *recordingIdentityStore) EnsurePersonalWorkspace(_ context.Context, personalWorkspace identity.PersonalWorkspace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.records[personalTenant.TenantID+"\x00"+personalTenant.UserID] = personalTenant
+	s.records[personalWorkspace.WorkspaceID+"\x00"+personalWorkspace.UserID] = personalWorkspace
 	return nil
 }
 
-func (s *recordingIdentityStore) get(tenantID, userID string) identity.PersonalTenant {
+func (s *recordingIdentityStore) GetUserProfile(_ context.Context, userID string) (identity.UserProfile, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.records[tenantID+"\x00"+userID]
+	for _, record := range s.records {
+		if record.UserID == userID {
+			return identity.UserProfile{
+				UserID:             record.UserID,
+				Email:              record.Email,
+				DisplayName:        record.DisplayName,
+				DisplayNameSource:  record.DisplayNameSource,
+				DefaultWorkspaceID: record.WorkspaceID,
+			}, nil
+		}
+	}
+	return identity.UserProfile{}, identity.ErrUserNotFound
+}
+
+func (s *recordingIdentityStore) UpdateDisplayName(_ context.Context, userID, displayName string) (identity.UserProfile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, record := range s.records {
+		if record.UserID == userID {
+			record.DisplayName = displayName
+			record.DisplayNameSource = "user"
+			s.records[key] = record
+			return identity.UserProfile{
+				UserID:             record.UserID,
+				Email:              record.Email,
+				DisplayName:        record.DisplayName,
+				DisplayNameSource:  record.DisplayNameSource,
+				DefaultWorkspaceID: record.WorkspaceID,
+			}, nil
+		}
+	}
+	return identity.UserProfile{}, identity.ErrUserNotFound
+}
+
+func (s *recordingIdentityStore) get(workspaceID, userID string) identity.PersonalWorkspace {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.records[workspaceID+"\x00"+userID]
 }
 
 func (s *recordingIdentityStore) count() int {

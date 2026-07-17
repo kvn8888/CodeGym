@@ -55,13 +55,35 @@ If publishing is blocked by auth, network, failing validation, missing owner
 approval, or mixed unrelated work, say exactly what is blocked and what must
 happen next. Do not present local-only work as finished repository work.
 
-## Current State (Last Updated: 2026-07-09)
+## Current State (Last Updated: 2026-07-16)
 
 - Branch: `codegym-v2`.
-- Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, mock-friendly app routes. MarathonPage is a continuous round loop: a "what do you want to study?" prompt feeds `POST /api/v1/generate` (kind `mcq`, per-round `session_id` = `<base>_r<round>`), each round end awaits `POST /api/v1/memory/notes/maintain` before generating the next round, and a Finished button ends the loop with a final reflection. Emits `mcq.*` memory events; falls back to a built-in practice set when generation is unavailable.
-- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, memory profile/event APIs, session APIs, Neon/Postgres store support, deterministic memory summarization, manual profile refresh, and worker-ready profile refresh.
-- Generation: `generation.Orchestrator` composes the scoped memory profile with the provider-neutral `Generator` seam. `generation/openaicompat` is the first adapter (OpenAI chat-completions wire format; default base URL is the Vercel AI Gateway). `POST /api/v1/generate` serves MCQ sets with structural validation and one bounded repair retry; it answers 503 when `CODEGYM_GENAI_API_KEY` is unset. MCQ prompt text mirrors `docs/ai-prompts/05-mcq-marathon.md` — keep them in sync.
-- Memory notes are the LLM-curated slice of the profile (agentic CRUD, like editing a living project doc): `POST /api/v1/memory/notes/maintain` runs deterministic profile refresh, then a best-effort LLM pass (`generation.MaintainNotes`, prompt mirrors `docs/ai-prompts/08-memory-notes.md`) that creates/updates/prunes notes from the round's events and emits `memory.note_created/updated/pruned` audit events. The deterministic `memory.Summarize` preserves notes by ID, so worker/cron refreshes never clobber LLM curation. The user-level summary stays deterministic until the daily cron work (#41) lands.
+- Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, and mock-friendly app routes. The visual system is a quiet operational workspace: 24px routine page titles, flat border-led surfaces, compact rows, a 216px desktop sidebar, and a dedicated mobile navigation sheet. Sidebar nav is Dashboard, New practice, History, Memory, Settings (Marathon is not a nav item). Dashboard composes active/recent sessions with memory-derived recommendations; Memory composes the profile, event history, focus queue, skills, and notes; `/generate` is labeled New Practice and lets users select practice format (multiple choice vs DSA-style coding problem). MCQ starts a marathon session; coding opens the problem workspace shell (AI coding generation still partial). New Practice creates a complete durable MCQ snapshot and hands it to Marathon, which restores the exact question, timer, and draft selection. Bare `/marathon` redirects to `/generate`; only launch state or `?session=` may enter the run UI. History (`/`) and New Practice surface persisted MCQ runs with resume/result links. Marathon Skip emits `answer_incorrect` (with `skipped: true`) so memory/personalization treats skips like misses, while Exit saves the active session and flushes a `session_exited` event before leaving. Completing every MCQ question set shows a top-right `Updating memory` / `Memory updated` toast; Finished and Next Round await full profile synthesis, and the next set is generated only after that reflection succeeds. Floating chat is limited to active Marathon and problem-detail contexts. Settings exposes `/api/v1/me` and lets users save a custom display name.
+- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, `/api/v1/me` account profile APIs, memory profile/event APIs, session APIs, Neon/Postgres store support, structured LLM profile synthesis, manual profile refresh, and scheduled profile refresh. A first synthesis failure remains an unpersisted empty state; deterministic evidence is not stored as a user-facing profile. Auth0/Google `name` seeds `app_users.display_name` with `display_name_source=oauth`; Settings updates set `display_name_source=user`, and future OAuth metadata must not overwrite user-edited names. Production Auth0 uses the custom API Identifier `https://codegym.onrender.com` (not the Auth0 Management API audience) in matching backend/frontend Doppler configs. The CodeGym SPA requires a `subject_type: user` client grant for that API. Render and Vercel were redeployed with this corrected setup on 2026-07-15.
+- Generation: `generation.Orchestrator` composes the scoped memory profile with the provider-neutral `Generator` seam. `generation/openaicompat` is the first adapter (OpenAI chat-completions wire format; default base URL is the Vercel AI Gateway). `POST /api/v1/generate` serves structurally validated single-select, multi-select, free-response, or mixed MCQ sets with one bounded repair retry. Question format is an LLM decision made independently for each concept; it is not a New Practice control or request field. Multi-select uses exact-set grading. `POST /api/v1/mcq/evaluate` runs binary semantic evaluation for written responses and returns concise feedback. Raw written answers remain in resumable session state and are never copied into memory events. MCQ prompt text mirrors `docs/ai-prompts/05-mcq-marathon.md`, and evaluation mirrors `docs/ai-prompts/09-mcq-free-response-evaluation.md`; keep them in sync.
+- Append-only memory events are deterministic evidence. `generation.ProfileSynthesizer`
+  filters maintenance/audit events, builds a bounded evidence digest, validates
+  one structured LLM result, and atomically persists summary, Skill profile,
+  Focus next (`growth_edges`), strengths, notes, and synthesis provenance.
+  `CODEGYM_MEMORY_REFRESH_TRIGGER=daily|set-completion|both` selects the trigger
+  paths; `both` is the default. Completion synthesis finishes before the next
+  generated set consumes memory. Provider or validation failure preserves an
+  existing profile; cold start stays unpersisted until model synthesis succeeds.
+  MCQ Skip emits `answer_incorrect` with `skipped: true` so the event stream
+  treats skips like misses; the UI may still reveal the correct answer after
+  Skip. `ProfileSynthesizer` currently still canonicalizes those skipped
+  incorrect events to neutral `question_skipped` before synthesis — align that
+  path when changing skip semantics end-to-end. Profile notes are a
+  model-managed desired state: synthesis reuses
+  stable note identities, updates matching concepts in place, and omits stale
+  notes to prune them, while server-side normalization rejects exact concept
+  duplicates. The
+  daily path first compares a SHA-256 digest of filtered learning evidence with
+  persisted profile provenance. An unchanged digest makes zero model calls,
+  uses zero tokens, and leaves profile timestamps untouched; a failed changed
+  refresh keeps the old digest so the next tick retries. The
+  primary completion route is `POST /api/v1/memory/profile/maintain`, with
+  `/memory/notes/maintain` retained only as a deprecated compatibility alias.
 - Deploy: backend runs on Render (`https://codegym.onrender.com`); `render.yaml` is the blueprint and `docs/render-deploy.md` documents applying it. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render.
 - Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`. GenAI: `CODEGYM_GENAI_BASE_URL` / `CODEGYM_GENAI_API_KEY` (alias `AI_GATEWAY_API_KEY`) / `CODEGYM_GENAI_MODEL`.
 - CI: `.github/workflows/ci.yml` runs frontend `npm ci`, lint, build, and backend `go test ./...` on PRs/pushes to `codegym-v2`. `.github/workflows/openapi-lint.yml` runs `npm run api:lint` (Redocly) when `api/**` changes.
@@ -71,7 +93,7 @@ happen next. Do not present local-only work as finished repository work.
 
 1. Identify the task surface area.
 - Frontend route/page/API consumption: inspect `frontend/src/App.tsx`, `frontend/src/features/`, and `frontend/src/shared/api/`.
-- Backend API/auth/workspace/memory work: inspect `backend/README.md`, `docs/auth-identity-tenant.md`, and `backend/internal/`.
+- Backend API/auth/workspace/memory work: inspect `backend/README.md`, `docs/auth-identity-workspace.md`, and `backend/internal/`.
 - Project scope or product intent: read the "Scope Specification" section in this skill first.
 
 2. Select the shortest local validation path.
@@ -104,8 +126,8 @@ happen next. Do not present local-only work as finished repository work.
 - Preserve the request path conceptually: auth middleware establishes
   `auth.Principal`, identity middleware bootstraps/persists the user and a
   personal workspace, workspace-scope middleware establishes the active scope,
-  and handlers read scoped services. The current implementation still uses
-  `tenant` package/table/field names as internal scope names; do not expand that
+  and handlers read scoped services. Scope uses the `workspace` package and
+  `workspace_id` fields for personal workspace isolation; do not expand that
   into organization/team SaaS tenancy unless product scope changes.
 - Memory writes should append events quickly. Profile summarization should stay
   behind `Service.RefreshProfile` or a worker boundary so request paths do not
@@ -168,6 +190,13 @@ frontend Auth0 envs, backend issuer/audience envs, and the Auth0 API Identifier
 to agree. Auth0 `sub` is the durable user ID; `email` and `name` are metadata
 only and must not drive authorization or workspace selection.
 
+For the current Auth0 tenant, the CodeGym API Identifier is
+`https://codegym.onrender.com`. Never use the tenant Management API audience
+ending in `/api/v2/` for CodeGym access tokens. Because the API's user access
+policy is `require_client_grant`, authorize the SPA with a user-delegated
+client grant (`subject_type: user`); a machine grant (`subject_type: client`)
+does not authorize logged-in SPA users.
+
 Render readiness for the Go backend means the service has the expected branch,
 start command, health check, Auth0 envs, database envs, and secret source wired.
 Deployment is not complete just because `.env.example` or docs list the values.
@@ -195,30 +224,31 @@ current as implementation lands.
 
 ### Critical Open Risks
 
-- Auth/backend completion still depends on external Auth0 and hosting setup; the
-  repo can document expected envs, but owner/vendor-console actions may remain.
-- The memory worker is scheduled from the API server with configurable interval,
-  but production readiness still needs deployed schedule/env validation and
-  observability for refresh failures.
+- The LLM memory worker is scheduled inside the API server with configurable
+  interval and trigger mode. Production readiness still needs deployed
+  schedule/env validation, refresh-failure observability, and a distributed
+  ownership strategy before running multiple API replicas.
 - Session/resume now has backend schema/store and protected `/api/v1/sessions`
   routes, but frontend resume/history is still incomplete until typed client
   wiring and #74 land.
 - Frontend memory/profile rendering does not finish typed API infrastructure.
   Shared API errors still need typed handling and memory-specific helpers before
   memory UX can rely on them broadly.
-- Memory-aware generation has a provider-neutral interface and memory-aware
-  orchestration scaffold, but provider adapters, HTTP routes, and frontend
-  flows still need follow-on implementation.
+- Memory-aware MCQ generation and written-answer evaluation are wired through
+  the provider-neutral orchestrator. Coding-problem and interview generation
+  still need their provider routes and frontend flows.
 
 ### Medium Risks
 
+- #85 tracks when the first authenticated backend request creates the persisted
+  account/workspace record. This is separate from the verified Auth0 sign-in
+  and token configuration.
 - Project board state can drift from PR state and code reality, especially when
   draft/conflicting PRs or docs-only spikes are moved too far right.
 - OpenAPI drift can appear when backend routes, `api/**`, and frontend helpers
   are changed independently.
-- The internal `tenant` naming still represents personal workspace scope. It can
-  confuse agents into designing organization/team SaaS tenancy that is out of
-  scope.
+- Agents may still treat "workspace" as multi-org SaaS tenancy. It is personal
+  data scope only; legacy `tenant` env/header aliases are compatibility shims.
 - Deployment/env drift can hide behind passing local tests because Auth0,
   Render, Vercel, Doppler, and Neon readiness depends on external state.
 
@@ -263,7 +293,7 @@ do not mean the worker is scheduled or running.
    validation evidence.
 3. Using Auth0 `email` or `name` for authorization, identity durability, or
    workspace selection instead of Auth0 `sub`.
-4. Expanding internal `tenant` names into organization/team tenancy without an
+4. Expanding personal workspaces into organization/team tenancy without an
    explicit product-scope change.
 5. Mixing raw memory events with derived profiles/notes; raw facts are written
    quickly, derived understanding belongs behind service/worker refresh.
@@ -272,6 +302,8 @@ do not mean the worker is scheduled or running.
 7. Updating backend routes, OpenAPI, or frontend typed helpers without checking
    the other two surfaces for drift.
 8. Assuming local tests prove Auth0/Render/Vercel/Doppler/Neon readiness.
+9. Using the Auth0 Management API audience or a machine client grant for the
+   SPA instead of the CodeGym API Identifier plus a user-delegated grant.
 
 ## Task Workflows
 
@@ -323,8 +355,8 @@ Parallel-agent rules:
   into issue comments and board moves.
 
 For auth/backend/memory completion loops, keep the tracks distinct:
-- Auth/backend foundation: Auth0 config/docs, external Auth0/hosting setup,
-  backend static checks, OpenAPI drift checks, and lint baseline.
+- Auth/backend follow-ups: eager account-bootstrap timing (#85), deployment
+  drift monitoring, backend static checks, OpenAPI drift checks, and lint baseline.
 - Memory services: typed frontend API helpers, memory UI/backend wiring, product
   flow memory events, worker scheduling/backfill, and memory-aware generation
   orchestration.

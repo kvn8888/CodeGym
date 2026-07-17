@@ -8,6 +8,7 @@ import { GeneratePage } from './features/generate/GeneratePage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { MarathonPage } from './features/marathon/MarathonPage';
 import { MemoryPage } from './features/memory/MemoryPage';
+import { SettingsPage } from './features/settings/SettingsPage';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
               <Route path="/marathon" element={<MarathonPage />} />
               <Route path="/memory" element={<MemoryPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

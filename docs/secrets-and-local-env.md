@@ -1,9 +1,11 @@
 # Secrets and Local Environment
 
-CodeGym uses Doppler for shared development secrets. Do not send `.env` files or
-connection strings over Slack.
+CodeGym uses **Doppler** as the only place to edit secrets. Render and Vercel
+each hold a single `DOPPLER_TOKEN` service token and fetch the rest at
+build/runtime via `doppler run`. Do not paste app secrets into the Render or
+Vercel dashboards.
 
-## First-time Doppler setup
+## First-time Doppler setup (local)
 
 From the repo root:
 
@@ -15,12 +17,19 @@ doppler setup --project codegym --config dev --no-interactive
 The setup command stores the `codegym/dev` binding in your local Doppler CLI
 config. That file is machine-specific and should not be committed.
 
-## Backend
+## Config map
 
-The backend reads `NEON_CONNECTION_STRING` first, then falls back to
-`DATABASE_URL`. When either value is present, the server uses Postgres for the
-identity bootstrap and memory store. Without a database URL, it runs with
-in-memory stores for local development.
+| Doppler config | Purpose | Deploy target |
+| --- | --- | --- |
+| `dev` / `stg` / `prd` | Backend + shared server secrets | Render (`prd` via service token) |
+| `dev_frontend` / `stg_frontend` / `prd_frontend` | Public `VITE_*` build-time config only | Vercel (`prd_frontend` via service token) |
+
+Never sync or inject `prd` into Vercel — that would expose Neon and GenAI
+credentials to the browser build.
+
+## Local development
+
+### Backend
 
 ```bash
 cd backend
@@ -51,138 +60,121 @@ Important scope note:
 Think of it as a temporary backpack handed to that one running program. When the process exits, that injected environment is gone.
 
 To run the Neon-backed schema integration test:
+Default address: `127.0.0.1:8080`. The backend reads `NEON_CONNECTION_STRING`
+first, then `DATABASE_URL`. Without a database URL it uses in-memory stores.
+
+Neon-backed integration test:
 
 ```bash
 cd backend
 doppler run -p codegym -c dev -- go test ./internal/integration -run TestNeonIdentityAndMemoryBootstrap -count=1
 ```
 
-That test bootstraps the user, personal workspace membership, memory profile,
-and memory event tables against Neon, verifies the membership foreign keys, and
-cleans up its temporary rows. Normal `go test ./...` skips the Neon check when
-no database URL is present.
+### Frontend
 
-Required development secrets:
+```bash
+cd frontend
+doppler run -p codegym -c dev_frontend -- npm run dev
+```
+
+Vite proxies `/api` to `http://localhost:8080`.
+
+## Backend / shared secrets (`dev` · `stg` · `prd`)
 
 | Name | Required | Purpose |
 | --- | --- | --- |
 | `NEON_CONNECTION_STRING` | Yes for durable memory | Neon/Postgres connection string. |
-| `CODEGYM_AUTH_MODE` | Optional | Set to `auth0` to require Auth0 configuration at startup. Defaults to dev auth unless Auth0 issuer/audience are present. |
-| `CODEGYM_AUTH0_DOMAIN` / `AUTH0_DOMAIN` | Yes for Auth0 | Auth0 domain, e.g. `your-auth0-domain.us.auth0.com`. Prefer the `CODEGYM_` name in Doppler. |
-| `CODEGYM_AUTH0_AUDIENCE` / `AUTH0_AUDIENCE` | Yes for Auth0 | API audience expected in Auth0 access tokens. This must match the Auth0 API Identifier. |
-| `CODEGYM_AUTH0_ISSUER_URL` / `AUTH0_ISSUER_URL` | Optional | Explicit issuer URL override when domain is not enough. |
-| `CODEGYM_AUTH0_CLOCK_SKEW` | Optional | Go duration for token time skew, e.g. `30s`. Defaults to no skew. |
-| `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for local protected routes. |
-| `CODEGYM_DEV_USER_ID` | Optional | Default dev user for static-token auth. |
-| `CODEGYM_DEV_TENANT_ID` | Optional | Default personal workspace ID for static-token auth. Legacy env name. |
-| `CODEGYM_HOST` | Optional | Backend listen host. |
-| `CODEGYM_PORT` | Optional | Backend listen port. |
-| `CODEGYM_MEMORY_WORKER_DISABLED` | Optional | Set to `true` to disable the scheduled profile refresh worker. Defaults to `false`. |
-| `CODEGYM_MEMORY_WORKER_INTERVAL` | Optional | Go duration for the profile refresh schedule. Defaults to `24h`. |
+| `CODEGYM_AUTH_MODE` | Production | Auth mode (`auth0` or dev). |
+| `CODEGYM_AUTH0_DOMAIN` | When Auth0 | Auth0 tenant domain (e.g. `dev-….us.auth0.com`). |
+| `CODEGYM_AUTH0_AUDIENCE` | When Auth0 | **Auth0 API Identifier** for the CodeGym API (e.g. `https://api.codegym.app`). Must match `VITE_AUTH0_AUDIENCE`. **Not** `https://…auth0.com/api/v2/` (Management API). |
+| `CODEGYM_CORS_ALLOWED_ORIGINS` | Production | Allowed browser origins (Vercel URL). |
+| `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for protected routes. |
+| `CODEGYM_DEV_TENANT_ID` | Optional | Default personal tenant for static-token auth. |
+| `DAYTONA_API_KEY` / `DAYTONA_API_URL` | Spikes | Daytona sandbox access. |
+| `VERCEL_API_GATEWAY` | Optional | Vercel AI Gateway key (not used by the multi-provider router today). |
 
-Auth0 frontend values are public app configuration, not backend secrets:
+### GenAI multi-provider registry
 
-| Name | Required | Purpose |
+The backend registers every provider that has an API key and tries them in
+priority order (default **meta → azure → gemini**). Failover hops on
+provider/transport errors only — not on MCQ schema validate/repair.
+
+| Name | Required for that hop | Purpose |
 | --- | --- | --- |
-| `VITE_AUTH0_DOMAIN` | Yes for frontend Auth0 login | Same Auth0 domain the backend validates, without `https://`. |
-| `VITE_AUTH0_CLIENT_ID` | Yes for frontend Auth0 login | Auth0 Single Page Application client ID. This is safe to expose to the browser. |
-| `VITE_AUTH0_AUDIENCE` | Yes for API access tokens | Same value as `CODEGYM_AUTH0_AUDIENCE`, so Auth0 issues access tokens for the backend API. |
+| `CODEGYM_GENAI_PROVIDER_ORDER` | Optional | Comma list, default `meta,azure,gemini`. |
+| `META_MUSE_SPARK_API` or `CODEGYM_GENAI_META_API_KEY` | Meta hop | Meta Model API key (Muse Spark). |
+| `CODEGYM_GENAI_META_BASE_URL` | Optional | Default `https://api.meta.ai/v1`. |
+| `CODEGYM_GENAI_META_MODEL` | Optional | Default `muse-spark-1.1`. |
+| `CODEGYM_GENAI_META_MAX_TOKENS` | Optional | Default `4096` (reasoning budget). |
+| `CODEGYM_GENAI_AZURE_API_KEY` | Azure hop | Azure OpenAI key (`api-key` header). |
+| `CODEGYM_GENAI_AZURE_BASE_URL` | Azure hop | `https://{resource}.openai.azure.com/openai/deployments/{deployment}`. |
+| `CODEGYM_GENAI_AZURE_MODEL` | Optional | Deployment name; defaults to last URL path segment. |
+| `CODEGYM_GENAI_AZURE_API_VERSION` | Optional | Default `2024-10-21-preview`. |
+| `CODEGYM_GEMINI_API_KEY` | Gemini hop | Last-resort Gemini key (omit from order to park). |
+| `CODEGYM_GEMINI_BASE_URL` | Optional | Gemini OpenAI-compat base URL. |
+| `CODEGYM_GEMINI_MODEL` | Optional | Gemini model slug (e.g. `gemini-flash-latest`). |
 
-Do not put an Auth0 client secret in the frontend or in local Vite env files.
-The current browser app should use an Auth0 SPA application with Authorization
-Code + PKCE, not a confidential client flow.
+Providers without a key are skipped. Example: Meta + Gemini only still works
+and tries Meta first.
 
-Minimal Doppler setup once Kevin/Alec have created the Auth0 API and SPA app:
+## Frontend secrets (`*_frontend`)
 
-```bash
-doppler secrets set CODEGYM_AUTH_MODE=auth0
-doppler secrets set CODEGYM_AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
-doppler secrets set CODEGYM_AUTH0_AUDIENCE=https://api.codegym.example
-doppler secrets set VITE_AUTH0_DOMAIN=your-auth0-domain.us.auth0.com
-doppler secrets set VITE_AUTH0_CLIENT_ID=your-spa-client-id
-doppler secrets set VITE_AUTH0_AUDIENCE=https://api.codegym.example
-```
-
-Use `CODEGYM_AUTH0_ISSUER_URL` only when the issuer differs from
-`https://<domain>/`. The backend normalizes a bare domain into an HTTPS issuer
-URL with a trailing slash.
-
-## Memory smoke test
-
-Start the backend in one terminal:
-
-```bash
-cd backend
-doppler run -p codegym -c dev -- go run ./cmd/server
-```
-
-Then run the smoke test in another terminal:
-
-```bash
-cd backend
-./scripts/memory_smoke.sh
-```
-
-If `CODEGYM_DEV_AUTH_TOKEN` lives in Doppler, run the script through Doppler so
-it can send the same static token that the backend expects:
-
-```bash
-cd backend
-doppler run -p codegym -c dev -- ./scripts/memory_smoke.sh
-```
-
-The smoke script uses `CODEGYM_API_BASE_URL` when set, otherwise
-`http://127.0.0.1:8080`. For auth, it uses `CODEGYM_DEV_AUTH_TOKEN` when set;
-otherwise it builds a local dev token from `CODEGYM_DEV_USER_ID` and
-`CODEGYM_DEV_TENANT_ID`:
-
-```text
-Authorization: Bearer dev:<user-id>:<workspace-id>
-```
-
-The script calls `/ready`, writes a `system.memory_api_checked` event, verifies
-that the event appears in `GET /api/v1/memory/events`, and fetches
-`GET /api/v1/memory/profile`. It exits non-zero if any API call or response
-shape check fails.
-
-## Frontend
-
-The frontend uses public Vite env values for browser-visible configuration.
-Never put server-only secrets, Auth0 client secrets, Neon connection strings, or
-backend bearer tokens in Vite env files.
-
-```bash
-cd frontend
-npm run dev
-```
-
-For Auth0 login, copy `frontend/.env.example` to `frontend/.env.local` or load
-the same values through Doppler:
-
-```bash
-cd frontend
-doppler run -p codegym -c dev -- npm run dev
-```
-
-Current Auth0 Single Page Application values:
-
-| Name | Value |
+| Name | Purpose |
 | --- | --- |
-| `VITE_AUTH0_DOMAIN` | `dev-qpevrkauua3p7j6l.us.auth0.com` |
-| `VITE_AUTH0_CLIENT_ID` | `Z4LdZf8STLjtuUvkrdgrtGvwzwQlJbBZ` |
+| `VITE_AUTH0_DOMAIN` | Auth0 SPA domain (mirrors `CODEGYM_AUTH0_DOMAIN`). |
+| `VITE_AUTH0_AUDIENCE` | Same **API Identifier** as `CODEGYM_AUTH0_AUDIENCE` so `getAccessTokenSilently` requests a backend-valid access token. |
+| `VITE_AUTH0_CLIENT_ID` | Auth0 SPA Application Client ID (required for Auth0 UI; empty falls back to “dev auth”). |
+| `VITE_API_BASE_URL` | Optional API origin; leave empty for same-origin / rewrites. |
+| `VITE_APP_ORIGIN` | Canonical frontend origin (Vercel production URL). |
 
-Set `VITE_AUTH0_AUDIENCE` to the Auth0 API Identifier for the Go backend once
-that API exists. It should match `CODEGYM_AUTH0_AUDIENCE` / `AUTH0_AUDIENCE`.
+Keep browser-visible values prefixed with `VITE_`.
 
-Auth0 dashboard settings for local frontend development:
+### Auth0 API Identifier (avoids `Invalid bearer token`)
 
-```text
-Allowed Callback URLs:
-http://localhost:3000, http://localhost:5173
+Settings, memory, generate, and cost all need a Bearer **access token**. If
+the SPA can sign in but `/api/v1/me` returns `Invalid bearer token`, the token
+`aud` almost certainly does not match the backend audience.
 
-Allowed Logout URLs:
-http://localhost:3000, http://localhost:5173
+1. Auth0 → **APIs** → create/select CodeGym API → copy **Identifier**.
+2. Set that Identifier as both `CODEGYM_AUTH0_AUDIENCE` and `VITE_AUTH0_AUDIENCE`.
+3. Authorize the SPA application for that API; set callback/logout/web origins.
+4. Redeploy Render + Vercel; log out and back in.
 
-Allowed Web Origins:
-http://localhost:3000, http://localhost:5173
-```
+Never set audience to `https://YOUR_TENANT.us.auth0.com/api/v2/` (Management
+API). Step-by-step: [../backend/README.md](../backend/README.md) (Auth0 API setup).
+
+## Production: Doppler-only deploys
+
+Full runbooks: [render-deploy.md](./render-deploy.md) and
+[vercel-deploy.md](./vercel-deploy.md). Blueprint: [render.yaml](../render.yaml).
+
+### Render (backend)
+
+- Service env: **only** `DOPPLER_TOKEN` (service token for `codegym` / `prd`).
+- Build installs the Doppler CLI into `./bin`, then compiles the Go binary.
+- Start: `./bin/doppler run -- env CODEGYM_HOST=0.0.0.0 CODEGYM_PORT=$PORT ./bin/codegym`.
+- Live URL: `https://codegym.onrender.com`.
+
+Rotate the token in Doppler (`prd` → Access → Service Tokens), then update
+`DOPPLER_TOKEN` on Render.
+
+### Vercel (frontend)
+
+- Project env: **only** `DOPPLER_TOKEN` (service token for `codegym` / `prd_frontend`)
+  on Production and Preview.
+- Build command: `curl -Ls https://cli.doppler.com/install.sh | sh && doppler run -- npm run build`
+  (also recorded in `frontend/vercel.json`).
+- `frontend/vercel.json` rewrites `/api/*` → `https://codegym.onrender.com/api/*`
+  and falls back SPA routes to `index.html`. Leave `VITE_API_BASE_URL` empty so
+  the browser uses same-origin `/api/v1`.
+
+Rotate the token in Doppler (`prd_frontend` → Access → Service Tokens), then
+update `DOPPLER_TOKEN` on Vercel.
+
+## Updating a secret
+
+1. Change it in Doppler (dashboard or `doppler secrets set`).
+2. **Backend:** redeploy or restart the Render service so `doppler run` picks up
+   the new values.
+3. **Frontend:** redeploy on Vercel so Vite rebuilds with the new `VITE_*` values.
+4. Do not also edit the same secret in Render/Vercel.

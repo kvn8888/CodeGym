@@ -11,6 +11,10 @@ const (
 	KindProblem   Kind = "problem"
 	KindMCQ       Kind = "mcq"
 	KindInterview Kind = "interview"
+	// KindMCQEvaluation is the internal AI grading pass for free-response items.
+	KindMCQEvaluation Kind = "mcq_evaluation"
+	// KindProfile is the internal full-profile memory synthesis pass.
+	KindProfile Kind = "memory_profile"
 	// KindNotes is the internal memory note-maintenance pass; it is not
 	// exposed as a client-requestable kind on POST /api/v1/generate.
 	KindNotes Kind = "notes"
@@ -78,4 +82,5 @@ type MemoryNoteContext struct {
 	Title     string   `json:"title"`
 	Summary   string   `json:"summary"`
 	Tags      []string `json:"tags"`
+	Action    string   `json:"action"`
 }

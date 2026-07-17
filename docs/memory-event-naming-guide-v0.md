@@ -73,8 +73,11 @@ rules. If the emitter is the same, prefer a new `type` under an existing source.
 | Type | When to Emit |
 | --- | --- |
 | `session_started` | User started an MCQ or marathon session. |
-| `question_answered` | User answered one question. |
+| `question_answered` | User correctly answered one single-select or multi-select question. |
+| `question_skipped` | User deliberately skipped a question; this is neutral evidence, not an incorrect answer. Include `skipped: true` and `answer_revealed: true` because the UI shows the correct answer without crediting it to the learner. |
+| `free_response_evaluated` | AI evaluation completed for one written response. Store only correctness, answer length, concept, timing, and provider metadata; never store the raw answer. |
 | `session_completed` | User finished the session. |
+| `session_exited` | User left an unfinished session after its durable state was saved. |
 | `answer_incorrect` | User missed a question worth tracking for growth edges. |
 
 ### `memory`
@@ -353,7 +356,7 @@ v0 is designed to evolve without a schema migration:
 
 ## Related Docs
 
-- [auth-identity-tenant.md](./auth-identity-tenant.md) documents request scoping
+- [auth-identity-workspace.md](./auth-identity-workspace.md) documents request scoping
   for memory routes.
 - [openapi-contract.md](./openapi-contract.md) documents the HTTP contract
   workflow.

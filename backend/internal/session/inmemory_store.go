@@ -32,12 +32,12 @@ func (s *InMemoryStore) Create(_ context.Context, session Session) (Session, err
 	return copySession(session), nil
 }
 
-func (s *InMemoryStore) Get(_ context.Context, tenantID, userID, id string) (Session, error) {
+func (s *InMemoryStore) Get(_ context.Context, workspaceID, userID, id string) (Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	session, ok := s.sessions[id]
-	if !ok || session.TenantID != tenantID || session.UserID != userID {
+	if !ok || session.WorkspaceID != workspaceID || session.UserID != userID {
 		return Session{}, ErrNotFound
 	}
 
@@ -46,13 +46,13 @@ func (s *InMemoryStore) Get(_ context.Context, tenantID, userID, id string) (Ses
 	return session, nil
 }
 
-func (s *InMemoryStore) List(_ context.Context, tenantID, userID string, filter ListFilter) ([]Summary, error) {
+func (s *InMemoryStore) List(_ context.Context, workspaceID, userID string, filter ListFilter) ([]Summary, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	summaries := []Summary{}
 	for _, session := range s.sessions {
-		if session.TenantID != tenantID || session.UserID != userID {
+		if session.WorkspaceID != workspaceID || session.UserID != userID {
 			continue
 		}
 		if filter.Kind != "" && session.Kind != filter.Kind {
@@ -81,7 +81,7 @@ func (s *InMemoryStore) Update(_ context.Context, session Session) (Session, err
 	defer s.mu.Unlock()
 
 	current, ok := s.sessions[session.ID]
-	if !ok || current.TenantID != session.TenantID || current.UserID != session.UserID {
+	if !ok || current.WorkspaceID != session.WorkspaceID || current.UserID != session.UserID {
 		return Session{}, ErrNotFound
 	}
 	s.sessions[session.ID] = copySession(session)
@@ -90,12 +90,12 @@ func (s *InMemoryStore) Update(_ context.Context, session Session) (Session, err
 	return session, nil
 }
 
-func (s *InMemoryStore) UpsertFiles(_ context.Context, tenantID, userID, sessionID string, files []File) (Session, error) {
+func (s *InMemoryStore) UpsertFiles(_ context.Context, workspaceID, userID, sessionID string, files []File) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	session, ok := s.sessions[sessionID]
-	if !ok || session.TenantID != tenantID || session.UserID != userID {
+	if !ok || session.WorkspaceID != workspaceID || session.UserID != userID {
 		return Session{}, ErrNotFound
 	}
 

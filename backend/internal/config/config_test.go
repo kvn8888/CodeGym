@@ -104,9 +104,16 @@ func TestLoadMemoryWorkerConfig(t *testing.T) {
 	if cfg.MemoryWorker.Interval != 24*time.Hour {
 		t.Fatalf("MemoryWorker.Interval default = %s, want 24h", cfg.MemoryWorker.Interval)
 	}
+	if cfg.MemoryWorker.Trigger != MemoryRefreshBoth {
+		t.Fatalf("MemoryWorker.Trigger default = %q, want both", cfg.MemoryWorker.Trigger)
+	}
+	if !cfg.MemoryWorker.DailyEnabled() || !cfg.MemoryWorker.SetCompletionEnabled() {
+		t.Fatal("default memory refresh trigger should enable daily and set completion")
+	}
 
 	t.Setenv("CODEGYM_MEMORY_WORKER_DISABLED", "true")
 	t.Setenv("CODEGYM_MEMORY_WORKER_INTERVAL", "15m")
+	t.Setenv("CODEGYM_MEMORY_REFRESH_TRIGGER", "set-completion")
 
 	cfg = Load()
 	if !cfg.MemoryWorker.Disabled {
@@ -114,6 +121,38 @@ func TestLoadMemoryWorkerConfig(t *testing.T) {
 	}
 	if cfg.MemoryWorker.Interval != 15*time.Minute {
 		t.Fatalf("MemoryWorker.Interval = %s, want 15m", cfg.MemoryWorker.Interval)
+	}
+	if cfg.MemoryWorker.Trigger != MemoryRefreshSetCompletion || !cfg.MemoryWorker.SetCompletionEnabled() {
+		t.Fatalf("MemoryWorker.Trigger = %q, want set-completion", cfg.MemoryWorker.Trigger)
+	}
+	if cfg.MemoryWorker.DailyEnabled() {
+		t.Fatal("disabled worker must not enable daily refresh")
+	}
+
+	t.Setenv("CODEGYM_MEMORY_WORKER_DISABLED", "false")
+	t.Setenv("CODEGYM_MEMORY_REFRESH_TRIGGER", "invalid")
+	if got := Load().MemoryWorker.Trigger; got != MemoryRefreshBoth {
+		t.Fatalf("invalid MemoryWorker.Trigger = %q, want both fallback", got)
+	}
+}
+
+func TestMemoryRefreshTriggerModes(t *testing.T) {
+	tests := []struct {
+		trigger        string
+		wantDaily      bool
+		wantCompletion bool
+	}{
+		{trigger: MemoryRefreshDaily, wantDaily: true},
+		{trigger: MemoryRefreshSetCompletion, wantCompletion: true},
+		{trigger: MemoryRefreshBoth, wantDaily: true, wantCompletion: true},
+	}
+	for _, test := range tests {
+		t.Run(test.trigger, func(t *testing.T) {
+			cfg := WorkerConfig{Trigger: test.trigger}
+			if cfg.DailyEnabled() != test.wantDaily || cfg.SetCompletionEnabled() != test.wantCompletion {
+				t.Fatalf("daily=%t completion=%t", cfg.DailyEnabled(), cfg.SetCompletionEnabled())
+			}
+		})
 	}
 }
 
@@ -133,17 +172,34 @@ func clearConfigEnv(t *testing.T) {
 		"CODEGYM_AUTH0_CLOCK_SKEW",
 		"CODEGYM_DEV_AUTH_TOKEN",
 		"CODEGYM_DEV_USER_ID",
-		"CODEGYM_DEV_TENANT_ID",
+		"CODEGYM_DEV_WORKSPACE_ID",
 		"CODEGYM_HOST",
 		"CODEGYM_PORT",
 		"PORT",
 		"CODEGYM_CORS_ALLOWED_ORIGINS",
 		"CODEGYM_MEMORY_WORKER_DISABLED",
 		"CODEGYM_MEMORY_WORKER_INTERVAL",
+		"CODEGYM_MEMORY_REFRESH_TRIGGER",
 		"CODEGYM_GENAI_BASE_URL",
 		"CODEGYM_GENAI_API_KEY",
 		"AI_GATEWAY_API_KEY",
 		"CODEGYM_GENAI_MODEL",
+		"CODEGYM_GENAI_PROVIDER_ORDER",
+		"CODEGYM_GENAI_META_API_KEY",
+		"META_MUSE_SPARK_API",
+		"CODEGYM_GENAI_META_BASE_URL",
+		"CODEGYM_GENAI_META_MODEL",
+		"CODEGYM_GENAI_META_MAX_TOKENS",
+		"CODEGYM_GENAI_AZURE_API_KEY",
+		"CODEGYM_GENAI_AZURE_BASE_URL",
+		"CODEGYM_GENAI_AZURE_MODEL",
+		"CODEGYM_GENAI_AZURE_API_VERSION",
+		"CODEGYM_GEMINI_API_KEY",
+		"CODEGYM_GEMINI_BASE_URL",
+		"CODEGYM_GEMINI_MODEL",
+		"CODEGYM_GENAI_GEMINI_API_KEY",
+		"CODEGYM_GENAI_GEMINI_BASE_URL",
+		"CODEGYM_GENAI_GEMINI_MODEL",
 	} {
 		t.Setenv(key, "")
 	}
@@ -178,11 +234,14 @@ func TestLoadGenAIConfig(t *testing.T) {
 	if cfg.GenAI.Enabled() {
 		t.Fatal("GenAI should be disabled without an API key")
 	}
-	if cfg.GenAI.BaseURL != "https://ai-gateway.vercel.sh/v1" {
+	if cfg.AnyGenAIEnabled() {
+		t.Fatal("multi-provider registry should be empty without keys")
+	}
+	if cfg.GenAI.BaseURL != "https://generativelanguage.googleapis.com/v1beta/openai" {
 		t.Fatalf("BaseURL = %q", cfg.GenAI.BaseURL)
 	}
-	if cfg.GenAI.Model == "" {
-		t.Fatal("Model default is empty")
+	if cfg.GenAI.Model != "gemini-flash-latest" {
+		t.Fatalf("Model = %q, want gemini-flash-latest default", cfg.GenAI.Model)
 	}
 
 	t.Setenv("AI_GATEWAY_API_KEY", "vercel-key")
@@ -190,16 +249,62 @@ func TestLoadGenAIConfig(t *testing.T) {
 	if !cfg.GenAI.Enabled() || cfg.GenAI.APIKey != "vercel-key" {
 		t.Fatalf("GenAI = %#v, want AI_GATEWAY_API_KEY alias honored", cfg.GenAI)
 	}
+	if !cfg.AnyGenAIEnabled() || len(cfg.GenAIProviders) != 1 || cfg.GenAIProviders[0].Name != "gemini" {
+		t.Fatalf("providers = %#v, want single gemini from legacy key", cfg.GenAIProviders)
+	}
 
-	t.Setenv("CODEGYM_GENAI_API_KEY", "codegym-key")
-	t.Setenv("CODEGYM_GENAI_BASE_URL", "https://example.test/v1")
-	t.Setenv("CODEGYM_GENAI_MODEL", "custom-model")
+	t.Setenv("CODEGYM_GEMINI_API_KEY", "gemini-key")
+	t.Setenv("CODEGYM_GEMINI_BASE_URL", "https://example.test/v1")
+	t.Setenv("CODEGYM_GEMINI_MODEL", "custom-model")
 	cfg = Load()
-	if cfg.GenAI.APIKey != "codegym-key" {
-		t.Fatalf("APIKey = %q, want CODEGYM_GENAI_API_KEY to win", cfg.GenAI.APIKey)
+	if cfg.GenAI.APIKey != "gemini-key" {
+		t.Fatalf("APIKey = %q, want CODEGYM_GEMINI_API_KEY to win", cfg.GenAI.APIKey)
 	}
 	if cfg.GenAI.BaseURL != "https://example.test/v1" || cfg.GenAI.Model != "custom-model" {
 		t.Fatalf("GenAI = %#v", cfg.GenAI)
+	}
+}
+
+func TestLoadMultiProviderOrderAndAliases(t *testing.T) {
+	clearConfigEnv(t)
+
+	t.Setenv("META_MUSE_SPARK_API", "meta-key")
+	t.Setenv("CODEGYM_GENAI_AZURE_API_KEY", "azure-key")
+	t.Setenv("CODEGYM_GENAI_AZURE_BASE_URL", "https://ex.openai.azure.com/openai/deployments/gpt-4o")
+	t.Setenv("CODEGYM_GEMINI_API_KEY", "gemini-key")
+	t.Setenv("CODEGYM_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+	t.Setenv("CODEGYM_GEMINI_MODEL", "gemini-flash-latest")
+
+	cfg := Load()
+	if !cfg.AnyGenAIEnabled() {
+		t.Fatal("expected providers")
+	}
+	if len(cfg.GenAIProviders) != 3 {
+		t.Fatalf("providers = %#v, want meta,azure,gemini", cfg.GenAIProviders)
+	}
+	if cfg.GenAIProviders[0].Name != "meta" || cfg.GenAIProviders[0].APIKey != "meta-key" {
+		t.Fatalf("meta = %#v", cfg.GenAIProviders[0])
+	}
+	if cfg.GenAIProviders[0].Model != "muse-spark-1.1" || cfg.GenAIProviders[0].DefaultMaxTokens != 4096 {
+		t.Fatalf("meta defaults = %#v", cfg.GenAIProviders[0])
+	}
+	if cfg.GenAIProviders[1].Name != "azure" || cfg.GenAIProviders[1].AuthStyle != "azure_api_key" {
+		t.Fatalf("azure = %#v", cfg.GenAIProviders[1])
+	}
+	if cfg.GenAIProviders[1].Model != "gpt-4o" {
+		t.Fatalf("azure model = %q, want deployment path segment", cfg.GenAIProviders[1].Model)
+	}
+	if cfg.GenAIProviders[2].Name != "gemini" || cfg.GenAIProviders[2].APIKey != "gemini-key" {
+		t.Fatalf("gemini = %#v", cfg.GenAIProviders[2])
+	}
+
+	// Azure without key is skipped; meta still first.
+	clearConfigEnv(t)
+	t.Setenv("META_MUSE_SPARK_API", "meta-key")
+	t.Setenv("CODEGYM_GEMINI_API_KEY", "gemini-key")
+	cfg = Load()
+	if len(cfg.GenAIProviders) != 2 || cfg.GenAIProviders[0].Name != "meta" || cfg.GenAIProviders[1].Name != "gemini" {
+		t.Fatalf("providers = %#v", cfg.GenAIProviders)
 	}
 }
 

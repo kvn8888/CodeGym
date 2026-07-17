@@ -3,19 +3,22 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"github.com/kvn8888/codegym/backend/internal/api/response"
+	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 )
 
 // MemoryHandler exposes HTTP handlers for memory profile and event operations.
 type MemoryHandler struct {
-	service *memory.Service
+	service  *memory.Service
+	profiles *generation.ProfileSynthesizer
 }
 
 // NewMemoryHandler builds a memory handler bound to a memory service.
-func NewMemoryHandler(service *memory.Service) *MemoryHandler {
-	return &MemoryHandler{service: service}
+func NewMemoryHandler(service *memory.Service, profiles *generation.ProfileSynthesizer) *MemoryHandler {
+	return &MemoryHandler{service: service, profiles: profiles}
 }
 
 // Profile returns the scoped user's memory profile.
@@ -32,13 +35,13 @@ func (h *MemoryHandler) Profile(w http.ResponseWriter, r *http.Request) {
 
 // RefreshProfile rebuilds the scoped user's memory profile from their event stream.
 func (h *MemoryHandler) RefreshProfile(w http.ResponseWriter, r *http.Request) {
-	profile, err := h.service.RefreshProfile(r.Context())
+	result, err := h.profiles.RefreshProfile(r.Context(), generation.ProfileRefreshInput{Trigger: "manual"})
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "memory_refresh_failed", "Could not refresh memory profile.")
 		return
 	}
 
-	response.JSON(w, http.StatusOK, profile)
+	response.JSON(w, http.StatusOK, result.Profile)
 }
 
 // ListEvents returns the scoped user's memory event stream.
@@ -50,6 +53,23 @@ func (h *MemoryHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Internal aggregation intentionally consumes oldest-first evidence. The
+	// public activity feed returns a sorted copy so recent user actions appear
+	// first without changing that service contract.
+	events = append([]memory.Event(nil), events...)
+	for index := range events {
+		events[index].OccurredAt = events[index].OccurredAt.UTC()
+		events[index].CreatedAt = events[index].CreatedAt.UTC()
+	}
+	sort.SliceStable(events, func(i, j int) bool {
+		if !events[i].OccurredAt.Equal(events[j].OccurredAt) {
+			return events[i].OccurredAt.After(events[j].OccurredAt)
+		}
+		if !events[i].CreatedAt.Equal(events[j].CreatedAt) {
+			return events[i].CreatedAt.After(events[j].CreatedAt)
+		}
+		return events[i].ID > events[j].ID
+	})
 	response.JSON(w, http.StatusOK, events)
 }
 

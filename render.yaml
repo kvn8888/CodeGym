@@ -1,64 +1,27 @@
 # Render Blueprint for the CodeGym backend API.
 #
-# This codifies the service already running manually at
-# https://codegym.onrender.com so it can be reproduced (or adopted) via
-# Render's "Blueprints" flow. See docs/render-deploy.md for how to apply it
-# and which values you must fill in by hand.
+# Matches the production service at https://codegym.onrender.com
+# (Doppler-only secrets). See docs/render-deploy.md.
 #
-# Spec reference: https://render.com/docs/blueprint-spec
-# (fetched via WebFetch during authoring: request returned HTTP 403 through
-# the sandboxed proxy, so field names below are from prior knowledge of the
-# Blueprint spec, not a live re-check. Recommended: dry-run the blueprint
-# in the Render dashboard preview before syncing, since it will flag any
-# unrecognized keys.)
+# Spec: https://render.com/docs/blueprint-spec
 
 services:
   - type: web
     name: codegym-backend
     runtime: go
-    plan: free # Render free web services spin down after 15 min idle and
-      # spin back up (cold start) on the next request. Upgrade to
-      # `starter` (or higher) for always-on, more CPU/RAM, and no
-      # cold starts once this needs to be production-reliable.
+    # Production uses starter (always-on). Free plan spins down after idle.
+    plan: starter
     region: oregon
-    branch: codegym-v2 # auto-deploy tracks this branch; see docs/render-deploy.md
+    branch: codegym-v2
     autoDeploy: true
     rootDir: backend
-    buildCommand: go build -o app ./cmd/server
-    startCommand: ./app
+    # Install Doppler CLI, then compile. Runtime secrets come from doppler run.
+    buildCommand: mkdir -p ./bin && curl -Ls https://cli.doppler.com/install.sh | sh -s -- --install-path ./bin --no-package-manager --no-verify && go build -o ./bin/codegym ./cmd/server
+    # Inject Doppler prd secrets, bind to Render's edge (0.0.0.0 + $PORT).
+    startCommand: ./bin/doppler run -- env CODEGYM_HOST=0.0.0.0 CODEGYM_PORT=$PORT ./bin/codegym
     healthCheckPath: /health
     envVars:
-      # Render injects PORT automatically; the app reads CODEGYM_PORT and
-      # falls back to PORT, so no port variable needs to be set here.
-      - key: CODEGYM_HOST
-        value: 0.0.0.0 # required: Go's default (127.0.0.1) is not reachable
-        # from Render's edge/proxy layer.
-
-      # --- Database (Neon Postgres) ---
-      - key: NEON_CONNECTION_STRING
-        sync: false # secret; already set by hand in the Render dashboard.
-
-      # --- Auth0 ---
-      - key: CODEGYM_AUTH_MODE
-        value: auth0
-      - key: CODEGYM_AUTH0_DOMAIN
-        sync: false # secret/dashboard-managed, e.g. your-tenant.us.auth0.com
-      - key: CODEGYM_AUTH0_AUDIENCE
-        sync: false # secret/dashboard-managed, e.g. https://codegym-api
-
-      # --- CORS ---
-      - key: CODEGYM_CORS_ALLOWED_ORIGINS
-        value: https://codegym.vercel.app # placeholder: replace with the
-        # real Vercel frontend URL(s). Comma-separated list, no spaces.
-
-      # --- GenAI (Vercel AI Gateway) ---
-      - key: CODEGYM_GENAI_BASE_URL
-        value: https://ai-gateway.vercel.sh/v1
-      - key: CODEGYM_GENAI_API_KEY
-        sync: false # secret; set by hand in the Render dashboard.
-      - key: CODEGYM_GENAI_MODEL
-        value: anthropic/claude-haiku-4.5
-
-      # Optional (not set here; see docs/render-deploy.md):
-      #   CODEGYM_MEMORY_WORKER_DISABLED
-      #   CODEGYM_MEMORY_WORKER_INTERVAL
+      # Only credential stored on Render. Create a service token for
+      # Doppler project `codegym`, config `prd`.
+      - key: DOPPLER_TOKEN
+        sync: false

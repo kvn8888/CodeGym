@@ -8,16 +8,16 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/memory"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 func TestOrchestratorInjectsMemoryContext(t *testing.T) {
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
-		UserID:          "kevin",
-		DefaultTenantID: "personal-kevin",
-		TenantIDs:       []string{"personal-kevin"},
+		UserID:             "kevin",
+		DefaultWorkspaceID: "personal-kevin",
+		WorkspaceIDs:       []string{"personal-kevin"},
 	})
-	ctx = tenant.WithScope(ctx, tenant.Scope{TenantID: "personal-kevin"})
+	ctx = workspace.WithScope(ctx, workspace.Scope{WorkspaceID: "personal-kevin"})
 
 	store := memory.NewInMemoryStore()
 	now := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
@@ -31,7 +31,7 @@ func TestOrchestratorInjectsMemoryContext(t *testing.T) {
 			{Label: "Graphs", Area: "DSA", Level: 2, Confidence: 60, Trend: "up"},
 		},
 		Notes: []memory.Note{
-			{ProblemID: "prob_graph", Title: "DFS", Summary: "Missed visited set", Tags: []string{"graphs"}},
+			{ProblemID: "prob_graph", Title: "DFS", Summary: "Missed visited set", Tags: []string{"graphs"}, Action: "review"},
 		},
 	})
 	if err != nil {
@@ -72,6 +72,9 @@ func TestOrchestratorInjectsMemoryContext(t *testing.T) {
 	}
 	if len(fake.request.MemoryContext.Notes) != 1 || fake.request.MemoryContext.Notes[0].ProblemID != "prob_graph" {
 		t.Fatalf("memory notes = %#v", fake.request.MemoryContext.Notes)
+	}
+	if fake.request.MemoryContext.Notes[0].Action != "review" {
+		t.Fatalf("memory note action = %q", fake.request.MemoryContext.Notes[0].Action)
 	}
 }
 

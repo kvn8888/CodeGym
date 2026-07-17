@@ -2,6 +2,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { CircleHelp, LogIn, LogOut, Settings, UserRound } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   auth0AuthorizationParams,
   hasAuth0ApiAudience,
@@ -25,6 +26,7 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
     logout,
     user,
   } = useAuth0();
+  const navigate = useNavigate();
   const shouldReduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -42,12 +44,13 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
   const label = isLoading
     ? 'Loading...'
     : isAuthenticated
-      ? user?.email ?? user?.name ?? 'Signed in'
+      ? user?.name ?? user?.email ?? 'Signed in'
       : 'Sign in';
   const initials = initialsFor(user?.name ?? user?.email ?? 'CodeGym');
 
   return (
-    <div ref={ref} className="relative shrink-0 border-t border-gray-alpha-200 p-2">
+    // Border/padding live on Layout's footer so we don't double border-t with ModeToggle.
+    <div ref={ref} className="relative min-w-0 flex-1">
       <motion.button
         type="button"
         onClick={() => setOpen((current) => !current)}
@@ -73,8 +76,8 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.98 }}
             transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2, ease: [0.175, 0.885, 0.32, 1.1] }}
-            className={`absolute z-50 overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100 ${
-              collapsed ? 'bottom-2 left-full ml-2 w-72' : 'bottom-full left-2 right-2 mb-2'
+            className={`absolute z-50 w-72 overflow-hidden rounded-xl border border-gray-alpha-200 bg-background-100 ${
+              collapsed ? 'bottom-2 left-full ml-2' : 'bottom-full left-0 mb-2'
             }`}
             style={{ boxShadow: 'var(--cg-popover-shadow)' }}
           >
@@ -100,7 +103,14 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
             <div className="py-1">
               {isAuthenticated ? (
                 <>
-                  <ProfileAction icon={Settings} label="Settings" />
+                  <ProfileAction
+                    icon={Settings}
+                    label="Settings"
+                    onClick={() => {
+                      setOpen(false);
+                      navigate('/settings');
+                    }}
+                  />
                   <ProfileAction icon={CircleHelp} label="Get Help" />
                   <ProfileAction
                     icon={LogOut}
@@ -138,7 +148,7 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
 
 function DevAccountMenu({ collapsed }: { collapsed: boolean }) {
   return (
-    <div className="relative shrink-0 border-t border-gray-alpha-200 p-2">
+    <div className="relative min-w-0 flex-1">
       <div
         className={`flex h-11 w-full items-center rounded-md ${
           collapsed ? 'justify-center px-0' : 'gap-3 px-2'

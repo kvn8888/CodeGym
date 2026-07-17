@@ -1,7 +1,7 @@
 // Package openaicompat implements generation.Generator against the OpenAI
 // chat-completions wire format. One adapter instance serves any
-// OpenAI-compatible platform (Vercel AI Gateway, OpenAI, Azure, Venice) by
-// config alone; it holds no product prompt text beyond JSON-discipline
+// OpenAI-compatible platform (Meta, Azure OpenAI, Gemini, Vercel AI Gateway)
+// by config alone; it holds no product prompt text beyond JSON-discipline
 // scaffolding around the instructions orchestration provides.
 package openaicompat
 
@@ -13,31 +13,51 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/generation"
 )
 
+// Auth styles for OpenAI-compatible platforms.
+const (
+	AuthBearer     = "bearer"
+	AuthAzureAPIKey = "azure_api_key"
+)
+
 // Config configures a single OpenAI-compatible backend.
 type Config struct {
-	// BaseURL is the platform root, e.g. "https://ai-gateway.vercel.sh/v1".
+	// Name is the provider id reported on GenerateResult (e.g. "meta", "azure").
+	// Empty defaults to "openai_compat".
+	Name string
+	// BaseURL is the platform root, e.g. "https://api.meta.ai/v1" or
+	// "https://{resource}.openai.azure.com/openai/deployments/{deployment}".
 	BaseURL string
-	// APIKey is sent as a bearer token. Never exposed to clients or sandboxes.
+	// APIKey is never exposed to clients or sandboxes.
 	APIKey string
-	// Model is the default model slug when a request has no preference,
-	// e.g. "anthropic/claude-haiku-4.5" on the Vercel AI Gateway.
+	// Model is the default model slug when a request has no preference.
 	Model string
+	// AuthStyle is AuthBearer (default) or AuthAzureAPIKey.
+	AuthStyle string
+	// APIVersion is appended as ?api-version= for Azure OpenAI.
+	APIVersion string
+	// DefaultMaxTokens is used when ModelPolicy.MaxTokens is zero.
+	DefaultMaxTokens int
 	// HTTPClient overrides the default client (mainly for tests).
 	HTTPClient *http.Client
 }
 
 // Adapter is an OpenAI-compatible generation.Generator.
 type Adapter struct {
-	baseURL string
-	apiKey  string
-	model   string
-	client  *http.Client
+	name             string
+	baseURL          string
+	apiKey           string
+	model            string
+	authStyle        string
+	apiVersion       string
+	defaultMaxTokens int
+	client           *http.Client
 }
 
 // New validates config and returns a ready adapter.
@@ -52,16 +72,39 @@ func New(cfg Config) (*Adapter, error) {
 	if strings.TrimSpace(cfg.Model) == "" {
 		return nil, errors.New("openaicompat: Model is required")
 	}
+	name := strings.TrimSpace(cfg.Name)
+	if name == "" {
+		name = "openai_compat"
+	}
+	authStyle := strings.TrimSpace(strings.ToLower(cfg.AuthStyle))
+	if authStyle == "" {
+		authStyle = AuthBearer
+	}
+	if authStyle != AuthBearer && authStyle != AuthAzureAPIKey {
+		return nil, fmt.Errorf("openaicompat: unsupported AuthStyle %q", cfg.AuthStyle)
+	}
 	client := cfg.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 90 * time.Second}
+		client = &http.Client{Timeout: 120 * time.Second}
 	}
 	return &Adapter{
-		baseURL: baseURL,
-		apiKey:  strings.TrimSpace(cfg.APIKey),
-		model:   strings.TrimSpace(cfg.Model),
-		client:  client,
+		name:             name,
+		baseURL:          baseURL,
+		apiKey:           strings.TrimSpace(cfg.APIKey),
+		model:            strings.TrimSpace(cfg.Model),
+		authStyle:        authStyle,
+		apiVersion:       strings.TrimSpace(cfg.APIVersion),
+		defaultMaxTokens: cfg.DefaultMaxTokens,
+		client:           client,
 	}, nil
+}
+
+// Name returns the configured provider id.
+func (a *Adapter) Name() string {
+	if a == nil {
+		return ""
+	}
+	return a.name
 }
 
 type chatMessage struct {
@@ -70,11 +113,12 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model          string          `json:"model"`
-	Messages       []chatMessage   `json:"messages"`
-	MaxTokens      int             `json:"max_tokens,omitempty"`
-	Temperature    *float64        `json:"temperature,omitempty"`
-	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+	Model               string          `json:"model"`
+	Messages            []chatMessage   `json:"messages"`
+	MaxTokens           int             `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64        `json:"temperature,omitempty"`
+	ResponseFormat      *responseFormat `json:"response_format,omitempty"`
 }
 
 type responseFormat struct {
@@ -116,22 +160,41 @@ func (a *Adapter) Generate(ctx context.Context, request generation.GenerateReque
 		model = a.model
 	}
 
+	maxTokens := request.ModelPolicy.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = a.defaultMaxTokens
+	}
+
 	body := chatRequest{
 		Model: model,
 		Messages: []chatMessage{
 			{Role: "system", Content: buildSystemMessage(request)},
 			{Role: "user", Content: buildUserMessage(request)},
 		},
-		MaxTokens:   request.ModelPolicy.MaxTokens,
 		Temperature: request.ModelPolicy.Temperature,
-		ResponseFormat: &responseFormat{
-			Type: "json_object",
-		},
+	}
+	// Azure gpt-5.x deployments reject max_tokens and require max_completion_tokens.
+	if a.authStyle == AuthAzureAPIKey {
+		body.MaxCompletionTokens = maxTokens
+	} else {
+		body.MaxTokens = maxTokens
+	}
+	// json_object forbids a top-level array. Only request it when the schema
+	// is object-shaped (or unknown). Array schemas (MCQ sets) omit it so
+	// providers can return [...] directly.
+	if schemaAllowsJSONObject(request.Schema.JSONSchema) {
+		body.ResponseFormat = &responseFormat{Type: "json_object"}
 	}
 
 	parsed, err := a.sendChatCompletion(ctx, body)
 	if isResponseFormatRejection(err) {
 		body.ResponseFormat = nil
+		parsed, err = a.sendChatCompletion(ctx, body)
+	}
+	if isMaxTokensRejection(err) {
+		// Some Azure models reject max_tokens; swap to max_completion_tokens.
+		body.MaxTokens = 0
+		body.MaxCompletionTokens = maxTokens
 		parsed, err = a.sendChatCompletion(ctx, body)
 	}
 	if err != nil {
@@ -162,7 +225,7 @@ func (a *Adapter) Generate(ctx context.Context, request generation.GenerateReque
 
 	return generation.GenerateResult{
 		Object:    object,
-		Provider:  "openai_compat",
+		Provider:  a.name,
 		Model:     resultModel,
 		TokensIn:  parsed.Usage.PromptTokens,
 		TokensOut: parsed.Usage.CompletionTokens,
@@ -176,12 +239,22 @@ func (a *Adapter) sendChatCompletion(ctx context.Context, body chatRequest) (cha
 		return chatResponse{}, fmt.Errorf("openaicompat: encode request: %w", err)
 	}
 
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, a.baseURL+"/chat/completions", bytes.NewReader(payload))
+	endpoint := a.baseURL + "/chat/completions"
+	if a.apiVersion != "" {
+		endpoint = appendQuery(endpoint, "api-version", a.apiVersion)
+	}
+
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return chatResponse{}, fmt.Errorf("openaicompat: build request: %w", err)
 	}
 	httpRequest.Header.Set("Content-Type", "application/json")
-	httpRequest.Header.Set("Authorization", "Bearer "+a.apiKey)
+	switch a.authStyle {
+	case AuthAzureAPIKey:
+		httpRequest.Header.Set("api-key", a.apiKey)
+	default:
+		httpRequest.Header.Set("Authorization", "Bearer "+a.apiKey)
+	}
 
 	httpResponse, err := a.client.Do(httpRequest)
 	if err != nil {
@@ -223,6 +296,17 @@ func (a *Adapter) sendChatCompletion(ctx context.Context, body chatRequest) (cha
 	return parsed, nil
 }
 
+func appendQuery(rawURL, key, value string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL + "?" + url.QueryEscape(key) + "=" + url.QueryEscape(value)
+	}
+	query := parsed.Query()
+	query.Set(key, value)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
 func isResponseFormatRejection(err error) bool {
 	var providerErr *generation.ProviderError
 	if !errors.As(err, &providerErr) {
@@ -230,6 +314,35 @@ func isResponseFormatRejection(err error) bool {
 	}
 	return providerErr.StatusCode == http.StatusBadRequest &&
 		strings.Contains(strings.ToLower(providerErr.Message), "response_format")
+}
+
+func isMaxTokensRejection(err error) bool {
+	var providerErr *generation.ProviderError
+	if !errors.As(err, &providerErr) {
+		return false
+	}
+	if providerErr.StatusCode != http.StatusBadRequest {
+		return false
+	}
+	message := strings.ToLower(providerErr.Message)
+	return strings.Contains(message, "max_tokens") &&
+		strings.Contains(message, "max_completion_tokens")
+}
+
+// schemaAllowsJSONObject is false when the declared schema is a JSON array
+// (or an array wrapped only as items), because OpenAI's json_object mode
+// cannot emit a top-level array.
+func schemaAllowsJSONObject(schema json.RawMessage) bool {
+	if len(bytes.TrimSpace(schema)) == 0 {
+		return true
+	}
+	var meta struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(schema, &meta); err != nil {
+		return true
+	}
+	return !strings.EqualFold(strings.TrimSpace(meta.Type), "array")
 }
 
 // buildSystemMessage frames orchestration's instructions with JSON discipline

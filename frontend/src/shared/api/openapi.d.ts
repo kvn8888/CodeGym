@@ -41,6 +41,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the authenticated user's account profile. */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update the authenticated user's editable account profile. */
+        patch: operations["updateCurrentUser"];
+        trace?: never;
+    };
+    "/api/v1/cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Aggregate GenAI token usage and estimated USD cost for the authenticated workspace user.
+         * @description Totals tokens_in / tokens_out and estimated cost from recorded generation
+         *     calls (MCQ generation, memory profile synthesis, etc.). Costs use a built-in rate
+         *     card (USD per million tokens) last reviewed 2026-07-15 for Meta Muse Spark,
+         *     Azure/OpenAI GPT-5.6 Terra family, and Gemini Flash-class models.
+         */
+        get: operations["getGenAICost"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memory/profile": {
         parameters: {
             query?: never;
@@ -67,7 +108,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rebuild and persist the authenticated user's memory profile from events. */
+        /** Synthesize and persist the authenticated user's memory profile from deterministic event evidence. */
         post: operations["refreshMemoryProfile"];
         delete?: never;
         options?: never;
@@ -82,7 +123,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List append-only memory events for the authenticated user and workspace scope. */
+        /**
+         * List append-only memory events for the authenticated user and workspace scope.
+         * @description Returns events newest-first by occurrence time. All timestamps include an explicit UTC offset.
+         */
         get: operations["listMemoryEvents"];
         put?: never;
         /** Append a memory event for the authenticated user and workspace scope. */
@@ -153,6 +197,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate practice content (MCQ sets today; problems and interviews later) personalized by the caller's memory profile. */
+        post: operations["generateContent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcq/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grade one short free-response practice answer with the configured AI evaluator. */
+        post: operations["evaluateMCQFreeResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/profile/maintain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run structured LLM profile synthesis after a completed practice set.
+         * @description Interprets bounded deterministic event evidence into the summary, strengths, growth edges, skills, and durable notes used by subsequent generation.
+         */
+        post: operations["maintainMemoryProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memory/notes/maintain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compatibility alias for full memory profile maintenance.
+         * @deprecated
+         */
+        post: operations["maintainMemoryNotes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -188,6 +306,82 @@ export interface components {
              */
             mode: "memory" | "postgres";
         };
+        UserProfileEnvelope: {
+            data: components["schemas"]["UserProfile"];
+            error: null;
+        };
+        CostAggregateEnvelope: {
+            data: components["schemas"]["CostAggregate"];
+            error: null;
+        };
+        CostAggregate: {
+            /** @example USD */
+            currency: string;
+            /** @example 2026-07-15 */
+            pricing_as_of: string;
+            /** Format: int64 */
+            total_tokens_in: number;
+            /** Format: int64 */
+            total_tokens_out: number;
+            /** Format: double */
+            total_cost_usd: number;
+            call_count: number;
+            by_provider: components["schemas"]["CostProviderSlice"][];
+            by_model: components["schemas"]["CostModelSlice"][];
+            rates: components["schemas"]["CostRate"][];
+        };
+        CostProviderSlice: {
+            provider: string;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /** Format: double */
+            cost_usd: number;
+            call_count: number;
+        };
+        CostModelSlice: {
+            provider: string;
+            model: string;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /** Format: double */
+            cost_usd: number;
+            call_count: number;
+        };
+        CostRate: {
+            provider: string;
+            model_match?: string;
+            /** Format: double */
+            input_usd_per_mtok: number;
+            /** Format: double */
+            output_usd_per_mtok: number;
+            source?: string;
+        };
+        UserProfile: {
+            /** @example auth0|user_123 */
+            user_id: string;
+            /** @example kevin@example.com */
+            email: string;
+            /** @example Kevin Chen */
+            display_name: string;
+            /**
+             * @description Where the current display name came from. `oauth` is seeded from the Auth0/Google name claim; `user` means the Settings page saved a manual override; `fallback` means no provider name was available.
+             * @enum {string}
+             */
+            display_name_source: "oauth" | "user" | "fallback";
+            /**
+             * @description Internal default personal workspace ID.
+             * @example personal-auth0-user-123
+             */
+            default_workspace_id: string;
+        };
+        UpdateUserProfileInput: {
+            /** @example Kevin Chen */
+            display_name: string;
+        };
         MemoryProfileEnvelope: {
             data: components["schemas"]["MemoryProfile"];
             error: null;
@@ -218,6 +412,21 @@ export interface components {
             growth_edges: string[];
             skills: components["schemas"]["SkillProficiency"][];
             notes: components["schemas"]["MemoryNote"][];
+            provenance?: components["schemas"]["MemoryProfileProvenance"];
+        };
+        MemoryProfileProvenance: {
+            schema_version: number;
+            /** @enum {string} */
+            trigger: "manual" | "daily" | "set-completion";
+            provider: string;
+            model: string;
+            /** Format: date-time */
+            synthesized_at: string;
+            /** Format: date-time */
+            evidence_through: string;
+            event_count: number;
+            /** @description Stable digest of filtered profile evidence. Unchanged daily ticks skip the model call when this digest still matches. */
+            evidence_digest?: string;
         };
         SkillProficiency: {
             id: string;
@@ -244,8 +453,8 @@ export interface components {
         MemoryEvent: {
             /** @example mem_evt_0123456789abcdef */
             id: string;
-            /** @description Internal workspace-scope ID. Legacy field name. */
-            tenant_id: string;
+            /** @description Personal workspace scope ID. */
+            workspace_id: string;
             user_id: string;
             /** @example memory */
             source: string;
@@ -253,9 +462,15 @@ export interface components {
             type: string;
             summary: string;
             payload?: components["schemas"]["JsonValue"];
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description Actual event occurrence time, serialized with an explicit UTC offset.
+             */
             occurred_at: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description Persistence time, serialized with an explicit UTC offset.
+             */
             created_at: string;
         };
         RecordMemoryEventInput: {
@@ -278,8 +493,8 @@ export interface components {
         SessionSummary: {
             /** @example sess_0123456789abcdef */
             id: string;
-            /** @description Internal workspace-scope ID. Legacy field name. */
-            tenant_id: string;
+            /** @description Personal workspace scope ID. */
+            workspace_id: string;
             user_id: string;
             kind: components["schemas"]["SessionKind"];
             status: components["schemas"]["SessionStatus"];
@@ -324,6 +539,90 @@ export interface components {
                 content: string;
             }[];
         };
+        GenerateInput: {
+            /**
+             * @description Generation kind. Only "mcq" is implemented today.
+             * @enum {string}
+             */
+            kind: "mcq" | "problem" | "interview";
+            spec?: components["schemas"]["MCQSpec"];
+        };
+        /** @description The model chooses single-select, multi-select, or free-response independently for each generated question. */
+        MCQSpec: {
+            /**
+             * @description Coarse topic; empty spreads questions across growth edges.
+             * @example hash tables
+             */
+            topic?: string;
+            /**
+             * @description The user's free-text "what do you want to study?" ask; steers concept selection together with memory notes.
+             * @example I want to drill Go concurrency patterns
+             */
+            prompt?: string;
+            /** @default 5 */
+            count: number;
+            /** @example medium */
+            difficulty?: string;
+            /** @description Round number in a continuous marathon; later rounds avoid repeating earlier questions. */
+            round?: number;
+        };
+        MaintainProfileInput: {
+            /**
+             * @description Highlights the just-completed practice set inside the bounded cross-session evidence digest.
+             * @example mcq_abc123_r2
+             */
+            session_id?: string;
+        };
+        MCQQuestion: {
+            /** @example mq1 */
+            id: string;
+            /** @enum {string} */
+            type: "single_select" | "multi_select" | "free_response";
+            text: string;
+            /** @description Exactly four options for single-select and multi-select; omitted for free response. */
+            options?: string[];
+            /** @description Required only for single-select. */
+            correctIndex?: number;
+            /** @description Required only for multi-select; grading requires an exact set match. */
+            correctIndices?: number[];
+            /** @description Concise evaluator reference answer for free-response items. */
+            expectedAnswer?: string;
+            /** @description Objective binary grading criteria for free-response items. */
+            rubric?: string;
+            concept: string;
+            helpContent: string;
+        };
+        FreeResponseEvaluationInput: {
+            question_id?: string;
+            question: string;
+            concept?: string;
+            expected_answer: string;
+            rubric: string;
+            answer: string;
+        };
+        FreeResponseEvaluation: {
+            correct: boolean;
+            feedback: string;
+            provider?: string;
+            model?: string;
+        };
+        FreeResponseEvaluationEnvelope: {
+            data: components["schemas"]["FreeResponseEvaluation"];
+            error: null;
+        };
+        GenerateMCQResult: {
+            /** @example mcq */
+            kind: string;
+            questions: components["schemas"]["MCQQuestion"][];
+            /** @example openai_compat */
+            provider: string;
+            /** @example anthropic/claude-haiku-4.5 */
+            model: string;
+        };
+        GenerateMCQEnvelope: {
+            data: components["schemas"]["GenerateMCQResult"];
+            error: null;
+        };
         JsonValue: {
             [key: string]: components["schemas"]["JsonValue"];
         } | components["schemas"]["JsonValue"][] | string | number | boolean | null;
@@ -348,7 +647,7 @@ export interface components {
             };
         };
         /** @description Authenticated user does not have access to the requested workspace scope. */
-        TenantForbidden: {
+        WorkspaceForbidden: {
             headers: {
                 [name: string]: unknown;
             };
@@ -376,8 +675,8 @@ export interface components {
         };
     };
     parameters: {
-        /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-        TenantHeader: string;
+        /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+        WorkspaceHeader: string;
         SessionID: string;
     };
     requestBodies: never;
@@ -435,12 +734,86 @@ export interface operations {
             };
         };
     };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User profile loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserProfileInput"];
+            };
+        };
+        responses: {
+            /** @description User profile updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getGenAICost: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cost aggregate loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostAggregateEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     getMemoryProfile: {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path?: never;
             cookie?: never;
@@ -457,7 +830,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -465,8 +838,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path?: never;
             cookie?: never;
@@ -483,7 +856,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -491,8 +864,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path?: never;
             cookie?: never;
@@ -509,7 +882,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -517,8 +890,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path?: never;
             cookie?: never;
@@ -540,7 +913,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
         };
     };
     listSessions: {
@@ -553,8 +926,8 @@ export interface operations {
                 cursor?: string;
             };
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path?: never;
             cookie?: never;
@@ -572,7 +945,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -580,8 +953,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path?: never;
             cookie?: never;
@@ -603,7 +976,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -611,8 +984,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path: {
                 id: components["parameters"]["SessionID"];
@@ -631,7 +1004,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -640,8 +1013,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path: {
                 id: components["parameters"]["SessionID"];
@@ -665,7 +1038,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -674,8 +1047,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Optional internal workspace-scope override. This header keeps the current legacy tenant name for wire compatibility. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. */
-                "X-CodeGym-Tenant-ID"?: components["parameters"]["TenantHeader"];
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
             };
             path: {
                 id: components["parameters"]["SessionID"];
@@ -699,8 +1072,175 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["TenantForbidden"];
+            403: components["responses"]["WorkspaceForbidden"];
             404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    generateContent: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateInput"];
+            };
+        };
+        responses: {
+            /** @description Content generated and validated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateMCQEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            /** @description The requested generation kind is not implemented yet. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The model provider failed or returned unusable output after the retry budget. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Generation is not configured on this server. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    evaluateMCQFreeResponse: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreeResponseEvaluationInput"];
+            };
+        };
+        responses: {
+            /** @description Binary correctness and concise evaluator feedback. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreeResponseEvaluationEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            /** @description The evaluator provider failed or returned unusable output; the answer remains unconfirmed and retryable. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description AI evaluation is not configured on this server. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    maintainMemoryProfile: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["MaintainProfileInput"];
+            };
+        };
+        responses: {
+            /** @description The latest successfully synthesized profile, or the preserved fallback profile when generation is unavailable or invalid. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryProfileEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    maintainMemoryNotes: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["MaintainProfileInput"];
+            };
+        };
+        responses: {
+            /** @description Latest memory profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryProfileEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
             500: components["responses"]["InternalError"];
         };
     };

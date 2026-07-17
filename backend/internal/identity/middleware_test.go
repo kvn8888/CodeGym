@@ -17,9 +17,9 @@ func TestMiddlewareBootstrapsAuthenticatedPrincipal(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	ctx := auth.WithPrincipal(req.Context(), auth.Principal{
-		UserID:          "kevin",
-		DefaultTenantID: "personal-kevin",
-		TenantIDs:       []string{"personal-kevin"},
+		UserID:             "kevin",
+		DefaultWorkspaceID: "personal-kevin",
+		WorkspaceIDs:       []string{"personal-kevin"},
 	})
 
 	res := httptest.NewRecorder()

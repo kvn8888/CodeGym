@@ -18,6 +18,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/usage"
 )
 
 // main wires configuration, persistence adapters, services, and the HTTP router,
@@ -36,6 +37,7 @@ func main() {
 	var memoryStore memory.Store = memory.NewInMemoryStore()
 	var identityStore identity.Store = identity.NewInMemoryStore()
 	var sessionStore session.Store = session.NewInMemoryStore()
+	var usageStore usage.Store = usage.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -51,6 +53,7 @@ func main() {
 		postgresIdentityStore := identity.NewPostgresStore(pool)
 		postgresMemoryStore := memory.NewPostgresStore(pool)
 		postgresSessionStore := session.NewPostgresStore(pool)
+		postgresUsageStore := usage.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -60,54 +63,80 @@ func main() {
 		if err := postgresSessionStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap session schema: %v", err)
 		}
+		if err := postgresUsageStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap genai usage schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
 		sessionStore = postgresSessionStore
-		log.Print("CodeGym API using Postgres identity, memory, and session stores")
+		usageStore = postgresUsageStore
+		log.Print("CodeGym API using Postgres identity, memory, session, and genai usage stores")
 	} else {
-		log.Print("CodeGym API using in-memory identity, memory, and session stores; set NEON_CONNECTION_STRING to enable Postgres")
+		log.Print("CodeGym API using in-memory identity, memory, session, and genai usage stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
 
 	identityService := identity.NewService(identityStore)
 	memoryService := memory.NewService(memoryStore, nil)
 	sessionService := session.NewService(sessionStore, nil)
+	usageService := usage.NewService(usageStore, nil)
 
 	var generationOrchestrator *generation.Orchestrator
-	if cfg.GenAI.Enabled() {
-		if warning := cfg.GenAI.PairingWarning(); warning != "" {
-			log.Printf("WARNING: %s base_url=%s model=%s", warning, cfg.GenAI.BaseURL, cfg.GenAI.Model)
+	if cfg.AnyGenAIEnabled() {
+		named := make([]generation.NamedGenerator, 0, len(cfg.GenAIProviders))
+		names := make([]string, 0, len(cfg.GenAIProviders))
+		for _, provider := range cfg.GenAIProviders {
+			if warning := provider.PairingWarning(); warning != "" {
+				log.Printf("WARNING: provider=%s %s base_url=%s model=%s",
+					provider.Name, warning, provider.BaseURL, provider.Model)
+			}
+			adapter, err := openaicompat.New(openaicompat.Config{
+				Name:             provider.Name,
+				BaseURL:          provider.BaseURL,
+				APIKey:           provider.APIKey,
+				Model:            provider.Model,
+				AuthStyle:        provider.AuthStyle,
+				APIVersion:       provider.APIVersion,
+				DefaultMaxTokens: provider.DefaultMaxTokens,
+			})
+			if err != nil {
+				log.Fatalf("could not configure GenAI provider %s: %v", provider.Name, err)
+			}
+			named = append(named, generation.NamedGenerator{Name: provider.Name, Generator: adapter})
+			names = append(names, provider.Name)
+			log.Printf("CodeGym GenAI provider registered name=%s base_url=%s model=%s",
+				provider.Name, provider.BaseURL, provider.Model)
 		}
-		generator, err := openaicompat.New(openaicompat.Config{
-			BaseURL: cfg.GenAI.BaseURL,
-			APIKey:  cfg.GenAI.APIKey,
-			Model:   cfg.GenAI.Model,
-		})
+		routerGenerator, err := generation.NewRouter(named)
 		if err != nil {
-			log.Fatalf("could not configure GenAI adapter: %v", err)
+			log.Fatalf("could not configure GenAI router: %v", err)
 		}
-		generationOrchestrator = generation.NewOrchestrator(memoryService, generator)
-		log.Printf("CodeGym generation enabled via %s (model %s)", cfg.GenAI.BaseURL, cfg.GenAI.Model)
+		generationOrchestrator = generation.NewOrchestrator(memoryService, routerGenerator).WithUsage(usageService)
+		log.Printf("CodeGym generation enabled providers=%v order=%v", names, cfg.GenAIProviderOrder)
 	} else {
-		log.Print("CodeGym generation disabled; set CODEGYM_GENAI_API_KEY to enable POST /api/v1/generate")
+		log.Print("CodeGym generation disabled; set META_MUSE_SPARK_API, CODEGYM_GENAI_AZURE_API_KEY, or CODEGYM_GEMINI_API_KEY to enable POST /api/v1/generate")
 	}
+	profileSynthesizer := generation.NewProfileSynthesizer(generationOrchestrator, memoryService)
 
-	if !cfg.MemoryWorker.Disabled {
-		worker := memory.NewWorker(memoryService, cfg.MemoryWorker.Interval)
+	if cfg.MemoryWorker.DailyEnabled() {
+		worker := memory.NewWorker(profileSynthesizer, cfg.MemoryWorker.Interval)
 		go worker.Run(ctx)
-		log.Printf("CodeGym memory worker scheduled every %s", cfg.MemoryWorker.Interval)
+		log.Printf("CodeGym LLM memory profile worker scheduled every %s trigger=%s", cfg.MemoryWorker.Interval, cfg.MemoryWorker.Trigger)
 	} else {
-		log.Print("CodeGym memory worker disabled")
+		log.Printf("CodeGym daily memory worker disabled trigger=%s", cfg.MemoryWorker.Trigger)
 	}
 
 	router := api.NewRouter(api.Dependencies{
-		Authenticator:      authenticator,
-		Identity:           identityService,
-		Memory:             memoryService,
-		Sessions:           sessionService,
-		Generation:         generationOrchestrator,
-		CORSAllowedOrigins: cfg.CORSAllowedOrigins,
-		DatabaseURL:        cfg.DatabaseURL,
+		Authenticator:        authenticator,
+		Identity:             identityService,
+		Memory:               memoryService,
+		Sessions:             sessionService,
+		Generation:           generationOrchestrator,
+		MemoryProfiles:       profileSynthesizer,
+		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,
+		Usage:                usageService,
+		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
+		DatabaseURL:          cfg.DatabaseURL,
 	})
 
 	log.Printf("CodeGym API listening on %s", cfg.Addr())
@@ -143,8 +172,8 @@ func buildAuthenticator(cfg config.Config) (auth.Authenticator, error) {
 
 	log.Print("CodeGym API using dev bearer token authentication")
 	return auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{
-		StaticToken:     cfg.DevAuthToken,
-		DefaultUserID:   cfg.DevUserID,
-		DefaultTenantID: cfg.DevTenantID,
+		StaticToken:        cfg.DevAuthToken,
+		DefaultUserID:      cfg.DevUserID,
+		DefaultWorkspaceID: cfg.DevWorkspaceID,
 	}), nil
 }

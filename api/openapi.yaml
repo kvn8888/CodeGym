@@ -51,12 +51,73 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /api/v1/me:
+    get:
+      operationId: getCurrentUser
+      summary: Get the authenticated user's account profile.
+      responses:
+        "200":
+          description: User profile loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updateCurrentUser
+      summary: Update the authenticated user's editable account profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserProfileInput"
+      responses:
+        "200":
+          description: User profile updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/cost:
+    get:
+      operationId: getGenAICost
+      summary: Aggregate GenAI token usage and estimated USD cost for the authenticated workspace user.
+      description: |
+        Totals tokens_in / tokens_out and estimated cost from recorded generation
+        calls (MCQ generation, memory profile synthesis, etc.). Costs use a built-in rate
+        card (USD per million tokens) last reviewed 2026-07-15 for Meta Muse Spark,
+        Azure/OpenAI GPT-5.6 Terra family, and Gemini Flash-class models.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "200":
+          description: Cost aggregate loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostAggregateEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/v1/memory/profile:
     get:
       operationId: getMemoryProfile
       summary: Get the authenticated user's memory profile for the selected workspace scope.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       responses:
         "200":
           description: Memory profile loaded.
@@ -67,16 +128,16 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
   /api/v1/memory/profile/refresh:
     post:
       operationId: refreshMemoryProfile
-      summary: Rebuild and persist the authenticated user's memory profile from events.
+      summary: Synthesize and persist the authenticated user's memory profile from deterministic event evidence.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       responses:
         "200":
           description: Memory profile refreshed.
@@ -87,7 +148,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -95,8 +156,9 @@ paths:
     get:
       operationId: listMemoryEvents
       summary: List append-only memory events for the authenticated user and workspace scope.
+      description: Returns events newest-first by occurrence time. All timestamps include an explicit UTC offset.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       responses:
         "200":
           description: Memory events loaded.
@@ -107,14 +169,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "500":
           $ref: "#/components/responses/InternalError"
     post:
       operationId: recordMemoryEvent
       summary: Append a memory event for the authenticated user and workspace scope.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
         required: true
         content:
@@ -133,7 +195,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
 
   /api/v1/sessions:
     get:
@@ -141,7 +203,7 @@ paths:
       summary: List practice sessions for the authenticated user and workspace scope.
       description: Returns history summaries only; state snapshots and draft files are excluded.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
         - name: kind
           in: query
           required: false
@@ -179,14 +241,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "500":
           $ref: "#/components/responses/InternalError"
     post:
       operationId: createSession
       summary: Create a resumable practice session.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
         required: true
         content:
@@ -205,7 +267,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -216,7 +278,7 @@ paths:
       operationId: getSession
       summary: Get one practice session for resume.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       responses:
         "200":
           description: Session detail loaded. Workspace sessions include draft files.
@@ -227,7 +289,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -236,7 +298,7 @@ paths:
       operationId: updateSession
       summary: Update a practice session title, status, or resume state.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
         required: true
         content:
@@ -255,7 +317,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -268,7 +330,7 @@ paths:
       operationId: upsertSessionFiles
       summary: Batch upsert draft files for a workspace session.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
         required: true
         content:
@@ -287,7 +349,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -298,7 +360,7 @@ paths:
       operationId: generateContent
       summary: Generate practice content (MCQ sets today; problems and interviews later) personalized by the caller's memory profile.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
         required: true
         content:
@@ -317,7 +379,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
         "501":
           description: The requested generation kind is not implemented yet.
           content:
@@ -337,21 +399,60 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
-  /api/v1/memory/notes/maintain:
+  /api/v1/mcq/evaluate:
     post:
-      operationId: maintainMemoryNotes
-      summary: Run the post-round memory reflection pass — deterministic profile refresh plus a best-effort LLM CRUD pass over memory notes.
+      operationId: evaluateMCQFreeResponse
+      summary: Grade one short free-response practice answer with the configured AI evaluator.
       parameters:
-        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FreeResponseEvaluationInput"
+      responses:
+        "200":
+          description: Binary correctness and concise evaluator feedback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FreeResponseEvaluationEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "502":
+          description: The evaluator provider failed or returned unusable output; the answer remains unconfirmed and retryable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: AI evaluation is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/memory/profile/maintain:
+    post:
+      operationId: maintainMemoryProfile
+      summary: Run structured LLM profile synthesis after a completed practice set.
+      description: Interprets bounded deterministic event evidence into the summary, strengths, growth edges, skills, and durable notes used by subsequent generation.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MaintainNotesInput"
+              $ref: "#/components/schemas/MaintainProfileInput"
       responses:
         "200":
-          description: Profile refreshed; note maintenance applied when the model produced usable actions.
+          description: The latest successfully synthesized profile, or the preserved fallback profile when generation is unavailable or invalid.
           content:
             application/json:
               schema:
@@ -361,7 +462,36 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/TenantForbidden"
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/memory/notes/maintain:
+    post:
+      deprecated: true
+      operationId: maintainMemoryNotes
+      summary: Compatibility alias for full memory profile maintenance.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintainProfileInput"
+      responses:
+        "200":
+          description: Latest memory profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -373,15 +503,15 @@ components:
       bearerFormat: dev-token-or-jwt
 
   parameters:
-    TenantHeader:
-      name: X-CodeGym-Tenant-ID
+    WorkspaceHeader:
+      name: X-CodeGym-Workspace-ID
       in: header
       required: false
       description: >
-        Optional internal workspace-scope override. This header keeps the
-        current legacy tenant name for wire compatibility. Product flows should
-        normally omit it so the backend uses the authenticated principal's
-        default personal workspace.
+        Optional workspace-scope override. Product flows should normally omit it
+        so the backend uses the authenticated principal's default personal
+        workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted
+        by the server for compatibility.
       schema:
         type: string
         example: personal-kevin
@@ -406,7 +536,7 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
-    TenantForbidden:
+    WorkspaceForbidden:
       description: Authenticated user does not have access to the requested workspace scope.
       content:
         application/json:
@@ -483,6 +613,162 @@ components:
           type: string
           enum: [memory, postgres]
           example: postgres
+
+    UserProfileEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/UserProfile"
+        error:
+          type: "null"
+
+    CostAggregateEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/CostAggregate"
+        error:
+          type: "null"
+
+    CostAggregate:
+      type: object
+      required:
+        - currency
+        - pricing_as_of
+        - total_tokens_in
+        - total_tokens_out
+        - total_cost_usd
+        - call_count
+        - by_provider
+        - by_model
+        - rates
+      properties:
+        currency:
+          type: string
+          example: USD
+        pricing_as_of:
+          type: string
+          example: "2026-07-15"
+        total_tokens_in:
+          type: integer
+          format: int64
+        total_tokens_out:
+          type: integer
+          format: int64
+        total_cost_usd:
+          type: number
+          format: double
+        call_count:
+          type: integer
+        by_provider:
+          type: array
+          items:
+            $ref: "#/components/schemas/CostProviderSlice"
+        by_model:
+          type: array
+          items:
+            $ref: "#/components/schemas/CostModelSlice"
+        rates:
+          type: array
+          items:
+            $ref: "#/components/schemas/CostRate"
+
+    CostProviderSlice:
+      type: object
+      required: [provider, tokens_in, tokens_out, cost_usd, call_count]
+      properties:
+        provider:
+          type: string
+        tokens_in:
+          type: integer
+          format: int64
+        tokens_out:
+          type: integer
+          format: int64
+        cost_usd:
+          type: number
+          format: double
+        call_count:
+          type: integer
+
+    CostModelSlice:
+      type: object
+      required: [provider, model, tokens_in, tokens_out, cost_usd, call_count]
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        tokens_in:
+          type: integer
+          format: int64
+        tokens_out:
+          type: integer
+          format: int64
+        cost_usd:
+          type: number
+          format: double
+        call_count:
+          type: integer
+
+    CostRate:
+      type: object
+      required: [provider, input_usd_per_mtok, output_usd_per_mtok]
+      properties:
+        provider:
+          type: string
+        model_match:
+          type: string
+        input_usd_per_mtok:
+          type: number
+          format: double
+        output_usd_per_mtok:
+          type: number
+          format: double
+        source:
+          type: string
+
+    UserProfile:
+      type: object
+      required:
+        - user_id
+        - email
+        - display_name
+        - display_name_source
+        - default_workspace_id
+      properties:
+        user_id:
+          type: string
+          example: auth0|user_123
+        email:
+          type: string
+          example: kevin@example.com
+        display_name:
+          type: string
+          example: Kevin Chen
+        display_name_source:
+          type: string
+          enum: [oauth, user, fallback]
+          description: >
+            Where the current display name came from. `oauth` is seeded from
+            the Auth0/Google name claim; `user` means the Settings page saved a
+            manual override; `fallback` means no provider name was available.
+        default_workspace_id:
+          type: string
+          description: Internal default personal workspace ID.
+          example: personal-auth0-user-123
+
+    UpdateUserProfileInput:
+      type: object
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          example: Kevin Chen
 
     MemoryProfileEnvelope:
       type: object
@@ -568,6 +854,34 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MemoryNote"
+        provenance:
+          $ref: "#/components/schemas/MemoryProfileProvenance"
+
+    MemoryProfileProvenance:
+      type: object
+      required: [schema_version, trigger, provider, model, synthesized_at, evidence_through, event_count]
+      properties:
+        schema_version:
+          type: integer
+        trigger:
+          type: string
+          enum: [manual, daily, set-completion]
+        provider:
+          type: string
+        model:
+          type: string
+        synthesized_at:
+          type: string
+          format: date-time
+        evidence_through:
+          type: string
+          format: date-time
+        event_count:
+          type: integer
+          minimum: 0
+        evidence_digest:
+          type: string
+          description: Stable digest of filtered profile evidence. Unchanged daily ticks skip the model call when this digest still matches.
 
     SkillProficiency:
       type: object
@@ -617,7 +931,7 @@ components:
       type: object
       required:
         - id
-        - tenant_id
+        - workspace_id
         - user_id
         - source
         - type
@@ -628,9 +942,9 @@ components:
         id:
           type: string
           example: mem_evt_0123456789abcdef
-        tenant_id:
+        workspace_id:
           type: string
-          description: Internal workspace-scope ID. Legacy field name.
+          description: Personal workspace scope ID.
         user_id:
           type: string
         source:
@@ -646,9 +960,11 @@ components:
         occurred_at:
           type: string
           format: date-time
+          description: Actual event occurrence time, serialized with an explicit UTC offset.
         created_at:
           type: string
           format: date-time
+          description: Persistence time, serialized with an explicit UTC offset.
 
     RecordMemoryEventInput:
       type: object
@@ -683,7 +999,7 @@ components:
       type: object
       required:
         - id
-        - tenant_id
+        - workspace_id
         - user_id
         - kind
         - status
@@ -695,9 +1011,9 @@ components:
         id:
           type: string
           example: sess_0123456789abcdef
-        tenant_id:
+        workspace_id:
           type: string
-          description: Internal workspace-scope ID. Legacy field name.
+          description: Personal workspace scope ID.
         user_id:
           type: string
         kind:
@@ -802,6 +1118,7 @@ components:
 
     MCQSpec:
       type: object
+      description: The model chooses single-select, multi-select, or free-response independently for each generated question.
       properties:
         topic:
           type: string
@@ -824,38 +1141,98 @@ components:
           type: integer
           minimum: 0
           description: Round number in a continuous marathon; later rounds avoid repeating earlier questions.
-
-    MaintainNotesInput:
+    MaintainProfileInput:
       type: object
       properties:
         session_id:
           type: string
-          description: Scopes the reflection digest to one practice round; empty uses the most recent round in the event log.
+          description: Highlights the just-completed practice set inside the bounded cross-session evidence digest.
           example: mcq_abc123_r2
 
     MCQQuestion:
       type: object
-      required: [id, text, options, correctIndex, concept, helpContent]
+      required: [id, type, text, concept, helpContent]
       properties:
         id:
           type: string
           example: mq1
+        type:
+          type: string
+          enum: [single_select, multi_select, free_response]
         text:
           type: string
         options:
           type: array
           items:
             type: string
-          minItems: 4
           maxItems: 4
+          description: Exactly four options for single-select and multi-select; omitted for free response.
         correctIndex:
           type: integer
           minimum: 0
           maximum: 3
+          description: Required only for single-select.
+        correctIndices:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 0
+            maximum: 3
+          description: Required only for multi-select; grading requires an exact set match.
+        expectedAnswer:
+          type: string
+          description: Concise evaluator reference answer for free-response items.
+        rubric:
+          type: string
+          description: Objective binary grading criteria for free-response items.
         concept:
           type: string
         helpContent:
           type: string
+
+    FreeResponseEvaluationInput:
+      type: object
+      required: [question, expected_answer, rubric, answer]
+      properties:
+        question_id:
+          type: string
+        question:
+          type: string
+        concept:
+          type: string
+        expected_answer:
+          type: string
+        rubric:
+          type: string
+        answer:
+          type: string
+          maxLength: 2000
+
+    FreeResponseEvaluation:
+      type: object
+      required: [correct, feedback]
+      properties:
+        correct:
+          type: boolean
+        feedback:
+          type: string
+          maxLength: 400
+        provider:
+          type: string
+        model:
+          type: string
+
+    FreeResponseEvaluationEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/FreeResponseEvaluation"
+        error:
+          type: "null"
 
     GenerateMCQResult:
       type: object

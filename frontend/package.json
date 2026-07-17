@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run typecheck:build && vite build",
+    "typecheck": "tsc -b",
+    "typecheck:build": "node ./node_modules/typescript7/bin/tsc -b",
     "lint": "eslint .",
     "api:lint": "npx @redocly/cli@latest lint ../api/openapi.yaml",
     "api:types": "npx openapi-typescript@latest ../api/openapi.yaml -o src/shared/api/openapi.d.ts",
@@ -67,6 +69,7 @@
     "tailwindcss": "^4.3.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
+    "typescript7": "npm:typescript@~7.0.2",
     "vite": "^7.3.5"
   }
 }

@@ -11,17 +11,19 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/memory"
-	"github.com/kvn8888/codegym/backend/internal/tenant"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 func validMCQJSON(count int) json.RawMessage {
 	questions := make([]MCQQuestion, 0, count)
 	for i := 0; i < count; i++ {
+		correctIndex := i % 4
 		questions = append(questions, MCQQuestion{
 			ID:           fmt.Sprintf("mq%d", i+1),
+			Type:         MCQSingleSelect,
 			Text:         fmt.Sprintf("Question %d?", i+1),
 			Options:      []string{"a", "b", "c", "d"},
-			CorrectIndex: i % 4,
+			CorrectIndex: &correctIndex,
 			Concept:      "Concept",
 			HelpContent:  "Because reasons.",
 		})
@@ -55,11 +57,11 @@ func (s *scriptedGenerator) Generate(_ context.Context, request GenerateRequest)
 
 func scopedContext() context.Context {
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
-		UserID:          "kevin",
-		DefaultTenantID: "personal-kevin",
-		TenantIDs:       []string{"personal-kevin"},
+		UserID:             "kevin",
+		DefaultWorkspaceID: "personal-kevin",
+		WorkspaceIDs:       []string{"personal-kevin"},
 	})
-	return tenant.WithScope(ctx, tenant.Scope{TenantID: "personal-kevin"})
+	return workspace.WithScope(ctx, workspace.Scope{WorkspaceID: "personal-kevin"})
 }
 
 func newTestOrchestrator(generator Generator) *Orchestrator {
@@ -92,8 +94,11 @@ func TestGenerateMCQSetHappyPath(t *testing.T) {
 	if request.Kind != KindMCQ {
 		t.Errorf("kind = %q", request.Kind)
 	}
-	if !strings.Contains(request.Instructions, "MCQ marathon generator") {
+	if !strings.Contains(request.Instructions, "mixed-question marathon generator") {
 		t.Error("instructions are missing the MCQ system prompt")
+	}
+	if !strings.Contains(request.Instructions, "choose the type that best tests") {
+		t.Error("instructions do not delegate question-type selection to the model")
 	}
 	if request.Schema.Name != "mcq_set" {
 		t.Errorf("schema name = %q", request.Schema.Name)
@@ -119,6 +124,21 @@ func TestGenerateMCQSetRetriesOnceOnInvalidOutput(t *testing.T) {
 	}
 	if !strings.Contains(generator.requests[1].Instructions, "previous output was rejected") {
 		t.Error("retry instructions do not carry the validation error back")
+	}
+}
+
+func TestGenerateMCQSetAcceptsModelSelectedQuestionTypes(t *testing.T) {
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`[
+		{"id":"mq1","type":"multi_select","text":"Select all","options":["a","b","c","d"],"correctIndices":[0,2],"concept":"C","helpContent":"H"},
+		{"id":"mq2","type":"free_response","text":"Explain","expectedAnswer":"A","rubric":"R","concept":"C","helpContent":"H"}
+	]`)}}
+
+	questions, _, err := GenerateMCQSet(scopedContext(), newTestOrchestrator(generator), MCQSpec{Count: 2})
+	if err != nil {
+		t.Fatalf("GenerateMCQSet: %v", err)
+	}
+	if questions[0].Type != MCQMultiSelect || questions[1].Type != MCQFreeResponse {
+		t.Fatalf("model-selected types = %#v", questions)
 	}
 }
 
@@ -180,9 +200,15 @@ func TestValidateMCQSet(t *testing.T) {
 		wantErr bool
 	}{
 		{"valid", string(validMCQJSON(2)), 2, false},
+		{"multi select", `[{"id":"mq1","type":"multi_select","text":"Select all","options":["a","b","c","d"],"correctIndices":[0,2],"concept":"C","helpContent":"H"}]`, 1, false},
+		{"free response", `[{"id":"mq1","type":"free_response","text":"Explain FIFO","expectedAnswer":"First in, first out","rubric":"Identifies removal order","concept":"Queues","helpContent":"Think about arrival order."}]`, 1, false},
 		{"wrapped object", `{"questions":` + string(validMCQJSON(2)) + `}`, 2, false},
+		{"schema items envelope", `{"type":"array","items":` + string(validMCQJSON(2)) + `}`, 2, false},
+		{"single question object", `{"id":"mq1","text":"Q?","options":["a","b","c","d"],"correctIndex":0,"concept":"C","helpContent":"H"}`, 1, false},
 		{"wrong count", string(validMCQJSON(3)), 2, true},
 		{"bad correctIndex", `[{"id":"mq1","text":"Q?","options":["a","b","c","d"],"correctIndex":4,"concept":"C","helpContent":"H"}]`, 1, true},
+		{"duplicate multi indices", `[{"id":"mq1","type":"multi_select","text":"Q?","options":["a","b","c","d"],"correctIndices":[1,1],"concept":"C","helpContent":"H"}]`, 1, true},
+		{"free response missing rubric", `[{"id":"mq1","type":"free_response","text":"Q?","expectedAnswer":"A","concept":"C","helpContent":"H"}]`, 1, true},
 		{"three options", `[{"id":"mq1","text":"Q?","options":["a","b","c"],"correctIndex":0,"concept":"C","helpContent":"H"}]`, 1, true},
 		{"empty text", `[{"id":"mq1","text":" ","options":["a","b","c","d"],"correctIndex":0,"concept":"C","helpContent":"H"}]`, 1, true},
 		{"empty help", `[{"id":"mq1","text":"Q?","options":["a","b","c","d"],"correctIndex":0,"concept":"C","helpContent":""}]`, 1, true},

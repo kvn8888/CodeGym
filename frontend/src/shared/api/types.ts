@@ -78,6 +78,18 @@ export interface Submission {
   result?: TestResult;
 }
 
+export interface UserProfile {
+  user_id: string;
+  email: string;
+  display_name: string;
+  display_name_source: 'oauth' | 'user' | 'fallback';
+  default_workspace_id: string;
+}
+
+export interface UpdateUserProfileInput {
+  display_name: string;
+}
+
 export interface UserMemoryProfile {
   summary: string;
   updated_at: string;
@@ -110,12 +122,76 @@ export interface MemoryNote {
 
 export interface MemoryEvent {
   id: string;
-  tenant_id: string;
+  workspace_id: string;
   user_id: string;
   source: string;
   type: string;
   summary: string;
-  payload?: Record<string, unknown> | unknown[] | string | number | boolean | null;
+  payload?: unknown;
   occurred_at: string;
   created_at: string;
+}
+
+export type SessionKind = 'workspace' | 'mcq' | 'interview';
+export type SessionStatus = 'active' | 'completed' | 'abandoned';
+
+export interface PracticeSessionSummary {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  kind: SessionKind;
+  status: SessionStatus;
+  title: string;
+  problem_id?: string;
+  generation_job_id?: string;
+  created_at: string;
+  updated_at: string;
+  last_activity_at: string;
+  completed_at?: string;
+}
+
+export interface PracticeSession extends PracticeSessionSummary {
+  state: unknown;
+  files?: Array<{
+    file_path: string;
+    content: string;
+    updated_at: string;
+  }>;
+}
+
+/** Practice format chosen on New practice. */
+export type PracticeFormat = 'mcq' | 'coding';
+export type MCQQuestionType = 'single_select' | 'multi_select' | 'free_response';
+
+export interface NewPracticeConfig {
+  /** `mcq` = multiple-choice marathon; `coding` = DSA / LeetCode-style workspace problem. */
+  format?: PracticeFormat;
+  prompt: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  count: number;
+}
+
+/** Aggregate from GET /api/v1/cost — estimated GenAI spend for this workspace user. */
+export interface GenAICostAggregate {
+  currency: string;
+  pricing_as_of: string;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_cost_usd: number;
+  call_count: number;
+  by_provider: Array<{
+    provider: string;
+    tokens_in: number;
+    tokens_out: number;
+    cost_usd: number;
+    call_count: number;
+  }>;
+  by_model: Array<{
+    provider: string;
+    model: string;
+    tokens_in: number;
+    tokens_out: number;
+    cost_usd: number;
+    call_count: number;
+  }>;
 }

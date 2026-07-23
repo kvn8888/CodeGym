@@ -21,6 +21,11 @@ export const Empty: Story = {
   parameters: { mockApiScenario: 'empty' },
 };
 
+export const LegacyNullableCollections: Story = {
+  name: 'Legacy nullable collections',
+  parameters: { mockApiScenario: 'nullable-memory' },
+};
+
 export const Loading: Story = {
   parameters: { mockApiScenario: 'loading' },
 };

@@ -8,6 +8,7 @@ import type {
   Problem,
   SubmissionFile,
   TestResult,
+  UserMemoryProfile,
   UserProfile,
 } from '../shared/api/types';
 
@@ -85,7 +86,7 @@ function createMemoryEventSeed(): MemoryEvent[] {
 
 let memoryEvents: MemoryEvent[] = createMemoryEventSeed();
 
-export type MockApiScenario = 'default' | 'empty' | 'error' | 'loading';
+export type MockApiScenario = 'default' | 'empty' | 'error' | 'loading' | 'nullable-memory';
 
 let mockApiScenario: MockApiScenario = 'default';
 
@@ -193,6 +194,15 @@ export async function mockApiFetch(
   }
 
   if (method === 'GET' && path === '/memory/profile') {
+    if (mockApiScenario === 'nullable-memory') {
+      return json({
+        ...mockMemoryProfile,
+        strengths: null,
+        growth_edges: null,
+        skills: null,
+        notes: null,
+      } as unknown as UserMemoryProfile);
+    }
     return json(
       mockApiScenario === 'empty'
         ? {
@@ -208,6 +218,9 @@ export async function mockApiFetch(
   }
 
   if (method === 'GET' && path === '/memory/events') {
+    if (mockApiScenario === 'nullable-memory') {
+      return json(null);
+    }
     return json([...memoryEvents].sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)));
   }
 

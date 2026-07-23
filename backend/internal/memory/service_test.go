@@ -24,6 +24,39 @@ func TestServiceReturnsDefaultProfileWhenMissing(t *testing.T) {
 	if !profile.UpdatedAt.Equal(now) {
 		t.Fatalf("expected UpdatedAt %s, got %s", now, profile.UpdatedAt)
 	}
+	if profile.Strengths == nil || profile.GrowthEdges == nil || profile.Skills == nil || profile.Notes == nil {
+		t.Fatal("expected default profile collections to be non-nil")
+	}
+}
+
+func TestServiceNormalizesLegacyNullableProfileCollections(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	store := NewInMemoryStore()
+	service := NewService(store, func() time.Time { return now })
+	ctx := scopedContext()
+
+	if err := store.UpsertProfile(context.Background(), "tenant-1", "user-1", Profile{
+		Summary:      "Legacy profile",
+		UpdatedAt:    now,
+		NextReviewAt: now.Add(24 * time.Hour),
+		Notes: []Note{{
+			ID:    "legacy-note",
+			Title: "Legacy note",
+		}},
+	}); err != nil {
+		t.Fatalf("UpsertProfile returned error: %v", err)
+	}
+
+	profile, err := service.GetProfile(ctx)
+	if err != nil {
+		t.Fatalf("GetProfile returned error: %v", err)
+	}
+	if profile.Strengths == nil || profile.GrowthEdges == nil || profile.Skills == nil || profile.Notes == nil {
+		t.Fatal("expected legacy profile collections to be normalized")
+	}
+	if profile.Notes[0].Tags == nil {
+		t.Fatal("expected legacy note tags to be normalized")
+	}
 }
 
 func TestServiceRecordsEventForScopedUser(t *testing.T) {

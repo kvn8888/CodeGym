@@ -41,7 +41,10 @@ func (s *Service) GetProfile(ctx context.Context) (Profile, error) {
 	if errors.Is(err, ErrProfileNotFound) {
 		return s.defaultProfile(), nil
 	}
-	return profile, err
+	if err != nil {
+		return Profile{}, err
+	}
+	return normalizeProfileCollections(profile), nil
 }
 
 // ProfileInputs returns the current profile and its append-only evidence for a
@@ -66,7 +69,7 @@ func (s *Service) ProfileInputs(ctx context.Context) (Profile, []Event, bool, er
 	if err != nil {
 		return Profile{}, nil, false, err
 	}
-	return profile, events, true, nil
+	return normalizeProfileCollections(profile), events, true, nil
 }
 
 // RecordEvent validates and appends a scoped memory event.
@@ -151,6 +154,7 @@ func (s *Service) ReplaceNotes(ctx context.Context, notes []Note) (Profile, erro
 	}
 
 	profile.Notes = notes
+	profile = normalizeProfileCollections(profile)
 	profile.UpdatedAt = s.now().UTC()
 	if err := s.store.UpsertProfile(ctx, id.workspaceID, id.userID, profile); err != nil {
 		return Profile{}, err
@@ -166,6 +170,7 @@ func (s *Service) ReplaceProfile(ctx context.Context, profile Profile) (Profile,
 	if err != nil {
 		return Profile{}, err
 	}
+	profile = normalizeProfileCollections(profile)
 	if err := s.store.UpsertProfile(ctx, id.workspaceID, id.userID, profile); err != nil {
 		return Profile{}, err
 	}
@@ -195,7 +200,7 @@ func (s *Service) RefreshProfileFor(ctx context.Context, workspaceID, userID str
 		return Profile{}, err
 	}
 
-	next := Summarize(current, events, s.now())
+	next := normalizeProfileCollections(Summarize(normalizeProfileCollections(current), events, s.now()))
 	if err := s.store.UpsertProfile(ctx, workspaceID, userID, next); err != nil {
 		return Profile{}, err
 	}
@@ -230,7 +235,35 @@ func (s *Service) ListEvents(ctx context.Context) ([]Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListEvents(ctx, identity.workspaceID, identity.userID)
+	events, err := s.store.ListEvents(ctx, identity.workspaceID, identity.userID)
+	if err != nil {
+		return nil, err
+	}
+	if events == nil {
+		return []Event{}, nil
+	}
+	return events, nil
+}
+
+func normalizeProfileCollections(profile Profile) Profile {
+	if profile.Strengths == nil {
+		profile.Strengths = []string{}
+	}
+	if profile.GrowthEdges == nil {
+		profile.GrowthEdges = []string{}
+	}
+	if profile.Skills == nil {
+		profile.Skills = []SkillProficiency{}
+	}
+	if profile.Notes == nil {
+		profile.Notes = []Note{}
+	}
+	for index := range profile.Notes {
+		if profile.Notes[index].Tags == nil {
+			profile.Notes[index].Tags = []string{}
+		}
+	}
+	return profile
 }
 
 func (s *Service) defaultProfile() Profile {

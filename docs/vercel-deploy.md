@@ -47,6 +47,7 @@ same token/config unless you add a separate `stg_frontend` token later):
 | `VITE_AUTH0_CLIENT_ID` | Auth0 SPA client id (public) |
 | `VITE_AUTH0_AUDIENCE` | **API Identifier** of the CodeGym Auth0 API (must match `CODEGYM_AUTH0_AUDIENCE`). Not the Management API (`…/api/v2/`). |
 | `VITE_API_BASE_URL` | Leave empty for rewrite proxy |
+| `VITE_USE_MOCK_API` | `false` for the real Daytona demo |
 | `VITE_APP_ORIGIN` | Canonical frontend origin (production Vercel URL) |
 
 Auth0 login mounts when `VITE_AUTH0_DOMAIN` and `VITE_AUTH0_CLIENT_ID` are both
@@ -62,8 +63,9 @@ manual testing:
 localStorage.setItem('codegym_token', '<token that the backend accepts>')
 ```
 
-Do **not** set `VITE_USE_MOCK_API` on Vercel — mocks are gated on
-`import.meta.env.DEV` and never run in a production build.
+`VITE_USE_MOCK_API=false` documents that this deployment is the real-API demo.
+Mocks are also gated on `import.meta.env.DEV`, so they cannot run in the
+production build.
 
 ## Rotate `DOPPLER_TOKEN`
 

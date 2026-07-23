@@ -24,6 +24,7 @@ type Config struct {
 	// Doppler (codegym/dev). Empty API key disables code execution.
 	DaytonaAPIKey      string
 	DaytonaAPIURL      string
+	SeedDemo           bool
 	CORSAllowedOrigins []string
 	MemoryWorker       WorkerConfig
 	// GenAI is the legacy single-provider view (Gemini / CODEGYM_GENAI_*).
@@ -165,6 +166,7 @@ func Load() Config {
 		DevWorkspaceID: firstEnvOr("personal-dev", "CODEGYM_DEV_WORKSPACE_ID", "CODEGYM_DEV_TENANT_ID"),
 		DaytonaAPIKey:  os.Getenv("DAYTONA_API_KEY"),
 		DaytonaAPIURL:  os.Getenv("DAYTONA_API_URL"),
+		SeedDemo:       boolEnv("CODEGYM_SEED_DEMO", false),
 		CORSAllowedOrigins: csvEnv("CODEGYM_CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",

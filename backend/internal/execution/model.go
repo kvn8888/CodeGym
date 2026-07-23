@@ -36,11 +36,14 @@ type Run struct {
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspace_id"`
 	UserID      string `json:"user_id"`
-	// ProblemID is a free-form reference; there is no problems domain in v2 yet.
-	ProblemID   string     `json:"problem_id,omitempty"`
-	Language    string     `json:"language"`
-	Entrypoint  string     `json:"entrypoint"`
-	Files       []File     `json:"files"`
+	// ProblemID references the global problem catalog when the run comes
+	// through /submissions; raw /executions callers may use another label.
+	ProblemID  string `json:"problem_id,omitempty"`
+	Language   string `json:"language"`
+	Entrypoint string `json:"entrypoint"`
+	// Files are persisted for execution diagnostics but never serialized:
+	// submission runs include server-only hidden tests.
+	Files       []File     `json:"-"`
 	Status      Status     `json:"status"`
 	ExitCode    *int       `json:"exit_code,omitempty"`
 	Output      string     `json:"output"`

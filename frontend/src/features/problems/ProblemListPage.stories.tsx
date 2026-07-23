@@ -131,9 +131,25 @@ const sampleSessions: PracticeSessionSummary[] = [
   },
 ];
 
+const sampleWorkspaceSessions: PracticeSessionSummary[] = [
+  {
+    id: 'sess_two_sum_draft',
+    workspace_id: workspaceId,
+    user_id: userId,
+    kind: 'workspace',
+    status: 'active',
+    title: 'Two Sum',
+    problem_id: 'two-sum',
+    created_at: '2026-07-15T14:05:00.000Z',
+    updated_at: '2026-07-15T14:18:00.000Z',
+    last_activity_at: '2026-07-15T14:18:00.000Z',
+  },
+];
+
 interface FetchScenario {
   problems?: ProblemSummary[];
   sessions?: PracticeSessionSummary[];
+  workspaceSessions?: PracticeSessionSummary[];
   loading?: boolean;
   sessionsError?: boolean;
 }
@@ -148,6 +164,7 @@ function apiResponse(data: unknown, init?: ResponseInit) {
 function makeFetchMock({
   problems = sampleProblems,
   sessions = sampleSessions,
+  workspaceSessions = sampleWorkspaceSessions,
   loading = false,
   sessionsError = false,
 }: FetchScenario = {}) {
@@ -167,7 +184,10 @@ function makeFetchMock({
       );
     }
 
-    if (url.pathname.endsWith('/sessions')) return Promise.resolve(apiResponse(sessions));
+    if (url.pathname.endsWith('/sessions')) {
+      const data = url.searchParams.get('kind') === 'workspace' ? workspaceSessions : sessions;
+      return Promise.resolve(apiResponse(data));
+    }
     if (url.pathname.endsWith('/problems')) {
       return Promise.resolve(apiResponse({ problems, total: problems.length }));
     }
@@ -188,7 +208,7 @@ export const Populated: Story = {
 
 export const Empty: Story = {
   parameters: { mockApiScenario: 'empty' },
-  decorators: [withFetchMock({ sessions: [] })],
+  decorators: [withFetchMock({ sessions: [], workspaceSessions: [] })],
 };
 
 export const Loading: Story = {

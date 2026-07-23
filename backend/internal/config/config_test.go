@@ -136,6 +136,23 @@ func TestLoadMemoryWorkerConfig(t *testing.T) {
 	}
 }
 
+func TestLoadExecutionAndDemoConfig(t *testing.T) {
+	clearConfigEnv(t)
+
+	if cfg := Load(); cfg.SeedDemo || cfg.DaytonaAPIKey != "" || cfg.DaytonaAPIURL != "" {
+		t.Fatalf("default execution/demo config = %#v", cfg)
+	}
+
+	t.Setenv("CODEGYM_SEED_DEMO", "true")
+	t.Setenv("DAYTONA_API_KEY", "test-key")
+	t.Setenv("DAYTONA_API_URL", "https://example.test")
+	cfg := Load()
+	if !cfg.SeedDemo || cfg.DaytonaAPIKey != "test-key" ||
+		cfg.DaytonaAPIURL != "https://example.test" {
+		t.Fatalf("execution/demo config = %#v", cfg)
+	}
+}
+
 func TestMemoryRefreshTriggerModes(t *testing.T) {
 	tests := []struct {
 		trigger        string
@@ -180,6 +197,9 @@ func clearConfigEnv(t *testing.T) {
 		"CODEGYM_MEMORY_WORKER_DISABLED",
 		"CODEGYM_MEMORY_WORKER_INTERVAL",
 		"CODEGYM_MEMORY_REFRESH_TRIGGER",
+		"CODEGYM_SEED_DEMO",
+		"DAYTONA_API_KEY",
+		"DAYTONA_API_URL",
 		"CODEGYM_GENAI_BASE_URL",
 		"CODEGYM_GENAI_API_KEY",
 		"AI_GATEWAY_API_KEY",

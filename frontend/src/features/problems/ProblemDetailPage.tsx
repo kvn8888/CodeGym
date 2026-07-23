@@ -6,11 +6,19 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import Editor from '@monaco-editor/react';
 import { api } from '../../shared/api/client';
-import type { Problem, SubmissionFile, TestResult, TestCaseResult } from '../../shared/api/types';
+import { useCodeGymAuthState } from '../../shared/auth/authState';
+import type {
+  PracticeSession,
+  PracticeSessionSummary,
+  Problem,
+  SubmissionFile,
+  TestCaseResult,
+  TestResult,
+} from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 
 const languageMap: Record<string, string> = {
@@ -32,18 +40,44 @@ const DEFAULT_RESULTS_HEIGHT = 32;
 const MIN_RESULTS_HEIGHT = 18;
 const MAX_RESULTS_HEIGHT = 65;
 const RESIZE_KEY_STEP = 2;
+const AUTOSAVE_DELAY_MS = 800;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeSessionState(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return { schema_version: 1 };
+}
+
+function restoredHintCount(state: Record<string, unknown>, availableHints: number) {
+  const value = Number(state.hints_revealed ?? 0);
+  if (!Number.isFinite(value)) return 0;
+  return clamp(Math.floor(value), 0, availableHints);
+}
+
 export function ProblemDetailPage() {
+  const { configured: authConfigured, isAuthenticated } = useCodeGymAuthState();
+  const apiAuthReady = !authConfigured || isAuthenticated;
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const requestedSessionId = searchParams.get('session')?.trim() ?? '';
   const pageRef = useRef<HTMLDivElement>(null);
   const rightPaneRef = useRef<HTMLDivElement>(null);
+  const filesRef = useRef<SubmissionFile[]>([]);
+  const hintsRef = useRef(0);
+  const sessionStateRef = useRef<Record<string, unknown>>({ schema_version: 1 });
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runRequestRef = useRef(0);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [files, setFiles] = useState<SubmissionFile[]>([]);
   const [activeFile, setActiveFile] = useState(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [resumedDraft, setResumedDraft] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
   const [hintsRevealed, setHintsRevealed] = useState(0);
@@ -53,25 +87,149 @@ export function ProblemDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([
-      api.get<Problem>(`/problems/${id}`),
-      api.get<{ files: SubmissionFile[] }>(`/problems/${id}/skeleton`),
-    ]).then(([prob, skel]) => {
-      setProblem(prob);
-      setFiles(skel.files);
-      setError(null);
-    }).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Could not load this problem.');
-    });
-  }, [id]);
+    if (!apiAuthReady) {
+      setProblem(null);
+      setError('Sign in to open this coding workspace.');
+      return;
+    }
+    let cancelled = false;
+    runRequestRef.current += 1;
+    setProblem(null);
+    setFiles([]);
+    filesRef.current = [];
+    setSessionId(null);
+    setResumedDraft(false);
+    setSaveStatus('idle');
+    setResult(null);
+    setError(null);
+    setActiveFile(0);
+
+    const load = async () => {
+      try {
+        const [loadedProblem, skeleton, activeSessions] = await Promise.all([
+          api.get<Problem>(`/problems/${id}`),
+          api.get<{ files: SubmissionFile[] }>(`/problems/${id}/skeleton`),
+          api.get<PracticeSessionSummary[]>(
+            '/sessions?kind=workspace&status=active&limit=100',
+          ),
+        ]);
+
+        const matchingSummary =
+          (requestedSessionId
+            ? activeSessions.find(
+                (session) =>
+                  session.id === requestedSessionId && session.problem_id === loadedProblem.id,
+              )
+            : undefined) ??
+          activeSessions.find((session) => session.problem_id === loadedProblem.id);
+
+        const workspaceSession = matchingSummary
+          ? await api.get<PracticeSession>(`/sessions/${matchingSummary.id}`)
+          : await api.post<PracticeSession>('/sessions', {
+              kind: 'workspace',
+              title: loadedProblem.title,
+              problem_id: loadedProblem.id,
+              state: { schema_version: 1, hints_revealed: 0 },
+            });
+
+        if (cancelled) return;
+
+        const state = normalizeSessionState(workspaceSession.state);
+        const restoredFiles =
+          workspaceSession.files?.map((file) => ({
+            path: file.file_path,
+            content: file.content,
+          })) ?? [];
+        const initialFiles = restoredFiles.length > 0 ? restoredFiles : skeleton.files;
+        const initialHintCount = restoredHintCount(
+          state,
+          loadedProblem.hints?.length ?? 0,
+        );
+
+        sessionStateRef.current = state;
+        filesRef.current = initialFiles;
+        hintsRef.current = initialHintCount;
+        setProblem(loadedProblem);
+        setFiles(initialFiles);
+        setHintsRevealed(initialHintCount);
+        setSessionId(workspaceSession.id);
+        setResumedDraft(restoredFiles.length > 0);
+        setSaveStatus(restoredFiles.length > 0 ? 'saved' : 'idle');
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Could not load this problem.');
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      runRequestRef.current += 1;
+    };
+  }, [apiAuthReady, id, requestedSessionId]);
+
+  const persistDraft = useCallback(
+    async (currentFiles: SubmissionFile[], currentHints: number) => {
+      if (!sessionId) return;
+      setSaveStatus('saving');
+      const state = {
+        ...sessionStateRef.current,
+        schema_version: Number(sessionStateRef.current.schema_version ?? 1),
+        hints_revealed: currentHints,
+      };
+      sessionStateRef.current = state;
+      try {
+        await Promise.all([
+          api.put<PracticeSession>(`/sessions/${sessionId}/files`, {
+            files: currentFiles.map((file) => ({
+              file_path: file.path,
+              content: file.content,
+            })),
+          }),
+          api.patch<PracticeSession>(`/sessions/${sessionId}`, { state }),
+        ]);
+        setSaveStatus('saved');
+      } catch (err) {
+        setSaveStatus('error');
+        throw err;
+      }
+    },
+    [sessionId],
+  );
+
+  useEffect(() => {
+    if (!sessionId || files.length === 0) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      void persistDraft(files, hintsRevealed).catch(() => {
+        // The compact save indicator communicates autosave failure without
+        // replacing the editor with a blocking error state.
+      });
+    }, AUTOSAVE_DELAY_MS);
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [files, hintsRevealed, persistDraft, sessionId]);
 
   const handleCodeChange = useCallback(
     (value: string | undefined) => {
       if (value === undefined) return;
-      setFiles((prev) => prev.map((f, i) => (i === activeFile ? { ...f, content: value } : f)));
+      setFiles((previous) => {
+        const next = previous.map((file, index) =>
+          index === activeFile ? { ...file, content: value } : file,
+        );
+        filesRef.current = next;
+        return next;
+      });
     },
     [activeFile],
   );
+
+  const revealHint = useCallback((count: number) => {
+    hintsRef.current = count;
+    setHintsRevealed(count);
+  }, []);
 
   const beginHorizontalResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!pageRef.current) return;
@@ -182,31 +340,43 @@ export function ProblemDetailPage() {
   }, []);
 
   const handleSubmit = async () => {
-    if (!problem) return;
+    if (!problem || !sessionId) return;
+    const requestID = runRequestRef.current + 1;
+    runRequestRef.current = requestID;
+    const submittedFiles = filesRef.current;
     setSubmitting(true);
     setResult(null);
     setError(null);
     try {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      await persistDraft(submittedFiles, hintsRef.current);
       const res = await api.post<{ submission_id: string }>('/submissions', {
         problem_id: problem.id,
-        files,
+        session_id: sessionId,
+        files: submittedFiles,
       });
-      const poll = async () => {
+
+      while (runRequestRef.current === requestID) {
         const sub = await api.get<{ status: string; result?: TestResult }>(
           `/submissions/${res.submission_id}`,
         );
         if (sub.status === 'pending' || sub.status === 'running') {
-          setTimeout(poll, 1000);
-        } else if (sub.result) {
-          setResult(sub.result);
-          setSubmitting(false);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          continue;
         }
-      };
-      poll();
+        if (sub.status === 'completed' && sub.result) {
+          setResult(sub.result);
+          await persistDraft(filesRef.current, hintsRef.current);
+          break;
+        }
+        throw new Error('The execution could not produce test results.');
+      }
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : 'Submission failed.');
-      setSubmitting(false);
+      if (runRequestRef.current === requestID) {
+        setError(err instanceof Error ? err.message : 'Submission failed.');
+      }
+    } finally {
+      if (runRequestRef.current === requestID) setSubmitting(false);
     }
   };
 
@@ -251,6 +421,27 @@ export function ProblemDetailPage() {
           <span className="rounded-md bg-amber-100 px-2 py-1 text-amber-900">
             {problem.estimated_minutes} MIN
           </span>
+          {resumedDraft && (
+            <span className="rounded-md border border-green-300 bg-green-100 px-2 py-1 text-green-900">
+              DRAFT RESUMED
+            </span>
+          )}
+          {saveStatus !== 'idle' && (
+            <span
+              className={`rounded-md border px-2 py-1 ${
+                saveStatus === 'error'
+                  ? 'border-red-300 bg-red-100 text-red-900'
+                  : 'border-gray-alpha-200 bg-background-100 text-gray-700'
+              }`}
+              aria-live="polite"
+            >
+              {saveStatus === 'saving'
+                ? 'SAVING'
+                : saveStatus === 'saved'
+                  ? 'SAVED'
+                  : 'NOT SAVED'}
+            </span>
+          )}
         </div>
         <div className="prose-geist text-sm text-gray-900">
           <ReactMarkdown>{problem.description}</ReactMarkdown>
@@ -272,7 +463,7 @@ export function ProblemDetailPage() {
                   </p>
                 ) : (
                   <button
-                    onClick={() => setHintsRevealed(i + 1)}
+                    onClick={() => revealHint(i + 1)}
                     className="text-sm font-medium text-blue-700 transition-colors hover:text-blue-800"
                   >
                     {'\u2192'} Reveal hint {i + 1}{' '}
@@ -324,7 +515,7 @@ export function ProblemDetailPage() {
           <div className="flex-1" />
           <button
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || !sessionId}
             className="m-1.5 rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
           >
@@ -350,7 +541,7 @@ export function ProblemDetailPage() {
                 automaticLayout: true,
                 padding: { top: 12 },
                 lineNumbers: 'on',
-                readOnly: false,
+                readOnly: submitting,
               }}
             />
           )}

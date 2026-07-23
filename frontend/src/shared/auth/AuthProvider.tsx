@@ -1,6 +1,7 @@
 import { Auth0Provider, useAuth0 } from '@auth0/auth0-react';
-import { useEffect, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useState, type ReactNode } from 'react';
 import { setApiAccessTokenProvider } from '../api/client';
+import { CodeGymAuthContext } from './authState';
 import {
   auth0AuthorizationParams,
   auth0ClientConfig,
@@ -10,7 +11,11 @@ import {
 
 export function CodeGymAuthProvider({ children }: { children: ReactNode }) {
   if (!hasAuth0ClientConfig()) {
-    return <>{children}</>;
+    return (
+      <CodeGymAuthContext.Provider value={{ configured: false, isAuthenticated: true }}>
+        {children}
+      </CodeGymAuthContext.Provider>
+    );
   }
 
   return (
@@ -22,29 +27,59 @@ export function CodeGymAuthProvider({ children }: { children: ReactNode }) {
         ...auth0AuthorizationParams(),
       }}
     >
-      <ApiTokenBridge />
-      {children}
+      <AuthSessionBridge>{children}</AuthSessionBridge>
     </Auth0Provider>
   );
 }
 
-function ApiTokenBridge() {
-  const { getAccessTokenSilently, isAuthenticated } = useAuth0();
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setApiAccessTokenProvider(null);
-      return;
-    }
-
-    setApiAccessTokenProvider(async () =>
+function AuthSessionBridge({ children }: { children: ReactNode }) {
+  const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
+  const expectedAuthState = isAuthenticated ? 'authenticated' : 'anonymous';
+  const [installedAuthState, setInstalledAuthState] = useState<string | null>(null);
+  const tokenProvider = useCallback(
+    () =>
       getAccessTokenSilently({
         authorizationParams: hasAuth0ApiAudience() ? auth0AuthorizationParams() : undefined,
       }),
+    [getAccessTokenSilently],
+  );
+
+  // Route loaders start in passive effects. Install the bearer-token source
+  // in the preceding layout phase, then render route content on the next
+  // commit so loaders cannot race Auth0 callback processing.
+  useLayoutEffect(() => {
+    if (isLoading) return;
+    let active = true;
+    setApiAccessTokenProvider(isAuthenticated ? tokenProvider : null);
+    queueMicrotask(() => {
+      if (active) setInstalledAuthState(expectedAuthState);
+    });
+    return () => {
+      active = false;
+      setApiAccessTokenProvider(null);
+    };
+  }, [expectedAuthState, isAuthenticated, isLoading, tokenProvider]);
+
+  if (isLoading || installedAuthState !== expectedAuthState) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+        Restoring account
+      </div>
     );
+  }
 
-    return () => setApiAccessTokenProvider(null);
-  }, [getAccessTokenSilently, isAuthenticated]);
+  // OAuth navigation may restore the pre-login page from the browser's
+  // back-forward cache. Remount route content when auth state flips so stale
+  // unauthenticated loaders rerun with the newly installed token provider.
+  return (
+    <CodeGymAuthContext.Provider value={{ configured: true, isAuthenticated }}>
+      <AuthContent key={isAuthenticated ? 'authenticated' : 'anonymous'}>
+        {children}
+      </AuthContent>
+    </CodeGymAuthContext.Provider>
+  );
+}
 
-  return null;
+function AuthContent({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }

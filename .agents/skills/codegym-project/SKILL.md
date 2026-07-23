@@ -55,11 +55,12 @@ If publishing is blocked by auth, network, failing validation, missing owner
 approval, or mixed unrelated work, say exactly what is blocked and what must
 happen next. Do not present local-only work as finished repository work.
 
-## Current State (Last Updated: 2026-07-16)
+## Current State (Last Updated: 2026-07-29)
 
 - Branch: `codegym-v2`.
-- Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, and mock-friendly app routes. The visual system is a quiet operational workspace: 24px routine page titles, flat border-led surfaces, compact rows, a 216px desktop sidebar, and a dedicated mobile navigation sheet. Sidebar nav is Dashboard, New practice, History, Memory, Settings (Marathon is not a nav item). Dashboard composes active/recent sessions with memory-derived recommendations; Memory composes the profile, event history, focus queue, skills, and notes; `/generate` is labeled New Practice and lets users select practice format (multiple choice vs DSA-style coding problem). MCQ starts a marathon session; coding opens the problem workspace shell (AI coding generation still partial). New Practice creates a complete durable MCQ snapshot and hands it to Marathon, which restores the exact question, timer, and draft selection. Bare `/marathon` redirects to `/generate`; only launch state or `?session=` may enter the run UI. History (`/`) and New Practice surface persisted MCQ runs with resume/result links. Marathon Skip emits the neutral `question_skipped` event (with `skipped: true`) so memory/personalization does not treat revealed answers as misses, while Exit saves the active session and flushes a `session_exited` event before leaving. Completing every MCQ question set shows a top-right `Updating memory` / `Memory updated` toast; Finished and Next Round await full profile synthesis, and the next set is generated only after that reflection succeeds. Floating chat is limited to active Marathon and problem-detail contexts. Settings exposes `/api/v1/me` and lets users save a custom display name.
-- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, `/api/v1/me` account profile APIs, memory profile/event APIs, session APIs, Neon/Postgres store support, structured LLM profile synthesis, manual profile refresh, and scheduled profile refresh. A first synthesis failure remains an unpersisted empty state; deterministic evidence is not stored as a user-facing profile. Auth0/Google `name` seeds `app_users.display_name` with `display_name_source=oauth`; Settings updates set `display_name_source=user`, and future OAuth metadata must not overwrite user-edited names. Production Auth0 uses the custom API Identifier `https://codegym.onrender.com` (not the Auth0 Management API audience) in matching backend/frontend Doppler configs. The CodeGym SPA requires a `subject_type: user` client grant for that API. Render and Vercel were redeployed with this corrected setup on 2026-07-15.
+- Frontend: React 19 + Vite 7, Storybook 10, Motion/Framer-style animations, Monaco editor, and mock-friendly app routes. The visual system is a quiet operational workspace: 24px routine page titles, flat border-led surfaces, compact rows, a 216px desktop sidebar, and a dedicated mobile navigation sheet. Sidebar nav is Dashboard, New practice, History, Memory, Settings (Marathon is not a nav item). Dashboard composes active/recent sessions with memory-derived recommendations; Memory composes the profile, event history, focus queue, skills, and notes; `/generate` is labeled New Practice and lets users select practice format (multiple choice vs DSA-style coding problem). MCQ starts a marathon session; coding opens the problem workspace shell (AI coding generation still partial). New Practice creates a complete durable MCQ snapshot and hands it to Marathon, which restores the exact question, timer, and draft selection. Bare `/marathon` redirects to `/generate`; only launch state or `?session=` may enter the run UI. History (`/`) surfaces active coding drafts plus persisted MCQ runs. The Two Sum workspace loads real problem/skeleton APIs, restores the newest active `workspace` session, autosaves files and basic editor state after 800ms, and runs real `/submissions` polling with per-test results. OAuth-aware route loaders wait for authenticated state so browser back-forward-cache restoration cannot preserve a stale missing-token response. Marathon Skip emits the neutral `question_skipped` event (with `skipped: true`) so memory/personalization does not treat revealed answers as misses, while Exit saves the active session and flushes a `session_exited` event before leaving. Completing every MCQ question set shows a top-right `Updating memory` / `Memory updated` toast; Finished and Next Round await full profile synthesis, and the next set is generated only after that reflection succeeds. Floating chat is limited to active Marathon and problem-detail contexts. Settings exposes `/api/v1/me` and lets users save a custom display name.
+- Backend: Go service with `auth -> identity -> personal workspace scope -> handler` request path, Auth0 RS256/JWKS bearer-token validation behind `auth.Authenticator`, dev-token auth fallback, Auth0 `sub` to personal workspace bootstrap, optional Auth0 `email`/`name` user-metadata reconciliation, `/api/v1/me` account profile APIs, memory profile/event APIs, session APIs, Neon/Postgres store support, structured LLM profile synthesis, manual profile refresh, and scheduled profile refresh. The global problem catalog is intentionally not workspace-owned; `CODEGYM_SEED_DEMO=true` idempotently upserts the single `two-sum` public spec, skeleton, server-only hidden tests, and manual reference solution. `/api/v1/problems` exposes only the public representation. `/api/v1/submissions` assembles hidden tests server-side over the workspace-scoped execution store, parses the last `CODEGYM_RESULT` line into per-test results, saves only user files into the associated workspace session, and completes that session on pass. Execution run files are never serialized because persisted bundles can contain hidden tests. A first memory synthesis failure remains an unpersisted empty state; deterministic evidence is not stored as a user-facing profile. Auth0/Google `name` seeds `app_users.display_name` with `display_name_source=oauth`; Settings updates set `display_name_source=user`, and future OAuth metadata must not overwrite user-edited names. Production Auth0 uses the custom API Identifier `https://codegym.onrender.com` (not the Auth0 Management API audience) in matching backend/frontend Doppler configs. The CodeGym SPA requires a `subject_type: user` client grant for that API.
+- Execution: `execution.DaytonaRunner` is the only backend file that imports the Daytona SDK. It creates an ephemeral `NetworkBlockAll` sandbox from the language snapshot, uploads home-relative files under `work/`, runs with the language timeout, treats nonzero exit as a normal result, and deletes with an independent cleanup context. Use `doppler run -p codegym -c dev -- go test ./internal/execution -run TestDaytonaRunner -count=1 -v` for the real passing/failing/blocked-egress gate.
 - Generation: `generation.Orchestrator` composes the scoped memory profile with the provider-neutral `Generator` seam. `generation/openaicompat` is the first adapter (OpenAI chat-completions wire format; default base URL is the Vercel AI Gateway). `POST /api/v1/generate` serves structurally validated single-select, multi-select, free-response, or mixed MCQ sets with one bounded repair retry. Question format is an LLM decision made independently for each concept; it is not a New Practice control or request field. Multi-select uses exact-set grading. `POST /api/v1/mcq/evaluate` runs binary semantic evaluation for written responses and returns concise feedback. Raw written answers remain in resumable session state and are never copied into memory events. MCQ prompt text mirrors `docs/ai-prompts/05-mcq-marathon.md`, and evaluation mirrors `docs/ai-prompts/09-mcq-free-response-evaluation.md`; keep them in sync.
 - Append-only memory events are deterministic evidence. `generation.ProfileSynthesizer`
   filters maintenance/audit events, builds a bounded evidence digest, validates
@@ -84,8 +85,8 @@ happen next. Do not present local-only work as finished repository work.
   refresh keeps the old digest so the next tick retries. The
   primary completion route is `POST /api/v1/memory/profile/maintain`, with
   `/memory/notes/maintain` retained only as a deprecated compatibility alias.
-- Deploy: backend runs on Render (`https://codegym.onrender.com`); `render.yaml` is the blueprint and `docs/render-deploy.md` documents applying it. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render.
-- Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`. GenAI: `CODEGYM_GENAI_BASE_URL` / `CODEGYM_GENAI_API_KEY` (alias `AI_GATEWAY_API_KEY`) / `CODEGYM_GENAI_MODEL`.
+- Deploy: backend runs on Render (`https://codegym.onrender.com`); `render.yaml` is the blueprint and `docs/render-deploy.md` documents applying it. The backend module pins Go 1.25.4. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render. The Vercel frontend uses a same-origin `/api` rewrite to Render and must build with `VITE_USE_MOCK_API=false`.
+- Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`. The coding demo additionally requires `DAYTONA_API_KEY`, `DAYTONA_API_URL`, and `CODEGYM_SEED_DEMO=true` in the backend config; frontend Auth0 domain/client/audience and `VITE_USE_MOCK_API=false` belong in the frontend config. GenAI: `CODEGYM_GENAI_BASE_URL` / `CODEGYM_GENAI_API_KEY` (alias `AI_GATEWAY_API_KEY`) / `CODEGYM_GENAI_MODEL`.
 - CI: `.github/workflows/ci.yml` runs frontend `npm ci`, lint, build, and backend `go test ./...` on PRs/pushes to `codegym-v2`. `.github/workflows/openapi-lint.yml` runs `npm run api:lint` (Redocly) when `api/**` changes.
 - Project board: GitHub Projects v2 project `#2` (`CodeGym v2`) is the active kanban unless the user says otherwise.
 
@@ -218,7 +219,7 @@ comment that names the environment verified and the validation performed.
 ## Current Risk Register
 
 Verified from the codebase and board reconciliation work around 2026-07-02.
-Updated during the backend/session/generation implementation pass on 2026-07-06.
+Updated during the Daytona/Two Sum demo implementation pass on 2026-07-22.
 Treat exact PR/check status as time-sensitive, but keep the risk categories
 current as implementation lands.
 
@@ -228,9 +229,8 @@ current as implementation lands.
   interval and trigger mode. Production readiness still needs deployed
   schedule/env validation, refresh-failure observability, and a distributed
   ownership strategy before running multiple API replicas.
-- Session/resume now has backend schema/store and protected `/api/v1/sessions`
-  routes, but frontend resume/history is still incomplete until typed client
-  wiring and #74 land.
+- Coding-session resume is wired for the seeded Two Sum demo. Broader generated
+  problem workspace state and multi-problem history remain part of #74.
 - Frontend memory/profile rendering does not finish typed API infrastructure.
   Shared API errors still need typed handling and memory-specific helpers before
   memory UX can rely on them broadly.
@@ -281,10 +281,10 @@ When docs, board state, and code disagree:
   issue/PR and repairing obvious drift.
 - Update stale docs or this skill when the mismatch is durable.
 
-Session-history/resume docs do not mean session storage, sessions HTTP routes,
-OpenAPI coverage, or frontend resume/history UX are complete. Auth0 setup docs
-do not mean vendor-console configuration is complete. Memory architecture docs
-do not mean the worker is scheduled or running.
+The seeded Two Sum path does not mean AI problem generation or multi-problem
+workspace resume is complete. Auth0 setup docs do not mean vendor-console
+configuration is current. Memory architecture docs do not mean the worker is
+scheduled or running.
 
 ## Common Pitfalls
 

@@ -13,6 +13,7 @@ import {
 import { motion } from 'motion/react';
 
 import { api } from '../../shared/api/client';
+import { useCodeGymAuthState } from '../../shared/auth/authState';
 import type { PracticeSessionSummary, ProblemSummary } from '../../shared/api/types';
 import {
   WorkspaceEmptyState,
@@ -89,12 +90,17 @@ function sessionDateLabel(session: PracticeSessionSummary) {
 }
 
 export function ProblemListPage() {
+  const { configured: authConfigured, isAuthenticated } = useCodeGymAuthState();
+  const apiAuthReady = !authConfigured || isAuthenticated;
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [sessions, setSessions] = useState<PracticeSessionSummary[]>([]);
+  const [workspaceSessions, setWorkspaceSessions] = useState<PracticeSessionSummary[]>([]);
   const [problemsLoading, setProblemsLoading] = useState(true);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [workspaceSessionsLoading, setWorkspaceSessionsLoading] = useState(true);
   const [problemsError, setProblemsError] = useState<string | null>(null);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [workspaceSessionsError, setWorkspaceSessionsError] = useState<string | null>(null);
   const [languageFilter, setLanguageFilter] = useState('');
 
   const loadProblems = useCallback(async () => {
@@ -123,10 +129,38 @@ export function ProblemListPage() {
     }
   }, []);
 
+  const loadWorkspaceSessions = useCallback(async () => {
+    setWorkspaceSessionsLoading(true);
+    setWorkspaceSessionsError(null);
+    try {
+      const data = await api.get<PracticeSessionSummary[]>(
+        '/sessions?kind=workspace&status=active&limit=50',
+      );
+      setWorkspaceSessions(data);
+    } catch (error) {
+      setWorkspaceSessionsError(
+        error instanceof Error ? error.message : 'Could not load your coding drafts.',
+      );
+    } finally {
+      setWorkspaceSessionsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
+    if (!apiAuthReady) {
+      const message = 'Sign in to load your practice data.';
+      setProblemsLoading(false);
+      setSessionsLoading(false);
+      setWorkspaceSessionsLoading(false);
+      setProblemsError(message);
+      setSessionsError(message);
+      setWorkspaceSessionsError(message);
+      return;
+    }
     void loadProblems();
     void loadSessions();
-  }, [loadProblems, loadSessions]);
+    void loadWorkspaceSessions();
+  }, [apiAuthReady, loadProblems, loadSessions, loadWorkspaceSessions]);
 
   const filteredProblems = useMemo(
     () =>
@@ -144,6 +178,13 @@ export function ProblemListPage() {
       ),
     [sessions],
   );
+  const sortedWorkspaceSessions = useMemo(
+    () =>
+      [...workspaceSessions]
+        .filter((session) => session.problem_id)
+        .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at)),
+    [workspaceSessions],
+  );
   const languages = useMemo(
     () => [...new Set(problems.map((problem) => problem.language))].sort(),
     [problems],
@@ -153,10 +194,97 @@ export function ProblemListPage() {
     <WorkspacePage>
       <WorkspacePageHeader
         title="History"
-        description="Resume multiple-choice practice or open a coding problem."
+        description="Resume a coding draft or multiple-choice run, or open a problem."
       />
 
       <section>
+        <WorkspaceSectionHeader
+          title="Coding drafts"
+          description={
+            !workspaceSessionsLoading &&
+            !workspaceSessionsError &&
+            sortedWorkspaceSessions.length > 0
+              ? `${sortedWorkspaceSessions.length} active ${
+                  sortedWorkspaceSessions.length === 1 ? 'draft' : 'drafts'
+                }`
+              : undefined
+          }
+        />
+        {workspaceSessionsLoading ? (
+          <div className="overflow-hidden rounded-lg border" aria-label="Loading coding drafts">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={index} className="flex min-h-14 items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
+                <Skeleton className="size-8 shrink-0 rounded-md" />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-40 max-w-full" />
+                  <Skeleton className="h-3 w-28 max-w-full" />
+                </div>
+                <Skeleton className="h-8 w-20 rounded-md" />
+              </div>
+            ))}
+          </div>
+        ) : workspaceSessionsError ? (
+          <WorkspaceEmptyState
+            icon={<Code2 size={20} strokeWidth={1.8} />}
+            title="Coding drafts are unavailable"
+            description={workspaceSessionsError}
+            action={
+              <Button variant="outline" size="sm" onClick={() => void loadWorkspaceSessions()}>
+                <RefreshCw data-icon="inline-start" />
+                Try again
+              </Button>
+            }
+            className="min-h-32"
+          />
+        ) : sortedWorkspaceSessions.length === 0 ? (
+          <WorkspaceEmptyState
+            icon={<Code2 size={20} strokeWidth={1.8} />}
+            title="No coding drafts"
+            description="Edits in an active problem workspace will appear here automatically."
+            action={
+              <Button size="sm" asChild>
+                <Link to="/generate">Start coding practice</Link>
+              </Button>
+            }
+            className="min-h-32"
+          />
+        ) : (
+          <div className="overflow-hidden rounded-lg border">
+            {sortedWorkspaceSessions.map((session) => (
+              <div
+                key={session.id}
+                className="flex min-h-14 items-center gap-3 border-b px-3 py-2.5 last:border-b-0"
+              >
+                <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
+                  <Code2 size={16} strokeWidth={1.8} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{session.title}</div>
+                  <div className="text-muted-foreground mt-0.5 truncate text-xs">
+                    Updated {formatSessionDate(session.last_activity_at)}
+                  </div>
+                </div>
+                <Badge variant="outline" className="hidden rounded-md font-normal sm:inline-flex">
+                  <CircleDot className="text-amber-700" />
+                  Active
+                </Badge>
+                <Button size="sm" asChild>
+                  <Link
+                    to={`/problems/${encodeURIComponent(
+                      session.problem_id ?? '',
+                    )}?session=${encodeURIComponent(session.id)}`}
+                  >
+                    Resume
+                    <ArrowRight data-icon="inline-end" />
+                  </Link>
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-7">
         <WorkspaceSectionHeader
           title="MCQ history"
           description={

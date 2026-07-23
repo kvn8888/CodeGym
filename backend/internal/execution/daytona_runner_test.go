@@ -1,8 +1,7 @@
 package execution
 
-// Integration tests for DaytonaRunner against the real Daytona API. These
-// are the finish line for implementing daytona_runner.go — they currently
-// fail with errNotImplemented. Run them with:
+// Integration tests for DaytonaRunner against the real Daytona API. Run them
+// with:
 //
 //	doppler run -p codegym -c dev -- go test ./internal/execution -run TestDaytonaRunner -count=1
 //

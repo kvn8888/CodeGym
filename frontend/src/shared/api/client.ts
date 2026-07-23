@@ -2,9 +2,8 @@ import { mockApiFetch } from '../../mocks/apiProxy';
 import type { components, paths } from './openapi';
 
 const DEFAULT_API_BASE = '/api/v1';
-// Empty string must fall through — Doppler often sets VITE_API_BASE_URL="" for
-// "use same-origin", and `??` only replaces null/undefined. An empty base makes
-// requests hit SPA routes (e.g. /memory/profile) and res.json() fails on HTML.
+// The relative fallback is for local Vite development, where /api is proxied to
+// the local backend. Deployed builds set an explicit environment-scoped base URL.
 const API_BASE = ((import.meta.env.VITE_API_BASE_URL ?? '').trim() || DEFAULT_API_BASE).replace(
   /\/$/,
   '',

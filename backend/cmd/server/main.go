@@ -13,6 +13,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/api"
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/config"
+	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
 	"github.com/kvn8888/codegym/backend/internal/identity"
@@ -38,6 +39,7 @@ func main() {
 	var identityStore identity.Store = identity.NewInMemoryStore()
 	var sessionStore session.Store = session.NewInMemoryStore()
 	var usageStore usage.Store = usage.NewInMemoryStore()
+	var executionStore execution.Store = execution.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -54,6 +56,7 @@ func main() {
 		postgresMemoryStore := memory.NewPostgresStore(pool)
 		postgresSessionStore := session.NewPostgresStore(pool)
 		postgresUsageStore := usage.NewPostgresStore(pool)
+		postgresExecutionStore := execution.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -66,20 +69,37 @@ func main() {
 		if err := postgresUsageStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap genai usage schema: %v", err)
 		}
+		if err := postgresExecutionStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap execution schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
 		sessionStore = postgresSessionStore
 		usageStore = postgresUsageStore
-		log.Print("CodeGym API using Postgres identity, memory, session, and genai usage stores")
+		executionStore = postgresExecutionStore
+		log.Print("CodeGym API using Postgres identity, memory, session, genai usage, and execution stores")
 	} else {
-		log.Print("CodeGym API using in-memory identity, memory, session, and genai usage stores; set NEON_CONNECTION_STRING to enable Postgres")
+		log.Print("CodeGym API using in-memory identity, memory, session, genai usage, and execution stores; set NEON_CONNECTION_STRING to enable Postgres")
+	}
+
+	var executionRunner execution.Runner
+	if cfg.DaytonaAPIKey != "" {
+		daytonaRunner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL)
+		if err != nil {
+			log.Fatalf("could not configure Daytona runner: %v", err)
+		}
+		executionRunner = daytonaRunner
+		log.Print("CodeGym API execution runner: Daytona")
+	} else {
+		log.Print("CodeGym API execution runner disabled; set DAYTONA_API_KEY to enable")
 	}
 
 	identityService := identity.NewService(identityStore)
 	memoryService := memory.NewService(memoryStore, nil)
 	sessionService := session.NewService(sessionStore, nil)
 	usageService := usage.NewService(usageStore, nil)
+	executionService := execution.NewService(executionStore, executionRunner, nil)
 
 	var generationOrchestrator *generation.Orchestrator
 	if cfg.AnyGenAIEnabled() {
@@ -131,6 +151,7 @@ func main() {
 		Identity:             identityService,
 		Memory:               memoryService,
 		Sessions:             sessionService,
+		Execution:            executionService,
 		Generation:           generationOrchestrator,
 		MemoryProfiles:       profileSynthesizer,
 		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,

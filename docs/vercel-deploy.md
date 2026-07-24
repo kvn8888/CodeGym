@@ -3,14 +3,14 @@
 Production frontend project: `code-gym` (alias example:
 [code-gym-rho.vercel.app](https://code-gym-rho.vercel.app)).
 
-The React/Vite app deploys on Vercel and reaches the Go backend on Render
-through a **rewrite proxy** in
-[`frontend/vercel.json`](../frontend/vercel.json).
+The React/Vite app deploys on Vercel and calls the matching Render backend
+through an explicit environment-scoped `VITE_API_BASE_URL`.
 
 Build-time config (`VITE_*`) comes from **Doppler only**. Vercel holds a
-single `DOPPLER_TOKEN` (project `codegym`, config `prd_frontend`) and the
-build runs `doppler run -- npm run build`. Do not paste Auth0 or other
-`VITE_*` values into the Vercel dashboard.
+Production-only `DOPPLER_TOKEN` for `codegym/prd_frontend` and a Preview-only
+token for `codegym/stg_frontend`; the build runs
+`doppler run -- npm run build`. Do not paste Auth0 or other `VITE_*` values
+into the Vercel dashboard.
 
 See also [secrets-and-local-env.md](./secrets-and-local-env.md).
 
@@ -20,41 +20,43 @@ See also [secrets-and-local-env.md](./secrets-and-local-env.md).
 
 1. **Build** — install Doppler CLI, then
    `doppler run -- npm run build` so Vite inlines `VITE_*` from
-   `prd_frontend`.
-2. **Rewrite** `/api/*` → `https://codegym.onrender.com/api/*` so the browser
-   only talks to the Vercel origin.
-3. **SPA fallback** `/*` → `/index.html` for client routes such as `/marathon`.
+   matching Production or Preview config.
+2. **Direct API routing** — Production embeds
+   `https://codegym.onrender.com/api/v1`; Preview embeds
+   `https://codegym-staging.onrender.com/api/v1`.
+3. **Stable Auth callback** — `VITE_APP_ORIGIN` supplies the canonical
+   Production URL or stable branch Preview alias. Even when someone opens an
+   ephemeral Vercel deployment URL, Auth0 receives the stable callback.
+4. **SPA fallback** `/*` → `/index.html` for client routes such as `/marathon`.
 
-Same-origin API calls mean no browser CORS for the proxied path. Leave
-`VITE_API_BASE_URL` empty in Doppler so the client uses `/api/v1` (mirrors the
-local Vite proxy in `vite.config.ts`).
-
-If the Render hostname changes, update the rewrite `destination` in
-`vercel.json` — rewrites cannot read env vars.
+The Render services must allow their matching Vercel origin through CORS.
+`vercel.json` intentionally has no backend rewrite so Preview cannot fall
+through to Production.
 
 ## Environment variables on Vercel
 
 | Key | Environments | Notes |
 | --- | --- | --- |
-| `DOPPLER_TOKEN` | Production, Preview | Service token for `codegym` / `prd_frontend` only. |
+| `DOPPLER_TOKEN` | Production | Service token for `codegym/prd_frontend` only. |
+| `DOPPLER_TOKEN` | Preview | Different service token for `codegym/stg_frontend` only. |
 
-All browser config lives in Doppler `prd_frontend` (and preview can share the
-same token/config unless you add a separate `stg_frontend` token later):
+Browser config lives in separate Doppler frontend configs:
 
 | Doppler key | Purpose |
 | --- | --- |
 | `VITE_AUTH0_DOMAIN` | Auth0 SPA domain |
 | `VITE_AUTH0_CLIENT_ID` | Auth0 SPA client id (public) |
 | `VITE_AUTH0_AUDIENCE` | **API Identifier** of the CodeGym Auth0 API (must match `CODEGYM_AUTH0_AUDIENCE`). Not the Management API (`…/api/v2/`). |
-| `VITE_API_BASE_URL` | Leave empty for rewrite proxy |
+| `VITE_API_BASE_URL` | Absolute URL of the environment's matching Render API |
 | `VITE_USE_MOCK_API` | `false` for the real Daytona demo |
-| `VITE_APP_ORIGIN` | Canonical frontend origin (production Vercel URL) |
+| `VITE_APP_ORIGIN` | Canonical Production URL or stable branch Preview alias used for Auth0 callbacks/logout |
 
 Auth0 login mounts when `VITE_AUTH0_DOMAIN` and `VITE_AUTH0_CLIENT_ID` are both
 set. API calls still need a matching audience: if login works but Settings
-shows `Invalid bearer token`, fix the API Identifier on both Doppler configs
-and redeploy (see `backend/README.md`). Add the Vercel production and preview
-URLs to the Auth0 app's allowed callback, logout, and web-origin lists.
+shows `Invalid bearer token`, fix the API Identifier on the matching Doppler
+config and redeploy (see `backend/README.md`). The Production Auth0 SPA should
+allow only the canonical Production URL. The staging SPA should allow only the
+stable branch Preview alias; do not add every ephemeral Vercel deployment URL.
 
 Without Auth0 values, the app can fall back to a localStorage bearer token for
 manual testing:
@@ -78,13 +80,14 @@ production build.
 
 1. Open the production alias (e.g. `https://code-gym-rho.vercel.app`).
 2. Confirm the shell loads (200 HTML).
-3. In DevTools Network, a call to `/api/v1/...` should proxy to Render
-   (not a Vercel 404). Unauthenticated routes may return 401 from the API —
-   that still proves the rewrite works.
-4. Quick check:
+3. In DevTools Network, confirm API calls reach the environment's matching
+   Render hostname.
+4. Open an ephemeral Preview deployment, start login, and confirm Auth0's
+   `redirect_uri` is the stable branch Preview alias.
+5. Quick check:
 
 ```sh
 curl -sS -o /dev/null -w "%{http_code}\n" https://code-gym-rho.vercel.app/
-curl -sS -o /dev/null -w "%{http_code}\n" https://code-gym-rho.vercel.app/api/v1/memory/profile
-# expect 401 (or 200 with a token), not 404
+curl -sS https://codegym.onrender.com/health
+curl -sS https://codegym-staging.onrender.com/health
 ```

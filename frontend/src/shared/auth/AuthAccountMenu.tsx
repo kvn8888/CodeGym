@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  auth0AppOrigin,
   auth0AuthorizationParams,
   hasAuth0ApiAudience,
   hasAuth0ClientConfig,
@@ -115,7 +116,7 @@ function Auth0AccountMenu({ collapsed }: { collapsed: boolean }) {
                   <ProfileAction
                     icon={LogOut}
                     label="Log Out"
-                    onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+                    onClick={() => logout({ logoutParams: { returnTo: auth0AppOrigin() } })}
                   />
                 </>
               ) : (

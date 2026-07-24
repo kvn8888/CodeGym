@@ -3,6 +3,7 @@ import { useCallback, useLayoutEffect, useState, type ReactNode } from 'react';
 import { setApiAccessTokenProvider } from '../api/client';
 import { CodeGymAuthContext } from './authState';
 import {
+  auth0AppOrigin,
   auth0AuthorizationParams,
   auth0ClientConfig,
   hasAuth0ApiAudience,
@@ -23,7 +24,7 @@ export function CodeGymAuthProvider({ children }: { children: ReactNode }) {
       domain={auth0ClientConfig.domain}
       clientId={auth0ClientConfig.clientId}
       authorizationParams={{
-        redirect_uri: window.location.origin,
+        redirect_uri: auth0AppOrigin(),
         ...auth0AuthorizationParams(),
       }}
     >

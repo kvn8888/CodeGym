@@ -1,5 +1,5 @@
 import { Auth0Provider, useAuth0 } from '@auth0/auth0-react';
-import { useCallback, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { setApiAccessTokenProvider } from '../api/client';
 import { CodeGymAuthContext } from './authState';
 import {
@@ -19,6 +19,11 @@ export function CodeGymAuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  const appOrigin = auth0AppOrigin();
+  if (window.location.origin !== appOrigin) {
+    return <Auth0OriginRedirect appOrigin={appOrigin} />;
+  }
+
   return (
     <Auth0Provider
       domain={auth0ClientConfig.domain}
@@ -30,6 +35,22 @@ export function CodeGymAuthProvider({ children }: { children: ReactNode }) {
     >
       <AuthSessionBridge>{children}</AuthSessionBridge>
     </Auth0Provider>
+  );
+}
+
+function Auth0OriginRedirect({ appOrigin }: { appOrigin: string }) {
+  useEffect(() => {
+    const destination = new URL(window.location.href);
+    const canonicalOrigin = new URL(appOrigin);
+    destination.protocol = canonicalOrigin.protocol;
+    destination.host = canonicalOrigin.host;
+    window.location.replace(destination);
+  }, [appOrigin]);
+
+  return (
+    <div className="grid min-h-screen place-items-center bg-background font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+      Opening secure sign in
+    </div>
   );
 }
 

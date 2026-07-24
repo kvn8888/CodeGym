@@ -85,7 +85,7 @@ happen next. Do not present local-only work as finished repository work.
   refresh keeps the old digest so the next tick retries. The
   primary completion route is `POST /api/v1/memory/profile/maintain`, with
   `/memory/notes/maintain` retained only as a deprecated compatibility alias.
-- Deploy: Production Vercel calls `https://codegym.onrender.com/api/v1` and Preview calls `https://codegym-staging.onrender.com/api/v1`; each Render service uses its own Neon branch and backend Doppler config. The Vercel frontend has no backend rewrite and must build with an explicit environment-scoped `VITE_API_BASE_URL`, `VITE_APP_ORIGIN`, and `VITE_USE_MOCK_API=false`. `VITE_APP_ORIGIN` is the canonical Production URL or stable branch Preview alias and is used for Auth0 callbacks/logout even when the page was opened on an ephemeral deployment URL. `render.yaml` is the Production blueprint and `docs/render-deploy.md` documents the split. The backend module pins Go 1.25.4. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render.
+- Deploy: Production Vercel calls `https://codegym.onrender.com/api/v1` and Preview calls `https://codegym-staging.onrender.com/api/v1`; each Render service uses its own Neon branch and backend Doppler config. The Vercel frontend has no backend rewrite and must build with an explicit environment-scoped `VITE_API_BASE_URL`, `VITE_APP_ORIGIN`, and `VITE_USE_MOCK_API=false`. `VITE_APP_ORIGIN` is the canonical Production URL or stable branch Preview alias; ephemeral deployment URLs redirect there before Auth0 starts so the PKCE transaction, callback, and logout remain on one browser origin. `render.yaml` is the Production blueprint and `docs/render-deploy.md` documents the split. The backend module pins Go 1.25.4. The server honors `PORT` as a fallback for `CODEGYM_PORT`; `CODEGYM_HOST=0.0.0.0` is required on Render.
 - Secrets: Doppler is the preferred local secret runner; `NEON_CONNECTION_STRING` is checked before `DATABASE_URL`. The coding demo additionally requires `DAYTONA_API_KEY`, `DAYTONA_API_URL`, and `CODEGYM_SEED_DEMO=true` in the backend config; frontend Auth0 domain/client/audience and `VITE_USE_MOCK_API=false` belong in the frontend config. GenAI: `CODEGYM_GENAI_BASE_URL` / `CODEGYM_GENAI_API_KEY` (alias `AI_GATEWAY_API_KEY`) / `CODEGYM_GENAI_MODEL`.
 - CI: `.github/workflows/ci.yml` runs frontend `npm ci`, lint, build, and backend `go test ./...` on PRs/pushes to `codegym-v2`. `.github/workflows/openapi-lint.yml` runs `npm run api:lint` (Redocly) when `api/**` changes.
 - Project board: GitHub Projects v2 project `#2` (`CodeGym v2`) is the active kanban unless the user says otherwise.
@@ -204,10 +204,12 @@ Deployment is not complete just because `.env.example` or docs list the values.
 
 Vercel/frontend readiness means Preview and Production have separate Doppler
 tokens/configs, matching Auth0 domain/client/audience values, explicit backend
-base URLs, and stable `VITE_APP_ORIGIN` values. The Auth0 provider must use
-`VITE_APP_ORIGIN`, not `window.location.origin`, so ephemeral Preview URLs
-return through the one allowed stable branch callback. If frontend and backend
-are on different origins, confirm CORS and Auth0 allowed origins together.
+base URLs, and stable `VITE_APP_ORIGIN` values. The frontend must redirect an
+ephemeral deployment to `VITE_APP_ORIGIN` before mounting Auth0, and the Auth0
+provider must use that same origin rather than `window.location.origin`. This
+keeps PKCE state and the one allowed stable callback on the same origin. If
+frontend and backend are on different origins, confirm CORS and Auth0 allowed
+origins together.
 
 Doppler and Neon are the preferred local secret and Postgres targets. Prefer
 `NEON_CONNECTION_STRING` over `DATABASE_URL` when both exist. Never print or

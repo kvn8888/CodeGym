@@ -24,9 +24,10 @@ See also [secrets-and-local-env.md](./secrets-and-local-env.md).
 2. **Direct API routing** — Production embeds
    `https://codegym.onrender.com/api/v1`; Preview embeds
    `https://codegym-staging.onrender.com/api/v1`.
-3. **Stable Auth callback** — `VITE_APP_ORIGIN` supplies the canonical
-   Production URL or stable branch Preview alias. Even when someone opens an
-   ephemeral Vercel deployment URL, Auth0 receives the stable callback.
+3. **Stable Auth origin** — `VITE_APP_ORIGIN` supplies the canonical
+   Production URL or stable branch Preview alias. Opening an ephemeral Vercel
+   deployment first redirects to that stable origin, so the Auth0 PKCE
+   transaction and callback both remain on one browser origin.
 4. **SPA fallback** `/*` → `/index.html` for client routes such as `/marathon`.
 
 The Render services must allow their matching Vercel origin through CORS.
@@ -82,8 +83,9 @@ production build.
 2. Confirm the shell loads (200 HTML).
 3. In DevTools Network, confirm API calls reach the environment's matching
    Render hostname.
-4. Open an ephemeral Preview deployment, start login, and confirm Auth0's
-   `redirect_uri` is the stable branch Preview alias.
+4. Open an ephemeral Preview deployment and confirm it redirects to the stable
+   branch Preview alias before login. Then confirm sign-in returns to that same
+   stable alias.
 5. Quick check:
 
 ```sh

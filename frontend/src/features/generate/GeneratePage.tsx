@@ -32,23 +32,6 @@ const difficulties: Array<{ value: NewPracticeConfig['difficulty']; label: strin
   { value: 'easy', label: 'Easy' },
   { value: 'medium', label: 'Medium' },
   { value: 'hard', label: 'Hard' },
-import { cn } from '@/lib/utils';
-import { createMemoryEvent } from '../../shared/api/client';
-import { buildGenerateEvent, memoryEventTypes } from '../../shared/api/memoryEvents';
-import { QuestionModal, type Question, type Answer } from './QuestionModal';
-
-type GenerateView = 'command' | 'spotlight';
-type GenerateFormat = 'problem' | 'mcq' | 'interview';
-type Difficulty = 'easy' | 'medium' | 'hard';
-
-const PHRASE_STORAGE_KEY = 'codegym.generate.sessionPhrase';
-
-const SESSION_PHRASES = [
-  'Build real fluency.',
-  'Practice with intent.',
-  'Turn gaps into reps.',
-  'Make hard topics familiar.',
-  'Train the parts that matter.',
 ];
 
 const practiceFormats: Array<{
@@ -121,14 +104,6 @@ export function GeneratePage() {
     };
   }, []);
 
-  const recordGenerateEvent = async (input: Parameters<typeof buildGenerateEvent>[0]) => {
-    try {
-      await createMemoryEvent(buildGenerateEvent(input));
-    } catch (error) {
-      console.warn('[generate] failed to record memory event', error);
-    }
-  };
-
   const contextItems = useMemo(() => {
     if (!profile) return [];
     return [
@@ -153,84 +128,10 @@ export function GeneratePage() {
     const config: NewPracticeConfig = {
       format,
       prompt: prompt.trim(),
-      language,
       difficulty,
       count: format === 'mcq' ? count : 1,
     };
 
-    void recordGenerateEvent({
-      type: memoryEventTypes.intakeStarted,
-      summary: `Started a ${difficulty} ${language} ${format} generation request.`,
-      payload: {
-        prompt: requestContext.prompt,
-        format,
-        language,
-        difficulty,
-        view,
-        schema_version: 1,
-      },
-    });
-
-    // TODO: Call /api/v1/generate/questions with requestContext to get real questions.
-    console.log('[generate]', requestContext);
-
-    const mockQuestions: Question[] = [
-      {
-        id: 'q1',
-        text: 'What programming language would you like to use?',
-        options: ['Python', 'Go', 'JavaScript', 'TypeScript', 'Specify...'],
-      },
-      {
-        id: 'q2',
-        text: 'What area should this practice focus on?',
-        options: ['Core algorithm', 'Data structure design', 'API integration', 'Specify...'],
-      },
-      {
-        id: 'q3',
-        text: 'How challenging should this be?',
-        options: ['Beginner friendly', 'Moderate complexity', 'Senior-level challenge', 'Specify...'],
-      },
-    ];
-
-    setAgentQuestions(mockQuestions);
-    setShowQuestions(true);
-    setGenerating(false);
-  };
-
-  const handleQuestionsComplete = (answers: Answer[]) => {
-    setShowQuestions(false);
-    setGenerating(true);
-    console.log('[generate] answers:', answers);
-
-    void recordGenerateEvent({
-      type: memoryEventTypes.clarifyingQuestionsAnswered,
-      summary: `Answered ${answers.length} clarifying questions for ${format} generation.`,
-      payload: {
-        format,
-        language,
-        difficulty,
-        view,
-        answer_count: answers.length,
-        question_ids: answers.map((answer) => answer.questionId),
-        schema_version: 1,
-      },
-    });
-
-    // TODO: Call POST /api/v1/generate with prompt + answers + view context.
-    setTimeout(() => {
-      setStatus('Generation endpoint not yet implemented');
-      setGenerating(false);
-    }, 3000);
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      handleGenerate();
-    }
-  };
-
-  const usePrompt = (value: string) => {
-    setPrompt(value);
     setStarting(true);
     setError(null);
     try {

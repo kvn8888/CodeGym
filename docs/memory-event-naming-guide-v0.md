@@ -354,6 +354,44 @@ v0 is designed to evolve without a schema migration:
 - Add new names in `api/memory-events.registry.json`, regenerate artifacts, and
   then use them in UI code.
 
+### Recent Activity Curation (`includeTypes` / `excludeTypes`)
+
+The Memory page's compact "Recent Activity" rail is intentionally curated and
+does not automatically show every recorded event type.
+
+Scope and jurisdiction:
+
+- Event storage scope: **all valid events** are still recorded in
+  `memory_events` and available in full event views.
+- UI curation scope: the compact "Recent Activity" list in
+  `frontend/src/features/memory/MemoryRecentActivityWing.tsx` is filtered by
+  `includeTypes` and `excludeTypes`.
+- Conflict rule: if a type appears in both lists, `excludeTypes` wins.
+
+Practical intent:
+
+- `includeTypes` defines high-signal event outcomes that are eligible for the
+  short feed.
+- `excludeTypes` removes noisy or low-value timeline items from that short feed.
+- This curation affects only presentation, not event validity, persistence, or
+  profile derivation inputs.
+
+Recommended maintenance workflow:
+
+1. Add/adjust event names in `api/memory-events.registry.json`.
+2. Regenerate artifacts (`npm run memory-events:generate`).
+3. Decide whether the new type should appear in compact Recent Activity.
+4. If yes, add it to `includeTypes`; if no, add it to `excludeTypes` or leave
+   unlisted.
+5. Verify behavior on Memory page:
+   - compact "Recent Activity" remains concise,
+   - "All memory events" still shows the full stream.
+
+Design guideline:
+
+- Prefer outcomes over intermediate steps in compact Recent Activity.
+- Example: include `session_completed`; usually exclude `session_started`.
+
 ## Related Docs
 
 - [auth-identity-workspace.md](./auth-identity-workspace.md) documents request scoping

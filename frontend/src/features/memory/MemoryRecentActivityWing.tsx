@@ -49,6 +49,219 @@ function stringifyPayload(payload: unknown) {
   }
 }
 
+function getPayloadRecord(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  return payload as Record<string, unknown>;
+}
+
+function normalizeLabel(key: string) {
+  return key
+    .split('_')
+    .map((word) => word[0]?.toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function formatDetailValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return 'Unknown';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0 ? 'None' : value.map((item) => formatDetailValue(item)).join(', ');
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return 'Complex object';
+    }
+  }
+
+  return String(value);
+}
+
+function outcomePresentation(type: string) {
+  if (type.includes('failed') || type.includes('incorrect')) {
+    return {
+      label: 'Needs attention',
+      className: 'border-amber-300/70 bg-amber-50 text-amber-900',
+    };
+  }
+  if (type.includes('solved') || type.includes('completed')) {
+    return {
+      label: 'Positive signal',
+      className: 'border-emerald-300/70 bg-emerald-50 text-emerald-900',
+    };
+  }
+  if (type.includes('started') || type.includes('opened')) {
+    return {
+      label: 'Progress marker',
+      className: 'border-sky-300/70 bg-sky-50 text-sky-900',
+    };
+  }
+  return {
+    label: 'Informational',
+    className: 'border-border bg-muted/70 text-foreground',
+  };
+}
+
+type RecentEventPolicy = {
+  includeTypes: string[];
+  excludeTypes: string[];
+};
+
+const recentEventPolicy: RecentEventPolicy = {
+  includeTypes: [
+    'session_completed',
+    'attempt_solved',
+    'attempt_failed',
+    'answer_incorrect',
+    'note_created',
+    'note_updated',
+    'note_pruned',
+    'problem_generated',
+    'mcq_set_generated',
+    'interview_prompt_generated',
+  ],
+  excludeTypes: [
+    'session_started',
+    'attempt_started',
+    'thread_opened',
+    'thread_closed',
+    'message_sent',
+    'assistant_replied',
+    'tests_run',
+    'memory_api_checked',
+  ],
+};
+
+function curateRecentEvents(events: MemoryEvent[]) {
+  const includeTypes = new Set(recentEventPolicy.includeTypes);
+  const excludeTypes = new Set(recentEventPolicy.excludeTypes);
+
+  return events.filter((event) => includeTypes.has(event.type) && !excludeTypes.has(event.type));
+}
+
+type DetailRow = {
+  label: string;
+  value: string;
+};
+
+type DetailSection = {
+  title: string;
+  rows: DetailRow[];
+};
+
+function pushPayloadRows(
+  rows: DetailRow[],
+  payload: Record<string, unknown> | null,
+  keys: string[],
+  used: Set<string>,
+  labels?: Record<string, string>,
+) {
+  if (!payload) return;
+  keys.forEach((key) => {
+    if (payload[key] === undefined) {
+      return;
+    }
+    rows.push({
+      label: labels?.[key] ?? normalizeLabel(key),
+      value: formatDetailValue(payload[key]),
+    });
+    used.add(key);
+  });
+}
+
+function eventDetails(event: MemoryEvent) {
+  const payload = getPayloadRecord(event.payload);
+  const usedKeys = new Set<string>();
+
+  const contextRows: DetailRow[] = [
+    { label: 'Event ID', value: event.id },
+    { label: 'Workspace ID', value: event.workspace_id },
+    { label: 'User ID', value: event.user_id },
+  ];
+  pushPayloadRows(
+    contextRows,
+    payload,
+    ['session_id', 'problem_id', 'attempt_id', 'thread_id', 'note_id', 'generation_job_id', 'message_id'],
+    usedKeys,
+  );
+
+  const metricRows: DetailRow[] = [];
+  pushPayloadRows(
+    metricRows,
+    payload,
+    [
+      'passed',
+      'total',
+      'score',
+      'message_length',
+      'answer_length',
+      'duration_ms',
+      'latency_ms',
+      'retry_count',
+      'question_count',
+      'correct_count',
+      'incorrect_count',
+      'test_case_count',
+    ],
+    usedKeys,
+  );
+
+  const classificationRows: DetailRow[] = [];
+  pushPayloadRows(
+    classificationRows,
+    payload,
+    ['format', 'difficulty', 'language', 'topic', 'area', 'concept', 'tags', 'action', 'result', 'status'],
+    usedKeys,
+  );
+
+  const timingRows: DetailRow[] = [
+    { label: 'Occurred At', value: formatExactDate(event.occurred_at) },
+    { label: 'Persisted At', value: formatExactDate(event.created_at) },
+  ];
+  pushPayloadRows(timingRows, payload, ['started_at', 'completed_at'], usedKeys);
+
+  const provenanceRows: DetailRow[] = [
+    { label: 'Source', value: event.source },
+    { label: 'Type', value: event.type },
+  ];
+  pushPayloadRows(provenanceRows, payload, ['schema_version', 'provider', 'model', 'emitter'], usedKeys);
+
+  const extraRows: DetailRow[] = [];
+  if (payload) {
+    Object.keys(payload)
+      .filter((key) => !usedKeys.has(key))
+      .sort()
+      .forEach((key) => {
+        extraRows.push({ label: normalizeLabel(key), value: formatDetailValue(payload[key]) });
+      });
+  }
+
+  const sections: DetailSection[] = [
+    { title: 'Timing', rows: timingRows },
+    { title: 'Context', rows: contextRows },
+    { title: 'Outcome Metrics', rows: metricRows },
+    { title: 'Classification', rows: classificationRows },
+    { title: 'Provenance', rows: provenanceRows },
+    { title: 'Additional Metadata', rows: extraRows },
+  ].filter((section) => section.rows.length > 0);
+
+  return {
+    sections,
+    outcome: outcomePresentation(event.type),
+  };
+}
+
 type MemoryRecentActivityWingProps = {
   events: MemoryEvent[];
 };
@@ -56,7 +269,7 @@ type MemoryRecentActivityWingProps = {
 export function RecentActivity({ events }: MemoryRecentActivityWingProps) {
   const [allEventsOpen, setAllEventsOpen] = useState(false);
   const [activeAllEventId, setActiveAllEventId] = useState<string | null>(null);
-  const visibleEvents = events.slice(0, 6);
+  const visibleEvents = curateRecentEvents(events).slice(0, 6);
 
   return (
     <>
@@ -139,7 +352,7 @@ export function RecentActivity({ events }: MemoryRecentActivityWingProps) {
       >
         <DialogContent
           showCloseButton={false}
-          className="left-auto top-0 right-0 h-full w-full max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-l p-0 sm:w-[500px] sm:max-w-none"
+          className="left-auto top-0 right-0 h-full w-full max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-l p-0 sm:w-[540px] sm:max-w-none lg:w-[600px]"
         >
           <DialogHeader className="border-b px-5 py-4 text-left">
             <div className="flex items-start justify-between gap-3">
@@ -170,6 +383,7 @@ export function RecentActivity({ events }: MemoryRecentActivityWingProps) {
                   const EventIcon = presentation.icon;
                   const expanded = activeAllEventId === event.id;
                   const payloadText = stringifyPayload(event.payload);
+                  const detail = eventDetails(event);
 
                   return (
                     <div
@@ -207,6 +421,22 @@ export function RecentActivity({ events }: MemoryRecentActivityWingProps) {
                             <div className="min-w-0">
                               <div className="text-xs font-semibold">{presentation.label}</div>
                               <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-4">{event.summary}</p>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                <span className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-medium">
+                                  {formatEventType(event.type)}
+                                </span>
+                                <span className="rounded-full border bg-background px-2 py-0.5 text-[10px] font-medium capitalize">
+                                  {event.source}
+                                </span>
+                                <span
+                                  className={[
+                                    'rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                                    detail.outcome.className,
+                                  ].join(' ')}
+                                >
+                                  {detail.outcome.label}
+                                </span>
+                              </div>
                             </div>
                             <div className="text-muted-foreground shrink-0 pt-0.5 text-[11px]">
                               {formatRelativeDate(event.occurred_at)}
@@ -220,29 +450,44 @@ export function RecentActivity({ events }: MemoryRecentActivityWingProps) {
                             ].join(' ')}
                           >
                             <div className="overflow-hidden">
-                              <div className="space-y-2">
-                                <div className="rounded-md border bg-background/70 px-3 py-2">
-                                  <dl className="space-y-1.5 text-[11px] leading-4">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <dt className="text-muted-foreground">Type</dt>
-                                      <dd className="text-right font-medium">{formatEventType(event.type)}</dd>
+                              <div className="space-y-2.5">
+                                {detail.sections.map((section) => (
+                                  <div key={`${event.id}-${section.title}`} className="rounded-md border bg-background/70 px-3 py-2">
+                                    <div className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                      {section.title}
                                     </div>
-                                    <div className="flex items-start justify-between gap-2">
-                                      <dt className="text-muted-foreground">Source</dt>
-                                      <dd className="text-right font-medium">{event.source}</dd>
-                                    </div>
-                                    <div className="flex items-start justify-between gap-2">
-                                      <dt className="text-muted-foreground">Occurred</dt>
-                                      <dd className="text-right font-medium">{formatExactDate(event.occurred_at)}</dd>
-                                    </div>
-                                  </dl>
-                                </div>
-
-                                <div className="rounded-md border bg-background/70 px-3 py-2">
-                                  <div className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                    Metadata
+                                    <dl className="mt-1.5 space-y-1.5 text-[11px] leading-4">
+                                      {section.rows.map((row) => {
+                                        const idLike = row.label.endsWith('ID');
+                                        return (
+                                          <div
+                                            key={`${event.id}-${section.title}-${row.label}`}
+                                            className="grid grid-cols-[max-content_minmax(0,1fr)] items-start gap-2"
+                                          >
+                                            <dt className="text-muted-foreground shrink-0">{row.label}</dt>
+                                            <dd
+                                              className={[
+                                                'min-w-0 text-right font-medium',
+                                                idLike
+                                                  ? 'font-mono text-[10.5px] truncate'
+                                                  : 'break-words',
+                                              ].join(' ')}
+                                              title={row.value}
+                                            >
+                                              {row.value}
+                                            </dd>
+                                          </div>
+                                        );
+                                      })}
+                                    </dl>
                                   </div>
-                                  <pre className="text-muted-foreground mt-1 max-h-28 overflow-y-auto text-[11px] leading-4 whitespace-pre-wrap">
+                                ))}
+
+                                <div className="rounded-md border bg-background/70 px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                  <div className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                    Raw payload JSON
+                                  </div>
+                                  <pre className="mt-1.5 rounded-sm border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-[11px] leading-4 whitespace-pre-wrap text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
                                     {payloadText}
                                   </pre>
                                 </div>

@@ -126,23 +126,30 @@ export function ProblemDetailPage({
           ),
         ]);
 
-        const matchingSummary =
-          (requestedSessionId
-            ? activeSessions.find(
-                (session) =>
-                  session.id === requestedSessionId && session.problem_id === loadedProblem.id,
-              )
-            : undefined) ??
-          activeSessions.find((session) => session.problem_id === loadedProblem.id);
-
-        const workspaceSession = matchingSummary
-          ? await api.get<PracticeSession>(`/sessions/${matchingSummary.id}`)
-          : await api.post<PracticeSession>('/sessions', {
-              kind: 'workspace',
-              title: loadedProblem.title,
-              problem_id: loadedProblem.id,
-              state: { schema_version: 1, hints_revealed: 0 },
-            });
+        let workspaceSession: PracticeSession;
+        if (requestedSessionId) {
+          workspaceSession = await api.get<PracticeSession>(
+            `/sessions/${encodeURIComponent(requestedSessionId)}`,
+          );
+          if (
+            workspaceSession.kind !== 'workspace' ||
+            workspaceSession.problem_id !== loadedProblem.id
+          ) {
+            throw new Error('The requested workspace session does not match this problem.');
+          }
+        } else {
+          const matchingSummary = activeSessions.find(
+            (session) => session.problem_id === loadedProblem.id,
+          );
+          workspaceSession = matchingSummary
+            ? await api.get<PracticeSession>(`/sessions/${matchingSummary.id}`)
+            : await api.post<PracticeSession>('/sessions', {
+                kind: 'workspace',
+                title: loadedProblem.title,
+                problem_id: loadedProblem.id,
+                state: { schema_version: 1, hints_revealed: 0 },
+              });
+        }
 
         if (cancelled) return;
 

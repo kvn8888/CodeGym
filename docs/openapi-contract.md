@@ -28,6 +28,9 @@ Current routes:
 | `GET` | `/api/v1/memory/profile` | Yes | Fetch the scoped user's derived memory profile. |
 | `POST` | `/api/v1/memory/profile/refresh` | Yes | Manually synthesize and persist the scoped user's profile from bounded event evidence. |
 | `POST` | `/api/v1/memory/profile/maintain` | Yes | Run set-completion profile synthesis before the next generated set. |
+| `POST` | `/api/v1/practice-intakes` | Yes | Prepare, resume, or explicitly restart a normalized topic baseline. |
+| `GET` | `/api/v1/practice-intakes?status=pending&limit=1` | Yes | Restore the newest unfinished baseline. |
+| `PATCH` | `/api/v1/practice-intakes/{id}` | Yes | Save partial answers or mark the baseline completed/skipped. |
 | `POST` | `/api/v1/generate` | Yes | Generate a validated single-select, multi-select, free-response, or mixed MCQ set. |
 | `POST` | `/api/v1/mcq/evaluate` | Yes | Evaluate one free-response answer against its reference answer and rubric. |
 | `GET` | `/api/v1/memory/events` | Yes | List append-only memory events newest-first with explicit UTC timestamps. |

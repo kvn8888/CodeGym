@@ -169,6 +169,38 @@ export interface NewPracticeConfig {
   prompt: string;
   difficulty: 'easy' | 'medium' | 'hard';
   count: number;
+  intakeId?: string;
+}
+
+export type PracticeIntakeStatus = 'pending' | 'completed' | 'skipped';
+
+export interface PracticeIntakeOption {
+  id: string;
+  label: string;
+}
+
+export interface PracticeIntakeQuestion {
+  id: string;
+  dimension: string;
+  text: string;
+  options: PracticeIntakeOption[];
+}
+
+export interface PracticeIntake {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  normalized_topic: string;
+  original_topic: string;
+  practice_seed: Record<string, unknown>;
+  questions: PracticeIntakeQuestion[];
+  answers: Record<string, string>;
+  status: PracticeIntakeStatus;
+  suppression_reason?: string;
+  generation_error?: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
 }
 
 /** Aggregate from GET /api/v1/cost — estimated GenAI spend for this workspace user. */

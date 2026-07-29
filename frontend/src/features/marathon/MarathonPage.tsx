@@ -91,6 +91,7 @@ interface MarathonSessionState {
   prompt: string;
   difficulty: NewPracticeConfig['difficulty'];
   count: number;
+  intake_id?: string;
   round: number;
   question_index: number;
   elapsed: number;
@@ -148,6 +149,7 @@ function normalizeMarathonSessionState(value: unknown): MarathonSessionState | n
     prompt: candidate.prompt,
     difficulty: candidate.difficulty,
     count: candidate.count,
+    intake_id: typeof candidate.intake_id === 'string' ? candidate.intake_id : undefined,
     round: candidate.round,
     question_index: candidate.question_index,
     elapsed: candidate.elapsed,
@@ -447,6 +449,7 @@ export function MarathonPage() {
 
   // Durable practice session id used by the resume/history APIs.
   const practiceSessionIdRef = useRef(launch?.sessionId ?? requestedSessionId);
+  const intakeIdRef = useRef(launch?.config.intakeId);
 
   // StrictMode-safe guard for the one-shot launch/resume effect.
   const initializedRef = useRef(false);
@@ -530,10 +533,16 @@ export function MarathonPage() {
    *  swapping in the practice set. */
   const generateRound = async (
     roundNumber: number,
-    config: NewPracticeConfig = { prompt: studyPrompt, difficulty, count: questionCount },
+    config: NewPracticeConfig = {
+      prompt: studyPrompt,
+      difficulty,
+      count: questionCount,
+      intakeId: intakeIdRef.current,
+    },
   ) => {
     const generated = await api.post<GenerateMcqResponse>('/generate', {
       kind: 'mcq',
+      intake_id: config.intakeId,
       spec: {
         topic: '',
         prompt: config.prompt.trim(),
@@ -628,6 +637,7 @@ export function MarathonPage() {
     prompt: studyPrompt,
     difficulty,
     count: questionCount,
+    intake_id: intakeIdRef.current,
     round,
     question_index: questionIndex,
     elapsed,
@@ -662,6 +672,7 @@ export function MarathonPage() {
   };
 
   const ensurePracticeSession = async (config: NewPracticeConfig) => {
+    intakeIdRef.current = config.intakeId;
     if (practiceSessionIdRef.current) return practiceSessionIdRef.current;
     const session = await api.post<PracticeSession>('/sessions', {
       kind: 'mcq',
@@ -672,6 +683,7 @@ export function MarathonPage() {
         prompt: config.prompt,
         difficulty: config.difficulty,
         count: config.count,
+        intake_id: config.intakeId,
         round: 1,
         question_index: 0,
         elapsed: 0,
@@ -839,6 +851,7 @@ export function MarathonPage() {
         }
 
         if (snapshot && snapshot.questions.length > 0) {
+          intakeIdRef.current = snapshot.intake_id;
           setStudyPrompt(snapshot.prompt);
           setDifficulty(snapshot.difficulty);
           setQuestionCount(snapshot.count);
@@ -864,6 +877,7 @@ export function MarathonPage() {
               prompt: snapshot.prompt,
               difficulty: snapshot.difficulty,
               count: snapshot.count,
+              intakeId: snapshot.intake_id,
             }
           : DEFAULT_CONFIG;
         await handleStart(fallbackConfig);

@@ -268,6 +268,10 @@ GET   /api/v1/sessions/{id}
 PATCH /api/v1/sessions/{id}
 PUT   /api/v1/sessions/{id}/files
 
+POST  /api/v1/practice-intakes
+GET   /api/v1/practice-intakes?status=pending&limit=1
+PATCH /api/v1/practice-intakes/{id}
+
 POST /api/v1/generate
 POST /api/v1/mcq/evaluate
 POST /api/v1/memory/notes/maintain # deprecated compatibility alias

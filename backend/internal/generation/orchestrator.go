@@ -56,10 +56,12 @@ func (o *Orchestrator) GenerateWithProfile(ctx context.Context, input GenerateIn
 		return GenerateResult{}, errors.New("generation orchestrator requires a generator")
 	}
 
+	memoryContext := MemoryContextFromProfile(profile)
+	memoryContext.SelfReportedBaseline = input.IntakeContext
 	result, err := o.generator.Generate(ctx, GenerateRequest{
 		Kind:          input.Kind,
 		Spec:          input.Spec,
-		MemoryContext: MemoryContextFromProfile(profile),
+		MemoryContext: memoryContext,
 		Schema:        input.Schema,
 		ModelPolicy:   input.ModelPolicy,
 		Instructions:  input.Instructions,
@@ -81,11 +83,12 @@ func (o *Orchestrator) GenerateWithProfile(ctx context.Context, input GenerateIn
 }
 
 type GenerateInput struct {
-	Kind         Kind
-	Spec         json.RawMessage
-	Schema       Schema
-	ModelPolicy  ModelPolicy
-	Instructions string
+	Kind          Kind
+	Spec          json.RawMessage
+	Schema        Schema
+	ModelPolicy   ModelPolicy
+	Instructions  string
+	IntakeContext *PracticeIntakeContext
 }
 
 func MemoryContextFromProfile(profile memory.Profile) MemoryContext {

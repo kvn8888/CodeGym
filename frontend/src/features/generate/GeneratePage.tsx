@@ -34,6 +34,9 @@ const difficulties: Array<{ value: NewPracticeConfig['difficulty']; label: strin
   { value: 'hard', label: 'Hard' },
 ];
 
+/** Stable start-flow status for New Practice (not an implicit boolean/string). */
+type StartStatus = 'idle' | 'pending' | 'failed';
+
 const practiceFormats: Array<{
   value: PracticeFormat;
   label: string;
@@ -83,7 +86,7 @@ export function GeneratePage() {
   const [count, setCount] = useState(5);
   const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
   const [recentSessions, setRecentSessions] = useState<PracticeSessionSummary[]>([]);
-  const [starting, setStarting] = useState(false);
+  const [startStatus, setStartStatus] = useState<StartStatus>('idle');
   const [error, setError] = useState<string | null>(null);
 
   const selectedFormat = practiceFormats.find((item) => item.value === format) ?? practiceFormats[0];
@@ -123,7 +126,7 @@ export function GeneratePage() {
 
   const startPractice = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (starting) return;
+    if (startStatus === 'pending') return;
 
     const config: NewPracticeConfig = {
       format,
@@ -132,7 +135,7 @@ export function GeneratePage() {
       count: format === 'mcq' ? count : 1,
     };
 
-    setStarting(true);
+    setStartStatus('pending');
     setError(null);
     try {
       if (format === 'mcq') {
@@ -189,7 +192,7 @@ export function GeneratePage() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start practice.');
-      setStarting(false);
+      setStartStatus('failed');
     }
   };
 
@@ -324,16 +327,32 @@ export function GeneratePage() {
                     ? 'Opens the coding workspace with an editor and tests.'
                     : 'Progress is saved after every answer.'}
                 </div>
-                <Button type="submit" disabled={starting} className="sm:min-w-36">
-                  {starting ? 'Starting' : format === 'coding' ? 'Start coding' : 'Start practice'}
-                  {!starting && <ArrowRight data-icon="inline-end" />}
+                <Button
+                  type="submit"
+                  disabled={startStatus === 'pending'}
+                  className="sm:min-w-36"
+                >
+                  {startStatus === 'pending'
+                    ? 'Starting'
+                    : startStatus === 'failed'
+                      ? 'Retry'
+                      : format === 'coding'
+                        ? 'Start coding'
+                        : 'Start practice'}
+                  {startStatus !== 'pending' && <ArrowRight data-icon="inline-end" />}
                 </Button>
               </div>
             </section>
 
-            {error && (
-              <div className="border-destructive/40 bg-destructive/5 text-destructive mt-4 rounded-md border px-3 py-2 text-sm">
-                {error}
+            {startStatus === 'failed' && error && (
+              <div
+                className="border-destructive/40 bg-destructive/5 text-destructive mt-4 rounded-md border px-3 py-2 text-sm"
+                role="alert"
+              >
+                <p>{error}</p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  Edit your prompt above, then retry. Submits are blocked while a start is pending.
+                </p>
               </div>
             )}
 

@@ -331,6 +331,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/practice-intakes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Restore unfinished topic baselines in most-recently-updated order. */
+        get: operations["listPendingPracticeIntakes"];
+        put?: never;
+        /** Prepare, resume, or explicitly restart the self-reported baseline for a normalized topic. */
+        post: operations["preparePracticeIntake"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/practice-intakes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Save partial answers immediately or mark an intake completed or skipped. */
+        patch: operations["updatePracticeIntake"];
+        trace?: never;
+    };
     "/api/v1/generate": {
         parameters: {
             query?: never;
@@ -838,6 +875,71 @@ export interface components {
              */
             kind: "mcq" | "problem" | "interview";
             spec?: components["schemas"]["MCQSpec"];
+            /** @description Optional completed intake in the caller's workspace. Its self-report remains separate from demonstrated memory. */
+            intake_id?: string;
+        };
+        PreparePracticeIntakeInput: {
+            /** @description Original user-entered practice topic. The server derives an exact normalized topic identity. */
+            topic: string;
+            /** @description Original New Practice choices retained for resume and generation context. */
+            practice_seed?: {
+                [key: string]: unknown;
+            };
+            /**
+             * @description Creates a fresh pending intake even when this topic was previously completed or skipped.
+             * @default false
+             */
+            restart: boolean;
+        };
+        UpdatePracticeIntakeInput: {
+            /** @description Question ID to option ID updates; each supplied option is validated. */
+            answers?: {
+                [key: string]: string;
+            };
+            /** @enum {string} */
+            status?: "pending" | "completed" | "skipped";
+        };
+        PracticeIntakeOption: {
+            id: string;
+            label: string;
+        };
+        PracticeIntakeQuestion: {
+            id: string;
+            dimension: string;
+            text: string;
+            options: components["schemas"]["PracticeIntakeOption"][];
+        };
+        PracticeIntake: {
+            id: string;
+            workspace_id: string;
+            user_id: string;
+            normalized_topic: string;
+            original_topic: string;
+            practice_seed: {
+                [key: string]: unknown;
+            };
+            questions: components["schemas"]["PracticeIntakeQuestion"][];
+            answers: {
+                [key: string]: string;
+            };
+            /** @enum {string} */
+            status: "pending" | "completed" | "skipped";
+            suppression_reason?: string;
+            generation_error?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            completed_at?: string;
+        };
+        PracticeIntakeEnvelope: {
+            data: components["schemas"]["PracticeIntake"];
+            error: null;
+        };
+        PracticeIntakeListEnvelope: {
+            data: components["schemas"]["PracticeIntake"][];
+            error: null;
         };
         /** @description The model chooses single-select, multi-select, or free-response independently for each generated question. */
         MCQSpec: {
@@ -1582,6 +1684,118 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    listPendingPracticeIntakes: {
+        parameters: {
+            query?: {
+                status?: "pending";
+                limit?: number;
+            };
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending practice intakes scoped to the authenticated workspace user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeIntakeListEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    preparePracticeIntake: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparePracticeIntakeInput"];
+            };
+        };
+        responses: {
+            /** @description Existing suppression or pending state, or a newly generated intake. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeIntakeEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            500: components["responses"]["InternalError"];
+            /** @description Practice intake is not configured on this server. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    updatePracticeIntake: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePracticeIntakeInput"];
+            };
+        };
+        responses: {
+            /** @description Updated workspace-scoped intake. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeIntakeEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Practice intake is not configured on this server. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     generateContent: {

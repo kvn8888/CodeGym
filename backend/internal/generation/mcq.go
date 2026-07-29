@@ -22,6 +22,8 @@ type MCQSpec struct {
 	// Round distinguishes successive rounds of a continuous marathon so the
 	// model can avoid repeating earlier questions verbatim.
 	Round int `json:"round,omitempty"`
+	// IntakeContext is server-resolved and never accepted from model output.
+	IntakeContext *PracticeIntakeContext `json:"-"`
 }
 
 type MCQQuestionType string
@@ -293,7 +295,8 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 			ModelPolicy: ModelPolicy{
 				MaxTokens: mcqDefaultMaxTokens,
 			},
-			Instructions: instructions,
+			Instructions:  instructions,
+			IntakeContext: spec.IntakeContext,
 		})
 		if err != nil {
 			log.Printf("mcq generation attempt %d failed class=%s detail=%s", attempt, DiagnosticClass(err), DiagnosticMessage(err))

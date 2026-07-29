@@ -1,57 +1,61 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QuestionModal } from './QuestionModal';
 
-// Sample questions that mimic what the Claude agent would generate.
-const SAMPLE_QUESTIONS = [
+const questions = [
   {
     id: 'q1',
-    text: 'What programming language would you like to use?',
-    options: ['Python', 'Go', 'JavaScript', 'TypeScript', 'Specify…'],
+    dimension: 'exposure',
+    text: 'How much prior exposure do you have to graph traversal?',
+    options: [
+      { id: 'new', label: 'This is new to me' },
+      { id: 'recognize', label: 'I recognize the core ideas' },
+      { id: 'practiced', label: 'I have solved a few related problems' },
+    ],
   },
   {
     id: 'q2',
-    text: 'What aspect of two pointers do you want to focus on?',
-    options: ['Sliding window', 'Fast/slow pointers', 'Meeting in middle', 'Specify…'],
+    dimension: 'application',
+    text: 'Where have you used these ideas?',
+    options: [
+      { id: 'none', label: 'Not in practice yet' },
+      { id: 'guided', label: 'In guided exercises' },
+      { id: 'independent', label: 'In an independent project or interview' },
+    ],
   },
   {
     id: 'q3',
-    text: 'How familiar are you with this topic?',
-    options: ['Just starting out', 'Somewhat comfortable', 'Advanced — challenge me', 'Specify…'],
+    dimension: 'challenge',
+    text: 'What kind of session would be most useful today?',
+    options: [
+      { id: 'foundations', label: 'Reinforce foundations' },
+      { id: 'mixed', label: 'Mix recall with application' },
+      { id: 'stretch', label: 'Push me with edge cases' },
+    ],
   },
 ];
 
 const meta: Meta<typeof QuestionModal> = {
-  title: 'Features/QuestionModal',
+  title: 'Features/Practice Intake',
   component: QuestionModal,
-  parameters: {
-    // QuestionModal is a full-screen overlay, so no routing needed.
-    layout: 'fullscreen',
-  },
+  parameters: { layout: 'fullscreen' },
   args: {
-    questions: SAMPLE_QUESTIONS,
-    onComplete: (answers) => console.log('[QuestionModal] onComplete:', answers),
-    onClose: () => console.log('[QuestionModal] onClose'),
+    topic: 'graph traversal',
+    questions,
+    onSaveAnswer: () => {},
+    onComplete: () => {},
+    onSkip: () => {},
   },
 };
 
 export default meta;
 type Story = StoryObj<typeof QuestionModal>;
 
-/** Default state: first question visible, no selection. */
-export const Default: Story = {
-  name: 'Three Questions',
+export const Populated: Story = {};
+
+export const PartialResume: Story = {
+  args: { initialAnswers: { q1: 'recognize' } },
 };
 
-/** A single-question series (e.g. when the agent only needs one clarification). */
-export const SingleQuestion: Story = {
-  args: {
-    questions: [SAMPLE_QUESTIONS[0]],
-  },
-};
-
-/** Two-question series. */
-export const TwoQuestions: Story = {
-  args: {
-    questions: SAMPLE_QUESTIONS.slice(0, 2),
-  },
+export const Saving: Story = {
+  args: { initialAnswers: { q1: 'recognize' }, saving: true },
 };

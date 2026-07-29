@@ -5,11 +5,13 @@ import { ArrowRight, Brain, Check, Clock3, Code2, ListChecks } from 'lucide-reac
 import { api } from '../../shared/api/client';
 import type {
   NewPracticeConfig,
+  PracticeIntake,
   PracticeFormat,
   PracticeSession,
   PracticeSessionSummary,
   UserMemoryProfile,
 } from '../../shared/api/types';
+import { QuestionModal } from './QuestionModal';
 import {
   WorkspacePage,
   WorkspacePageHeader,
@@ -77,17 +79,53 @@ function formatRelativeDate(value: string) {
   return formatter.format(Math.round(hours / 24), 'day');
 }
 
-export function GeneratePage() {
+function configFromIntake(
+  intake: PracticeIntake,
+): NewPracticeConfig & { format: PracticeFormat } {
+  const seed = intake.practice_seed;
+  const seedFormat = seed.format === 'coding' || seed.format === 'mcq' ? seed.format : 'mcq';
+  const seedDifficulty =
+    seed.difficulty === 'easy' || seed.difficulty === 'hard' ? seed.difficulty : 'medium';
+  const seedCount =
+    typeof seed.count === 'number' && Number.isInteger(seed.count) && seed.count > 0
+      ? seed.count
+      : seedFormat === 'mcq'
+        ? 5
+        : 1;
+  return {
+    format: seedFormat,
+    prompt: intake.original_topic,
+    difficulty: seedDifficulty,
+    count: seedCount,
+    intakeId: intake.id,
+  };
+}
+
+interface GeneratePageProps {
+  initialIntake?: PracticeIntake | null;
+  initialStarting?: boolean;
+}
+
+export function GeneratePage({ initialIntake = null, initialStarting = false }: GeneratePageProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [format, setFormat] = useState<PracticeFormat>('mcq');
-  const [prompt, setPrompt] = useState(() => searchParams.get('prompt') ?? '');
+  const [prompt, setPrompt] = useState(
+    () => searchParams.get('prompt') ?? initialIntake?.original_topic ?? '',
+  );
   const [difficulty, setDifficulty] = useState<NewPracticeConfig['difficulty']>('medium');
   const [count, setCount] = useState(5);
   const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
   const [recentSessions, setRecentSessions] = useState<PracticeSessionSummary[]>([]);
-  const [startStatus, setStartStatus] = useState<StartStatus>('idle');
+  const [startStatus, setStartStatus] = useState<StartStatus>(
+    initialStarting ? 'pending' : 'idle',
+  );
   const [error, setError] = useState<string | null>(null);
+  const [intake, setIntake] = useState<PracticeIntake | null>(initialIntake);
+  const [pendingConfig, setPendingConfig] = useState<NewPracticeConfig | null>(
+    initialIntake ? configFromIntake(initialIntake) : null,
+  );
+  const [intakeSaving, setIntakeSaving] = useState(false);
 
   const selectedFormat = practiceFormats.find((item) => item.value === format) ?? practiceFormats[0];
   const FormatIcon = selectedFormat.icon;
@@ -97,15 +135,28 @@ export function GeneratePage() {
     void Promise.allSettled([
       api.get<UserMemoryProfile>('/memory/profile'),
       api.get<PracticeSessionSummary[]>('/sessions?limit=8'),
-    ]).then(([profileResult, sessionsResult]) => {
+      initialIntake
+        ? Promise.resolve([] as PracticeIntake[])
+        : api.get<PracticeIntake[]>('/practice-intakes?status=pending&limit=1'),
+    ]).then(([profileResult, sessionsResult, intakeResult]) => {
       if (cancelled) return;
       if (profileResult.status === 'fulfilled') setProfile(profileResult.value);
       if (sessionsResult.status === 'fulfilled') setRecentSessions(sessionsResult.value);
+      if (intakeResult.status === 'fulfilled' && intakeResult.value[0]) {
+        const restored = intakeResult.value[0];
+        const restoredConfig = configFromIntake(restored);
+        setIntake(restored);
+        setPendingConfig(restoredConfig);
+        setPrompt(restoredConfig.prompt);
+        setFormat(restoredConfig.format);
+        setDifficulty(restoredConfig.difficulty);
+        setCount(restoredConfig.count);
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialIntake]);
 
   const contextItems = useMemo(() => {
     if (!profile) return [];
@@ -124,76 +175,127 @@ export function GeneratePage() {
       .slice(0, 4);
   }, [format, recentSessions]);
 
+  const launchPractice = async (config: NewPracticeConfig) => {
+    if (config.format === 'mcq') {
+      const session = await api.post<PracticeSession>('/sessions', {
+        kind: 'mcq',
+        title: sessionTitle('mcq', config.prompt),
+        state: {
+          schema_version: 1,
+          prompt: config.prompt,
+          difficulty: config.difficulty,
+          count: config.count,
+          intake_id: config.intakeId,
+          round: 1,
+          question_index: 0,
+          elapsed: 0,
+          selected_index: null,
+          selected_indices: [],
+          response_text: '',
+          evaluation_result: null,
+          confirmed: false,
+          using_fallback: false,
+          questions: [],
+          results: [],
+          skipped_questions: [],
+        },
+      });
+      navigate(`/marathon?session=${encodeURIComponent(session.id)}`, {
+        state: { newPractice: { sessionId: session.id, config } },
+      });
+      return;
+    }
+
+    const session = await api.post<PracticeSession>('/sessions', {
+      kind: 'workspace',
+      title: sessionTitle('coding', config.prompt),
+      problem_id: 'two-sum',
+      state: {
+        schema_version: 1,
+        format: 'coding',
+        prompt: config.prompt,
+        difficulty: config.difficulty,
+        intake_id: config.intakeId,
+        problem_id: 'two-sum',
+      },
+    });
+    navigate(`/problems/two-sum?session=${encodeURIComponent(session.id)}&from=generate`, {
+      state: { newPractice: { sessionId: session.id, config } },
+    });
+  };
+
+  const prepareIntake = async (config: NewPracticeConfig, restart = false) => {
+    setStartStatus('pending');
+    setError(null);
+    setPendingConfig(config);
+    try {
+      if (!config.prompt.trim()) {
+        await launchPractice(config);
+        return;
+      }
+      const prepared = await api.post<PracticeIntake>('/practice-intakes', {
+        topic: config.prompt,
+        practice_seed: config,
+        restart,
+      });
+      if (prepared.status !== 'pending') {
+        await launchPractice({ ...config, intakeId: prepared.id });
+        return;
+      }
+      setIntake(prepared);
+      setStartStatus('idle');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not prepare the topic baseline.');
+      setStartStatus('failed');
+    }
+  };
+
   const startPractice = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (startStatus === 'pending') return;
-
     const config: NewPracticeConfig = {
       format,
       prompt: prompt.trim(),
       difficulty,
       count: format === 'mcq' ? count : 1,
     };
+    await prepareIntake(config);
+  };
 
-    setStartStatus('pending');
+  const saveIntakeAnswer = async (questionId: string, optionId: string) => {
+    if (!intake) return;
+    setIntakeSaving(true);
     setError(null);
     try {
-      if (format === 'mcq') {
-        const session = await api.post<PracticeSession>('/sessions', {
-          kind: 'mcq',
-          title: sessionTitle('mcq', config.prompt),
-          state: {
-            schema_version: 1,
-            prompt: config.prompt,
-            difficulty: config.difficulty,
-            count: config.count,
-            round: 1,
-            question_index: 0,
-            elapsed: 0,
-            selected_index: null,
-            selected_indices: [],
-            response_text: '',
-            evaluation_result: null,
-            confirmed: false,
-            using_fallback: false,
-            questions: [],
-            results: [],
-            skipped_questions: [],
-          },
-        });
-        navigate(`/marathon?session=${encodeURIComponent(session.id)}`, {
-          state: { newPractice: { sessionId: session.id, config } },
-        });
-        return;
-      }
-
-      // DSA / LeetCode-style coding session. Full AI problem generation is still
-      // landing; we open the coding workspace shell with a practice problem and
-      // persist a workspace session for history/resume.
-      const session = await api.post<PracticeSession>('/sessions', {
-        kind: 'workspace',
-        title: sessionTitle('coding', config.prompt),
-        problem_id: 'two-sum',
-        state: {
-          schema_version: 1,
-          format: 'coding',
-          prompt: config.prompt,
-          difficulty: config.difficulty,
-          problem_id: 'two-sum',
-        },
+      const updated = await api.patch<PracticeIntake>(`/practice-intakes/${intake.id}`, {
+        answers: { [questionId]: optionId },
       });
-      navigate(
-        `/problems/two-sum?session=${encodeURIComponent(session.id)}&from=generate`,
-        {
-          state: {
-            newPractice: { sessionId: session.id, config },
-          },
-        },
-      );
+      setIntake(updated);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start practice.');
-      setStartStatus('failed');
+      setError(err instanceof Error ? err.message : 'Could not save the baseline answer.');
+      throw err;
+    } finally {
+      setIntakeSaving(false);
     }
+  };
+
+  const finishIntake = async (status: 'completed' | 'skipped') => {
+    if (!intake || !pendingConfig) return;
+    setIntakeSaving(true);
+    setError(null);
+    try {
+      const updated = await api.patch<PracticeIntake>(`/practice-intakes/${intake.id}`, { status });
+      setIntake(updated);
+      await launchPractice({ ...pendingConfig, intakeId: updated.id });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the topic baseline.');
+      setIntakeSaving(false);
+    }
+  };
+
+  const retryIntake = async () => {
+    if (!pendingConfig) return;
+    await prepareIntake(pendingConfig);
   };
 
   return (
@@ -327,6 +429,27 @@ export function GeneratePage() {
                     ? 'Opens the coding workspace with an editor and tests.'
                     : 'Progress is saved after every answer.'}
                 </div>
+                {prompt.trim() && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={startStatus === 'pending'}
+                    onClick={() =>
+                      void prepareIntake(
+                        {
+                          format,
+                          prompt: prompt.trim(),
+                          difficulty,
+                          count: format === 'mcq' ? count : 1,
+                        },
+                        true,
+                      )
+                    }
+                  >
+                    Update baseline
+                  </Button>
+                )}
                 <Button
                   type="submit"
                   disabled={startStatus === 'pending'}
@@ -344,14 +467,45 @@ export function GeneratePage() {
               </div>
             </section>
 
-            {startStatus === 'failed' && error && (
+            {error && (
               <div
                 className="border-destructive/40 bg-destructive/5 text-destructive mt-4 rounded-md border px-3 py-2 text-sm"
                 role="alert"
               >
                 <p>{error}</p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  Edit your prompt above, then retry. Submits are blocked while a start is pending.
+                {startStatus === 'failed' && (
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    Edit your prompt above, then retry. Submits are blocked while a start is pending.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {intake?.generation_error && (
+              <div className="mt-4 rounded-md border px-4 py-3">
+                <p className="text-sm font-medium">Baseline questions could not be prepared</p>
+                <p className="text-muted-foreground mt-1 text-sm">{intake.generation_error}</p>
+                <div className="mt-3 flex gap-2">
+                  <Button type="button" size="sm" onClick={() => void retryIntake()}>
+                    Retry
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => void finishIntake('skipped')}>
+                    Skip baseline
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {intake && intake.status !== 'pending' && (
+              <div className="bg-muted/20 mt-4 rounded-md border px-4 py-3">
+                <p className="text-sm font-medium">
+                  {intake.status === 'completed'
+                    ? 'Baseline already on file'
+                    : 'Baseline questionnaire skipped'}
+                </p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  This topic will start without another automatic questionnaire. Use Update
+                  baseline whenever you want to replace it.
                 </p>
               </div>
             )}
@@ -452,6 +606,20 @@ export function GeneratePage() {
           </aside>
         </div>
       </form>
+      {intake &&
+        !intake.generation_error &&
+        intake.status === 'pending' &&
+        intake.questions.length > 0 && (
+          <QuestionModal
+            topic={intake.original_topic}
+            questions={intake.questions}
+            initialAnswers={intake.answers}
+            saving={intakeSaving}
+            onSaveAnswer={saveIntakeAnswer}
+            onComplete={() => finishIntake('completed')}
+            onSkip={() => finishIntake('skipped')}
+          />
+        )}
     </WorkspacePage>
   );
 }

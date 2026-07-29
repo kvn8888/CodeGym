@@ -8,6 +8,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
+	"github.com/kvn8888/codegym/backend/internal/intake"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
@@ -25,6 +26,7 @@ type Dependencies struct {
 	Execution     *execution.Service
 	Problems      *problems.Service
 	Submissions   *submission.Service
+	Intakes       *intake.Service
 	// Generation is nil when no GenAI provider is configured; the generate
 	// route stays registered and answers 503 so clients can fall back.
 	Generation           *generation.Orchestrator
@@ -71,7 +73,11 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("GET /api/v1/sessions/{id}", sessionHandler.Get)
 	protected.HandleFunc("PATCH /api/v1/sessions/{id}", sessionHandler.Patch)
 	protected.HandleFunc("PUT /api/v1/sessions/{id}/files", sessionHandler.UpsertFiles)
-	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion)
+	intakeHandler := handlers.NewIntakeHandler(deps.Intakes)
+	protected.HandleFunc("POST /api/v1/practice-intakes", intakeHandler.Prepare)
+	protected.HandleFunc("GET /api/v1/practice-intakes", intakeHandler.List)
+	protected.HandleFunc("PATCH /api/v1/practice-intakes/{id}", intakeHandler.Update)
+	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion, deps.Intakes)
 	protected.HandleFunc("POST /api/v1/generate", generateHandler.Generate)
 	protected.HandleFunc("POST /api/v1/mcq/evaluate", generateHandler.EvaluateFreeResponse)
 	protected.HandleFunc("POST /api/v1/memory/profile/maintain", generateHandler.MaintainProfile)

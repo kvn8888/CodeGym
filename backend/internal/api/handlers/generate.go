@@ -10,6 +10,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/api/response"
 	"github.com/kvn8888/codegym/backend/internal/generation"
+	"github.com/kvn8888/codegym/backend/internal/intake"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 )
 
@@ -21,20 +22,22 @@ type GenerateHandler struct {
 	memory                 *memory.Service
 	profiles               *generation.ProfileSynthesizer
 	refreshOnSetCompletion bool
+	intakes                *intake.Service
 }
 
 // NewGenerateHandler builds a generation handler. Both dependencies may be
 // used per-request with the caller's scoped context.
-func NewGenerateHandler(orchestrator *generation.Orchestrator, memoryService *memory.Service, profiles *generation.ProfileSynthesizer, refreshOnSetCompletion bool) *GenerateHandler {
+func NewGenerateHandler(orchestrator *generation.Orchestrator, memoryService *memory.Service, profiles *generation.ProfileSynthesizer, refreshOnSetCompletion bool, intakes *intake.Service) *GenerateHandler {
 	return &GenerateHandler{
 		orchestrator: orchestrator, memory: memoryService, profiles: profiles,
-		refreshOnSetCompletion: refreshOnSetCompletion,
+		refreshOnSetCompletion: refreshOnSetCompletion, intakes: intakes,
 	}
 }
 
 type generateRequestBody struct {
-	Kind string          `json:"kind"`
-	Spec json.RawMessage `json:"spec"`
+	Kind     string          `json:"kind"`
+	Spec     json.RawMessage `json:"spec"`
+	IntakeID string          `json:"intake_id,omitempty"`
 }
 
 type generateMCQResponse struct {
@@ -70,7 +73,7 @@ func (h *GenerateHandler) Generate(w http.ResponseWriter, r *http.Request) {
 
 	switch generation.Kind(body.Kind) {
 	case generation.KindMCQ:
-		h.generateMCQ(w, r, body.Spec)
+		h.generateMCQ(w, r, body.Spec, body.IntakeID)
 	case generation.KindProblem, generation.KindInterview:
 		response.Error(w, http.StatusNotImplemented, "kind_not_implemented",
 			fmt.Sprintf("Generation kind %q is not implemented yet; only \"mcq\" is available.", body.Kind))
@@ -80,13 +83,21 @@ func (h *GenerateHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, rawSpec json.RawMessage) {
+func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, rawSpec json.RawMessage, intakeID string) {
 	var spec generation.MCQSpec
 	if len(rawSpec) > 0 {
 		if err := json.Unmarshal(rawSpec, &spec); err != nil {
 			response.Error(w, http.StatusBadRequest, "invalid_spec", "spec must be an object with topic, count, and difficulty fields.")
 			return
 		}
+	}
+	if h.intakes != nil && strings.TrimSpace(intakeID) != "" {
+		intakeContext, err := h.intakes.Context(r.Context(), intakeID)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid_intake", "intake_id is not available in this workspace.")
+			return
+		}
+		spec.IntakeContext = intakeContext
 	}
 
 	questions, result, err := generation.GenerateMCQSet(r.Context(), h.orchestrator, spec)

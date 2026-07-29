@@ -39,6 +39,12 @@ func testRequest() generation.GenerateRequest {
 		MemoryContext: generation.MemoryContext{
 			Summary:     "22 events.",
 			GrowthEdges: []string{"Caching"},
+			SelfReportedBaseline: &generation.PracticeIntakeContext{
+				IntakeID: "intake-1",
+				Answers: []generation.PracticeIntakeAnswer{{
+					Dimension: "exposure", OptionID: "new", OptionLabel: "This is new to me",
+				}},
+			},
 		},
 	}
 }
@@ -98,6 +104,12 @@ func TestGenerateReturnsParsedObject(t *testing.T) {
 	}
 	if !strings.Contains(system, "untrusted reference data") {
 		t.Error("system message is missing memory injection guard")
+	}
+	if !strings.Contains(system, "demonstrated evidence takes precedence") {
+		t.Error("system message is missing demonstrated-over-self-report precedence")
+	}
+	if !strings.Contains(system, `"self_reported_baseline"`) {
+		t.Error("system message is missing self-reported baseline context")
 	}
 
 	if string(result.Object) != `[{"id":"mq1"}]` {
@@ -292,11 +304,11 @@ func TestNewRequiresConfig(t *testing.T) {
 
 func TestGenerateAzureAuthAndAPIVersion(t *testing.T) {
 	var captured struct {
-		apiKey         string
-		auth           string
-		apiVersion     string
-		maxTokens      any
-		maxCompletion  any
+		apiKey        string
+		auth          string
+		apiVersion    string
+		maxTokens     any
+		maxCompletion any
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured.apiKey = r.Header.Get("api-key")

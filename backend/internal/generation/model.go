@@ -11,6 +11,9 @@ const (
 	KindProblem   Kind = "problem"
 	KindMCQ       Kind = "mcq"
 	KindInterview Kind = "interview"
+	// KindPracticeIntake is the internal typed baseline-question generation pass.
+	// It is exposed through /practice-intakes rather than /generate.
+	KindPracticeIntake Kind = "practice_intake"
 	// KindMCQEvaluation is the internal AI grading pass for free-response items.
 	KindMCQEvaluation Kind = "mcq_evaluation"
 	// KindProfile is the internal full-profile memory synthesis pass.
@@ -67,6 +70,23 @@ type MemoryContext struct {
 	GrowthEdges []string             `json:"growth_edges"`
 	Skills      []MemorySkillContext `json:"skills"`
 	Notes       []MemoryNoteContext  `json:"notes"`
+	// SelfReportedBaseline is deliberately separate from demonstrated memory.
+	// Generators must prefer the profile fields above when the two disagree.
+	SelfReportedBaseline *PracticeIntakeContext `json:"self_reported_baseline,omitempty"`
+}
+
+type PracticeIntakeContext struct {
+	IntakeID        string                 `json:"intake_id"`
+	NormalizedTopic string                 `json:"normalized_topic"`
+	PracticeSeed    string                 `json:"practice_seed"`
+	Answers         []PracticeIntakeAnswer `json:"answers"`
+}
+
+type PracticeIntakeAnswer struct {
+	Dimension   string `json:"dimension"`
+	Question    string `json:"question"`
+	OptionID    string `json:"option_id"`
+	OptionLabel string `json:"option_label"`
 }
 
 type MemorySkillContext struct {

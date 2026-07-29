@@ -1,200 +1,148 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, LoaderCircle } from 'lucide-react';
 
+import type { PracticeIntakeQuestion } from '../../shared/api/types';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-/** A single question the agent wants the user to answer. */
-export interface Question {
-  /** Unique identifier for this question (e.g. "q1"). */
-  id: string;
-  /** The question text shown to the user. */
-  text: string;
-  /** Multiple-choice options. The last one is always "Specify…" which
-   *  reveals a free-text input so the user can type a custom answer. */
-  options: string[];
-}
-
-/** The user's answer to one question. */
-export interface Answer {
-  questionId: string;
-  selectedOption: string;
-  /** Populated when the user chose "Specify…" and typed a custom answer. */
-  freeText?: string;
-}
-
-/** Props for the QuestionModal component. */
 export interface QuestionModalProps {
-  /** The series of questions to display (max 3 per series). */
-  questions: Question[];
-  /** Called when the user finishes answering all questions in the series. */
-  onComplete: (answers: Answer[]) => void;
-  /** Called when the user dismisses the modal without finishing. */
-  onClose: () => void;
+  topic: string;
+  questions: PracticeIntakeQuestion[];
+  initialAnswers?: Record<string, string>;
+  saving?: boolean;
+  onSaveAnswer: (questionId: string, optionId: string) => Promise<void> | void;
+  onComplete: () => Promise<void> | void;
+  onSkip: () => Promise<void> | void;
 }
-
-// ── Component ────────────────────────────────────────────────────────────────
 
 /**
- * QuestionModal — a step-through modal that presents the user with a series
- * of multiple-choice questions before generating a problem. The agent uses
- * the answers to tailor difficulty, topic focus, and language.
- *
- * Features:
- * - Progress dots showing current question (1 / 2 / 3)
- * - Radio-style option buttons (only one selectable at a time)
- * - "Specify…" as the final option → reveals a text input
- * - [Next] advances to the next question; [Generate] on the last one
- * - Backdrop overlay that closes on click
+ * A compact, resumable topic baseline. It records self-report only; the copy
+ * deliberately avoids presenting answers as demonstrated skill.
  */
-export function QuestionModal({ questions, onComplete, onClose }: QuestionModalProps) {
-  // Index of the question currently being displayed (0-based).
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  // Accumulates answers as the user progresses through questions.
-  // Each entry maps to the question at the same index.
-  const [answers, setAnswers] = useState<Answer[]>(
-    questions.map((q) => ({ questionId: q.id, selectedOption: '' }))
+export function QuestionModal({
+  topic,
+  questions,
+  initialAnswers = {},
+  saving = false,
+  onSaveAnswer,
+  onComplete,
+  onSkip,
+}: QuestionModalProps) {
+  const firstUnanswered = questions.findIndex((question) => !initialAnswers[question.id]);
+  const [currentIndex, setCurrentIndex] = useState(
+    firstUnanswered === -1 ? Math.max(0, questions.length - 1) : firstUnanswered,
   );
-
-  // The current question object being displayed.
+  const [answers, setAnswers] = useState<Record<string, string>>(initialAnswers);
   const question = questions[currentIndex];
-
-  // The answer object for the current question.
-  const currentAnswer = answers[currentIndex];
-
-  // Whether the user chose "Specify…" and needs to type a free-text answer.
-  const isSpecify = currentAnswer.selectedOption === 'Specify…';
-
-  // True when the user has selected an option (and typed text if "Specify…").
-  const canAdvance =
-    currentAnswer.selectedOption !== '' &&
-    (!isSpecify || (currentAnswer.freeText?.trim() ?? '') !== '');
-
-  // Whether the user is on the last question in the series.
+  const selected = question ? answers[question.id] : undefined;
+  const complete = useMemo(
+    () => questions.length > 0 && questions.every((item) => Boolean(answers[item.id])),
+    [answers, questions],
+  );
   const isLast = currentIndex === questions.length - 1;
 
-  /** Updates the selected option for the current question. */
-  const handleSelect = (option: string) => {
-    setAnswers((prev) =>
-      prev.map((a, i) =>
-        i === currentIndex
-          ? { ...a, selectedOption: option, freeText: option === 'Specify…' ? a.freeText : undefined }
-          : a
-      )
-    );
-  };
+  if (!question) return null;
 
-  /** Updates the free-text field when "Specify…" is chosen. */
-  const handleFreeText = (text: string) => {
-    setAnswers((prev) =>
-      prev.map((a, i) =>
-        i === currentIndex ? { ...a, freeText: text } : a
-      )
-    );
-  };
-
-  /** Advances to the next question or completes the series. */
-  const handleNext = () => {
-    if (!canAdvance) return;
-    if (isLast) {
-      onComplete(answers);
-    } else {
-      setCurrentIndex((i) => i + 1);
-    }
-  };
-
-  /** Goes back to the previous question. */
-  const handleBack = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex((i) => i - 1);
+  const choose = async (optionId: string) => {
+    const previous = answers[question.id];
+    setAnswers((current) => ({ ...current, [question.id]: optionId }));
+    try {
+      await onSaveAnswer(question.id, optionId);
+    } catch {
+      setAnswers((current) => {
+        const reverted = { ...current };
+        if (previous) reverted[question.id] = previous;
+        else delete reverted[question.id];
+        return reverted;
+      });
     }
   };
 
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
-        <DialogHeader className="px-6 pt-5 pb-3 text-left">
-          <DialogTitle className="text-xl">Tailor Your Problem</DialogTitle>
+    <Dialog open>
+      <DialogContent
+        className="gap-0 overflow-hidden p-0 sm:max-w-xl"
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
+        <DialogHeader className="border-b px-5 py-4 text-left sm:px-6">
+          <div className="text-muted-foreground font-mono text-[11px] tracking-[0.12em] uppercase">
+            Topic baseline · {currentIndex + 1}/{questions.length}
+          </div>
+          <DialogTitle className="mt-2 text-xl">A quick read on {topic}</DialogTitle>
+          <DialogDescription>
+            This is your self-reported starting point. Practice results remain the stronger signal.
+          </DialogDescription>
         </DialogHeader>
 
-        {/* Progress dots */}
-        <div className="flex gap-1.5 px-6 pb-4">
-          {questions.map((_, i) => (
-            <div
-              key={i}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                i <= currentIndex ? 'bg-primary flex-[2]' : 'bg-muted flex-1'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Question text */}
-        <div className="px-6 pb-4">
-          <p className="text-muted-foreground text-sm leading-6">{question.text}</p>
-        </div>
-
-        {/* Options */}
-        <div className="flex flex-col gap-2 px-6 pb-4">
-          {question.options.map((option) => {
-            const selected = currentAnswer.selectedOption === option;
-            return (
-              <button
-                key={option}
-                onClick={() => handleSelect(option)}
-                className={`w-full rounded-lg border px-4 py-3 text-left text-sm transition-all duration-150 ${
-                  selected
-                    ? 'border-primary bg-accent text-foreground font-medium'
-                    : 'bg-background text-muted-foreground hover:bg-accent/50'
+        <div className="px-5 py-5 sm:px-6">
+          <div className="mb-5 flex gap-1.5" aria-hidden="true">
+            {questions.map((item, index) => (
+              <span
+                key={item.id}
+                className={`h-1 flex-1 rounded-full ${
+                  index <= currentIndex ? 'bg-foreground' : 'bg-muted'
                 }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                      selected ? 'border-primary' : 'border-input'
-                    }`}
-                  >
-                    {selected && <div className="bg-primary h-2 w-2 rounded-full" />}
-                  </div>
-                  {option}
-                </div>
-              </button>
-            );
-          })}
+              />
+            ))}
+          </div>
 
-          {/* Free-text input (shown when "Specify…" is selected) */}
-          {isSpecify && (
-            <Input
-              type="text"
-              value={currentAnswer.freeText ?? ''}
-              onChange={(e) => handleFreeText(e.target.value)}
-              placeholder="Type your answer…"
-              autoFocus
-            />
-          )}
+          <p className="text-base leading-7 font-medium">{question.text}</p>
+          <div className="mt-4 overflow-hidden rounded-md border">
+            {question.options.map((option) => {
+              const active = selected === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  disabled={saving}
+                  aria-pressed={active}
+                  onClick={() => void choose(option.id)}
+                  className={`flex min-h-12 w-full items-center gap-3 border-b px-4 py-3 text-left text-sm last:border-b-0 ${
+                    active ? 'bg-foreground text-background' : 'hover:bg-muted/40'
+                  }`}
+                >
+                  <span
+                    className={`h-3.5 w-3.5 shrink-0 rounded-full border ${
+                      active ? 'border-background bg-background shadow-[inset_0_0_0_3px_var(--foreground)]' : ''
+                    }`}
+                  />
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Footer: Back + Next/Generate */}
-        <div className="flex items-center justify-between border-t px-6 py-4">
-          {currentIndex > 0 ? (
-            <Button variant="ghost" size="sm" onClick={handleBack}>
-              ← Back
-            </Button>
-          ) : (
-            <div />
-          )}
-
-          <Button onClick={handleNext} disabled={!canAdvance}>
-            {isLast ? 'Generate' : 'Next'}
+        <div className="bg-muted/20 flex items-center justify-between gap-3 border-t px-5 py-3 sm:px-6">
+          <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => void onSkip()}>
+            Skip baseline
           </Button>
+          <div className="flex items-center gap-2">
+            {currentIndex > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={saving}
+                onClick={() => setCurrentIndex((value) => value - 1)}
+              >
+                <ArrowLeft />
+                Back
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              disabled={!selected || saving || (isLast && !complete)}
+              onClick={() =>
+                isLast ? void onComplete() : setCurrentIndex((value) => value + 1)
+              }
+            >
+              {saving ? <LoaderCircle className="animate-spin" /> : isLast ? 'Build session' : 'Next'}
+              {!saving && !isLast && <ArrowRight />}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -547,6 +547,112 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/practice-intakes:
+    post:
+      operationId: preparePracticeIntake
+      summary: Prepare, resume, or explicitly restart the self-reported baseline for a normalized topic.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreparePracticeIntakeInput"
+      responses:
+        "200":
+          description: Existing suppression or pending state, or a newly generated intake.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeIntakeEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: Practice intake is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    get:
+      operationId: listPendingPracticeIntakes
+      summary: Restore unfinished topic baselines in most-recently-updated order.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 1
+      responses:
+        "200":
+          description: Pending practice intakes scoped to the authenticated workspace user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeIntakeListEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/practice-intakes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updatePracticeIntake
+      summary: Save partial answers immediately or mark an intake completed or skipped.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePracticeIntakeInput"
+      responses:
+        "200":
+          description: Updated workspace-scoped intake.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeIntakeEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Practice intake is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   /api/v1/generate:
     post:
       operationId: generateContent
@@ -1665,6 +1771,139 @@ components:
           description: Generation kind. Only "mcq" is implemented today.
         spec:
           $ref: "#/components/schemas/MCQSpec"
+        intake_id:
+          type: string
+          description: Optional completed intake in the caller's workspace. Its self-report remains separate from demonstrated memory.
+
+    PreparePracticeIntakeInput:
+      type: object
+      required: [topic]
+      properties:
+        topic:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Original user-entered practice topic. The server derives an exact normalized topic identity.
+        practice_seed:
+          type: object
+          additionalProperties: true
+          description: Original New Practice choices retained for resume and generation context.
+        restart:
+          type: boolean
+          default: false
+          description: Creates a fresh pending intake even when this topic was previously completed or skipped.
+
+    UpdatePracticeIntakeInput:
+      type: object
+      properties:
+        answers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Question ID to option ID updates; each supplied option is validated.
+        status:
+          type: string
+          enum: [pending, completed, skipped]
+
+    PracticeIntakeOption:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+
+    PracticeIntakeQuestion:
+      type: object
+      required: [id, dimension, text, options]
+      properties:
+        id:
+          type: string
+        dimension:
+          type: string
+        text:
+          type: string
+        options:
+          type: array
+          minItems: 2
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/PracticeIntakeOption"
+
+    PracticeIntake:
+      type: object
+      required:
+        - id
+        - workspace_id
+        - user_id
+        - normalized_topic
+        - original_topic
+        - practice_seed
+        - questions
+        - answers
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        user_id:
+          type: string
+        normalized_topic:
+          type: string
+        original_topic:
+          type: string
+        practice_seed:
+          type: object
+          additionalProperties: true
+        questions:
+          type: array
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/PracticeIntakeQuestion"
+        answers:
+          type: object
+          additionalProperties:
+            type: string
+        status:
+          type: string
+          enum: [pending, completed, skipped]
+        suppression_reason:
+          type: string
+        generation_error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    PracticeIntakeEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/PracticeIntake"
+        error:
+          type: "null"
+
+    PracticeIntakeListEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeIntake"
+        error:
+          type: "null"
 
     MCQSpec:
       type: object

@@ -4,6 +4,7 @@ import { mockMemoryProfile } from './memoryFixtures';
 import { mockMemoryEvents, mockSessions } from './activityFixtures';
 import type {
   MemoryEvent,
+  PracticeIntake,
   PracticeSession,
   Problem,
   SubmissionFile,
@@ -28,6 +29,40 @@ let mockUserProfile: UserProfile = {
 };
 
 let sessions: PracticeSession[] = structuredClone(mockSessions);
+let practiceIntakes: PracticeIntake[] = [];
+
+const mockIntakeQuestions = [
+  {
+    id: 'q1',
+    dimension: 'exposure',
+    text: 'How much prior exposure do you have to this topic?',
+    options: [
+      { id: 'new', label: 'This is new to me' },
+      { id: 'some', label: 'I recognize the core ideas' },
+      { id: 'practiced', label: 'I have practiced it before' },
+    ],
+  },
+  {
+    id: 'q2',
+    dimension: 'application',
+    text: 'Where have you applied it?',
+    options: [
+      { id: 'none', label: 'Not in practice yet' },
+      { id: 'guided', label: 'In guided exercises' },
+      { id: 'independent', label: 'In an independent project or interview' },
+    ],
+  },
+  {
+    id: 'q3',
+    dimension: 'challenge',
+    text: 'What kind of challenge would help today?',
+    options: [
+      { id: 'foundations', label: 'Reinforce foundations' },
+      { id: 'mixed', label: 'Mix recall with application' },
+      { id: 'stretch', label: 'Push me with edge cases' },
+    ],
+  },
+];
 
 interface MockProblemFixture {
   problem: Problem;
@@ -86,7 +121,17 @@ function createMemoryEventSeed(): MemoryEvent[] {
 
 let memoryEvents: MemoryEvent[] = createMemoryEventSeed();
 
-export type MockApiScenario = 'default' | 'empty' | 'error' | 'loading' | 'nullable-memory';
+export type MockApiScenario =
+  | 'default'
+  | 'empty'
+  | 'error'
+  | 'loading'
+  | 'nullable-memory'
+  | 'intake-partial'
+  | 'intake-known'
+  | 'intake-skipped'
+  | 'intake-error'
+  | 'intake-loading';
 
 let mockApiScenario: MockApiScenario = 'default';
 
@@ -94,6 +139,7 @@ export function setMockApiScenario(scenario: MockApiScenario) {
   mockApiScenario = scenario;
   sessions = structuredClone(mockSessions);
   memoryEvents = scenario === 'empty' ? [] : createMemoryEventSeed();
+  practiceIntakes = [];
 }
 
 function json<T>(data: T, init?: ResponseInit): Response {
@@ -134,6 +180,10 @@ export async function mockApiFetch(
   const path = url.pathname.replace('/api/v1', '') || '/';
 
   if (mockApiScenario === 'loading' && method === 'GET') {
+    await new Promise<never>(() => {});
+  }
+
+  if (mockApiScenario === 'intake-loading' && method === 'POST' && path === '/practice-intakes') {
     await new Promise<never>(() => {});
   }
 
@@ -248,6 +298,73 @@ export async function mockApiFetch(
         completed_at: session.completed_at,
       }));
     return json(filtered);
+  }
+
+  if (method === 'GET' && path === '/practice-intakes') {
+    return json(practiceIntakes.filter((record) => record.status === 'pending').slice(0, 1));
+  }
+
+  if (method === 'POST' && path === '/practice-intakes') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as {
+      topic?: string;
+      practice_seed?: unknown;
+      restart?: boolean;
+    };
+    const now = new Date().toISOString();
+    const terminalStatus =
+      mockApiScenario === 'intake-known' || mockApiScenario === 'intake-skipped'
+        ? 'skipped'
+        : 'pending';
+    const record: PracticeIntake = {
+      id: `mock-intake-${Date.now()}`,
+      workspace_id: mockUserProfile.default_workspace_id,
+      user_id: mockUserProfile.user_id,
+      normalized_topic: (body.topic ?? '').trim().toLowerCase(),
+      original_topic: (body.topic ?? '').trim(),
+      practice_seed:
+        body.practice_seed && typeof body.practice_seed === 'object'
+          ? (body.practice_seed as Record<string, unknown>)
+          : {},
+      questions: terminalStatus === 'pending' && mockApiScenario !== 'intake-error' ? mockIntakeQuestions : [],
+      answers: mockApiScenario === 'intake-partial' ? { q1: 'some' } : {},
+      status: terminalStatus,
+      suppression_reason:
+        mockApiScenario === 'intake-known'
+          ? 'demonstrated_event'
+          : mockApiScenario === 'intake-skipped'
+            ? 'user_skipped'
+            : undefined,
+      generation_error:
+        mockApiScenario === 'intake-error'
+          ? 'The model did not return a usable baseline. Retry or skip.'
+          : undefined,
+      created_at: now,
+      updated_at: now,
+      completed_at: terminalStatus === 'skipped' ? now : undefined,
+    };
+    practiceIntakes = [record, ...practiceIntakes];
+    return json(record);
+  }
+
+  const intakeMatch = path.match(/^\/practice-intakes\/([^/]+)$/);
+  if (method === 'PATCH' && intakeMatch) {
+    const index = practiceIntakes.findIndex((record) => record.id === intakeMatch[1]);
+    if (index < 0) return error('intake_not_found', 'Practice intake not found.', 404);
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as {
+      answers?: Record<string, string>;
+      status?: PracticeIntake['status'];
+    };
+    const now = new Date().toISOString();
+    practiceIntakes[index] = {
+      ...practiceIntakes[index],
+      answers: { ...practiceIntakes[index].answers, ...body.answers },
+      status: body.status ?? practiceIntakes[index].status,
+      updated_at: now,
+      completed_at: body.status && body.status !== 'pending' ? now : practiceIntakes[index].completed_at,
+    };
+    return json(practiceIntakes[index]);
   }
 
   if (method === 'POST' && path === '/sessions') {

@@ -70,11 +70,9 @@ happen next. Do not present local-only work as finished repository work.
   paths; `both` is the default. Completion synthesis finishes before the next
   generated set consumes memory. Provider or validation failure preserves an
   existing profile; cold start stays unpersisted until model synthesis succeeds.
-  MCQ Skip emits `answer_incorrect` with `skipped: true` so the event stream
-  treats skips like misses; the UI may still reveal the correct answer after
-  Skip. `ProfileSynthesizer` currently still canonicalizes those skipped
-  incorrect events to neutral `question_skipped` before synthesis — align that
-  path when changing skip semantics end-to-end. Profile notes are a
+  MCQ Skip emits the governed neutral `question_skipped` event with
+  `skipped: true`; the UI may still reveal the correct answer after Skip, but
+  personalization must not treat that reveal as a miss. Profile notes are a
   model-managed desired state: synthesis reuses
   stable note identities, updates matching concepts in place, and omits stale
   notes to prune them, while server-side normalization rejects exact concept

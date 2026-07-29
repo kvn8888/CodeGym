@@ -5,84 +5,90 @@ import "fmt"
 
 // Event source names shared across frontend/backend emitters.
 const (
-	SourceGenerate  = "generate"
-	SourceChat      = "chat"
+	SourceGenerate = "generate"
+	SourceChat = "chat"
 	SourceWorkspace = "workspace"
-	SourceMCQ       = "mcq"
-	SourceMemory    = "memory"
-	SourceSystem    = "system"
+	SourceMCQ = "mcq"
+	SourceMemory = "memory"
+	SourceSystem = "system"
 )
 
 // Event type names approved in docs/memory-event-naming-guide-v0.md.
 const (
-	TypeIntakeStarted               = "intake_started"
+	TypeIntakeStarted = "intake_started"
 	TypeClarifyingQuestionsAnswered = "clarifying_questions_answered"
-	TypeProblemGenerated            = "problem_generated"
-	TypeMCQSetGenerated             = "mcq_set_generated"
-	TypeInterviewPromptGenerated    = "interview_prompt_generated"
-	TypeGenerationFailed            = "generation_failed"
-	TypeThreadOpened                = "thread_opened"
-	TypeMessageSent                 = "message_sent"
-	TypeAssistantReplied            = "assistant_replied"
-	TypeThreadClosed                = "thread_closed"
-	TypeProblemOpened               = "problem_opened"
-	TypeAttemptStarted              = "attempt_started"
-	TypeTestsRun                    = "tests_run"
-	TypeAttemptSubmitted            = "attempt_submitted"
-	TypeAttemptSolved               = "attempt_solved"
-	TypeAttemptFailed               = "attempt_failed"
-	TypeSessionStarted              = "session_started"
-	TypeQuestionAnswered            = "question_answered"
-	TypeSessionCompleted            = "session_completed"
-	TypeAnswerIncorrect             = "answer_incorrect"
-	TypeProfileViewed               = "profile_viewed"
-	TypeProfileRefreshed            = "profile_refreshed"
-	TypeNoteCreated                 = "note_created"
-	TypeNoteUpdated                 = "note_updated"
-	TypeNotePruned                  = "note_pruned"
-	TypeWorkerProfileRefreshed      = "worker_profile_refreshed"
-	TypeMemoryAPIChecked            = "memory_api_checked"
+	TypeProblemGenerated = "problem_generated"
+	TypeMCQSetGenerated = "mcq_set_generated"
+	TypeInterviewPromptGenerated = "interview_prompt_generated"
+	TypeGenerationFailed = "generation_failed"
+	TypeThreadOpened = "thread_opened"
+	TypeMessageSent = "message_sent"
+	TypeAssistantReplied = "assistant_replied"
+	TypeThreadClosed = "thread_closed"
+	TypeProblemOpened = "problem_opened"
+	TypeAttemptStarted = "attempt_started"
+	TypeTestsRun = "tests_run"
+	TypeAttemptSubmitted = "attempt_submitted"
+	TypeAttemptSolved = "attempt_solved"
+	TypeAttemptFailed = "attempt_failed"
+	TypeSessionStarted = "session_started"
+	TypeQuestionAnswered = "question_answered"
+	TypeQuestionSkipped = "question_skipped"
+	TypeFreeResponseEvaluated = "free_response_evaluated"
+	TypeSessionCompleted = "session_completed"
+	TypeSessionExited = "session_exited"
+	TypeAnswerIncorrect = "answer_incorrect"
+	TypeProfileViewed = "profile_viewed"
+	TypeProfileRefreshed = "profile_refreshed"
+	TypeNoteCreated = "note_created"
+	TypeNoteUpdated = "note_updated"
+	TypeNotePruned = "note_pruned"
+	TypeWorkerProfileRefreshed = "worker_profile_refreshed"
+	TypeMemoryAPIChecked = "memory_api_checked"
 )
 
 var allowedEventTypesBySource = map[string]map[string]struct{}{
 	SourceGenerate: {
-		TypeIntakeStarted:               {},
+		TypeIntakeStarted: {},
 		TypeClarifyingQuestionsAnswered: {},
-		TypeProblemGenerated:            {},
-		TypeMCQSetGenerated:             {},
-		TypeInterviewPromptGenerated:    {},
-		TypeGenerationFailed:            {},
+		TypeProblemGenerated: {},
+		TypeMCQSetGenerated: {},
+		TypeInterviewPromptGenerated: {},
+		TypeGenerationFailed: {},
 	},
 	SourceChat: {
-		TypeThreadOpened:     {},
-		TypeMessageSent:      {},
+		TypeThreadOpened: {},
+		TypeMessageSent: {},
 		TypeAssistantReplied: {},
-		TypeThreadClosed:     {},
+		TypeThreadClosed: {},
 	},
 	SourceWorkspace: {
-		TypeProblemOpened:    {},
-		TypeAttemptStarted:   {},
-		TypeTestsRun:         {},
+		TypeProblemOpened: {},
+		TypeAttemptStarted: {},
+		TypeTestsRun: {},
 		TypeAttemptSubmitted: {},
-		TypeAttemptSolved:    {},
-		TypeAttemptFailed:    {},
+		TypeAttemptSolved: {},
+		TypeAttemptFailed: {},
 	},
 	SourceMCQ: {
-		TypeSessionStarted:   {},
+		TypeSessionStarted: {},
 		TypeQuestionAnswered: {},
+		TypeQuestionSkipped: {},
+		TypeFreeResponseEvaluated: {},
 		TypeSessionCompleted: {},
-		TypeAnswerIncorrect:  {},
+		TypeSessionExited: {},
+		TypeAnswerIncorrect: {},
 	},
 	SourceMemory: {
-		TypeProfileViewed:    {},
+		TypeProfileViewed: {},
 		TypeProfileRefreshed: {},
-		TypeNoteCreated:      {},
-		TypeNoteUpdated:      {},
-		TypeNotePruned:       {},
+		TypeNoteCreated: {},
+		TypeNoteUpdated: {},
+		TypeNotePruned: {},
 	},
 	SourceSystem: {
 		TypeWorkerProfileRefreshed: {},
-		TypeMemoryAPIChecked:       {},
+		TypeMemoryAPIChecked: {},
 	},
 }
 

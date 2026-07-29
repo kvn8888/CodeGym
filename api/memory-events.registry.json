@@ -154,9 +154,27 @@
     },
     {
       "source": "mcq",
+      "key": "questionSkipped",
+      "value": "question_skipped",
+      "goConst": "TypeQuestionSkipped"
+    },
+    {
+      "source": "mcq",
+      "key": "freeResponseEvaluated",
+      "value": "free_response_evaluated",
+      "goConst": "TypeFreeResponseEvaluated"
+    },
+    {
+      "source": "mcq",
       "key": "sessionCompleted",
       "value": "session_completed",
       "goConst": "TypeSessionCompleted"
+    },
+    {
+      "source": "mcq",
+      "key": "sessionExited",
+      "value": "session_exited",
+      "goConst": "TypeSessionExited"
     },
     {
       "source": "mcq",

@@ -44,7 +44,6 @@ export const Default: Story = {
 
 /** A single-question series (e.g. when the agent only needs one clarification). */
 export const SingleQuestion: Story = {
-  name: 'Single Question',
   args: {
     questions: [SAMPLE_QUESTIONS[0]],
   },
@@ -52,7 +51,6 @@ export const SingleQuestion: Story = {
 
 /** Two-question series. */
 export const TwoQuestions: Story = {
-  name: 'Two Questions',
   args: {
     questions: SAMPLE_QUESTIONS.slice(0, 2),
   },

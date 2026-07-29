@@ -56,8 +56,8 @@ interface QuestionResult {
   usedHelp: boolean;
 }
 
-/** A skipped question is persisted for resume/history. Memory treats skips
- *  like misses (`answer_incorrect`); they stay out of answer `results` so the
+/** A skipped question is persisted for resume/history. Memory records skips as
+ *  neutral `question_skipped` events; they stay out of answer `results` so the
  *  UI can still show them as skipped. */
 interface SkippedQuestion {
   questionId: string;
@@ -184,19 +184,19 @@ function sameIndexSet(left: number[], right: number[]) {
 /** Memory event writer for the mcq source. Product interactions queue these
  *  without blocking; round completion flushes the queue before maintenance. */
 function emitMcqEvent(
-  type: string,
+  type: MemoryEventType,
   summary: string,
   payload: Record<string, unknown>,
   occurredAt: string,
 ) {
-  return api
-    .post('/memory/events', {
-      source: 'mcq',
+  return createMemoryEvent(
+    buildMcqEvent({
       type,
       summary,
       payload: { ...payload, schema_version: 1 },
-      occurred_at: occurredAt,
-    })
+      occurredAt,
+    }),
+  )
     .then(() => undefined);
 }
 
@@ -465,7 +465,7 @@ export function MarathonPage() {
     }
   };
 
-  const trackMcqEvent = (type: string, summary: string, payload: Record<string, unknown>) => {
+  const trackMcqEvent = (type: MemoryEventType, summary: string, payload: Record<string, unknown>) => {
     const occurredAt = new Date().toISOString();
     const write = () => emitMcqEvent(type, summary, payload, occurredAt);
     const event: PendingMemoryEvent = { write, promise: write() };
@@ -962,7 +962,7 @@ export function MarathonPage() {
     }
   };
 
-  /** Advance without an answer selection. Memory treats this like a miss. */
+  /** Advance without an answer selection and record neutral skip evidence. */
   const handleSkip = () => {
     if (confirmed) return;
     const skipped: SkippedQuestion = {
@@ -979,12 +979,11 @@ export function MarathonPage() {
     setEvaluationResult(null);
     setConfirmed(true);
     setSkippedQuestions(nextSkippedQuestions);
-    trackMcqEvent('answer_incorrect', `Skipped a ${currentQ.concept} question.`, {
+    trackMcqEvent(memoryEventTypes.questionSkipped, `Skipped a ${currentQ.concept} question.`, {
       session_id: sessionIdRef.current,
       question_id: currentQ.id,
       topic: currentQ.concept,
       question_type: currentQuestionType,
-      correct: false,
       skipped: true,
       answer_revealed: true,
       duration_ms: skipped.timeMs,

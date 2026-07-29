@@ -124,6 +124,7 @@ const recentEventPolicy: RecentEventPolicy = {
     'attempt_solved',
     'attempt_failed',
     'answer_incorrect',
+    'question_skipped',
     'note_created',
     'note_updated',
     'note_pruned',

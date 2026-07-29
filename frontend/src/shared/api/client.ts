@@ -36,7 +36,7 @@ export class ApiRequestError extends Error {
 }
 
 function resolveApiBaseUrl() {
-  return (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE).replace(/\/$/, '');
+  return API_BASE;
 }
 
 function joinUrl(baseUrl: string, path: string) {

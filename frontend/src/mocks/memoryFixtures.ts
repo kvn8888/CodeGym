@@ -91,7 +91,7 @@ export const mockMemoryProfile: UserMemoryProfile = {
 export const mockMemoryEvents: MemoryEvent[] = [
   {
     id: 'mem_evt_01',
-    tenant_id: 'workspace_kevin',
+    workspace_id: 'workspace_kevin',
     user_id: 'user_kevin',
     source: memoryEventSources.generate,
     type: memoryEventTypes.problemGenerated,
@@ -106,7 +106,7 @@ export const mockMemoryEvents: MemoryEvent[] = [
   },
   {
     id: 'mem_evt_02',
-    tenant_id: 'workspace_kevin',
+    workspace_id: 'workspace_kevin',
     user_id: 'user_kevin',
     source: memoryEventSources.workspace,
     type: memoryEventTypes.attemptFailed,
@@ -121,7 +121,7 @@ export const mockMemoryEvents: MemoryEvent[] = [
   },
   {
     id: 'mem_evt_03',
-    tenant_id: 'workspace_kevin',
+    workspace_id: 'workspace_kevin',
     user_id: 'user_kevin',
     source: memoryEventSources.memory,
     type: memoryEventTypes.noteCreated,

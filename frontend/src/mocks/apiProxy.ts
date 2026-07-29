@@ -77,22 +77,6 @@ function toUrl(input: RequestInfo | URL): URL {
   return new URL(input.toString(), window.location.origin);
 }
 
-function parseBody(input?: BodyInit | null) {
-  if (input == null) {
-    return null;
-  }
-
-  if (typeof input === 'string') {
-    return JSON.parse(input) as Record<string, unknown>;
-  }
-
-  if (input instanceof Blob) {
-    throw new Error('Blob request bodies are not supported by the mock API.');
-  }
-
-  return JSON.parse(String(input)) as Record<string, unknown>;
-}
-
 export async function mockApiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,

@@ -94,8 +94,7 @@ naming guide: additive, readers tolerant of missing fields).
   completed AI evaluation, generated questions, answer
   results, and skips are persisted so the run can reopen exactly where it left
   off. A skip is continuity data in the session snapshot (separate from answer
-  results for UI), and memory treats it like a miss via `answer_incorrect`
-  with `skipped: true`.
+  results for UI), and memory records it as a neutral `question_skipped` event.
 
 - `interview`: pointer state only; the transcript needs an append-only
   `session_messages` table (`id`, `session_id`, `role`, `content`,

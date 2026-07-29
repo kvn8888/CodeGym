@@ -18,7 +18,8 @@ type SubmitInput struct {
 }
 
 type Accepted struct {
-	SubmissionID string `json:"submission_id"`
+	SubmissionID       string `json:"submission_id"`
+	MemoryUpdateStatus string `json:"memory_update_status,omitempty"`
 }
 
 type View struct {

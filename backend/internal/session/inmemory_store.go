@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"sync"
 	"time"
@@ -11,6 +12,24 @@ type InMemoryStore struct {
 	mu       sync.RWMutex
 	sessions map[string]Session
 	files    map[string]map[string]File
+}
+
+func (s *InMemoryStore) HasPendingMemoryUpdate(_ context.Context, workspaceID, userID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, found := range s.sessions {
+		if found.WorkspaceID != workspaceID || found.UserID != userID {
+			continue
+		}
+		var state map[string]any
+		if json.Unmarshal(found.State, &state) == nil {
+			status, _ := state["memory_update_status"].(string)
+			if status == "pending" || status == "failed" {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func NewInMemoryStore() *InMemoryStore {

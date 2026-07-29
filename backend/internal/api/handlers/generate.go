@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,8 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/intake"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/problems"
+	"github.com/kvn8888/codegym/backend/internal/session"
 )
 
 // GenerateHandler exposes the model-backed generation endpoint. The
@@ -23,14 +26,16 @@ type GenerateHandler struct {
 	profiles               *generation.ProfileSynthesizer
 	refreshOnSetCompletion bool
 	intakes                *intake.Service
+	problems               *problems.Service
+	sessions               *session.Service
 }
 
 // NewGenerateHandler builds a generation handler. Both dependencies may be
 // used per-request with the caller's scoped context.
-func NewGenerateHandler(orchestrator *generation.Orchestrator, memoryService *memory.Service, profiles *generation.ProfileSynthesizer, refreshOnSetCompletion bool, intakes *intake.Service) *GenerateHandler {
+func NewGenerateHandler(orchestrator *generation.Orchestrator, memoryService *memory.Service, profiles *generation.ProfileSynthesizer, refreshOnSetCompletion bool, intakes *intake.Service, problemService *problems.Service, sessions *session.Service) *GenerateHandler {
 	return &GenerateHandler{
 		orchestrator: orchestrator, memory: memoryService, profiles: profiles,
-		refreshOnSetCompletion: refreshOnSetCompletion, intakes: intakes,
+		refreshOnSetCompletion: refreshOnSetCompletion, intakes: intakes, problems: problemService, sessions: sessions,
 	}
 }
 
@@ -45,6 +50,14 @@ type generateMCQResponse struct {
 	Questions []generation.MCQQuestion `json:"questions"`
 	Provider  string                   `json:"provider"`
 	Model     string                   `json:"model"`
+}
+
+type generateProblemResponse struct {
+	Kind      string           `json:"kind"`
+	ProblemID string           `json:"problem_id"`
+	Problem   problems.Problem `json:"problem"`
+	Provider  string           `json:"provider"`
+	Model     string           `json:"model"`
 }
 
 type evaluateFreeResponseBody struct {
@@ -74,13 +87,83 @@ func (h *GenerateHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	switch generation.Kind(body.Kind) {
 	case generation.KindMCQ:
 		h.generateMCQ(w, r, body.Spec, body.IntakeID)
-	case generation.KindProblem, generation.KindInterview:
+	case generation.KindProblem:
+		h.generateProblem(w, r, body.Spec, body.IntakeID)
+	case generation.KindInterview:
 		response.Error(w, http.StatusNotImplemented, "kind_not_implemented",
-			fmt.Sprintf("Generation kind %q is not implemented yet; only \"mcq\" is available.", body.Kind))
+			fmt.Sprintf("Generation kind %q is not implemented yet.", body.Kind))
 	default:
 		response.Error(w, http.StatusBadRequest, "invalid_kind",
 			"kind must be one of \"mcq\", \"problem\", or \"interview\".")
 	}
+}
+
+func (h *GenerateHandler) generateProblem(w http.ResponseWriter, r *http.Request, rawSpec json.RawMessage, intakeID string) {
+	if h.problems == nil {
+		response.Error(w, http.StatusServiceUnavailable, "problem_store_unconfigured", "Problem storage is not configured.")
+		return
+	}
+	if h.sessions != nil {
+		pending, err := h.sessions.HasPendingMemoryUpdate(r.Context())
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "memory_status_failed", "Could not verify memory freshness.")
+			return
+		}
+		if pending {
+			response.Error(w, http.StatusConflict, "memory_update_required", "Retry the saved memory update before generating the next coding problem.")
+			return
+		}
+	}
+	var spec generation.ProblemSpec
+	if len(rawSpec) > 0 {
+		if err := json.Unmarshal(rawSpec, &spec); err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid_spec", "spec must be an object with topic, prompt, and difficulty fields.")
+			return
+		}
+	}
+	normalizedSpec, err := generation.NormalizeProblemSpec(spec)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid_spec", err.Error())
+		return
+	}
+	spec = normalizedSpec
+	if h.intakes != nil && strings.TrimSpace(intakeID) != "" {
+		intakeContext, err := h.intakes.Context(r.Context(), intakeID)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid_intake", "intake_id is not available in this workspace.")
+			return
+		}
+		spec.IntakeContext = intakeContext
+	}
+	definition, result, err := generation.GenerateProblem(r.Context(), h.orchestrator, spec)
+	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+		log.Printf("problem generation failed class=%s detail=%s", generation.DiagnosticClass(err), generation.DiagnosticMessage(err))
+		response.Error(w, http.StatusBadGateway, "generation_failed", "The model did not return a usable coding problem. Try again or adjust the topic.")
+		return
+	}
+	problem, err := h.problems.PersistGenerated(r.Context(), definition)
+	if err != nil {
+		log.Printf("generated problem persistence failed: %v", err)
+		response.Error(w, http.StatusInternalServerError, "problem_persistence_failed", "The generated problem could not be saved.")
+		return
+	}
+	h.recordEvent(r, memory.RecordEventInput{
+		Source:  memory.SourceGenerate,
+		Type:    memory.TypeProblemGenerated,
+		Summary: "Generated a personalized coding problem.",
+		Payload: mustJSON(map[string]any{
+			"problem_id": problem.ID, "topic": spec.Topic, "difficulty": spec.Difficulty,
+			"concept": problem.Subcategory, "provider": result.Provider, "model": result.Model,
+			"schema_version": 1,
+		}),
+	})
+	response.JSON(w, http.StatusOK, generateProblemResponse{
+		Kind: string(generation.KindProblem), ProblemID: problem.ID, Problem: problem,
+		Provider: result.Provider, Model: result.Model,
+	})
 }
 
 func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, rawSpec json.RawMessage, intakeID string) {
@@ -222,6 +305,12 @@ func (h *GenerateHandler) MaintainProfile(w http.ResponseWriter, r *http.Request
 	}
 	if result.Skipped != "" {
 		log.Printf("memory profile synthesis used fallback: %s", result.Skipped)
+		if result.Skipped == "generation is not configured" ||
+			strings.HasPrefix(result.Skipped, "profile generation failed") ||
+			strings.HasPrefix(result.Skipped, "generated profile was invalid") {
+			response.Error(w, http.StatusBadGateway, "memory_profile_synthesis_failed", "The result is saved, but memory could not be updated. Retry this update.")
+			return
+		}
 	}
 
 	// Audit trail: one memory event per applied CRUD action so the memory
@@ -247,6 +336,16 @@ func (h *GenerateHandler) MaintainProfile(w http.ResponseWriter, r *http.Request
 				"schema_version": 1,
 			}),
 		})
+	}
+	if h.sessions != nil && strings.TrimSpace(body.SessionID) != "" {
+		if _, err := h.sessions.SetMemoryUpdateStatus(r.Context(), body.SessionID, "synced"); err != nil {
+			if errors.Is(err, session.ErrNotFound) {
+				response.JSON(w, http.StatusOK, result.Profile)
+				return
+			}
+			response.Error(w, http.StatusInternalServerError, "memory_status_failed", "Memory was updated, but its session status could not be saved.")
+			return
+		}
 	}
 
 	response.JSON(w, http.StatusOK, result.Profile)

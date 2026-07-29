@@ -377,7 +377,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate practice content (MCQ sets today; problems and interviews later) personalized by the caller's memory profile. */
+        /** Generate validated MCQ or persisted coding practice personalized by the caller's memory profile. */
         post: operations["generateContent"];
         delete?: never;
         options?: never;
@@ -799,6 +799,11 @@ export interface components {
         SubmissionAccepted: {
             /** @example exec_run_0123456789abcdef */
             submission_id: string;
+            /**
+             * @description Best-effort profile maintenance outcome. The submission result is durable even when this is failed.
+             * @enum {string}
+             */
+            memory_update_status?: "synced" | "failed";
         };
         SubmissionAcceptedEnvelope: {
             data: components["schemas"]["SubmissionAccepted"];
@@ -870,11 +875,11 @@ export interface components {
         };
         GenerateInput: {
             /**
-             * @description Generation kind. Only "mcq" is implemented today.
+             * @description MCQ and problem are implemented; interview uses the chat API.
              * @enum {string}
              */
             kind: "mcq" | "problem" | "interview";
-            spec?: components["schemas"]["MCQSpec"];
+            spec?: components["schemas"]["MCQSpec"] | components["schemas"]["ProblemGenerationSpec"];
             /** @description Optional completed intake in the caller's workspace. Its self-report remains separate from demonstrated memory. */
             intake_id?: string;
         };
@@ -1015,6 +1020,24 @@ export interface components {
         };
         GenerateMCQEnvelope: {
             data: components["schemas"]["GenerateMCQResult"];
+            error: null;
+        };
+        ProblemGenerationSpec: {
+            topic?: string;
+            prompt?: string;
+            /** @enum {string} */
+            difficulty?: "easy" | "medium" | "hard";
+        };
+        GenerateProblemResult: {
+            /** @enum {string} */
+            kind: "problem";
+            problem_id: string;
+            problem: components["schemas"]["Problem"];
+            provider: string;
+            model: string;
+        };
+        GenerateProblemEnvelope: {
+            data: components["schemas"]["GenerateProblemResult"];
             error: null;
         };
         JsonValue: {
@@ -1820,12 +1843,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GenerateMCQEnvelope"];
+                    "application/json": components["schemas"]["GenerateMCQEnvelope"] | components["schemas"]["GenerateProblemEnvelope"];
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["WorkspaceForbidden"];
+            /** @description A saved terminal result has a retryable memory update that must finish before another coding problem is generated. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description The requested generation kind is not implemented yet. */
             501: {
                 headers: {

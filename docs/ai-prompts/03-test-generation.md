@@ -5,8 +5,16 @@ input/output pairs (or unit tests) that will be executed against user
 submissions and the hidden reference solution. This is the "test case
 generation" scope item, and the input to verification (service 4).
 
-**Output contract:** a JSON object with a `cases` array. Each case is
-executable against `spec.entry_point` / `spec.signature`.
+**Production safety boundary:** models may return only structured input/output
+cases. They never return a test file, test runner, shell command, or
+`CODEGYM_RESULT` code. The backend validates every case against the declared
+parameter/return types and inserts accepted cases into its fixed, versioned
+Python harness template. Hidden case inputs and expected values are never
+serialized by a public API.
+
+**Output contract:** a JSON object with a `cases` array. Each case is data that
+the server-controlled harness can execute against `spec.entry_point` /
+`spec.signature`.
 
 ```ts
 interface TestSuite {
@@ -123,6 +131,6 @@ minimum length 2; hidden functional cases; correct indices in every `expected`.
 - Getting wrong `expected` values? Lower ambition: add "prefer fewer, certainly
   correct cases; drop any case you can't verify by hand."
 - Too easy to hardcode? Raise the hidden ratio and add more edge kinds.
-- Want language-native unit tests instead of I/O pairs? Change `strategy` to
-  `"unit"` and ask for a `test_file` string containing runnable test code —
-  but I/O pairs are far easier to verify in service 4, so prefer them first.
+- Do not ask the model for language-native unit-test or runner code. Extend the
+  server-owned harness template and its validator when another language or I/O
+  shape is intentionally supported.

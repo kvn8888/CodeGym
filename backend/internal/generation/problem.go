@@ -1,0 +1,370 @@
+package generation
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"regexp"
+	"strings"
+
+	"github.com/kvn8888/codegym/backend/internal/problems"
+)
+
+const (
+	problemMaxAttempts      = 2
+	problemDefaultMaxTokens = 6144
+)
+
+var pythonIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// ProblemSpec is the caller-controlled part of a generated coding problem.
+// IntakeContext is resolved by the server and never trusted from JSON.
+type ProblemSpec struct {
+	Topic         string                 `json:"topic"`
+	Prompt        string                 `json:"prompt,omitempty"`
+	Difficulty    string                 `json:"difficulty,omitempty"`
+	IntakeContext *PracticeIntakeContext `json:"-"`
+}
+
+type GeneratedProblem struct {
+	Title             string             `json:"title"`
+	Description       string             `json:"description"`
+	Category          string             `json:"category"`
+	Subcategory       string             `json:"subcategory"`
+	Tags              []string           `json:"tags"`
+	Difficulty        int                `json:"difficulty"`
+	EstimatedMinutes  int                `json:"estimated_minutes"`
+	FunctionName      string             `json:"function_name"`
+	Parameters        []ProblemParameter `json:"parameters"`
+	ReturnType        string             `json:"return_type"`
+	Hints             []string           `json:"hints"`
+	ReferenceSolution string             `json:"reference_solution"`
+	TestCases         []ProblemTestCase  `json:"test_cases"`
+}
+
+type ProblemParameter struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+type ProblemTestCase struct {
+	Name     string            `json:"name"`
+	Args     []json.RawMessage `json:"args"`
+	Expected json.RawMessage   `json:"expected"`
+}
+
+const problemSystemPrompt = `You generate one safe Python coding problem for CodeGym.
+Return one JSON object matching the supplied schema. Do not return markdown.
+
+Rules:
+- Choose a focused problem that follows the learner's prompt and memory profile. Demonstrated evidence outranks the self-reported baseline.
+- difficulty is 1, 2, or 3. estimated_minutes is 10..90.
+- function_name and parameter names are valid Python identifiers.
+- Allowed parameter and return types: int, str, bool, list[int], list[str].
+- Include 1..3 progressive hints.
+- Include 4..12 deterministic test cases. Each args array has exactly one value per parameter and expected matches return_type.
+- reference_solution contains only the Python function definition and helpers it needs. It must define function_name.
+- Never produce a test runner, imports of hidden tests, shell commands, CODEGYM_RESULT, eval, exec, open, subprocess, socket, or network/file access. CodeGym builds the hidden runner itself.`
+
+var problemJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["title","description","category","subcategory","tags","difficulty","estimated_minutes","function_name","parameters","return_type","hints","reference_solution","test_cases"],
+  "properties":{
+    "title":{"type":"string"},
+    "description":{"type":"string"},
+    "category":{"type":"string"},
+    "subcategory":{"type":"string"},
+    "tags":{"type":"array","items":{"type":"string"}},
+    "difficulty":{"type":"integer","minimum":1,"maximum":3},
+    "estimated_minutes":{"type":"integer","minimum":10,"maximum":90},
+    "function_name":{"type":"string"},
+    "parameters":{"type":"array","minItems":1,"maxItems":5,"items":{"type":"object","required":["name","type"]}},
+    "return_type":{"type":"string"},
+    "hints":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"string"}},
+    "reference_solution":{"type":"string"},
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","args","expected"]}}
+  }
+}`)
+
+var allowedProblemTypes = map[string]bool{
+	"int": true, "str": true, "bool": true, "list[int]": true, "list[str]": true,
+}
+
+func NormalizeProblemSpec(spec ProblemSpec) (ProblemSpec, error) {
+	spec.Topic = strings.TrimSpace(spec.Topic)
+	spec.Prompt = strings.TrimSpace(spec.Prompt)
+	if spec.Topic == "" {
+		spec.Topic = spec.Prompt
+	}
+	if len(spec.Prompt) > 500 {
+		spec.Prompt = spec.Prompt[:500]
+	}
+	spec.Difficulty = strings.ToLower(strings.TrimSpace(spec.Difficulty))
+	switch spec.Difficulty {
+	case "", "easy", "medium", "hard":
+	default:
+		return spec, errors.New("difficulty must be easy, medium, or hard")
+	}
+	return spec, nil
+}
+
+func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
+	var output GeneratedProblem
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&output); err != nil {
+		return output, fmt.Errorf("output is not a problem object: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return output, errors.New("output must contain exactly one problem object")
+	}
+	output.Title = strings.TrimSpace(output.Title)
+	output.Description = strings.TrimSpace(output.Description)
+	output.Category = strings.TrimSpace(output.Category)
+	output.Subcategory = strings.TrimSpace(output.Subcategory)
+	output.FunctionName = strings.TrimSpace(output.FunctionName)
+	output.ReturnType = strings.TrimSpace(output.ReturnType)
+	output.ReferenceSolution = strings.TrimSpace(output.ReferenceSolution)
+	if output.Title == "" || output.Description == "" || output.Category == "" {
+		return output, errors.New("title, description, and category are required")
+	}
+	if len(output.Title) > 120 || len(output.Description) > 8000 ||
+		len(output.Category) > 80 || len(output.Subcategory) > 120 {
+		return output, errors.New("problem text exceeds allowed length")
+	}
+	if len(output.Tags) == 0 || len(output.Tags) > 8 {
+		return output, errors.New("tags must contain 1..8 entries")
+	}
+	for _, tag := range output.Tags {
+		if strings.TrimSpace(tag) == "" || len(tag) > 40 {
+			return output, errors.New("tags must be non-empty and at most 40 characters")
+		}
+	}
+	if output.Difficulty < 1 || output.Difficulty > 3 {
+		return output, errors.New("difficulty must be 1..3")
+	}
+	if output.EstimatedMinutes < 10 || output.EstimatedMinutes > 90 {
+		return output, errors.New("estimated_minutes must be 10..90")
+	}
+	if !pythonIdentifier.MatchString(output.FunctionName) {
+		return output, errors.New("function_name is not a valid Python identifier")
+	}
+	if len(output.Parameters) < 1 || len(output.Parameters) > 5 {
+		return output, errors.New("parameters must contain 1..5 entries")
+	}
+	seen := map[string]bool{}
+	for _, parameter := range output.Parameters {
+		if !pythonIdentifier.MatchString(parameter.Name) || seen[parameter.Name] {
+			return output, errors.New("parameter names must be unique Python identifiers")
+		}
+		if !allowedProblemTypes[parameter.Type] {
+			return output, fmt.Errorf("unsupported parameter type %q", parameter.Type)
+		}
+		seen[parameter.Name] = true
+	}
+	if !allowedProblemTypes[output.ReturnType] {
+		return output, fmt.Errorf("unsupported return type %q", output.ReturnType)
+	}
+	if len(output.Hints) < 1 || len(output.Hints) > 3 {
+		return output, errors.New("hints must contain 1..3 entries")
+	}
+	for _, hint := range output.Hints {
+		if strings.TrimSpace(hint) == "" {
+			return output, errors.New("hints must not be empty")
+		}
+	}
+	if len(output.TestCases) < 4 || len(output.TestCases) > 12 {
+		return output, errors.New("test_cases must contain 4..12 entries")
+	}
+	for index, test := range output.TestCases {
+		if strings.TrimSpace(test.Name) == "" || len(test.Name) > 80 || len(test.Args) != len(output.Parameters) || len(test.Expected) == 0 || !json.Valid(test.Expected) {
+			return output, fmt.Errorf("test case %d has invalid name, args, or expected value", index+1)
+		}
+		for argumentIndex, arg := range test.Args {
+			if len(arg) == 0 || !json.Valid(arg) ||
+				!validProblemJSONType(arg, output.Parameters[argumentIndex].Type) {
+				return output, fmt.Errorf("test case %d argument %d does not match %s", index+1, argumentIndex+1, output.Parameters[argumentIndex].Type)
+			}
+		}
+		if !validProblemJSONType(test.Expected, output.ReturnType) {
+			return output, fmt.Errorf("test case %d expected value does not match %s", index+1, output.ReturnType)
+		}
+	}
+	lowerSolution := strings.ToLower(output.ReferenceSolution)
+	if !strings.Contains(output.ReferenceSolution, "def "+output.FunctionName+"(") {
+		return output, errors.New("reference_solution does not define function_name")
+	}
+	if len(output.ReferenceSolution) > 12000 {
+		return output, errors.New("reference_solution exceeds allowed length")
+	}
+	for _, forbidden := range []string{"codegym_result", "subprocess", "socket", "open(", "eval(", "exec(", "__import__"} {
+		if strings.Contains(lowerSolution, forbidden) {
+			return output, fmt.Errorf("reference_solution contains forbidden token %q", forbidden)
+		}
+	}
+	return output, nil
+}
+
+func validProblemJSONType(raw json.RawMessage, expected string) bool {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	switch expected {
+	case "int":
+		number, ok := value.(float64)
+		return ok && number == float64(int64(number))
+	case "str":
+		_, ok := value.(string)
+		return ok
+	case "bool":
+		_, ok := value.(bool)
+		return ok
+	case "list[int]":
+		values, ok := value.([]any)
+		if !ok {
+			return false
+		}
+		for _, item := range values {
+			number, ok := item.(float64)
+			if !ok || number != float64(int64(number)) {
+				return false
+			}
+		}
+		return true
+	case "list[str]":
+		values, ok := value.([]any)
+		if !ok {
+			return false
+		}
+		for _, item := range values {
+			if _, ok := item.(string); !ok {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec ProblemSpec) (problems.Definition, GenerateResult, error) {
+	spec, err := NormalizeProblemSpec(spec)
+	if err != nil {
+		return problems.Definition{}, GenerateResult{}, err
+	}
+	specJSON, err := json.Marshal(spec)
+	if err != nil {
+		return problems.Definition{}, GenerateResult{}, fmt.Errorf("encode problem spec: %w", err)
+	}
+	instructions := problemSystemPrompt
+	var lastErr error
+	var lastRaw string
+	for attempt := 1; attempt <= problemMaxAttempts; attempt++ {
+		result, generateErr := orchestrator.Generate(ctx, GenerateInput{
+			Kind:          KindProblem,
+			Spec:          specJSON,
+			Schema:        Schema{Name: "generated_problem", Version: "1", JSONSchema: problemJSONSchema},
+			ModelPolicy:   ModelPolicy{MaxTokens: problemDefaultMaxTokens},
+			Instructions:  instructions,
+			IntakeContext: spec.IntakeContext,
+		})
+		if generateErr != nil {
+			return problems.Definition{}, GenerateResult{}, generateErr
+		}
+		output, validateErr := ValidateGeneratedProblem(result.Object)
+		if validateErr == nil {
+			definition, buildErr := buildProblemDefinition(output)
+			return definition, result, buildErr
+		}
+		lastErr, lastRaw = validateErr, string(result.Object)
+		instructions = problemSystemPrompt + "\n\nYour previous output was rejected: " + validateErr.Error() + ". Return a complete corrected object."
+	}
+	return problems.Definition{}, GenerateResult{}, &InvalidOutputError{
+		Reason:    "problem generation produced invalid output after 2 attempts",
+		RawOutput: lastRaw,
+		Err:       lastErr,
+	}
+}
+
+func buildProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
+	type runnerCase struct {
+		Args     []json.RawMessage `json:"args"`
+		Expected json.RawMessage   `json:"expected"`
+	}
+	runnerCases := make([]runnerCase, 0, len(output.TestCases))
+	for _, test := range output.TestCases {
+		runnerCases = append(runnerCases, runnerCase{Args: test.Args, Expected: test.Expected})
+	}
+	casesJSON, err := json.Marshal(runnerCases)
+	if err != nil {
+		return problems.Definition{}, err
+	}
+	encodedCases := base64.StdEncoding.EncodeToString(casesJSON)
+	parameters := make([]string, 0, len(output.Parameters))
+	for _, parameter := range output.Parameters {
+		parameters = append(parameters, parameter.Name+": "+parameter.Type)
+	}
+	hints := make([]problems.Hint, 0, len(output.Hints))
+	for index, hint := range output.Hints {
+		hints = append(hints, problems.Hint{Cost: index, Text: strings.TrimSpace(hint)})
+	}
+	skeleton := fmt.Sprintf("def %s(%s) -> %s:\n    \"\"\"Implement the solution described in the problem.\"\"\"\n    # TODO: implement this function.\n    raise NotImplementedError\n",
+		output.FunctionName, strings.Join(parameters, ", "), output.ReturnType)
+	runner := fmt.Sprintf(`import base64
+import importlib
+import json
+import time
+
+PREFIX = "CODEGYM_RESULT "
+CASES = json.loads(base64.b64decode(%q).decode("utf-8"))
+
+def emit(tests, compile_error=None):
+    print(PREFIX + json.dumps({"tests": tests, "compile_error": compile_error}, separators=(",", ":")))
+
+try:
+    solution = importlib.import_module("solution")
+    target = getattr(solution, %q)
+except Exception as exc:
+    emit([], f"{type(exc).__name__}: {exc}")
+    raise SystemExit(0)
+
+results = []
+for index, case in enumerate(CASES):
+    started = time.perf_counter()
+    error = None
+    status = "pass"
+    try:
+        actual = target(*case["args"])
+        if actual != case["expected"]:
+            status = "fail"
+            error = "output did not match the expected result"
+    except Exception as exc:
+        status = "fail"
+        error = f"{type(exc).__name__}: {exc}"
+    results.append({"name": f"Hidden case {index + 1}", "status": status, "duration_ms": max(0, int((time.perf_counter() - started) * 1000)), "error": error})
+
+emit(results)
+`, encodedCases, output.FunctionName)
+	return problems.Definition{
+		Problem: problems.Problem{
+			Summary: problems.Summary{
+				Title: output.Title, Category: output.Category, Language: "python",
+				Difficulty: output.Difficulty, Tags: output.Tags,
+				EstimatedMinutes: output.EstimatedMinutes, Type: "coding",
+			},
+			Version: "1.0.0", Description: output.Description, Subcategory: output.Subcategory,
+			Runtime:    problems.Runtime{Image: "python312", TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: "block-all"},
+			Files:      problems.FileManifest{Skeleton: []problems.FileRef{{Path: "solution.py", Entry: true}}},
+			TestConfig: problems.TestConfig{Strategy: "unit"}, Hints: hints,
+		},
+		SkeletonFiles:     []problems.File{{Path: "solution.py", Content: skeleton}},
+		HiddenTestFiles:   []problems.File{{Path: "test_solution.py", Content: runner}},
+		ReferenceSolution: output.ReferenceSolution + "\n",
+		Entrypoint:        "test_solution.py",
+	}, nil
+}

@@ -122,8 +122,6 @@ func main() {
 		}
 		log.Print("CodeGym demo problem seeded: two-sum")
 	}
-	submissionService := submission.NewService(problemService, executionService, sessionService)
-
 	var generationOrchestrator *generation.Orchestrator
 	if cfg.AnyGenAIEnabled() {
 		named := make([]generation.NamedGenerator, 0, len(cfg.GenAIProviders))
@@ -161,6 +159,7 @@ func main() {
 	}
 	profileSynthesizer := generation.NewProfileSynthesizer(generationOrchestrator, memoryService)
 	intakeService := intake.NewService(intakeStore, memoryService, generationOrchestrator, nil)
+	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, profileSynthesizer)
 
 	if cfg.MemoryWorker.DailyEnabled() {
 		worker := memory.NewWorker(profileSynthesizer, cfg.MemoryWorker.Interval)

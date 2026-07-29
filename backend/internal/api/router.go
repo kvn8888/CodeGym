@@ -77,7 +77,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/practice-intakes", intakeHandler.Prepare)
 	protected.HandleFunc("GET /api/v1/practice-intakes", intakeHandler.List)
 	protected.HandleFunc("PATCH /api/v1/practice-intakes/{id}", intakeHandler.Update)
-	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion, deps.Intakes)
+	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion, deps.Intakes, deps.Problems, deps.Sessions)
 	protected.HandleFunc("POST /api/v1/generate", generateHandler.Generate)
 	protected.HandleFunc("POST /api/v1/mcq/evaluate", generateHandler.EvaluateFreeResponse)
 	protected.HandleFunc("POST /api/v1/memory/profile/maintain", generateHandler.MaintainProfile)

@@ -9,6 +9,7 @@ import type {
   PracticeFormat,
   PracticeSession,
   PracticeSessionSummary,
+  Problem,
   UserMemoryProfile,
 } from '../../shared/api/types';
 import { QuestionModal } from './QuestionModal';
@@ -104,12 +105,19 @@ function configFromIntake(
 interface GeneratePageProps {
   initialIntake?: PracticeIntake | null;
   initialStarting?: boolean;
+  initialFormat?: PracticeFormat;
+  initialStartError?: string | null;
 }
 
-export function GeneratePage({ initialIntake = null, initialStarting = false }: GeneratePageProps) {
+export function GeneratePage({
+  initialIntake = null,
+  initialStarting = false,
+  initialFormat = 'mcq',
+  initialStartError = null,
+}: GeneratePageProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [format, setFormat] = useState<PracticeFormat>('mcq');
+  const [format, setFormat] = useState<PracticeFormat>(initialFormat);
   const [prompt, setPrompt] = useState(
     () => searchParams.get('prompt') ?? initialIntake?.original_topic ?? '',
   );
@@ -118,9 +126,9 @@ export function GeneratePage({ initialIntake = null, initialStarting = false }: 
   const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
   const [recentSessions, setRecentSessions] = useState<PracticeSessionSummary[]>([]);
   const [startStatus, setStartStatus] = useState<StartStatus>(
-    initialStarting ? 'pending' : 'idle',
+    initialStarting ? 'pending' : initialStartError ? 'failed' : 'idle',
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialStartError);
   const [intake, setIntake] = useState<PracticeIntake | null>(initialIntake);
   const [pendingConfig, setPendingConfig] = useState<NewPracticeConfig | null>(
     initialIntake ? configFromIntake(initialIntake) : null,
@@ -206,20 +214,36 @@ export function GeneratePage({ initialIntake = null, initialStarting = false }: 
       return;
     }
 
+    const generated = await api.post<{
+      kind: 'problem';
+      problem_id: string;
+      problem: Problem;
+      provider: string;
+      model: string;
+    }>('/generate', {
+      kind: 'problem',
+      intake_id: config.intakeId,
+      spec: {
+        topic: config.prompt,
+        prompt: config.prompt,
+        difficulty: config.difficulty,
+      },
+    });
     const session = await api.post<PracticeSession>('/sessions', {
       kind: 'workspace',
-      title: sessionTitle('coding', config.prompt),
-      problem_id: 'two-sum',
+      title: generated.problem.title || sessionTitle('coding', config.prompt),
+      problem_id: generated.problem_id,
       state: {
         schema_version: 1,
         format: 'coding',
         prompt: config.prompt,
         difficulty: config.difficulty,
         intake_id: config.intakeId,
-        problem_id: 'two-sum',
+        problem_id: generated.problem_id,
+        memory_update_status: 'idle',
       },
     });
-    navigate(`/problems/two-sum?session=${encodeURIComponent(session.id)}&from=generate`, {
+    navigate(`/problems/${encodeURIComponent(generated.problem_id)}?session=${encodeURIComponent(session.id)}&from=generate`, {
       state: { newPractice: { sessionId: session.id, config } },
     });
   };

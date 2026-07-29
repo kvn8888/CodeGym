@@ -76,6 +76,14 @@ curl https://codegym.onrender.com/ready    # liveness + DB (postgres mode when N
 Both should return 2xx. `/ready` fails if Doppler did not supply a working
 database URL or Neon is unreachable.
 
+For a generated-DSA rollout, verify staging before production: create a coding
+practice through intake, confirm the persisted problem is visible only in the
+current workspace, run its server-controlled hidden tests in Daytona, reload
+the session to restore the draft and last result, and confirm compact coding
+events update memory without containing source code or hidden cases. Repeat the
+same authenticated smoke against production after promoting the identical
+reviewed commit.
+
 ## Existing production service
 
 The live service at `codegym.onrender.com` was created in the dashboard and is

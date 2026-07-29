@@ -28,6 +28,7 @@ const (
 	TypeProblemOpened = "problem_opened"
 	TypeAttemptStarted = "attempt_started"
 	TypeTestsRun = "tests_run"
+	TypeHintRevealed = "hint_revealed"
 	TypeAttemptSubmitted = "attempt_submitted"
 	TypeAttemptSolved = "attempt_solved"
 	TypeAttemptFailed = "attempt_failed"
@@ -66,6 +67,7 @@ var allowedEventTypesBySource = map[string]map[string]struct{}{
 		TypeProblemOpened: {},
 		TypeAttemptStarted: {},
 		TypeTestsRun: {},
+		TypeHintRevealed: {},
 		TypeAttemptSubmitted: {},
 		TypeAttemptSolved: {},
 		TypeAttemptFailed: {},

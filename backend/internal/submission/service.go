@@ -2,11 +2,15 @@ package submission
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/kvn8888/codegym/backend/internal/execution"
+	"github.com/kvn8888/codegym/backend/internal/generation"
+	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
 )
@@ -17,17 +21,23 @@ type Service struct {
 	problems   *problems.Service
 	executions *execution.Service
 	sessions   *session.Service
+	memory     *memory.Service
+	profiles   *generation.ProfileSynthesizer
 }
 
 func NewService(
 	problemService *problems.Service,
 	executionService *execution.Service,
 	sessionService *session.Service,
+	memoryService *memory.Service,
+	profiles *generation.ProfileSynthesizer,
 ) *Service {
 	return &Service{
 		problems:   problemService,
 		executions: executionService,
 		sessions:   sessionService,
+		memory:     memoryService,
+		profiles:   profiles,
 	}
 }
 
@@ -49,10 +59,15 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 		}
 	}
 
+	s.recordEvent(ctx, memory.TypeAttemptStarted, "Started a coding attempt.", definition, sessionID, map[string]any{
+		"file_count": len(input.Files),
+	})
+
 	files, err := assembleFiles(input.Files, definition.HiddenTestFiles)
 	if err != nil {
 		return Accepted{}, err
 	}
+	s.recordEvent(ctx, memory.TypeAttemptSubmitted, "Submitted a coding attempt.", definition, sessionID, nil)
 	run, err := s.executions.SubmitRun(ctx, execution.SubmitRunInput{
 		ProblemID:  problemID,
 		Language:   definition.Language,
@@ -63,6 +78,7 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 		return Accepted{}, err
 	}
 
+	memoryStatus := ""
 	if sessionID != "" && isTerminal(run.Status) {
 		sessionFiles := make([]session.FileInput, 0, len(input.Files))
 		for _, file := range input.Files {
@@ -76,15 +92,113 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 		}
 
 		view := viewFromRun(run)
+		memoryEventsSaved := true
+		if view.Result != nil {
+			memoryEventsSaved = s.recordEvent(ctx, memory.TypeTestsRun, "Ran coding problem tests.", definition, sessionID, map[string]any{
+				"total": view.Result.Total, "passed_count": view.Result.Passed,
+				"failed_count": view.Result.Failed, "duration_ms": view.Result.DurationMs,
+			})
+			outcomeType := memory.TypeAttemptFailed
+			summary := "Coding attempt did not pass."
+			if view.Result.Status == "pass" {
+				outcomeType, summary = memory.TypeAttemptSolved, "Solved a coding problem."
+			}
+			memoryEventsSaved = s.recordEvent(ctx, outcomeType, summary, definition, sessionID, map[string]any{
+				"passed": view.Result.Status == "pass", "total": view.Result.Total,
+				"passed_count": view.Result.Passed, "failed_count": view.Result.Failed,
+				"duration_ms": view.Result.DurationMs,
+			}) && memoryEventsSaved
+		} else {
+			memoryEventsSaved = s.recordEvent(ctx, memory.TypeAttemptFailed, "Coding attempt could not produce test results.", definition, sessionID, map[string]any{
+				"passed": false, "total": 0, "passed_count": 0, "failed_count": 0,
+				"duration_ms": run.DurationMs,
+			})
+		}
 		if view.Result != nil && view.Result.Status == "pass" {
 			completed := session.StatusCompleted
 			if _, err := s.sessions.Update(ctx, sessionID, session.UpdateInput{Status: &completed}); err != nil {
 				return Accepted{}, fmt.Errorf("complete passed session: %w", err)
 			}
 		}
+		memoryStatus = s.refreshMemory(ctx, sessionID, run.ID, memoryEventsSaved)
 	}
 
-	return Accepted{SubmissionID: run.ID}, nil
+	return Accepted{SubmissionID: run.ID, MemoryUpdateStatus: memoryStatus}, nil
+}
+
+func (s *Service) recordEvent(ctx context.Context, eventType, summary string, definition problems.Definition, sessionID string, extra map[string]any) bool {
+	if s.memory == nil {
+		return true
+	}
+	payload := map[string]any{
+		"problem_id": definition.ID, "session_id": sessionID,
+		"concept": definition.Subcategory, "difficulty": definition.Difficulty,
+		"language": definition.Language, "schema_version": 1,
+	}
+	for key, value := range extra {
+		payload[key] = value
+	}
+	encoded, _ := json.Marshal(payload)
+	if _, err := s.memory.RecordEvent(ctx, memory.RecordEventInput{
+		Source: memory.SourceWorkspace, Type: eventType, Summary: summary, Payload: encoded,
+	}); err != nil {
+		log.Printf("could not record workspace.%s memory event: %v", eventType, err)
+		return false
+	}
+	return true
+}
+
+func (s *Service) refreshMemory(ctx context.Context, sessionID, submissionID string, eventsSaved bool) string {
+	if s.profiles == nil {
+		_ = s.setMemoryUpdateStatus(ctx, sessionID, submissionID, "idle")
+		return ""
+	}
+	_ = s.setMemoryUpdateStatus(ctx, sessionID, submissionID, "pending")
+	if !eventsSaved {
+		_ = s.setMemoryUpdateStatus(ctx, sessionID, submissionID, "failed")
+		return "failed"
+	}
+	result, err := s.profiles.RefreshProfile(ctx, generation.ProfileRefreshInput{
+		SessionID: sessionID, Trigger: "set-completion",
+	})
+	status := "synced"
+	if err != nil || strings.HasPrefix(result.Skipped, "profile generation failed") ||
+		strings.HasPrefix(result.Skipped, "generated profile was invalid") ||
+		result.Skipped == "generation is not configured" {
+		status = "failed"
+		if err != nil {
+			log.Printf("coding result saved but memory update failed: %v", err)
+		} else {
+			log.Printf("coding result saved but memory update used failure fallback: %s", result.Skipped)
+		}
+	}
+	if updateErr := s.setMemoryUpdateStatus(ctx, sessionID, submissionID, status); updateErr != nil {
+		log.Printf("could not persist memory update status for session %s: %v", sessionID, updateErr)
+		if status == "synced" {
+			return "failed"
+		}
+	}
+	return status
+}
+
+func (s *Service) setMemoryUpdateStatus(ctx context.Context, sessionID, submissionID, status string) error {
+	current, err := s.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	state := map[string]any{}
+	if len(current.State) > 0 {
+		_ = json.Unmarshal(current.State, &state)
+	}
+	state["memory_update_status"] = status
+	state["last_submission_id"] = submissionID
+	encodedJSON, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	encoded := json.RawMessage(encodedJSON)
+	_, err = s.sessions.Update(ctx, sessionID, session.UpdateInput{State: &encoded})
+	return err
 }
 
 func (s *Service) Get(ctx context.Context, id string) (View, error) {

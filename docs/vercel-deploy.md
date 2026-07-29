@@ -86,7 +86,11 @@ production build.
 4. Open an ephemeral Preview deployment and confirm it redirects to the stable
    branch Preview alias before login. Then confirm sign-in returns to that same
    stable alias.
-5. Quick check:
+5. Start a coding practice in Preview and verify intake → generated problem →
+   workspace execution → result resume. Repeat on Production after promotion;
+   each browser must call its matching Render hostname and must not see the
+   other environment's generated problems or sessions.
+6. Quick check:
 
 ```sh
 curl -sS -o /dev/null -w "%{http_code}\n" https://code-gym-rho.vercel.app/

@@ -656,7 +656,7 @@ paths:
   /api/v1/generate:
     post:
       operationId: generateContent
-      summary: Generate practice content (MCQ sets today; problems and interviews later) personalized by the caller's memory profile.
+      summary: Generate validated MCQ or persisted coding practice personalized by the caller's memory profile.
       parameters:
         - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
@@ -671,13 +671,21 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GenerateMCQEnvelope"
+                oneOf:
+                  - $ref: "#/components/schemas/GenerateMCQEnvelope"
+                  - $ref: "#/components/schemas/GenerateProblemEnvelope"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/WorkspaceForbidden"
+        "409":
+          description: A saved terminal result has a retryable memory update that must finish before another coding problem is generated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "501":
           description: The requested generation kind is not implemented yet.
           content:
@@ -1601,6 +1609,10 @@ components:
         submission_id:
           type: string
           example: exec_run_0123456789abcdef
+        memory_update_status:
+          type: string
+          enum: [synced, failed]
+          description: Best-effort profile maintenance outcome. The submission result is durable even when this is failed.
 
     SubmissionAcceptedEnvelope:
       type: object
@@ -1768,9 +1780,11 @@ components:
         kind:
           type: string
           enum: [mcq, problem, interview]
-          description: Generation kind. Only "mcq" is implemented today.
+          description: MCQ and problem are implemented; interview uses the chat API.
         spec:
-          $ref: "#/components/schemas/MCQSpec"
+          oneOf:
+            - $ref: "#/components/schemas/MCQSpec"
+            - $ref: "#/components/schemas/ProblemGenerationSpec"
         intake_id:
           type: string
           description: Optional completed intake in the caller's workspace. Its self-report remains separate from demonstrated memory.
@@ -2047,6 +2061,44 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/GenerateMCQResult"
+        error:
+          type: "null"
+
+    ProblemGenerationSpec:
+      type: object
+      properties:
+        topic:
+          type: string
+          maxLength: 500
+        prompt:
+          type: string
+          maxLength: 500
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+
+    GenerateProblemResult:
+      type: object
+      required: [kind, problem_id, problem, provider, model]
+      properties:
+        kind:
+          type: string
+          enum: [problem]
+        problem_id:
+          type: string
+        problem:
+          $ref: "#/components/schemas/Problem"
+        provider:
+          type: string
+        model:
+          type: string
+
+    GenerateProblemEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/GenerateProblemResult"
         error:
           type: "null"
 

@@ -68,8 +68,18 @@ type Skeleton struct {
 // hidden tests, the entrypoint, or the reference solution from an endpoint.
 type Definition struct {
 	Problem
-	SkeletonFiles     []File `json:"-"`
-	HiddenTestFiles   []File `json:"-"`
-	ReferenceSolution string `json:"-"`
-	Entrypoint        string `json:"-"`
+	SkeletonFiles     []File     `json:"-"`
+	HiddenTestFiles   []File     `json:"-"`
+	ReferenceSolution string     `json:"-"`
+	Entrypoint        string     `json:"-"`
+	Visibility        Visibility `json:"-"`
+	WorkspaceID       string     `json:"-"`
+	UserID            string     `json:"-"`
 }
+
+type Visibility string
+
+const (
+	VisibilityGlobal    Visibility = "global"
+	VisibilityWorkspace Visibility = "workspace"
+)

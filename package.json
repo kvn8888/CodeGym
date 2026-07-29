@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "memory-events:generate": "node scripts/generate-memory-event-registry.mjs",
+    "memory-events:check": "node scripts/generate-memory-event-registry.mjs --check"
+  },
   "dependencies": {
     "motion": "^12.40.0"
   }

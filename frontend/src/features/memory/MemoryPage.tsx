@@ -3,8 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   Brain,
-  CheckCircle2,
-  Clock3,
   RefreshCw,
   RotateCcw,
   TrendingDown,
@@ -24,6 +22,7 @@ import {
   WorkspacePageHeader,
   WorkspaceSectionHeader,
 } from '../../shared/components/WorkspacePage';
+import { RecentActivity } from './MemoryRecentActivityWing';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -53,12 +52,6 @@ function trendPresentation(trend: SkillProficiency['trend']) {
   if (trend === 'up') return { label: 'Improving', icon: TrendingUp, className: 'text-green-800' };
   if (trend === 'down') return { label: 'Needs reps', icon: TrendingDown, className: 'text-amber-800' };
   return { label: 'Stable', icon: RotateCcw, className: 'text-muted-foreground' };
-}
-
-function eventPresentation(event: MemoryEvent) {
-  if (event.type.includes('completed')) return { label: 'Session', icon: CheckCircle2 };
-  if (event.type.includes('note')) return { label: 'Memory', icon: Brain };
-  return { label: 'Practice', icon: Clock3 };
 }
 
 export function MemoryPage() {
@@ -342,41 +335,7 @@ export function MemoryPage() {
           </section>
         </div>
 
-        <aside className="min-w-0 lg:border-l lg:pl-7">
-          <section>
-            <WorkspaceSectionHeader
-              title="Recent activity"
-              description="Profile-shaping signals from your recent practice."
-            />
-            {events.length > 0 ? (
-              <div className="flex flex-col">
-                {events.slice(0, 6).map((event) => {
-                  const presentation = eventPresentation(event);
-                  const EventIcon = presentation.icon;
-                  return (
-                    <div key={event.id} className="relative flex gap-3 border-l pb-5 pl-4 last:pb-0">
-                      <span className="bg-background absolute -left-[7px] top-0 flex size-3.5 items-center justify-center rounded-full border">
-                        <span className="bg-muted-foreground size-1 rounded-full" />
-                      </span>
-                      <EventIcon className="text-muted-foreground mt-0.5 shrink-0" size={15} strokeWidth={1.8} />
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium">{presentation.label}</div>
-                        <p className="text-muted-foreground mt-0.5 text-xs leading-4">{event.summary}</p>
-                        <div className="text-muted-foreground mt-1 text-[11px]">
-                          {formatRelativeDate(event.occurred_at)}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm leading-5">
-                Activity appears here after you answer questions and finish sessions.
-              </p>
-            )}
-          </section>
-        </aside>
+        <RecentActivity events={events} />
       </div>
     </WorkspacePage>
   );

@@ -147,6 +147,18 @@ func TestWorkerRunOnceRefreshesActiveProfiles(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsUnknownEventName(t *testing.T) {
+	service := NewService(NewInMemoryStore(), time.Now)
+	_, err := service.RecordEvent(scopedContext(), RecordEventInput{
+		Source:  SourceGenerate,
+		Type:    "not_a_real_event",
+		Summary: "bad event",
+	})
+	if err == nil {
+		t.Fatal("expected validation error for unknown event type")
+	}
+}
+
 func scopedContext() context.Context {
 	ctx := context.Background()
 	ctx = auth.WithPrincipal(ctx, auth.Principal{

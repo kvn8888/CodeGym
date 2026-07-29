@@ -81,6 +81,9 @@ func (s *Service) RecordEvent(ctx context.Context, input RecordEventInput) (Even
 	if source == "" || eventType == "" {
 		return Event{}, errors.New("memory event source and type are required")
 	}
+	if err := ValidateEventName(source, eventType); err != nil {
+		return Event{}, err
+	}
 
 	now := s.now().UTC()
 	occurredAt := input.OccurredAt.UTC()

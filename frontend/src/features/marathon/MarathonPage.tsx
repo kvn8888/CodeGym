@@ -11,9 +11,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { HelpFlashcard } from './HelpFlashcard';
-import { api } from '../../shared/api/client';
+import { api, createMemoryEvent } from '../../shared/api/client';
 import type { MCQQuestionType, NewPracticeConfig, PracticeSession } from '../../shared/api/types';
 import { WorkspacePage } from '../../shared/components/WorkspacePage';
+import { buildMcqEvent, memoryEventTypes } from '../../shared/api/memoryEvents';
+import type { MemoryEventType } from '../../shared/api/memoryEvents';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';

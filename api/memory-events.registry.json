@@ -1,0 +1,222 @@
+{
+  "sources": [
+    {
+      "key": "generate",
+      "value": "generate",
+      "goConst": "SourceGenerate",
+      "builder": "buildGenerateEvent"
+    },
+    {
+      "key": "chat",
+      "value": "chat",
+      "goConst": "SourceChat",
+      "builder": "buildChatEvent"
+    },
+    {
+      "key": "workspace",
+      "value": "workspace",
+      "goConst": "SourceWorkspace",
+      "builder": "buildWorkspaceEvent"
+    },
+    {
+      "key": "mcq",
+      "value": "mcq",
+      "goConst": "SourceMCQ",
+      "builder": "buildMcqEvent"
+    },
+    {
+      "key": "memory",
+      "value": "memory",
+      "goConst": "SourceMemory",
+      "builder": "buildMemorySourceEvent"
+    },
+    {
+      "key": "system",
+      "value": "system",
+      "goConst": "SourceSystem",
+      "builder": "buildSystemEvent"
+    }
+  ],
+  "types": [
+    {
+      "source": "generate",
+      "key": "intakeStarted",
+      "value": "intake_started",
+      "goConst": "TypeIntakeStarted",
+      "aliases": [
+        {
+          "key": "problemRequested",
+          "value": "intake_started"
+        }
+      ]
+    },
+    {
+      "source": "generate",
+      "key": "clarifyingQuestionsAnswered",
+      "value": "clarifying_questions_answered",
+      "goConst": "TypeClarifyingQuestionsAnswered"
+    },
+    {
+      "source": "generate",
+      "key": "problemGenerated",
+      "value": "problem_generated",
+      "goConst": "TypeProblemGenerated"
+    },
+    {
+      "source": "generate",
+      "key": "mcqSetGenerated",
+      "value": "mcq_set_generated",
+      "goConst": "TypeMCQSetGenerated"
+    },
+    {
+      "source": "generate",
+      "key": "interviewPromptGenerated",
+      "value": "interview_prompt_generated",
+      "goConst": "TypeInterviewPromptGenerated"
+    },
+    {
+      "source": "generate",
+      "key": "generationFailed",
+      "value": "generation_failed",
+      "goConst": "TypeGenerationFailed"
+    },
+    {
+      "source": "chat",
+      "key": "threadOpened",
+      "value": "thread_opened",
+      "goConst": "TypeThreadOpened"
+    },
+    {
+      "source": "chat",
+      "key": "messageSent",
+      "value": "message_sent",
+      "goConst": "TypeMessageSent"
+    },
+    {
+      "source": "chat",
+      "key": "assistantReplied",
+      "value": "assistant_replied",
+      "goConst": "TypeAssistantReplied"
+    },
+    {
+      "source": "chat",
+      "key": "threadClosed",
+      "value": "thread_closed",
+      "goConst": "TypeThreadClosed"
+    },
+    {
+      "source": "workspace",
+      "key": "problemOpened",
+      "value": "problem_opened",
+      "goConst": "TypeProblemOpened"
+    },
+    {
+      "source": "workspace",
+      "key": "attemptStarted",
+      "value": "attempt_started",
+      "goConst": "TypeAttemptStarted"
+    },
+    {
+      "source": "workspace",
+      "key": "testsRun",
+      "value": "tests_run",
+      "goConst": "TypeTestsRun"
+    },
+    {
+      "source": "workspace",
+      "key": "attemptSubmitted",
+      "value": "attempt_submitted",
+      "goConst": "TypeAttemptSubmitted"
+    },
+    {
+      "source": "workspace",
+      "key": "attemptSolved",
+      "value": "attempt_solved",
+      "goConst": "TypeAttemptSolved"
+    },
+    {
+      "source": "workspace",
+      "key": "attemptFailed",
+      "value": "attempt_failed",
+      "goConst": "TypeAttemptFailed"
+    },
+    {
+      "source": "mcq",
+      "key": "sessionStarted",
+      "value": "session_started",
+      "goConst": "TypeSessionStarted"
+    },
+    {
+      "source": "mcq",
+      "key": "questionAnswered",
+      "value": "question_answered",
+      "goConst": "TypeQuestionAnswered"
+    },
+    {
+      "source": "mcq",
+      "key": "sessionCompleted",
+      "value": "session_completed",
+      "goConst": "TypeSessionCompleted"
+    },
+    {
+      "source": "mcq",
+      "key": "answerIncorrect",
+      "value": "answer_incorrect",
+      "goConst": "TypeAnswerIncorrect",
+      "aliases": [
+        {
+          "key": "answerWrong",
+          "value": "answer_incorrect"
+        }
+      ]
+    },
+    {
+      "source": "memory",
+      "key": "profileViewed",
+      "value": "profile_viewed",
+      "goConst": "TypeProfileViewed"
+    },
+    {
+      "source": "memory",
+      "key": "profileRefreshed",
+      "value": "profile_refreshed",
+      "goConst": "TypeProfileRefreshed"
+    },
+    {
+      "source": "memory",
+      "key": "noteCreated",
+      "value": "note_created",
+      "goConst": "TypeNoteCreated",
+      "aliases": [
+        {
+          "key": "memoryNoteCreated",
+          "value": "note_created"
+        }
+      ]
+    },
+    {
+      "source": "memory",
+      "key": "noteUpdated",
+      "value": "note_updated",
+      "goConst": "TypeNoteUpdated"
+    },
+    {
+      "source": "memory",
+      "key": "notePruned",
+      "value": "note_pruned",
+      "goConst": "TypeNotePruned"
+    },
+    {
+      "source": "system",
+      "key": "workerProfileRefreshed",
+      "value": "worker_profile_refreshed",
+      "goConst": "TypeWorkerProfileRefreshed"
+    },
+    {
+      "source": "system",
+      "key": "memoryApiChecked",
+      "value": "memory_api_checked",
+      "goConst": "TypeMemoryAPIChecked"
+    }
+  ]
+}

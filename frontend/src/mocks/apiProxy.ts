@@ -5,6 +5,10 @@ import { mockMemoryEvents, mockSessions } from './activityFixtures';
 import type {
   MemoryEvent,
   PracticeSession,
+  Problem,
+  SubmissionFile,
+  TestResult,
+  UserMemoryProfile,
   UserProfile,
 } from '../shared/api/types';
 
@@ -25,6 +29,45 @@ let mockUserProfile: UserProfile = {
 
 let sessions: PracticeSession[] = structuredClone(mockSessions);
 
+interface MockProblemFixture {
+  problem: Problem;
+  skeleton: { files: SubmissionFile[] };
+  result?: TestResult;
+  resumedFiles?: SubmissionFile[];
+  hintsRevealed?: number;
+}
+
+let mockProblemFixture: MockProblemFixture | null = null;
+
+export function setMockProblemFixture(fixture: MockProblemFixture | null) {
+  mockProblemFixture = fixture ? structuredClone(fixture) : null;
+  if (!fixture) return;
+
+  const now = new Date().toISOString();
+  const session: PracticeSession = {
+    id: `storybook-${fixture.problem.id}`,
+    workspace_id: mockUserProfile.default_workspace_id,
+    user_id: mockUserProfile.user_id,
+    kind: 'workspace',
+    status: 'active',
+    title: fixture.problem.title,
+    problem_id: fixture.problem.id,
+    state: {
+      schema_version: 1,
+      hints_revealed: fixture.hintsRevealed ?? 0,
+    },
+    files: (fixture.resumedFiles ?? []).map((file) => ({
+      file_path: file.path,
+      content: file.content,
+      updated_at: now,
+    })),
+    created_at: now,
+    updated_at: now,
+    last_activity_at: now,
+  };
+  sessions = [session, ...sessions.filter((candidate) => candidate.id !== session.id)];
+}
+
 const mockEventAges = [2 * 60_000, 18 * 60_000, 26 * 60 * 60_000, 2 * 24 * 60 * 60_000];
 
 function createMemoryEventSeed(): MemoryEvent[] {
@@ -43,7 +86,7 @@ function createMemoryEventSeed(): MemoryEvent[] {
 
 let memoryEvents: MemoryEvent[] = createMemoryEventSeed();
 
-export type MockApiScenario = 'default' | 'empty' | 'error' | 'loading';
+export type MockApiScenario = 'default' | 'empty' | 'error' | 'loading' | 'nullable-memory';
 
 let mockApiScenario: MockApiScenario = 'default';
 
@@ -151,6 +194,15 @@ export async function mockApiFetch(
   }
 
   if (method === 'GET' && path === '/memory/profile') {
+    if (mockApiScenario === 'nullable-memory') {
+      return json({
+        ...mockMemoryProfile,
+        strengths: null,
+        growth_edges: null,
+        skills: null,
+        notes: null,
+      } as unknown as UserMemoryProfile);
+    }
     return json(
       mockApiScenario === 'empty'
         ? {
@@ -166,6 +218,9 @@ export async function mockApiFetch(
   }
 
   if (method === 'GET' && path === '/memory/events') {
+    if (mockApiScenario === 'nullable-memory') {
+      return json(null);
+    }
     return json([...memoryEvents].sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)));
   }
 
@@ -206,6 +261,8 @@ export async function mockApiFetch(
       kind: body.kind ?? 'mcq',
       status: 'active',
       title: body.title?.trim() || 'Untitled practice',
+      problem_id: body.problem_id,
+      generation_job_id: body.generation_job_id,
       created_at: now,
       updated_at: now,
       last_activity_at: now,
@@ -244,6 +301,28 @@ export async function mockApiFetch(
     }
   }
 
+  const sessionFilesMatch = path.match(/^\/sessions\/([^/]+)\/files$/);
+  if (method === 'PUT' && sessionFilesMatch) {
+    const sessionIndex = sessions.findIndex((candidate) => candidate.id === sessionFilesMatch[1]);
+    if (sessionIndex < 0) {
+      return error('not_found', 'Practice session not found.', 404);
+    }
+
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as {
+      files?: Array<{ file_path: string; content: string }>;
+    };
+    const now = new Date().toISOString();
+    const updated: PracticeSession = {
+      ...sessions[sessionIndex],
+      files: (body.files ?? []).map((file) => ({ ...file, updated_at: now })),
+      updated_at: now,
+      last_activity_at: now,
+    };
+    sessions[sessionIndex] = updated;
+    return json(updated);
+  }
+
   if (method === 'GET' && path === '/problems') {
     const language = url.searchParams.get('language');
     const problems = language
@@ -256,6 +335,9 @@ export async function mockApiFetch(
   const problemSkeletonMatch = path.match(/^\/problems\/([^/]+)\/skeleton$/);
   if (method === 'GET' && problemSkeletonMatch) {
     const problemId = problemSkeletonMatch[1];
+    if (mockProblemFixture?.problem.id === problemId) {
+      return json(mockProblemFixture.skeleton);
+    }
     const files = mockSkeletons[problemId];
 
     if (!files) {
@@ -268,6 +350,9 @@ export async function mockApiFetch(
   const problemMatch = path.match(/^\/problems\/([^/]+)$/);
   if (method === 'GET' && problemMatch) {
     const problemId = problemMatch[1];
+    if (mockProblemFixture?.problem.id === problemId) {
+      return json(mockProblemFixture.problem);
+    }
     const problem = mockProblems.find((candidate) => candidate.id === problemId);
 
     if (!problem) {
@@ -285,7 +370,7 @@ export async function mockApiFetch(
   if (method === 'GET' && submissionMatch) {
     return json({
       status: 'completed',
-      result: mockPassingResult,
+      result: mockProblemFixture?.result ?? mockPassingResult,
     });
   }
 

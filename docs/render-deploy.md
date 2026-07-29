@@ -22,11 +22,16 @@ The production web service is already configured as:
 | Start | `./bin/doppler run -- env CODEGYM_HOST=0.0.0.0 CODEGYM_PORT=$PORT ./bin/codegym` |
 | Env on Render | **only** `DOPPLER_TOKEN` |
 
+The backend module pins Go `1.25.4`; Render's native Go build reads that
+version from `backend/go.mod`.
+
 `CODEGYM_HOST=0.0.0.0` is required so the process is reachable from Render's
 proxy. Port comes from Render's injected `PORT` (mapped to `CODEGYM_PORT`).
 
-App secrets (`NEON_CONNECTION_STRING`, Auth0, GenAI, CORS, memory worker, etc.)
-live in Doppler config `prd` — edit them there, then redeploy/restart Render.
+App secrets (`NEON_CONNECTION_STRING`, Auth0, GenAI, CORS, memory worker,
+`DAYTONA_API_KEY`, `DAYTONA_API_URL`, etc.) and the demo seed flag
+(`CODEGYM_SEED_DEMO=true`) live in Doppler config `prd` — edit them there, then
+redeploy/restart Render.
 
 ## Blueprint (`render.yaml`)
 

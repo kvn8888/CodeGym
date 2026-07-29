@@ -197,6 +197,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/problems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the seeded public coding-problem catalog. */
+        get: operations["listProblems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get one public coding-problem specification.
+         * @description Hidden tests, the execution entrypoint, and the reference solution are never returned.
+         */
+        get: operations["getProblem"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/problems/{id}/skeleton": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Get editable starter files for one coding problem. */
+        get: operations["getProblemSkeleton"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a problem solution against server-only tests in Daytona.
+         * @description The backend loads the hidden tests and execution entrypoint from the problem catalog. Clients send only editable solution files.
+         */
+        post: operations["submitProblemSolution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Poll one structured coding-problem submission. */
+        get: operations["getProblemSubmission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the authenticated workspace's raw execution runs. */
+        get: operations["listExecutions"];
+        put?: never;
+        /** Run an explicit file bundle in Daytona. */
+        post: operations["createExecution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Get one raw execution run. */
+        get: operations["getExecution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generate": {
         parameters: {
             query?: never;
@@ -538,6 +672,164 @@ export interface components {
                 file_path: string;
                 content: string;
             }[];
+        };
+        ProblemSummary: {
+            /** @example two-sum */
+            id: string;
+            /** @example Two Sum */
+            title: string;
+            /** @example algorithms */
+            category: string;
+            /** @example python */
+            language: string;
+            framework?: string;
+            /** @example 1 */
+            difficulty: number;
+            tags: string[];
+            /** @example 15 */
+            estimated_minutes: number;
+            /** @example coding */
+            type: string;
+        };
+        Problem: components["schemas"]["ProblemSummary"] & {
+            /** @example 1 */
+            version: string;
+            description: string;
+            subcategory?: string;
+            runtime: components["schemas"]["ProblemRuntime"];
+            files: components["schemas"]["ProblemFileManifest"];
+            test_config: components["schemas"]["ProblemTestConfig"];
+            hints?: components["schemas"]["ProblemHint"][];
+        };
+        ProblemRuntime: {
+            /** @example python:3.13 */
+            image: string;
+            /** @example 20 */
+            timeout_seconds: number;
+            /** @example 256 */
+            memory_mb: number;
+            /** @enum {string} */
+            network_mode: "block-all";
+        };
+        ProblemFileManifest: {
+            skeleton: components["schemas"]["ProblemFileRef"][];
+        };
+        ProblemFileRef: {
+            /** @example solution.py */
+            path: string;
+            entry?: boolean;
+            readonly?: boolean;
+        };
+        ProblemTestConfig: {
+            /** @example hidden */
+            strategy: string;
+        };
+        ProblemHint: {
+            cost: number;
+            text: string;
+        };
+        SubmissionFile: {
+            /** @example solution.py */
+            path: string;
+            content: string;
+        };
+        ProblemSkeleton: {
+            files: components["schemas"]["SubmissionFile"][];
+        };
+        ProblemList: {
+            problems: components["schemas"]["ProblemSummary"][];
+            total: number;
+        };
+        ProblemListEnvelope: {
+            data: components["schemas"]["ProblemList"];
+            error: null;
+        };
+        ProblemEnvelope: {
+            data: components["schemas"]["Problem"];
+            error: null;
+        };
+        ProblemSkeletonEnvelope: {
+            data: components["schemas"]["ProblemSkeleton"];
+            error: null;
+        };
+        SubmitProblemInput: {
+            /** @example two-sum */
+            problem_id: string;
+            /** @example sess_0123456789abcdef */
+            session_id?: string;
+            files: components["schemas"]["SubmissionFile"][];
+        };
+        SubmissionAccepted: {
+            /** @example exec_run_0123456789abcdef */
+            submission_id: string;
+        };
+        SubmissionAcceptedEnvelope: {
+            data: components["schemas"]["SubmissionAccepted"];
+            error: null;
+        };
+        /** @enum {string} */
+        SubmissionStatus: "pending" | "running" | "completed" | "error";
+        Submission: {
+            status: components["schemas"]["SubmissionStatus"];
+            result?: components["schemas"]["TestResult"];
+        };
+        TestResult: {
+            /** @enum {string} */
+            status: "pass" | "fail";
+            total: number;
+            passed: number;
+            failed: number;
+            /** Format: int64 */
+            duration_ms: number;
+            test_cases: components["schemas"]["TestCaseResult"][];
+            compile_error?: string;
+        };
+        TestCaseResult: {
+            name: string;
+            /** @enum {string} */
+            status: "pass" | "fail";
+            /** Format: int64 */
+            duration_ms: number;
+            error?: string;
+        };
+        SubmissionEnvelope: {
+            data: components["schemas"]["Submission"];
+            error: null;
+        };
+        /** @enum {string} */
+        ExecutionStatus: "queued" | "running" | "passed" | "failed" | "error";
+        ExecutionRun: {
+            /** @example exec_run_0123456789abcdef */
+            id: string;
+            workspace_id: string;
+            user_id: string;
+            problem_id?: string;
+            language: string;
+            entrypoint: string;
+            status: components["schemas"]["ExecutionStatus"];
+            exit_code?: number;
+            output: string;
+            error?: string;
+            /** Format: int64 */
+            duration_ms: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at?: string;
+        };
+        SubmitExecutionInput: {
+            problem_id: string;
+            language: string;
+            entrypoint: string;
+            files: components["schemas"]["SubmissionFile"][];
+        };
+        ExecutionRunEnvelope: {
+            data: components["schemas"]["ExecutionRun"];
+            error: null;
+        };
+        ExecutionRunsEnvelope: {
+            data: components["schemas"]["ExecutionRun"][];
+            error: null;
         };
         GenerateInput: {
             /**
@@ -1073,6 +1365,221 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["WorkspaceForbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listProblems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public problem summaries loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemListEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getProblem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public problem specification loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getProblemSkeleton: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public starter files loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemSkeletonEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    submitProblemSolution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitProblemInput"];
+            };
+        };
+        responses: {
+            /** @description Submission accepted; poll the returned submission ID. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionAcceptedEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Daytona execution is not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getProblemSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Submission status and, when complete, per-test results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listExecutions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Execution runs loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionRunsEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitExecutionInput"];
+            };
+        };
+        responses: {
+            /** @description Execution completed and persisted. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionRunEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Daytona execution is not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Execution run loaded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionRunEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };

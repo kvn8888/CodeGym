@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { ProblemDetailPage } from './ProblemDetailPage';
 import type { Problem, SubmissionFile, TestResult } from '../../shared/api/types';
+import { setMockProblemFixture } from '../../mocks/apiProxy';
 
 const meta: Meta<typeof ProblemDetailPage> = {
   title: 'Pages/ProblemDetail',
@@ -182,83 +183,54 @@ const compileErrorResult: TestResult = {
 ./solution.go:6:1: syntax error: non-declaration statement outside function body`,
 };
 
-function makeFetch(problem: Problem, skeleton: { files: SubmissionFile[] }, result?: TestResult) {
-  return (url: string, options?: RequestInit) => {
-    const u = String(url);
-    if (u.includes('/skeleton')) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ data: skeleton, error: null }), {
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    if (u.includes('/submissions') && options?.method === 'POST') {
-      return Promise.resolve(
-        new Response(JSON.stringify({ data: { submission_id: 'sub-123' }, error: null }), {
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    if (u.includes('/submissions')) {
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({ data: { status: result ? 'pass' : 'pending', result }, error: null }),
-          { headers: { 'Content-Type': 'application/json' } },
-        ),
-      );
-    }
-    if (u.includes('/problems')) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ data: problem, error: null }), {
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-    }
-    return Promise.resolve(
-      new Response(JSON.stringify({ data: null, error: { code: 'NOT_FOUND', message: 'Not found' } }), {
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
+function withProblemFixture(
+  problem: Problem,
+  skeleton: { files: SubmissionFile[] },
+  result?: TestResult,
+  resumedFiles?: SubmissionFile[],
+) {
+  return (Story: () => React.JSX.Element) => {
+    setMockProblemFixture({ problem, skeleton, result, resumedFiles });
+    return <Story />;
   };
 }
 
 export const GoTwoSum: Story = {
   name: 'Go – Two Sum (editor)',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(twoSum, goSkeleton) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  decorators: [withProblemFixture(twoSum, goSkeleton)],
 };
 
 export const GoTwoSumPassed: Story = {
   name: 'Go – All Tests Passed',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(twoSum, goSkeleton, passedResult) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  decorators: [withProblemFixture(twoSum, goSkeleton, passedResult)],
 };
 
 export const GoTwoSumFailed: Story = {
   name: 'Go – Tests Failed',
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(twoSum, goSkeleton, failedResult) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  decorators: [withProblemFixture(twoSum, goSkeleton, failedResult)],
 };
 
 export const GoTwoSumCompileError: Story = {
   name: 'Go – Compile Error',
+  decorators: [withProblemFixture(twoSum, goSkeleton, compileErrorResult)],
+};
+
+export const GoTwoSumResumed: Story = {
+  name: 'Go – Resumed Draft',
   decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(twoSum, goSkeleton, compileErrorResult) as typeof fetch;
-      return <Story />;
-    },
+    withProblemFixture(twoSum, goSkeleton, undefined, [
+      {
+        path: 'solution.go',
+        content: `package solution
+
+func TwoSum(nums []int, target int) []int {
+	seen := map[int]int{}
+	// Draft restored from the workspace session.
+	return nil
+}
+`,
+      },
+    ]),
   ],
 };
 
@@ -268,10 +240,5 @@ export const ExpressPagination: Story = {
     initialPath: '/problems/express-pagination',
     routePath: '/problems/:id',
   },
-  decorators: [
-    (Story) => {
-      globalThis.fetch = makeFetch(expressePagination, expressSkeletonFiles) as typeof fetch;
-      return <Story />;
-    },
-  ],
+  decorators: [withProblemFixture(expressePagination, expressSkeletonFiles)],
 };

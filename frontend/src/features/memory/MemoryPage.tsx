@@ -54,6 +54,27 @@ function trendPresentation(trend: SkillProficiency['trend']) {
   return { label: 'Stable', icon: RotateCcw, className: 'text-muted-foreground' };
 }
 
+function normalizeMemoryProfile(profile: UserMemoryProfile): UserMemoryProfile {
+  const notes = Array.isArray(profile.notes)
+    ? profile.notes.map((note) => ({
+        ...note,
+        tags: Array.isArray(note.tags) ? note.tags : [],
+      }))
+    : [];
+
+  return {
+    ...profile,
+    strengths: Array.isArray(profile.strengths) ? profile.strengths : [],
+    growth_edges: Array.isArray(profile.growth_edges) ? profile.growth_edges : [],
+    skills: Array.isArray(profile.skills) ? profile.skills : [],
+    notes,
+  };
+}
+
+function normalizeMemoryEvents(events: MemoryEvent[]): MemoryEvent[] {
+  return Array.isArray(events) ? events : [];
+}
+
 export function MemoryPage() {
   const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
   const [events, setEvents] = useState<MemoryEvent[]>([]);
@@ -69,8 +90,8 @@ export function MemoryPage() {
         api.get<UserMemoryProfile>('/memory/profile'),
         api.get<MemoryEvent[]>('/memory/events'),
       ]);
-      setProfile(nextProfile);
-      setEvents(nextEvents);
+      setProfile(normalizeMemoryProfile(nextProfile));
+      setEvents(normalizeMemoryEvents(nextEvents));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load memory.');
     } finally {
@@ -86,8 +107,8 @@ export function MemoryPage() {
     ])
       .then(([nextProfile, nextEvents]) => {
         if (cancelled) return;
-        setProfile(nextProfile);
-        setEvents(nextEvents);
+        setProfile(normalizeMemoryProfile(nextProfile));
+        setEvents(normalizeMemoryEvents(nextEvents));
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load memory.');
@@ -105,9 +126,9 @@ export function MemoryPage() {
     setError(null);
     try {
       const nextProfile = await api.post<UserMemoryProfile>('/memory/profile/refresh', {});
-      setProfile(nextProfile);
+      setProfile(normalizeMemoryProfile(nextProfile));
       const nextEvents = await api.get<MemoryEvent[]>('/memory/events');
-      setEvents(nextEvents);
+      setEvents(normalizeMemoryEvents(nextEvents));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not refresh memory.');
     } finally {

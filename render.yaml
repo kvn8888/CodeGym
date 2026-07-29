@@ -12,6 +12,7 @@ services:
     # Production uses starter (always-on). Free plan spins down after idle.
     plan: starter
     region: oregon
+    repo: https://github.com/kvn8888/CodeGym
     branch: codegym-v2
     autoDeploy: true
     rootDir: backend

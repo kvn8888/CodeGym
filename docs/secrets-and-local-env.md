@@ -88,9 +88,10 @@ Vite proxies `/api` to `http://localhost:8080`.
 | `CODEGYM_AUTH0_DOMAIN` | When Auth0 | Auth0 tenant domain (e.g. `dev-….us.auth0.com`). |
 | `CODEGYM_AUTH0_AUDIENCE` | When Auth0 | **Auth0 API Identifier** for the CodeGym API (e.g. `https://api.codegym.app`). Must match `VITE_AUTH0_AUDIENCE`. **Not** `https://…auth0.com/api/v2/` (Management API). |
 | `CODEGYM_CORS_ALLOWED_ORIGINS` | Production | Allowed browser origins (Vercel URL). |
+| `CODEGYM_SEED_DEMO` | Demo deploy | Set `true` to idempotently seed the global `two-sum` problem catalog at startup. |
 | `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for protected routes. |
 | `CODEGYM_DEV_TENANT_ID` | Optional | Default personal tenant for static-token auth. |
-| `DAYTONA_API_KEY` / `DAYTONA_API_URL` | Spikes | Daytona sandbox access. |
+| `DAYTONA_API_KEY` / `DAYTONA_API_URL` | Coding demo | Daytona sandbox access for real hidden-test execution. |
 | `VERCEL_API_GATEWAY` | Optional | Vercel AI Gateway key (not used by the multi-provider router today). |
 
 ### GenAI multi-provider registry
@@ -125,6 +126,7 @@ and tries Meta first.
 | `VITE_AUTH0_AUDIENCE` | Same **API Identifier** as `CODEGYM_AUTH0_AUDIENCE` so `getAccessTokenSilently` requests a backend-valid access token. |
 | `VITE_AUTH0_CLIENT_ID` | Auth0 SPA Application Client ID (required for Auth0 UI; empty falls back to “dev auth”). |
 | `VITE_API_BASE_URL` | Optional API origin; leave empty for same-origin / rewrites. |
+| `VITE_USE_MOCK_API` | Set `false` for the deployed real-API demo. Mocks are dev-only regardless. |
 | `VITE_APP_ORIGIN` | Canonical frontend origin (Vercel production URL). |
 
 Keep browser-visible values prefixed with `VITE_`.

@@ -43,6 +43,27 @@ function completedMcqState(prompt: string, round = 1) {
 
 export const mockSessions: PracticeSession[] = [
   {
+    id: 'sess_api_cache_draft',
+    workspace_id: workspaceId,
+    user_id: userId,
+    kind: 'workspace',
+    status: 'active',
+    title: 'Paginated API cache',
+    problem_id: 'pagination-api-cache',
+    created_at: '2026-07-10T15:30:00.000Z',
+    updated_at: '2026-07-10T15:38:00.000Z',
+    last_activity_at: '2026-07-10T15:38:00.000Z',
+    state: { schema_version: 1, hints_revealed: 1 },
+    files: [
+      {
+        file_path: 'solution.ts',
+        content:
+          'type Page<T> = { cursor: string; values: T[]; nextCursor?: string };\n\nexport class PaginatedCache<T> {\n  private pages = new Map<string, Page<T>>();\n}\n',
+        updated_at: '2026-07-10T15:38:00.000Z',
+      },
+    ],
+  },
+  {
     id: 'sess_go_concurrency',
     workspace_id: workspaceId,
     user_id: userId,

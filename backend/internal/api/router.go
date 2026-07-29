@@ -5,10 +5,13 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/submission"
 	"github.com/kvn8888/codegym/backend/internal/usage"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
@@ -19,6 +22,9 @@ type Dependencies struct {
 	Identity      *identity.Service
 	Memory        *memory.Service
 	Sessions      *session.Service
+	Execution     *execution.Service
+	Problems      *problems.Service
+	Submissions   *submission.Service
 	// Generation is nil when no GenAI provider is configured; the generate
 	// route stays registered and answers 503 so clients can fall back.
 	Generation           *generation.Orchestrator
@@ -73,6 +79,17 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/memory/notes/maintain", generateHandler.MaintainProfile)
 	costHandler := handlers.NewCostHandler(deps.Usage)
 	protected.HandleFunc("GET /api/v1/cost", costHandler.Cost)
+	executionHandler := handlers.NewExecutionHandler(deps.Execution)
+	protected.HandleFunc("POST /api/v1/executions", executionHandler.Submit)
+	protected.HandleFunc("GET /api/v1/executions", executionHandler.List)
+	protected.HandleFunc("GET /api/v1/executions/{id}", executionHandler.Get)
+	problemHandler := handlers.NewProblemHandler(deps.Problems)
+	protected.HandleFunc("GET /api/v1/problems", problemHandler.List)
+	protected.HandleFunc("GET /api/v1/problems/{id}", problemHandler.Get)
+	protected.HandleFunc("GET /api/v1/problems/{id}/skeleton", problemHandler.Skeleton)
+	submissionHandler := handlers.NewSubmissionHandler(deps.Submissions)
+	protected.HandleFunc("POST /api/v1/submissions", submissionHandler.Submit)
+	protected.HandleFunc("GET /api/v1/submissions/{id}", submissionHandler.Get)
 
 	protectedChain := chain(
 		protected,

@@ -355,6 +355,198 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/problems:
+    get:
+      operationId: listProblems
+      summary: List the seeded public coding-problem catalog.
+      responses:
+        "200":
+          description: Public problem summaries loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemListEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/problems/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          example: two-sum
+    get:
+      operationId: getProblem
+      summary: Get one public coding-problem specification.
+      description: Hidden tests, the execution entrypoint, and the reference solution are never returned.
+      responses:
+        "200":
+          description: Public problem specification loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/problems/{id}/skeleton:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          example: two-sum
+    get:
+      operationId: getProblemSkeleton
+      summary: Get editable starter files for one coding problem.
+      responses:
+        "200":
+          description: Public starter files loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemSkeletonEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/submissions:
+    post:
+      operationId: submitProblemSolution
+      summary: Run a problem solution against server-only tests in Daytona.
+      description: >
+        The backend loads the hidden tests and execution entrypoint from the
+        problem catalog. Clients send only editable solution files.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProblemInput"
+      responses:
+        "202":
+          description: Submission accepted; poll the returned submission ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmissionAcceptedEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Daytona execution is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/submissions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          example: exec_run_0123456789abcdef
+    get:
+      operationId: getProblemSubmission
+      summary: Poll one structured coding-problem submission.
+      responses:
+        "200":
+          description: Submission status and, when complete, per-test results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmissionEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/executions:
+    get:
+      operationId: listExecutions
+      summary: List the authenticated workspace's raw execution runs.
+      responses:
+        "200":
+          description: Execution runs loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionRunsEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createExecution
+      summary: Run an explicit file bundle in Daytona.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitExecutionInput"
+      responses:
+        "201":
+          description: Execution completed and persisted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionRunEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Daytona execution is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/executions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          example: exec_run_0123456789abcdef
+    get:
+      operationId: getExecution
+      summary: Get one raw execution run.
+      responses:
+        "200":
+          description: Execution run loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionRunEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/v1/generate:
     post:
       operationId: generateContent
@@ -1104,6 +1296,364 @@ components:
                 type: string
               content:
                 type: string
+
+    ProblemSummary:
+      type: object
+      required: [id, title, category, language, difficulty, tags, estimated_minutes, type]
+      properties:
+        id:
+          type: string
+          example: two-sum
+        title:
+          type: string
+          example: Two Sum
+        category:
+          type: string
+          example: algorithms
+        language:
+          type: string
+          example: python
+        framework:
+          type: string
+        difficulty:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 1
+        tags:
+          type: array
+          items:
+            type: string
+        estimated_minutes:
+          type: integer
+          minimum: 1
+          example: 15
+        type:
+          type: string
+          example: coding
+
+    Problem:
+      allOf:
+        - $ref: "#/components/schemas/ProblemSummary"
+        - type: object
+          required: [version, description, runtime, files, test_config]
+          properties:
+            version:
+              type: string
+              example: "1"
+            description:
+              type: string
+            subcategory:
+              type: string
+            runtime:
+              $ref: "#/components/schemas/ProblemRuntime"
+            files:
+              $ref: "#/components/schemas/ProblemFileManifest"
+            test_config:
+              $ref: "#/components/schemas/ProblemTestConfig"
+            hints:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProblemHint"
+
+    ProblemRuntime:
+      type: object
+      required: [image, timeout_seconds, memory_mb, network_mode]
+      properties:
+        image:
+          type: string
+          example: python:3.13
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          example: 20
+        memory_mb:
+          type: integer
+          minimum: 1
+          example: 256
+        network_mode:
+          type: string
+          enum: [block-all]
+
+    ProblemFileManifest:
+      type: object
+      required: [skeleton]
+      properties:
+        skeleton:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProblemFileRef"
+
+    ProblemFileRef:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          example: solution.py
+        entry:
+          type: boolean
+        readonly:
+          type: boolean
+
+    ProblemTestConfig:
+      type: object
+      required: [strategy]
+      properties:
+        strategy:
+          type: string
+          example: hidden
+
+    ProblemHint:
+      type: object
+      required: [cost, text]
+      properties:
+        cost:
+          type: integer
+          minimum: 0
+        text:
+          type: string
+
+    SubmissionFile:
+      type: object
+      required: [path, content]
+      properties:
+        path:
+          type: string
+          example: solution.py
+        content:
+          type: string
+
+    ProblemSkeleton:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubmissionFile"
+
+    ProblemList:
+      type: object
+      required: [problems, total]
+      properties:
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProblemSummary"
+        total:
+          type: integer
+          minimum: 0
+
+    ProblemListEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProblemList"
+        error:
+          type: "null"
+
+    ProblemEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/Problem"
+        error:
+          type: "null"
+
+    ProblemSkeletonEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProblemSkeleton"
+        error:
+          type: "null"
+
+    SubmitProblemInput:
+      type: object
+      required: [problem_id, files]
+      properties:
+        problem_id:
+          type: string
+          example: two-sum
+        session_id:
+          type: string
+          example: sess_0123456789abcdef
+        files:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SubmissionFile"
+
+    SubmissionAccepted:
+      type: object
+      required: [submission_id]
+      properties:
+        submission_id:
+          type: string
+          example: exec_run_0123456789abcdef
+
+    SubmissionAcceptedEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/SubmissionAccepted"
+        error:
+          type: "null"
+
+    SubmissionStatus:
+      type: string
+      enum: [pending, running, completed, error]
+
+    Submission:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/SubmissionStatus"
+        result:
+          $ref: "#/components/schemas/TestResult"
+
+    TestResult:
+      type: object
+      required: [status, total, passed, failed, duration_ms, test_cases]
+      properties:
+        status:
+          type: string
+          enum: [pass, fail]
+        total:
+          type: integer
+          minimum: 0
+        passed:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        duration_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        test_cases:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestCaseResult"
+        compile_error:
+          type: string
+
+    TestCaseResult:
+      type: object
+      required: [name, status, duration_ms]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [pass, fail]
+        duration_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        error:
+          type: string
+
+    SubmissionEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/Submission"
+        error:
+          type: "null"
+
+    ExecutionStatus:
+      type: string
+      enum: [queued, running, passed, failed, error]
+
+    ExecutionRun:
+      type: object
+      required:
+        - id
+        - workspace_id
+        - user_id
+        - language
+        - entrypoint
+        - status
+        - output
+        - duration_ms
+        - created_at
+      properties:
+        id:
+          type: string
+          example: exec_run_0123456789abcdef
+        workspace_id:
+          type: string
+        user_id:
+          type: string
+        problem_id:
+          type: string
+        language:
+          type: string
+        entrypoint:
+          type: string
+        status:
+          $ref: "#/components/schemas/ExecutionStatus"
+        exit_code:
+          type: integer
+        output:
+          type: string
+        error:
+          type: string
+        duration_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    SubmitExecutionInput:
+      type: object
+      required: [problem_id, language, entrypoint, files]
+      properties:
+        problem_id:
+          type: string
+        language:
+          type: string
+        entrypoint:
+          type: string
+        files:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SubmissionFile"
+
+    ExecutionRunEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/ExecutionRun"
+        error:
+          type: "null"
+
+    ExecutionRunsEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutionRun"
+        error:
+          type: "null"
 
     GenerateInput:
       type: object

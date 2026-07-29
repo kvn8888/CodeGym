@@ -9,17 +9,22 @@ import (
 
 // Config contains process configuration loaded from environment variables.
 type Config struct {
-	Host               string
-	Port               string
-	DatabaseURL        string
-	AuthMode           string
-	Auth0Domain        string
-	Auth0IssuerURL     string
-	Auth0Audience      string
-	Auth0ClockSkew     time.Duration
-	DevAuthToken       string
-	DevUserID          string
-	DevWorkspaceID     string
+	Host           string
+	Port           string
+	DatabaseURL    string
+	AuthMode       string
+	Auth0Domain    string
+	Auth0IssuerURL string
+	Auth0Audience  string
+	Auth0ClockSkew time.Duration
+	DevAuthToken   string
+	DevUserID      string
+	DevWorkspaceID string
+	// Daytona sandbox credentials for the execution runner; both come from
+	// Doppler (codegym/dev). Empty API key disables code execution.
+	DaytonaAPIKey      string
+	DaytonaAPIURL      string
+	SeedDemo           bool
 	CORSAllowedOrigins []string
 	MemoryWorker       WorkerConfig
 	// GenAI is the legacy single-provider view (Gemini / CODEGYM_GENAI_*).
@@ -159,6 +164,9 @@ func Load() Config {
 		DevUserID:      env("CODEGYM_DEV_USER_ID", "dev-user"),
 		// Prefer CODEGYM_DEV_WORKSPACE_ID; fall back to legacy CODEGYM_DEV_TENANT_ID.
 		DevWorkspaceID: firstEnvOr("personal-dev", "CODEGYM_DEV_WORKSPACE_ID", "CODEGYM_DEV_TENANT_ID"),
+		DaytonaAPIKey:  os.Getenv("DAYTONA_API_KEY"),
+		DaytonaAPIURL:  os.Getenv("DAYTONA_API_URL"),
+		SeedDemo:       boolEnv("CODEGYM_SEED_DEMO", false),
 		CORSAllowedOrigins: csvEnv("CODEGYM_CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",

@@ -26,6 +26,7 @@ export const memoryEventTypes = {
   problemOpened: 'problem_opened',
   attemptStarted: 'attempt_started',
   testsRun: 'tests_run',
+  hintRevealed: 'hint_revealed',
   attemptSubmitted: 'attempt_submitted',
   attemptSolved: 'attempt_solved',
   attemptFailed: 'attempt_failed',

@@ -555,7 +555,7 @@ func ParseCuratedProfile(raw json.RawMessage, current, fallback memory.Profile, 
 			continue
 		}
 		if !evidenceSkills[id] && !evidenceSkills[normalizeProfileKey(label)] {
-			return memory.Profile{}, fmt.Errorf("skill %q is not supported by deterministic evidence", label)
+			continue
 		}
 		if candidate.Level < 1 || candidate.Level > 5 {
 			return memory.Profile{}, fmt.Errorf("skill %q level must be between 1 and 5", label)

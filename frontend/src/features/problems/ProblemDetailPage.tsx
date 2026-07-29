@@ -9,7 +9,8 @@ import {
 import { useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import Editor from '@monaco-editor/react';
-import { api } from '../../shared/api/client';
+import { api, createMemoryEvent } from '../../shared/api/client';
+import { buildWorkspaceEvent, memoryEventTypes } from '../../shared/api/memoryEvents';
 import { useCodeGymAuthState } from '../../shared/auth/authState';
 import type {
   PracticeSession,
@@ -59,7 +60,15 @@ function restoredHintCount(state: Record<string, unknown>, availableHints: numbe
   return clamp(Math.floor(value), 0, availableHints);
 }
 
-export function ProblemDetailPage() {
+interface ProblemDetailPageProps {
+  initialResult?: TestResult | null;
+  initialMemoryUpdateStatus?: 'idle' | 'pending' | 'synced' | 'failed';
+}
+
+export function ProblemDetailPage({
+  initialResult = null,
+  initialMemoryUpdateStatus = 'idle',
+}: ProblemDetailPageProps = {}) {
   const { configured: authConfigured, isAuthenticated } = useCodeGymAuthState();
   const apiAuthReady = !authConfigured || isAuthenticated;
   const { id } = useParams<{ id: string }>();
@@ -79,11 +88,14 @@ export function ProblemDetailPage() {
   const [resumedDraft, setResumedDraft] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<TestResult | null>(null);
+  const [result, setResult] = useState<TestResult | null>(initialResult);
   const [hintsRevealed, setHintsRevealed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [descriptionWidth, setDescriptionWidth] = useState(DEFAULT_DESCRIPTION_WIDTH);
   const [resultsHeight, setResultsHeight] = useState(DEFAULT_RESULTS_HEIGHT);
+  const [memoryUpdateStatus, setMemoryUpdateStatus] = useState<
+    'idle' | 'pending' | 'synced' | 'failed'
+  >(initialMemoryUpdateStatus);
 
   useEffect(() => {
     if (!id) return;
@@ -100,7 +112,7 @@ export function ProblemDetailPage() {
     setSessionId(null);
     setResumedDraft(false);
     setSaveStatus('idle');
-    setResult(null);
+    setResult(initialResult);
     setError(null);
     setActiveFile(0);
 
@@ -114,23 +126,30 @@ export function ProblemDetailPage() {
           ),
         ]);
 
-        const matchingSummary =
-          (requestedSessionId
-            ? activeSessions.find(
-                (session) =>
-                  session.id === requestedSessionId && session.problem_id === loadedProblem.id,
-              )
-            : undefined) ??
-          activeSessions.find((session) => session.problem_id === loadedProblem.id);
-
-        const workspaceSession = matchingSummary
-          ? await api.get<PracticeSession>(`/sessions/${matchingSummary.id}`)
-          : await api.post<PracticeSession>('/sessions', {
-              kind: 'workspace',
-              title: loadedProblem.title,
-              problem_id: loadedProblem.id,
-              state: { schema_version: 1, hints_revealed: 0 },
-            });
+        let workspaceSession: PracticeSession;
+        if (requestedSessionId) {
+          workspaceSession = await api.get<PracticeSession>(
+            `/sessions/${encodeURIComponent(requestedSessionId)}`,
+          );
+          if (
+            workspaceSession.kind !== 'workspace' ||
+            workspaceSession.problem_id !== loadedProblem.id
+          ) {
+            throw new Error('The requested workspace session does not match this problem.');
+          }
+        } else {
+          const matchingSummary = activeSessions.find(
+            (session) => session.problem_id === loadedProblem.id,
+          );
+          workspaceSession = matchingSummary
+            ? await api.get<PracticeSession>(`/sessions/${matchingSummary.id}`)
+            : await api.post<PracticeSession>('/sessions', {
+                kind: 'workspace',
+                title: loadedProblem.title,
+                problem_id: loadedProblem.id,
+                state: { schema_version: 1, hints_revealed: 0 },
+              });
+        }
 
         if (cancelled) return;
 
@@ -145,6 +164,12 @@ export function ProblemDetailPage() {
           state,
           loadedProblem.hints?.length ?? 0,
         );
+        const restoredMemoryStatus =
+          state.memory_update_status === 'pending' ||
+          state.memory_update_status === 'synced' ||
+          state.memory_update_status === 'failed'
+            ? state.memory_update_status
+            : 'idle';
 
         sessionStateRef.current = state;
         filesRef.current = initialFiles;
@@ -155,6 +180,50 @@ export function ProblemDetailPage() {
         setSessionId(workspaceSession.id);
         setResumedDraft(restoredFiles.length > 0);
         setSaveStatus(restoredFiles.length > 0 ? 'saved' : 'idle');
+        setMemoryUpdateStatus(
+          initialMemoryUpdateStatus === 'idle'
+            ? restoredMemoryStatus
+            : initialMemoryUpdateStatus,
+        );
+        if (typeof state.last_submission_id === 'string' && !initialResult) {
+          void api
+            .get<{ status: string; result?: TestResult }>(
+              `/submissions/${encodeURIComponent(state.last_submission_id)}`,
+            )
+            .then((submission) => {
+              if (!cancelled && submission.status === 'completed' && submission.result) {
+                setResult(submission.result);
+              }
+            })
+            .catch(() => {
+              // A missing historical run does not prevent draft resume.
+            });
+        }
+        if (state.problem_opened_recorded !== true) {
+          const openedState = { ...state, problem_opened_recorded: true };
+          sessionStateRef.current = openedState;
+          void Promise.all([
+            createMemoryEvent(
+              buildWorkspaceEvent({
+                type: memoryEventTypes.problemOpened,
+                summary: 'Opened a coding problem.',
+                payload: {
+                  problem_id: loadedProblem.id,
+                  session_id: workspaceSession.id,
+                  concept: loadedProblem.subcategory ?? loadedProblem.category,
+                  difficulty: loadedProblem.difficulty,
+                  language: loadedProblem.language,
+                  schema_version: 1,
+                },
+              }),
+            ),
+            api.patch<PracticeSession>(`/sessions/${workspaceSession.id}`, {
+              state: openedState,
+            }),
+          ]).catch(() => {
+            sessionStateRef.current = state;
+          });
+        }
       } catch (err: unknown) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Could not load this problem.');
@@ -167,7 +236,7 @@ export function ProblemDetailPage() {
       cancelled = true;
       runRequestRef.current += 1;
     };
-  }, [apiAuthReady, id, requestedSessionId]);
+  }, [apiAuthReady, id, initialMemoryUpdateStatus, initialResult, requestedSessionId]);
 
   const persistDraft = useCallback(
     async (currentFiles: SubmissionFile[], currentHints: number) => {
@@ -226,10 +295,32 @@ export function ProblemDetailPage() {
     [activeFile],
   );
 
-  const revealHint = useCallback((count: number) => {
-    hintsRef.current = count;
-    setHintsRevealed(count);
-  }, []);
+  const revealHint = useCallback(
+    (count: number) => {
+      hintsRef.current = count;
+      setHintsRevealed(count);
+      if (!problem || !sessionId) return;
+      void createMemoryEvent(
+        buildWorkspaceEvent({
+          type: memoryEventTypes.hintRevealed,
+          summary: 'Revealed a coding problem hint.',
+          payload: {
+            problem_id: problem.id,
+            session_id: sessionId,
+            concept: problem.subcategory ?? problem.category,
+            difficulty: problem.difficulty,
+            language: problem.language,
+            hint_index: count,
+            hint_count: problem.hints?.length ?? 0,
+            schema_version: 1,
+          },
+        }),
+      ).catch(() => {
+        // Hint access is never blocked by best-effort memory persistence.
+      });
+    },
+    [problem, sessionId],
+  );
 
   const beginHorizontalResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!pageRef.current) return;
@@ -350,11 +441,25 @@ export function ProblemDetailPage() {
     try {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       await persistDraft(submittedFiles, hintsRef.current);
-      const res = await api.post<{ submission_id: string }>('/submissions', {
+      setMemoryUpdateStatus('pending');
+      const res = await api.post<{
+        submission_id: string;
+        memory_update_status?: 'synced' | 'failed';
+      }>('/submissions', {
         problem_id: problem.id,
         session_id: sessionId,
         files: submittedFiles,
       });
+      sessionStateRef.current = {
+        ...sessionStateRef.current,
+        last_submission_id: res.submission_id,
+        ...(res.memory_update_status
+          ? { memory_update_status: res.memory_update_status }
+          : {}),
+      };
+      if (res.memory_update_status) {
+        setMemoryUpdateStatus(res.memory_update_status);
+      }
 
       while (runRequestRef.current === requestID) {
         const sub = await api.get<{ status: string; result?: TestResult }>(
@@ -377,6 +482,23 @@ export function ProblemDetailPage() {
       }
     } finally {
       if (runRequestRef.current === requestID) setSubmitting(false);
+    }
+  };
+
+  const retryMemoryUpdate = async () => {
+    if (!sessionId) return;
+    setMemoryUpdateStatus('pending');
+    try {
+      await api.post('/memory/profile/maintain', { session_id: sessionId });
+      const state = { ...sessionStateRef.current, memory_update_status: 'synced' };
+      sessionStateRef.current = state;
+      await api.patch<PracticeSession>(`/sessions/${sessionId}`, { state });
+      setMemoryUpdateStatus('synced');
+    } catch {
+      const state = { ...sessionStateRef.current, memory_update_status: 'failed' };
+      sessionStateRef.current = state;
+      void api.patch<PracticeSession>(`/sessions/${sessionId}`, { state }).catch(() => {});
+      setMemoryUpdateStatus('failed');
     }
   };
 
@@ -597,6 +719,25 @@ export function ProblemDetailPage() {
                     <span className="text-[10px] text-[#666]">
                       {result.passed}/{result.total} {'\u2014'} {result.duration_ms}ms
                     </span>
+                    {memoryUpdateStatus === 'pending' && (
+                      <span className="ml-auto text-[10px] text-[#dcdcaa]">
+                        UPDATING MEMORY
+                      </span>
+                    )}
+                    {memoryUpdateStatus === 'synced' && (
+                      <span className="ml-auto text-[10px] text-[#4ec9b0]">
+                        MEMORY UPDATED
+                      </span>
+                    )}
+                    {memoryUpdateStatus === 'failed' && (
+                      <button
+                        type="button"
+                        onClick={() => void retryMemoryUpdate()}
+                        className="ml-auto text-[10px] font-semibold text-[#f0c674] hover:text-white"
+                      >
+                        RESULT SAVED · RETRY MEMORY
+                      </button>
+                    )}
                   </div>
                   <div>
                     {result.test_cases.map((tc: TestCaseResult, i: number) => (

@@ -92,6 +92,21 @@ export const IntakeLoading: Story = {
   parameters: { initialPath: '/generate?prompt=Graph%20traversal' },
 };
 
+export const GeneratedCodingProgress: Story = {
+  name: 'Generated coding · progress',
+  args: { initialFormat: 'coding', initialStarting: true },
+  parameters: { initialPath: '/generate?prompt=Graph%20shortest%20paths' },
+};
+
+export const GeneratedCodingFailure: Story = {
+  name: 'Generated coding · retryable failure',
+  args: {
+    initialFormat: 'coding',
+    initialStartError: 'The model did not return a usable coding problem. Try again.',
+  },
+  parameters: { initialPath: '/generate?prompt=Graph%20shortest%20paths' },
+};
+
 export const IntakeError: Story = {
   args: {
     initialIntake: intake({

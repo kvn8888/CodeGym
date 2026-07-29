@@ -160,6 +160,30 @@ func TestParseCuratedProfileReusesExistingNoteForDuplicateConcept(t *testing.T) 
 	}
 }
 
+func TestParseCuratedProfileDropsSkillsWithoutDeterministicEvidence(t *testing.T) {
+	now := time.Date(2026, 7, 29, 23, 0, 0, 0, time.UTC)
+	fallback := memory.Profile{Skills: []memory.SkillProficiency{{
+		ID: "monotonic-stack", Label: "Monotonic Stack", LastPracticed: now.Add(-time.Minute),
+	}}}
+	raw := json.RawMessage(`{
+		"summary":"Monotonic-stack practice is the current focus.",
+		"strengths":["Monotonic Stack"],"growth_edges":[],
+		"skills":[
+			{"id":"monotonic-stack","label":"Monotonic Stack","area":"DSA","level":3,"confidence":70,"trend":"up"},
+			{"id":"iterative-debugging","label":"Iterative Debugging","area":"General","level":3,"confidence":60,"trend":"flat"}
+		],
+		"notes":[]
+	}`)
+
+	profile, err := ParseCuratedProfile(raw, memory.Profile{}, fallback, now)
+	if err != nil {
+		t.Fatalf("ParseCuratedProfile: %v", err)
+	}
+	if len(profile.Skills) != 1 || profile.Skills[0].Label != "Monotonic Stack" {
+		t.Fatalf("skills = %#v", profile.Skills)
+	}
+}
+
 func TestProfileSynthesizerRefreshAllProfilesUsesLLM(t *testing.T) {
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
 	store := memory.NewInMemoryStore()

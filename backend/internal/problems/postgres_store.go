@@ -27,9 +27,46 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			hidden_test_files jsonb NOT NULL,
 			reference_solution text NOT NULL,
 			entrypoint text NOT NULL,
+			visibility text NOT NULL DEFAULT 'global',
+			workspace_id text,
+			user_id text,
 			created_at timestamptz NOT NULL DEFAULT now(),
 			updated_at timestamptz NOT NULL DEFAULT now()
 		)`,
+		`ALTER TABLE problems ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'global'`,
+		`ALTER TABLE problems ADD COLUMN IF NOT EXISTS workspace_id text`,
+		`ALTER TABLE problems ADD COLUMN IF NOT EXISTS user_id text`,
+		`UPDATE problems SET visibility = 'global' WHERE visibility IS NULL OR visibility = ''`,
+		`CREATE INDEX IF NOT EXISTS idx_problems_scope ON problems (workspace_id, user_id) WHERE visibility = 'workspace'`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conname = 'chk_problems_visibility'
+				  AND conrelid = 'problems'::regclass
+			) THEN
+				ALTER TABLE problems
+					ADD CONSTRAINT chk_problems_visibility
+					CHECK (
+						visibility = 'global'
+						OR (visibility = 'workspace' AND workspace_id IS NOT NULL AND user_id IS NOT NULL)
+					);
+			END IF;
+		END $$`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conname = 'fk_problems_workspace_owner'
+				  AND conrelid = 'problems'::regclass
+			) THEN
+				ALTER TABLE problems
+					ADD CONSTRAINT fk_problems_workspace_owner
+					FOREIGN KEY (workspace_id, user_id)
+					REFERENCES workspace_memberships (workspace_id, user_id)
+					ON DELETE CASCADE;
+			END IF;
+		END $$`,
 		`CREATE INDEX IF NOT EXISTS idx_problems_title ON problems ((public_spec->>'title'))`,
 	}
 	for _, statement := range statements {
@@ -62,21 +99,27 @@ func (s *PostgresStore) Upsert(ctx context.Context, definition Definition) error
 			hidden_test_files,
 			reference_solution,
 			entrypoint,
+			visibility,
+			workspace_id,
+			user_id,
 			updated_at
 		)
-		VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5, $6, now())
+		VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, now())
 		ON CONFLICT (id) DO UPDATE
 		SET public_spec = EXCLUDED.public_spec,
 			skeleton_files = EXCLUDED.skeleton_files,
 			hidden_test_files = EXCLUDED.hidden_test_files,
 			reference_solution = EXCLUDED.reference_solution,
 			entrypoint = EXCLUDED.entrypoint,
+			visibility = EXCLUDED.visibility,
+			workspace_id = EXCLUDED.workspace_id,
+			user_id = EXCLUDED.user_id,
 			updated_at = now()
-	`, definition.ID, string(publicSpec), string(skeletonFiles), string(hiddenFiles), definition.ReferenceSolution, definition.Entrypoint)
+	`, definition.ID, string(publicSpec), string(skeletonFiles), string(hiddenFiles), definition.ReferenceSolution, definition.Entrypoint, normalizeVisibility(definition.Visibility), nullableString(definition.WorkspaceID), nullableString(definition.UserID))
 	return err
 }
 
-func (s *PostgresStore) Get(ctx context.Context, id string) (Definition, error) {
+func (s *PostgresStore) Get(ctx context.Context, id, workspaceID, userID string) (Definition, error) {
 	var publicSpec []byte
 	var skeletonFiles []byte
 	var hiddenFiles []byte
@@ -87,15 +130,22 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Definition, error) 
 			skeleton_files,
 			hidden_test_files,
 			reference_solution,
-			entrypoint
+			entrypoint,
+			visibility,
+			COALESCE(workspace_id, ''),
+			COALESCE(user_id, '')
 		FROM problems
 		WHERE id = $1
-	`, id).Scan(
+		  AND (visibility = 'global' OR (visibility = 'workspace' AND workspace_id = $2 AND user_id = $3))
+	`, id, workspaceID, userID).Scan(
 		&publicSpec,
 		&skeletonFiles,
 		&hiddenFiles,
 		&definition.ReferenceSolution,
 		&definition.Entrypoint,
+		&definition.Visibility,
+		&definition.WorkspaceID,
+		&definition.UserID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Definition{}, ErrNotFound
@@ -115,12 +165,13 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Definition, error) 
 	return definition, nil
 }
 
-func (s *PostgresStore) List(ctx context.Context) ([]Summary, error) {
+func (s *PostgresStore) List(ctx context.Context, workspaceID, userID string) ([]Summary, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT public_spec
 		FROM problems
+		WHERE visibility = 'global' OR (visibility = 'workspace' AND workspace_id = $1 AND user_id = $2)
 		ORDER BY public_spec->>'title' ASC
-	`)
+	`, workspaceID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -142,4 +193,18 @@ func (s *PostgresStore) List(ctx context.Context) ([]Summary, error) {
 		return nil, err
 	}
 	return summaries, nil
+}
+
+func normalizeVisibility(value Visibility) Visibility {
+	if value == VisibilityWorkspace {
+		return value
+	}
+	return VisibilityGlobal
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }

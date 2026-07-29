@@ -280,6 +280,20 @@ func (s *PostgresStore) UpsertFiles(ctx context.Context, workspaceID, userID, se
 	return s.Get(ctx, workspaceID, userID, sessionID)
 }
 
+func (s *PostgresStore) HasPendingMemoryUpdate(ctx context.Context, workspaceID, userID string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM practice_sessions
+			WHERE workspace_id = $1
+			  AND user_id = $2
+			  AND state->>'memory_update_status' IN ('pending', 'failed')
+		)
+	`, workspaceID, userID).Scan(&exists)
+	return exists, err
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }

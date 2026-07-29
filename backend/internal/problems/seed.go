@@ -121,5 +121,6 @@ Exactly one valid answer exists. You may not use the same array element twice, a
 		},
 		ReferenceSolution: twoSumReferenceSolution,
 		Entrypoint:        "test_solution.py",
+		Visibility:        VisibilityGlobal,
 	}
 }

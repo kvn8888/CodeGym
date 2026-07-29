@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/execution"
+	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/problems"
@@ -19,6 +21,14 @@ import (
 
 type capturingRunner struct {
 	spec execution.RunSpec
+}
+
+type failingEventStore struct {
+	*memory.InMemoryStore
+}
+
+func (s *failingEventStore) AppendEvent(context.Context, memory.Event) error {
+	return errors.New("event store unavailable")
 }
 
 func (r *capturingRunner) Run(_ context.Context, spec execution.RunSpec) (execution.RunOutcome, error) {
@@ -38,12 +48,13 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	sessionService := session.NewService(session.NewInMemoryStore(), nil)
 	runner := &capturingRunner{}
 	executionService := execution.NewService(execution.NewInMemoryStore(), runner, nil)
-	submissionService := submission.NewService(problemService, executionService, sessionService)
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, nil)
 
 	router := NewRouter(Dependencies{
 		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
 		Identity:      identity.NewService(identity.NewInMemoryStore()),
-		Memory:        memory.NewService(memory.NewInMemoryStore(), nil),
+		Memory:        memoryService,
 		Sessions:      sessionService,
 		Execution:     executionService,
 		Problems:      problemService,
@@ -117,7 +128,8 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	updatedSession := decodeEnvelopeData[session.Session](t, getSession)
 	if updatedSession.Status != session.StatusCompleted ||
 		len(updatedSession.Files) != 1 ||
-		updatedSession.Files[0].Path != "solution.py" {
+		updatedSession.Files[0].Path != "solution.py" ||
+		!strings.Contains(string(updatedSession.State), `"last_submission_id":"`+accepted.SubmissionID+`"`) {
 		t.Fatalf("updated session = %#v", updatedSession)
 	}
 
@@ -125,6 +137,55 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	if strings.Contains(getExecution.Body.String(), `"files"`) ||
 		strings.Contains(getExecution.Body.String(), "seen[complement]") {
 		t.Fatalf("execution endpoint leaked stored run files: %s", getExecution.Body.String())
+	}
+
+	eventsResponse := authedRequest(t, router, http.MethodGet, "/api/v1/memory/events", "")
+	for _, eventType := range []string{"attempt_started", "attempt_submitted", "tests_run", "attempt_solved"} {
+		if !strings.Contains(eventsResponse.Body.String(), eventType) {
+			t.Fatalf("memory events missing %s: %s", eventType, eventsResponse.Body.String())
+		}
+	}
+	if !strings.Contains(eventsResponse.Body.String(), `"tags"`) {
+		t.Fatalf("memory events missing governed problem tags: %s", eventsResponse.Body.String())
+	}
+	if strings.Contains(eventsResponse.Body.String(), "def two_sum") ||
+		strings.Contains(eventsResponse.Body.String(), "CODEGYM_RESULT") {
+		t.Fatalf("memory event leaked code or hidden tests: %s", eventsResponse.Body.String())
+	}
+}
+
+func TestTerminalSubmissionSurvivesMemoryPersistenceFailure(t *testing.T) {
+	problemService := problems.NewService(problems.NewInMemoryStore())
+	if err := problemService.EnsureSeed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	sessionService := session.NewService(session.NewInMemoryStore(), nil)
+	executionService := execution.NewService(execution.NewInMemoryStore(), &capturingRunner{}, nil)
+	memoryService := memory.NewService(&failingEventStore{memory.NewInMemoryStore()}, nil)
+	profiles := generation.NewProfileSynthesizer(nil, memoryService)
+	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, profiles)
+	router := NewRouter(Dependencies{
+		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:      identity.NewService(identity.NewInMemoryStore()), Memory: memoryService,
+		Sessions: sessionService, Execution: executionService, Problems: problemService,
+		Submissions: submissionService, MemoryProfiles: profiles,
+	})
+	create := authedRequest(t, router, http.MethodPost, "/api/v1/sessions",
+		`{"kind":"workspace","problem_id":"two-sum","state":{"schema_version":1}}`)
+	created := decodeEnvelopeData[session.Session](t, create)
+	submit := authedRequest(t, router, http.MethodPost, "/api/v1/submissions",
+		`{"problem_id":"two-sum","session_id":"`+created.ID+`","files":[{"path":"solution.py","content":"def two_sum(nums,target): return [0,1]"}]}`)
+	if submit.Code != http.StatusAccepted {
+		t.Fatalf("submit status=%d body=%s", submit.Code, submit.Body.String())
+	}
+	accepted := decodeEnvelopeData[submission.Accepted](t, submit)
+	if accepted.MemoryUpdateStatus != "failed" || accepted.SubmissionID == "" {
+		t.Fatalf("accepted=%#v", accepted)
+	}
+	found := authedRequest(t, router, http.MethodGet, "/api/v1/sessions/"+created.ID, "")
+	updated := decodeEnvelopeData[session.Session](t, found)
+	if updated.Status != session.StatusCompleted || !strings.Contains(string(updated.State), `"memory_update_status":"failed"`) {
+		t.Fatalf("terminal result/state not preserved: %#v", updated)
 	}
 }
 

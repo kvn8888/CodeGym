@@ -64,6 +64,7 @@ rules. If the emitter is the same, prefer a new `type` under an existing source.
 | `problem_opened` | User opened a problem workspace. |
 | `attempt_started` | User began editing or running code. |
 | `tests_run` | User executed tests against an attempt. |
+| `hint_revealed` | User explicitly revealed a numbered coding hint; never include hint text. |
 | `attempt_submitted` | User submitted a solution attempt. |
 | `attempt_solved` | Hidden/reference checks mark the attempt as solved. |
 | `attempt_failed` | A submitted attempt failed checks and is useful for growth edges. |

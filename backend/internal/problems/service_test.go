@@ -3,8 +3,12 @@ package problems
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
@@ -59,4 +63,44 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 	if len(skeleton.Files) != 1 || skeleton.Files[0].Content != twoSumSkeleton {
 		t.Fatalf("skeleton = %#v", skeleton)
 	}
+}
+
+func TestGeneratedProblemsAreVisibleOnlyToTheirOwnerScope(t *testing.T) {
+	service := NewService(NewInMemoryStore())
+	if err := service.EnsureSeed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	owner := problemTestContext("workspace-1", "user-1")
+	generated, err := service.PersistGenerated(owner, Definition{
+		Problem: Problem{Summary: Summary{Title: "Private Graph Problem", Language: "python"}},
+	})
+	if err != nil {
+		t.Fatalf("PersistGenerated: %v", err)
+	}
+	if generated.ID == "" {
+		t.Fatal("generated problem did not receive an id")
+	}
+	if _, err := service.Get(owner, generated.ID); err != nil {
+		t.Fatalf("owner Get: %v", err)
+	}
+	if _, err := service.Get(problemTestContext("workspace-2", "user-1"), generated.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-workspace Get err=%v, want ErrNotFound", err)
+	}
+	if _, err := service.Get(problemTestContext("workspace-1", "user-2"), generated.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-user Get err=%v, want ErrNotFound", err)
+	}
+	otherList, err := service.List(problemTestContext("workspace-2", "user-2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(otherList) != 1 || otherList[0].ID != "two-sum" {
+		t.Fatalf("other scope should see only global seed: %#v", otherList)
+	}
+}
+
+func problemTestContext(workspaceID, userID string) context.Context {
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
+		UserID: userID, DefaultWorkspaceID: workspaceID, WorkspaceIDs: []string{workspaceID},
+	})
+	return workspace.WithScope(ctx, workspace.Scope{WorkspaceID: workspaceID})
 }

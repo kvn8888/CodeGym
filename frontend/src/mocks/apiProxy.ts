@@ -480,7 +480,10 @@ export async function mockApiFetch(
   }
 
   if (method === 'POST' && path === '/submissions') {
-    return json({ submission_id: `mock-submission-${Date.now()}` }, { status: 202 });
+    return json(
+      { submission_id: `mock-submission-${Date.now()}`, memory_update_status: 'synced' },
+      { status: 202 },
+    );
   }
 
   const submissionMatch = path.match(/^\/submissions\/([^/]+)$/);
@@ -531,8 +534,19 @@ export async function mockApiFetch(
   if (method === 'POST' && path === '/generate') {
     const rawBody = typeof init?.body === 'string' ? init.body : '{}';
     const body = JSON.parse(rawBody) as {
+      kind?: string;
       spec?: { count?: number };
     };
+    if (body.kind === 'problem') {
+      const problem = mockProblems[0];
+      return json({
+        kind: 'problem',
+        problem_id: problem.id,
+        problem,
+        provider: 'mock',
+        model: 'mock-model',
+      });
+    }
     const count = Math.max(1, body.spec?.count ?? 5);
     const questions = Array.from({ length: count }, (_, index) => ({
       ...mockMcqQuestions[index % mockMcqQuestions.length],

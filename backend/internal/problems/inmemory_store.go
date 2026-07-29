@@ -26,28 +26,39 @@ func (s *InMemoryStore) Upsert(_ context.Context, definition Definition) error {
 	return nil
 }
 
-func (s *InMemoryStore) Get(_ context.Context, id string) (Definition, error) {
+func (s *InMemoryStore) Get(_ context.Context, id, workspaceID, userID string) (Definition, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	definition, ok := s.definitions[id]
-	if !ok {
+	if !ok || !visibleTo(definition, workspaceID, userID) {
 		return Definition{}, ErrNotFound
 	}
 	return cloneDefinition(definition), nil
 }
 
-func (s *InMemoryStore) List(_ context.Context) ([]Summary, error) {
+func (s *InMemoryStore) List(_ context.Context, workspaceID, userID string) ([]Summary, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	summaries := make([]Summary, 0, len(s.definitions))
 	for _, definition := range s.definitions {
+		if !visibleTo(definition, workspaceID, userID) {
+			continue
+		}
 		summaries = append(summaries, cloneSummary(definition.Summary))
 	}
 	sort.Slice(summaries, func(i, j int) bool {
 		return summaries[i].Title < summaries[j].Title
 	})
 	return summaries, nil
+}
+
+func visibleTo(definition Definition, workspaceID, userID string) bool {
+	if definition.Visibility == "" || definition.Visibility == VisibilityGlobal {
+		return true
+	}
+	return definition.Visibility == VisibilityWorkspace &&
+		definition.WorkspaceID == workspaceID && definition.UserID == userID
 }
 
 func cloneDefinition(definition Definition) Definition {

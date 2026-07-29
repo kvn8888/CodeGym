@@ -13,6 +13,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
 )
 
@@ -31,12 +32,17 @@ func (s staticGenerator) Generate(_ context.Context, _ generation.GenerateReques
 
 func newGenerateTestRouter(t *testing.T, orchestrator *generation.Orchestrator, memoryService *memory.Service) http.Handler {
 	t.Helper()
+	problemService := problems.NewService(problems.NewInMemoryStore())
+	if err := problemService.EnsureSeed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	return NewRouter(Dependencies{
 		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
 		Identity:      identity.NewService(identity.NewInMemoryStore()),
 		Memory:        memoryService,
 		Sessions:      session.NewService(session.NewInMemoryStore(), nil),
 		Generation:    orchestrator,
+		Problems:      problemService,
 	})
 }
 
@@ -288,11 +294,83 @@ func TestGenerateRouteNotImplementedKinds(t *testing.T) {
 	router := newGenerateTestRouter(t, orchestrator, memoryService)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"problem"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"interview"}`))
 	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGenerateRoutePersistsWorkspaceScopedProblem(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	payload := `{
+		"title":"Reverse Words","description":"Reverse the words.","category":"algorithms",
+		"subcategory":"strings","tags":["strings"],"difficulty":1,"estimated_minutes":15,
+		"function_name":"reverse_words","parameters":[{"name":"value","type":"str"}],
+		"return_type":"str","hints":["Split first."],
+		"reference_solution":"def reverse_words(value: str) -> str:\n    return ' '.join(reversed(value.split()))",
+		"test_cases":[
+			{"name":"one","args":["hello world"],"expected":"world hello"},
+			{"name":"single","args":["hello"],"expected":"hello"},
+			{"name":"spaces","args":["a b c"],"expected":"c b a"},
+			{"name":"empty","args":[""],"expected":""}
+		]
+	}`
+	orchestrator := generation.NewOrchestrator(memoryService, staticGenerator{payload: payload})
+	router := newGenerateTestRouter(t, orchestrator, memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"problem","spec":{"topic":"strings","difficulty":"easy"}}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var envelope struct {
+		Data struct {
+			ProblemID string `json:"problem_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil || envelope.Data.ProblemID == "" {
+		t.Fatalf("response = %s err=%v", recorder.Body.String(), err)
+	}
+	get := httptest.NewRecorder()
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/problems/"+envelope.Data.ProblemID, nil)
+	getRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(get, getRequest)
+	if get.Code != http.StatusOK || strings.Contains(get.Body.String(), "reference_solution") ||
+		strings.Contains(get.Body.String(), "CODEGYM_RESULT") {
+		t.Fatalf("unsafe or missing public problem: %d %s", get.Code, get.Body.String())
+	}
+	otherScope := httptest.NewRecorder()
+	otherRequest := httptest.NewRequest(http.MethodGet, "/api/v1/problems/"+envelope.Data.ProblemID, nil)
+	otherRequest.Header.Set("Authorization", "Bearer dev:other:other-workspace")
+	router.ServeHTTP(otherScope, otherRequest)
+	if otherScope.Code != http.StatusNotFound {
+		t.Fatalf("cross-workspace problem status=%d body=%s", otherScope.Code, otherScope.Body.String())
+	}
+}
+
+func TestProblemGenerationRejectsExplicitlyStaleMemory(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	orchestrator := generation.NewOrchestrator(memoryService, staticGenerator{payload: `{}`})
+	router := newGenerateTestRouter(t, orchestrator, memoryService)
+	create := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(
+		`{"kind":"workspace","problem_id":"two-sum","state":{"schema_version":1,"memory_update_status":"failed"}}`,
+	))
+	createRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(create, createRequest)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", create.Code, create.Body.String())
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/generate", strings.NewReader(`{"kind":"problem","spec":{"topic":"arrays"}}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "memory_update_required") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

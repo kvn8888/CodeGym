@@ -47,7 +47,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Session, error
 	now := s.now().UTC()
 	session := Session{
 		ID:              newID("sess"),
-		WorkspaceID:        id.workspaceID,
+		WorkspaceID:     id.workspaceID,
 		UserID:          id.userID,
 		Kind:            kind,
 		Status:          StatusActive,
@@ -157,9 +157,40 @@ func (s *Service) UpsertFiles(ctx context.Context, sessionID string, input Upser
 	return s.store.UpsertFiles(ctx, id.workspaceID, id.userID, sessionID, files)
 }
 
+func (s *Service) HasPendingMemoryUpdate(ctx context.Context) (bool, error) {
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+	return s.store.HasPendingMemoryUpdate(ctx, id.workspaceID, id.userID)
+}
+
+func (s *Service) SetMemoryUpdateStatus(ctx context.Context, sessionID, status string) (Session, error) {
+	switch status {
+	case "idle", "pending", "synced", "failed":
+	default:
+		return Session{}, errors.New("invalid memory update status")
+	}
+	current, err := s.Get(ctx, sessionID)
+	if err != nil {
+		return Session{}, err
+	}
+	state := map[string]any{}
+	if len(current.State) > 0 {
+		_ = json.Unmarshal(current.State, &state)
+	}
+	state["memory_update_status"] = status
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		return Session{}, err
+	}
+	raw := json.RawMessage(encoded)
+	return s.Update(ctx, sessionID, UpdateInput{State: &raw})
+}
+
 type identity struct {
 	workspaceID string
-	userID   string
+	userID      string
 }
 
 func identityFromContext(ctx context.Context) (identity, error) {

@@ -124,6 +124,12 @@
     },
     {
       "source": "workspace",
+      "key": "hintRevealed",
+      "value": "hint_revealed",
+      "goConst": "TypeHintRevealed"
+    },
+    {
+      "source": "workspace",
       "key": "attemptSubmitted",
       "value": "attempt_submitted",
       "goConst": "TypeAttemptSubmitted"

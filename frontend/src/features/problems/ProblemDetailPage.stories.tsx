@@ -202,12 +202,20 @@ export const GoTwoSum: Story = {
 
 export const GoTwoSumPassed: Story = {
   name: 'Go – All Tests Passed',
+  args: { initialResult: passedResult, initialMemoryUpdateStatus: 'synced' },
   decorators: [withProblemFixture(twoSum, goSkeleton, passedResult)],
 };
 
 export const GoTwoSumFailed: Story = {
   name: 'Go – Tests Failed',
+  args: { initialResult: failedResult, initialMemoryUpdateStatus: 'synced' },
   decorators: [withProblemFixture(twoSum, goSkeleton, failedResult)],
+};
+
+export const ResultSavedMemoryRetry: Story = {
+  name: 'Result saved – Memory retry',
+  args: { initialResult: passedResult, initialMemoryUpdateStatus: 'failed' },
+  decorators: [withProblemFixture(twoSum, goSkeleton, passedResult)],
 };
 
 export const GoTwoSumCompileError: Story = {

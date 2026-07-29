@@ -2,8 +2,15 @@ package problems
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
 type Service struct {
@@ -25,7 +32,8 @@ func (s *Service) List(ctx context.Context) ([]Summary, error) {
 	if s == nil || s.store == nil {
 		return nil, errors.New("problem store is not configured")
 	}
-	return s.store.List(ctx)
+	workspaceID, userID := scopeFromContext(ctx)
+	return s.store.List(ctx, workspaceID, userID)
 }
 
 func (s *Service) Get(ctx context.Context, id string) (Problem, error) {
@@ -51,5 +59,42 @@ func (s *Service) GetDefinition(ctx context.Context, id string) (Definition, err
 	if s == nil || s.store == nil {
 		return Definition{}, errors.New("problem store is not configured")
 	}
-	return s.store.Get(ctx, strings.TrimSpace(id))
+	workspaceID, userID := scopeFromContext(ctx)
+	return s.store.Get(ctx, strings.TrimSpace(id), workspaceID, userID)
+}
+
+// PersistGenerated assigns ownership and a non-guessable ID before saving a
+// model-generated definition. Hidden tests remain server-only.
+func (s *Service) PersistGenerated(ctx context.Context, definition Definition) (Problem, error) {
+	workspaceID, userID := scopeFromContext(ctx)
+	if workspaceID == "" || userID == "" {
+		return Problem{}, errors.New("missing authenticated workspace scope")
+	}
+	if definition.ID == "" {
+		definition.ID = newGeneratedID()
+	}
+	definition.Visibility = VisibilityWorkspace
+	definition.WorkspaceID = workspaceID
+	definition.UserID = userID
+	if err := s.store.Upsert(ctx, definition); err != nil {
+		return Problem{}, err
+	}
+	return definition.Problem, nil
+}
+
+func scopeFromContext(ctx context.Context) (string, string) {
+	principal, principalOK := auth.PrincipalFromContext(ctx)
+	scope, scopeOK := workspace.ScopeFromContext(ctx)
+	if !principalOK || !scopeOK {
+		return "", ""
+	}
+	return scope.WorkspaceID, principal.UserID
+}
+
+func newGeneratedID() string {
+	var value [12]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return fmt.Sprintf("generated-%d", time.Now().UnixNano())
+	}
+	return "generated-" + hex.EncodeToString(value[:])
 }

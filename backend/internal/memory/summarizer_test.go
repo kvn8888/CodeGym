@@ -102,6 +102,23 @@ func TestSummarizeKeepsMixedSignalNeutral(t *testing.T) {
 	}
 }
 
+func TestSummarizeTreatsGovernedConceptAsSkillEvidence(t *testing.T) {
+	now := time.Date(2026, 7, 29, 22, 0, 0, 0, time.UTC)
+	got := Summarize(Profile{}, []Event{{
+		ID:         "evt-concept",
+		Source:     "workspace",
+		Type:       "attempt_solved",
+		Summary:    "Solved a coding problem.",
+		Payload:    mustJSON(t, map[string]any{"concept": "Monotonic Stack", "language": "Python", "passed": true}),
+		OccurredAt: now.Add(-time.Minute),
+		CreatedAt:  now.Add(-time.Minute),
+	}}, now)
+
+	if !contains(got.Strengths, "Monotonic Stack") {
+		t.Fatalf("expected governed concept to support a skill, got %#v", got.Strengths)
+	}
+}
+
 func mustJSON(t *testing.T, value any) json.RawMessage {
 	t.Helper()
 	payload, err := json.Marshal(value)

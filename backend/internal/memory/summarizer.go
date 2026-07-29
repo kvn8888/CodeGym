@@ -152,7 +152,7 @@ func inferSkills(event Event, payload map[string]any) []string {
 		labels = append(labels, label)
 	}
 
-	for _, key := range []string{"skill", "area", "topic", "category", "framework", "language", "problem_type"} {
+	for _, key := range []string{"skill", "area", "topic", "concept", "category", "framework", "language", "problem_type"} {
 		add(stringValue(payload, key))
 	}
 	for _, key := range []string{"skills", "tags", "concepts", "topics"} {

@@ -145,6 +145,9 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 			t.Fatalf("memory events missing %s: %s", eventType, eventsResponse.Body.String())
 		}
 	}
+	if !strings.Contains(eventsResponse.Body.String(), `"tags"`) {
+		t.Fatalf("memory events missing governed problem tags: %s", eventsResponse.Body.String())
+	}
 	if strings.Contains(eventsResponse.Body.String(), "def two_sum") ||
 		strings.Contains(eventsResponse.Body.String(), "CODEGYM_RESULT") {
 		t.Fatalf("memory event leaked code or hidden tests: %s", eventsResponse.Body.String())

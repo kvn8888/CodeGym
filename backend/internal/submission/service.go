@@ -133,7 +133,7 @@ func (s *Service) recordEvent(ctx context.Context, eventType, summary string, de
 	payload := map[string]any{
 		"problem_id": definition.ID, "session_id": sessionID,
 		"concept": definition.Subcategory, "difficulty": definition.Difficulty,
-		"language": definition.Language, "schema_version": 1,
+		"language": definition.Language, "tags": definition.Tags, "schema_version": 1,
 	}
 	for key, value := range extra {
 		payload[key] = value

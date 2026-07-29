@@ -14,7 +14,11 @@ import { HelpFlashcard } from './HelpFlashcard';
 import { api, createMemoryEvent } from '../../shared/api/client';
 import type { MCQQuestionType, NewPracticeConfig, PracticeSession } from '../../shared/api/types';
 import { WorkspacePage } from '../../shared/components/WorkspacePage';
-import { buildMcqEvent, memoryEventTypes } from '../../shared/api/memoryEvents';
+import {
+  buildGenerateEvent,
+  buildMcqEvent,
+  memoryEventTypes,
+} from '../../shared/api/memoryEvents';
 import type { MemoryEventType } from '../../shared/api/memoryEvents';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -344,6 +348,20 @@ function MemoryUpdateToast({ status }: { status: MemoryUpdateStatus }) {
 // ── Component ────────────────────────────────────────────────────────────────
 
 /**
+ * Marathon UI phases. `generation_failed` is the stable user-visible failure
+ * value aligned with memory event type `generation_failed`.
+ */
+type MarathonPhase = 'loading' | 'generation_failed' | 'active' | 'results';
+
+type GenerationFailure = {
+  /** Which generation attempt failed. */
+  kind: 'start' | 'next_round';
+  message: string;
+  round: number;
+  config: NewPracticeConfig;
+};
+
+/**
  * MarathonPage - timed mixed-question practice marathon.
  *
  * Entry is only via New Practice launch state or `?session=` resume.
@@ -351,6 +369,7 @@ function MemoryUpdateToast({ status }: { status: MemoryUpdateStatus }) {
  *
  * States:
  * - loading: generating a personalized set via POST /api/v1/generate
+ * - generation_failed: explicit failure with retry / edit-prompt / practice-set
  * - active: question display with timer + options + help button
  * - results: score summary + time breakdown + recommendations
  */
@@ -362,7 +381,9 @@ export function MarathonPage() {
   const requestedSessionId = searchParams.get('session') ?? '';
 
   // Which phase the marathon is in.
-  const [phase, setPhase] = useState<'loading' | 'active' | 'results'>('loading');
+  const [phase, setPhase] = useState<MarathonPhase>('loading');
+  const [generationFailure, setGenerationFailure] = useState<GenerationFailure | null>(null);
+  const [generationPending, setGenerationPending] = useState(false);
 
   // Guard: prevents accidental option selection when Next button unmounts
   // and mouseup lands on an option button underneath.
@@ -504,33 +525,75 @@ export function MarathonPage() {
     return () => clearInterval(interval);
   }, [phase, confirmed, evaluating]);
 
-  /** Generate one round's question set; falls back to the built-in practice
-   *  set when generation is unavailable. */
+  /** Generate one round's question set. Throws on provider/empty failures so
+   *  the UI can show an explicit `generation_failed` state instead of silently
+   *  swapping in the practice set. */
   const generateRound = async (
     roundNumber: number,
     config: NewPracticeConfig = { prompt: studyPrompt, difficulty, count: questionCount },
   ) => {
-    let nextQuestions = buildFallbackQuestions(config.count);
-    let fallback = true;
-    try {
-      const generated = await api.post<GenerateMcqResponse>('/generate', {
-        kind: 'mcq',
-        spec: {
-          topic: '',
-          prompt: config.prompt.trim(),
-          count: config.count,
-          difficulty: config.difficulty,
-          round: roundNumber,
-        },
-      });
-      if (generated.questions?.length) {
-        nextQuestions = generated.questions;
-        fallback = false;
-      }
-    } catch (err) {
-      console.warn('MCQ generation unavailable; using the built-in practice set.', err);
+    const generated = await api.post<GenerateMcqResponse>('/generate', {
+      kind: 'mcq',
+      spec: {
+        topic: '',
+        prompt: config.prompt.trim(),
+        count: config.count,
+        difficulty: config.difficulty,
+        round: roundNumber,
+      },
+    });
+    if (!generated.questions?.length) {
+      throw new Error('Generation returned an empty question set.');
     }
-    return { nextQuestions, fallback };
+    return { nextQuestions: generated.questions, fallback: false as const };
+  };
+
+  const recordGenerationFailed = (failure: GenerationFailure) => {
+    setGenerationFailure(failure);
+    setPhase('generation_failed');
+    void createMemoryEvent(
+      buildGenerateEvent({
+        type: memoryEventTypes.generationFailed,
+        summary: failure.message,
+        payload: {
+          schema_version: 1,
+          kind: 'mcq',
+          failure_kind: failure.kind,
+          round: failure.round,
+          prompt: failure.config.prompt,
+          difficulty: failure.config.difficulty,
+          count: failure.config.count,
+          session_id: practiceSessionIdRef.current || undefined,
+        },
+      }),
+    ).catch(() => {});
+  };
+
+  const enterGeneratedRound = async (
+    roundNumber: number,
+    nextQuestions: MarathonQuestion[],
+    fallback: boolean,
+    config: NewPracticeConfig,
+  ) => {
+    beginRound(roundNumber, nextQuestions, fallback);
+    await persistSession({
+      prompt: config.prompt,
+      difficulty: config.difficulty,
+      count: config.count,
+      round: roundNumber,
+      question_index: 0,
+      elapsed: 0,
+      selected_index: null,
+      selected_indices: [],
+      response_text: '',
+      evaluation_result: null,
+      confirmed: false,
+      using_fallback: fallback,
+      questions: nextQuestions,
+      ...(roundNumber === 1
+        ? { results: [], skipped_questions: [] }
+        : {}),
+    });
   };
 
   /** Enter a round: reset per-question state and emit session_started. */
@@ -663,6 +726,8 @@ export function MarathonPage() {
   const handleStart = async (config?: NewPracticeConfig) => {
     const nextConfig = config ?? { prompt: studyPrompt, difficulty, count: questionCount };
     setPhase('loading');
+    setGenerationFailure(null);
+    setGenerationPending(true);
     setIsFinishing(false);
     setSessionError(null);
     showMemoryUpdateStatus(null);
@@ -678,29 +743,70 @@ export function MarathonPage() {
       const durableSessionId = await ensurePracticeSession(nextConfig);
       baseIdRef.current = durableSessionId;
       setRound(1);
-      const { nextQuestions, fallback } = await generateRound(1, nextConfig);
-      beginRound(1, nextQuestions, fallback);
-      await persistSession({
-        prompt: nextConfig.prompt,
-        difficulty: nextConfig.difficulty,
-        count: nextConfig.count,
-        round: 1,
-        question_index: 0,
-        elapsed: 0,
-        selected_index: null,
-        selected_indices: [],
-        response_text: '',
-        evaluation_result: null,
-        confirmed: false,
-        using_fallback: fallback,
-        questions: nextQuestions,
-        results: [],
-        skipped_questions: [],
-      });
+      try {
+        const { nextQuestions, fallback } = await generateRound(1, nextConfig);
+        await enterGeneratedRound(1, nextQuestions, fallback, nextConfig);
+      } catch (err) {
+        recordGenerationFailed({
+          kind: 'start',
+          message: err instanceof Error ? err.message : 'Could not generate a question set.',
+          round: 1,
+          config: nextConfig,
+        });
+      }
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : 'Could not start the practice session.');
       navigate('/generate', { replace: true });
+    } finally {
+      setGenerationPending(false);
     }
+  };
+
+  /** Retry the failed generation attempt without leaving the marathon session. */
+  const handleRetryGeneration = async () => {
+    if (!generationFailure || generationPending) return;
+    const failure = generationFailure;
+    setPhase('loading');
+    setGenerationFailure(null);
+    setGenerationPending(true);
+    setSessionError(null);
+    try {
+      const { nextQuestions, fallback } = await generateRound(failure.round, failure.config);
+      await enterGeneratedRound(failure.round, nextQuestions, fallback, failure.config);
+    } catch (err) {
+      recordGenerationFailed({
+        ...failure,
+        message: err instanceof Error ? err.message : 'Could not generate a question set.',
+      });
+    } finally {
+      setGenerationPending(false);
+    }
+  };
+
+  /** Explicit opt-in to the built-in practice set after a generation failure. */
+  const handleUsePracticeSet = async () => {
+    if (!generationFailure || generationPending) return;
+    const failure = generationFailure;
+    setGenerationPending(true);
+    setGenerationFailure(null);
+    setSessionError(null);
+    try {
+      const nextQuestions = buildFallbackQuestions(failure.config.count);
+      await enterGeneratedRound(failure.round, nextQuestions, true, failure.config);
+    } catch (err) {
+      setSessionError(err instanceof Error ? err.message : 'Could not start the practice set.');
+      setPhase('generation_failed');
+      setGenerationFailure(failure);
+    } finally {
+      setGenerationPending(false);
+    }
+  };
+
+  const handleEditPrompt = () => {
+    const prompt = generationFailure?.config.prompt ?? studyPrompt;
+    const params = new URLSearchParams();
+    if (prompt.trim()) params.set('prompt', prompt.trim());
+    navigate(params.size > 0 ? `/generate?${params}` : '/generate');
   };
 
   useEffect(() => {
@@ -776,26 +882,19 @@ export function MarathonPage() {
   /** Round finished, user wants more: reflect (memory update), then build the
    *  next round from the just-updated notes. */
   const handleNextRound = async () => {
+    if (generationPending) return;
     setIsFinishing(false);
     setPhase('loading');
+    setGenerationFailure(null);
     setSessionError(null);
+    const nextConfig: NewPracticeConfig = {
+      prompt: studyPrompt,
+      difficulty,
+      count: questionCount,
+    };
+    const nextRound = round + 1;
     try {
       await reflectOnRound();
-      const nextRound = round + 1;
-      const { nextQuestions, fallback } = await generateRound(nextRound);
-      beginRound(nextRound, nextQuestions, fallback);
-      void persistSession({
-        round: nextRound,
-        question_index: 0,
-        elapsed: 0,
-        selected_index: null,
-        selected_indices: [],
-        response_text: '',
-        evaluation_result: null,
-        confirmed: false,
-        using_fallback: fallback,
-        questions: nextQuestions,
-      }).catch(() => {});
     } catch (err) {
       setSessionError(
         err instanceof Error
@@ -803,6 +902,22 @@ export function MarathonPage() {
           : 'Could not update memory. Retry before creating the next question set.',
       );
       setPhase('active');
+      return;
+    }
+
+    setGenerationPending(true);
+    try {
+      const { nextQuestions, fallback } = await generateRound(nextRound, nextConfig);
+      await enterGeneratedRound(nextRound, nextQuestions, fallback, nextConfig);
+    } catch (err) {
+      recordGenerationFailed({
+        kind: 'next_round',
+        message: err instanceof Error ? err.message : 'Could not generate the next question set.',
+        round: nextRound,
+        config: nextConfig,
+      });
+    } finally {
+      setGenerationPending(false);
     }
   };
 
@@ -1097,6 +1212,59 @@ export function MarathonPage() {
                 ? `Reflecting on round ${round} before showing your results…`
               : `Reflecting on round ${round}, then building round ${round + 1} from the updated notes…`}
           </p>
+        </Card>
+      </WorkspacePage>
+    );
+  }
+
+  // ── Generation failed: retry, edit prompt, or explicit practice-set path ─
+  if (phase === 'generation_failed') {
+    const failure = generationFailure;
+    const title =
+      failure?.kind === 'next_round'
+        ? `Couldn’t build round ${failure.round}`
+        : 'Couldn’t build your set';
+    return (
+      <WorkspacePage>
+        <MemoryUpdateToast status={memoryUpdateStatus} />
+        <Card className="mx-auto max-w-xl gap-0 px-6 py-8">
+          <div className="mb-4 flex items-start gap-3">
+            <CircleAlertIcon className="text-destructive mt-0.5 size-5 shrink-0" />
+            <div className="min-w-0">
+              <h1 className="mb-1 text-xl font-semibold">{title}</h1>
+              <p className="text-muted-foreground text-sm leading-5">
+                {failure?.message || 'Generation failed. Retry, edit your prompt, or use the built-in practice set.'}
+              </p>
+              {failure?.config.prompt.trim() ? (
+                <p className="text-muted-foreground mt-3 text-xs leading-4">
+                  Prompt: “{failure.config.prompt.trim()}”
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <Button
+              onClick={() => void handleRetryGeneration()}
+              disabled={generationPending}
+              className="sm:min-w-28"
+            >
+              {generationPending ? 'Retrying' : 'Retry'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleEditPrompt}
+              disabled={generationPending}
+            >
+              Edit prompt
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void handleUsePracticeSet()}
+              disabled={generationPending}
+            >
+              Use practice set
+            </Button>
+          </div>
         </Card>
       </WorkspacePage>
     );
@@ -1410,10 +1578,17 @@ export function MarathonPage() {
               animate={{ opacity: 1, y: 0 }}
               className="flex items-center gap-3"
             >
-              <Button variant="outline" onClick={() => void handleFinish()}>
+              <Button
+                variant="outline"
+                onClick={() => void handleFinish()}
+                disabled={generationPending || isFinishing}
+              >
                 Finished
               </Button>
-              <Button onClick={handleNextRound}>
+              <Button
+                onClick={() => void handleNextRound()}
+                disabled={generationPending || isFinishing}
+              >
                 Next Round
               </Button>
             </motion.div>

@@ -40,6 +40,13 @@ Current routes:
 | `GET` | `/api/v1/sessions/{id}` | Yes | Fetch one full session state for resume. |
 | `PATCH` | `/api/v1/sessions/{id}` | Yes | Update title, status, or state snapshot. |
 | `PUT` | `/api/v1/sessions/{id}/files` | Yes | Batch upsert draft workspace files. |
+| `POST` | `/api/v1/chat/threads` | Yes | Create/resume a scoped Interview or contextual-coach thread. |
+| `GET` | `/api/v1/chat/threads` | Yes | Find threads by kind, status, and practice session. |
+| `GET` | `/api/v1/chat/threads/{id}/messages` | Yes | Restore the append-only transcript. |
+| `POST` | `/api/v1/chat/threads/{id}/turns` | Yes | Send an idempotent user turn and receive `meta`, `delta`, `complete`, or `error` SSE events. |
+| `POST` | `/api/v1/chat/threads/{id}/reset` | Yes | Close a thread and create a clean successor. |
+| `POST` | `/api/v1/chat/threads/{id}/finish` | Yes | Complete an interview, save its coarse assessment, and refresh memory. |
+| `POST` | `/api/v1/chat/threads/{id}/exit` | Yes | Record an interview exit while retaining resume state. |
 
 ## Auth and Workspace Scope
 

@@ -43,6 +43,43 @@ function completedMcqState(prompt: string, round = 1) {
 
 export const mockSessions: PracticeSession[] = [
   {
+    id: 'sess_interview_active',
+    workspace_id: workspaceId,
+    user_id: userId,
+    kind: 'interview',
+    status: 'active',
+    title: 'Backend system design interview',
+    created_at: '2026-07-10T16:00:00.000Z',
+    updated_at: '2026-07-10T16:08:00.000Z',
+    last_activity_at: '2026-07-10T16:08:00.000Z',
+    state: {
+      schema_version: 1,
+      format: 'interview',
+      mode: 'system_design',
+      topic: 'Backend system design',
+      memory_update_status: 'idle',
+    },
+  },
+  {
+    id: 'sess_interview_completed',
+    workspace_id: workspaceId,
+    user_id: userId,
+    kind: 'interview',
+    status: 'completed',
+    title: 'Behavioral leadership interview',
+    created_at: '2026-07-09T18:00:00.000Z',
+    updated_at: '2026-07-09T18:24:00.000Z',
+    last_activity_at: '2026-07-09T18:24:00.000Z',
+    completed_at: '2026-07-09T18:24:00.000Z',
+    state: {
+      schema_version: 1,
+      format: 'interview',
+      mode: 'behavioral',
+      topic: 'Leadership',
+      memory_update_status: 'synced',
+    },
+  },
+  {
     id: 'sess_api_cache_draft',
     workspace_id: workspaceId,
     user_id: userId,

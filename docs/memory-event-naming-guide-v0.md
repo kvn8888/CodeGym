@@ -55,7 +55,15 @@ rules. If the emitter is the same, prefer a new `type` under an existing source.
 | `thread_opened` | User opened the chat panel. |
 | `message_sent` | User sent a message. |
 | `assistant_replied` | Assistant response completed. |
-| `thread_closed` | User dismissed or minimized chat for the session. |
+| `thread_closed` | A reset closed the current thread before creating its clean successor. |
+| `interview_started` | The server created an interview thread and persisted its opening question. |
+| `interview_completed` | The server completed a validated interview assessment and saved only coarse strengths, growth edges, topic, mode, turn count, and duration. |
+| `interview_exited` | User left an unfinished interview after its transcript was durably saved for resume. |
+
+Full user or assistant messages never enter memory events. They live only in
+`session_messages` for resume and are deleted with the owning practice session.
+`message_sent` and `assistant_replied` carry identifiers and compact lifecycle
+metadata, not message text.
 
 ### `workspace`
 
@@ -105,12 +113,15 @@ must be explicit per event type.
 
 Default ownership split:
 
-- Frontend owns user-intent and UI-interaction events.
+- Frontend owns user-intent and UI-interaction events when no authoritative
+  server transition exists.
   - Examples: `intake_started`, `clarifying_questions_answered`,
-    `thread_opened`, `profile_viewed`.
+    `profile_viewed`.
 - Backend owns authoritative outcomes and automation events.
   - Examples: `mcq_set_generated`, `generation_failed`, `note_created`,
-    `note_updated`, `note_pruned`, `worker_profile_refreshed`.
+    `note_updated`, `note_pruned`, `thread_opened`, `message_sent`,
+    `assistant_replied`, `interview_started`, `interview_completed`,
+    `interview_exited`, `worker_profile_refreshed`.
 
 When one side can own both:
 

@@ -316,6 +316,8 @@ var evidencePayloadKeys = map[string]bool{
 	"question_type": true, "answer_length": true, "selected_count": true,
 	"correct_option_count": true,
 	"round":                true, "problem_id": true, "passed_count": true, "failed_count": true, "total": true,
+	"mode": true, "strengths": true, "growth_edges": true,
+	"turn_count": true, "duration_seconds": true,
 }
 
 func profileEvidenceEvents(events []memory.Event) []memory.Event {
@@ -470,6 +472,21 @@ func compactEvidencePayload(raw json.RawMessage) map[string]any {
 			out[key] = truncate(strings.TrimSpace(typed), 120)
 		case bool, float64:
 			out[key] = typed
+		case []any:
+			labels := make([]string, 0, min(len(typed), 3))
+			for _, candidate := range typed {
+				label, ok := candidate.(string)
+				if !ok || strings.TrimSpace(label) == "" {
+					continue
+				}
+				labels = append(labels, truncate(strings.TrimSpace(label), 100))
+				if len(labels) == 3 {
+					break
+				}
+			}
+			if len(labels) > 0 {
+				out[key] = labels
+			}
 		}
 	}
 	if len(out) == 0 {

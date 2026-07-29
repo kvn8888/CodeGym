@@ -48,6 +48,34 @@ func (o *Orchestrator) Generate(ctx context.Context, input GenerateInput) (Gener
 	return o.GenerateWithProfile(ctx, input, profile)
 }
 
+// Stream delegates a conversational turn through the configured provider
+// router and records usage at the same orchestration boundary as structured
+// generation.
+func (o *Orchestrator) Stream(
+	ctx context.Context,
+	request StreamRequest,
+	emit func(StreamDelta) error,
+) (StreamResult, error) {
+	if o == nil || o.generator == nil {
+		return StreamResult{}, errors.New("generation orchestrator requires a generator")
+	}
+	streamer, ok := o.generator.(Streamer)
+	if !ok {
+		return StreamResult{}, errors.New("configured generator does not support streaming")
+	}
+	result, err := streamer.Stream(ctx, request, emit)
+	if err != nil {
+		return StreamResult{}, err
+	}
+	if o.usage != nil && (result.TokensIn > 0 || result.TokensOut > 0) {
+		o.usage.RecordBestEffort(ctx, usage.RecordInput{
+			Provider: result.Provider, Model: result.Model, Kind: "chat",
+			TokensIn: result.TokensIn, TokensOut: result.TokensOut,
+		})
+	}
+	return result, nil
+}
+
 // GenerateWithProfile runs a provider call with an explicitly supplied memory
 // context. Background profile synthesis uses this to avoid recursively reading
 // the profile it is currently replacing.

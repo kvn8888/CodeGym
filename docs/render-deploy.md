@@ -84,6 +84,14 @@ events update memory without containing source code or hidden cases. Repeat the
 same authenticated smoke against production after promoting the identical
 reviewed commit.
 
+For a conversational rollout, also start an Interview in each environment,
+send and stream at least one turn, reload to prove transcript resume, exit and
+resume from History, then finish it. Confirm the completion event contains only
+coarse strengths/growth edges, topic, mode, turn count, and duration. Open the
+floating coach on both a Marathon and coding workspace and confirm it uses the
+active session context without sending source files or hidden tests. Finally,
+verify staging transcripts/events never appear in production and vice versa.
+
 ## Existing production service
 
 The live service at `codegym.onrender.com` was created in the dashboard and is

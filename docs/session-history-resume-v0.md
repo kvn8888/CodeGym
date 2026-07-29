@@ -2,8 +2,8 @@
 
 Spike output for [#69](https://github.com/kvn8888/CodeGym/issues/69). Plans how
 session history and resume work across generated problems, MCQ sessions, and
-conversational interview practice. Interview persistence details stay gated on
-the [#68](https://github.com/kvn8888/CodeGym/issues/68) scope spike.
+conversational interview practice. Issue #68 selected one shared authenticated
+streaming service for dedicated Interview and contextual coach surfaces.
 
 ## Session vs Memory Event vs Saved Problem Attempt
 
@@ -96,9 +96,11 @@ naming guide: additive, readers tolerant of missing fields).
   off. A skip is continuity data in the session snapshot (separate from answer
   results for UI), and memory records it as a neutral `question_skipped` event.
 
-- `interview`: pointer state only; the transcript needs an append-only
-  `session_messages` table (`id`, `session_id`, `role`, `content`,
-  `created_at`). Sketched here, **not built until #68 selects a slice**.
+- `interview`: pointer state only. The transcript is append-only
+  `session_messages`, owned by a scoped `chat_threads` record that references
+  `practice_sessions` with `ON DELETE CASCADE`. Messages retain completed or
+  interrupted status and client-message idempotency metadata. Full transcripts
+  live for the practice-session lifetime and never enter memory events.
 
 ### What Stays Out of This Model
 
@@ -129,7 +131,7 @@ existing approved names from the naming guide:
 | Workspace session created/opened | `workspace.problem_opened`, then `workspace.attempt_started` |
 | Workspace resumed later | Same events with `"resumed": true` in the payload (payload flag instead of new type) |
 | MCQ session created / question / done | `mcq.session_started` / `mcq.question_answered` / `mcq.session_completed` |
-| Interview opened / messages | `chat.thread_opened` etc., pending #68 |
+| Interview opened / messages / exit / done | `chat.thread_opened`, `chat.message_sent`, `chat.assistant_replied`, `chat.interview_started`, `chat.interview_exited`, `chat.interview_completed` |
 
 ## Minimal API Routes
 
@@ -145,6 +147,11 @@ POST   /api/v1/sessions                     { kind, problem_id?, title?, state? 
 GET    /api/v1/sessions/{id}                full state for resume (workspace responses include files)
 PATCH  /api/v1/sessions/{id}                { state?, status?, title? } — autosave + transitions
 PUT    /api/v1/sessions/{id}/files          batch upsert of draft files (workspace autosave)
+POST   /api/v1/chat/threads                 create/resume interview or coach thread
+GET    /api/v1/chat/threads/{id}/messages   restore append-only transcript
+POST   /api/v1/chat/threads/{id}/turns      idempotent authenticated SSE turn
+POST   /api/v1/chat/threads/{id}/reset      close and create a clean successor
+POST   /api/v1/chat/threads/{id}/finish     complete interview + validated assessment
 ```
 
 Frontend consumers:
@@ -162,8 +169,8 @@ Frontend consumers:
 - **One active workspace session per problem?** Proposal: on opening a problem,
   reuse the existing active session for that `(user, problem_id)` instead of
   creating a duplicate.
-- **Interview persistence** is gated on #68; only the table sketch above exists
-  until that spike lands.
+- **Interview persistence** is implemented under the selected #68 architecture.
+  General RAG and generic workflow-progress SSE remain outside this slice.
 
 ## Selected Week 6/7 Slice
 

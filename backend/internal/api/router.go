@@ -5,6 +5,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/chat"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
@@ -27,6 +28,7 @@ type Dependencies struct {
 	Problems      *problems.Service
 	Submissions   *submission.Service
 	Intakes       *intake.Service
+	Chat          *chat.Service
 	// Generation is nil when no GenAI provider is configured; the generate
 	// route stays registered and answers 503 so clients can fall back.
 	Generation           *generation.Orchestrator
@@ -96,6 +98,14 @@ func NewRouter(deps Dependencies) http.Handler {
 	submissionHandler := handlers.NewSubmissionHandler(deps.Submissions)
 	protected.HandleFunc("POST /api/v1/submissions", submissionHandler.Submit)
 	protected.HandleFunc("GET /api/v1/submissions/{id}", submissionHandler.Get)
+	chatHandler := handlers.NewChatHandler(deps.Chat)
+	protected.HandleFunc("POST /api/v1/chat/threads", chatHandler.CreateThread)
+	protected.HandleFunc("GET /api/v1/chat/threads", chatHandler.ListThreads)
+	protected.HandleFunc("GET /api/v1/chat/threads/{id}/messages", chatHandler.Messages)
+	protected.HandleFunc("POST /api/v1/chat/threads/{id}/turns", chatHandler.Turn)
+	protected.HandleFunc("POST /api/v1/chat/threads/{id}/reset", chatHandler.Reset)
+	protected.HandleFunc("POST /api/v1/chat/threads/{id}/finish", chatHandler.Finish)
+	protected.HandleFunc("POST /api/v1/chat/threads/{id}/exit", chatHandler.Exit)
 
 	protectedChain := chain(
 		protected,

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kvn8888/codegym/backend/internal/api"
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/chat"
 	"github.com/kvn8888/codegym/backend/internal/config"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
@@ -45,6 +46,7 @@ func main() {
 	var executionStore execution.Store = execution.NewInMemoryStore()
 	var problemStore problems.Store = problems.NewInMemoryStore()
 	var intakeStore intake.Store = intake.NewInMemoryStore()
+	var chatStore chat.Store = chat.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -64,6 +66,7 @@ func main() {
 		postgresExecutionStore := execution.NewPostgresStore(pool)
 		postgresProblemStore := problems.NewPostgresStore(pool)
 		postgresIntakeStore := intake.NewPostgresStore(pool)
+		postgresChatStore := chat.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -85,6 +88,9 @@ func main() {
 		if err := postgresIntakeStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap practice intake schema: %v", err)
 		}
+		if err := postgresChatStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap chat schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
@@ -93,7 +99,8 @@ func main() {
 		executionStore = postgresExecutionStore
 		problemStore = postgresProblemStore
 		intakeStore = postgresIntakeStore
-		log.Print("CodeGym API using Postgres identity, memory, session, genai usage, execution, and problem stores")
+		chatStore = postgresChatStore
+		log.Print("CodeGym API using Postgres identity, memory, session, chat, genai usage, execution, and problem stores")
 	} else {
 		log.Print("CodeGym API using in-memory identity, memory, session, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
@@ -123,6 +130,7 @@ func main() {
 		log.Print("CodeGym demo problem seeded: two-sum")
 	}
 	var generationOrchestrator *generation.Orchestrator
+	var generationStreamer generation.Streamer
 	if cfg.AnyGenAIEnabled() {
 		named := make([]generation.NamedGenerator, 0, len(cfg.GenAIProviders))
 		names := make([]string, 0, len(cfg.GenAIProviders))
@@ -153,6 +161,7 @@ func main() {
 			log.Fatalf("could not configure GenAI router: %v", err)
 		}
 		generationOrchestrator = generation.NewOrchestrator(memoryService, routerGenerator).WithUsage(usageService)
+		generationStreamer = generationOrchestrator
 		log.Printf("CodeGym generation enabled providers=%v order=%v", names, cfg.GenAIProviderOrder)
 	} else {
 		log.Print("CodeGym generation disabled; set META_MUSE_SPARK_API, CODEGYM_GENAI_AZURE_API_KEY, or CODEGYM_GEMINI_API_KEY to enable POST /api/v1/generate")
@@ -160,6 +169,16 @@ func main() {
 	profileSynthesizer := generation.NewProfileSynthesizer(generationOrchestrator, memoryService)
 	intakeService := intake.NewService(intakeStore, memoryService, generationOrchestrator, nil)
 	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, profileSynthesizer)
+	chatService := chat.NewService(
+		chatStore,
+		sessionService,
+		problemService,
+		memoryService,
+		generationStreamer,
+		generationOrchestrator,
+		profileSynthesizer,
+		nil,
+	)
 
 	if cfg.MemoryWorker.DailyEnabled() {
 		worker := memory.NewWorker(profileSynthesizer, cfg.MemoryWorker.Interval)
@@ -178,6 +197,7 @@ func main() {
 		Problems:             problemService,
 		Submissions:          submissionService,
 		Intakes:              intakeService,
+		Chat:                 chatService,
 		Generation:           generationOrchestrator,
 		MemoryProfiles:       profileSynthesizer,
 		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,

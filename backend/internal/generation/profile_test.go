@@ -323,3 +323,29 @@ func TestProfileEvidenceCanonicalizesSkipAndSuppressesRevealCorrectness(t *testi
 		t.Fatalf("outcomes = %#v", evidence.Recent)
 	}
 }
+
+func TestCompactEvidencePayloadKeepsOnlyCoarseInterviewAssessment(t *testing.T) {
+	payload := compactEvidencePayload(json.RawMessage(`{
+		"topic":"Graphs",
+		"mode":"coding",
+		"strengths":["Clear decomposition"],
+		"growth_edges":["Tradeoff depth"],
+		"turn_count":4,
+		"duration_seconds":120,
+		"transcript":"must not survive",
+		"code":"must not survive"
+	}`))
+	if payload["topic"] != "Graphs" || payload["mode"] != "coding" {
+		t.Fatalf("payload = %#v", payload)
+	}
+	strengths, ok := payload["strengths"].([]string)
+	if !ok || len(strengths) != 1 || strengths[0] != "Clear decomposition" {
+		t.Fatalf("strengths = %#v", payload["strengths"])
+	}
+	if _, exists := payload["transcript"]; exists {
+		t.Fatal("transcript survived compact evidence hygiene")
+	}
+	if _, exists := payload["code"]; exists {
+		t.Fatal("code survived compact evidence hygiene")
+	}
+}

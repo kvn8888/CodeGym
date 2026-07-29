@@ -72,7 +72,7 @@ export function ProblemDetailPage({
   const { configured: authConfigured, isAuthenticated } = useCodeGymAuthState();
   const apiAuthReady = !authConfigured || isAuthenticated;
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedSessionId = searchParams.get('session')?.trim() ?? '';
   const pageRef = useRef<HTMLDivElement>(null);
   const rightPaneRef = useRef<HTMLDivElement>(null);
@@ -202,27 +202,34 @@ export function ProblemDetailPage({
         if (state.problem_opened_recorded !== true) {
           const openedState = { ...state, problem_opened_recorded: true };
           sessionStateRef.current = openedState;
-          void Promise.all([
-            createMemoryEvent(
-              buildWorkspaceEvent({
-                type: memoryEventTypes.problemOpened,
-                summary: 'Opened a coding problem.',
-                payload: {
-                  problem_id: loadedProblem.id,
-                  session_id: workspaceSession.id,
-                  concept: loadedProblem.subcategory ?? loadedProblem.category,
-                  difficulty: loadedProblem.difficulty,
-                  language: loadedProblem.language,
-                  schema_version: 1,
-                },
+          try {
+            await Promise.all([
+              createMemoryEvent(
+                buildWorkspaceEvent({
+                  type: memoryEventTypes.problemOpened,
+                  summary: 'Opened a coding problem.',
+                  payload: {
+                    problem_id: loadedProblem.id,
+                    session_id: workspaceSession.id,
+                    concept: loadedProblem.subcategory ?? loadedProblem.category,
+                    difficulty: loadedProblem.difficulty,
+                    language: loadedProblem.language,
+                    schema_version: 1,
+                  },
+                }),
+              ),
+              api.patch<PracticeSession>(`/sessions/${workspaceSession.id}`, {
+                state: openedState,
               }),
-            ),
-            api.patch<PracticeSession>(`/sessions/${workspaceSession.id}`, {
-              state: openedState,
-            }),
-          ]).catch(() => {
+            ]);
+          } catch {
             sessionStateRef.current = state;
-          });
+          }
+        }
+        if (!requestedSessionId) {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.set('session', workspaceSession.id);
+          setSearchParams(nextParams, { replace: true });
         }
       } catch (err: unknown) {
         if (!cancelled) {
@@ -236,7 +243,15 @@ export function ProblemDetailPage({
       cancelled = true;
       runRequestRef.current += 1;
     };
-  }, [apiAuthReady, id, initialMemoryUpdateStatus, initialResult, requestedSessionId]);
+  }, [
+    apiAuthReady,
+    id,
+    initialMemoryUpdateStatus,
+    initialResult,
+    requestedSessionId,
+    searchParams,
+    setSearchParams,
+  ]);
 
   const persistDraft = useCallback(
     async (currentFiles: SubmissionFile[], currentHints: number) => {

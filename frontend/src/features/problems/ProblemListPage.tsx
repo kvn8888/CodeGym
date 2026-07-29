@@ -8,6 +8,7 @@ import {
   Code2,
   History,
   ListChecks,
+  MessagesSquare,
   RefreshCw,
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -95,12 +96,15 @@ export function ProblemListPage() {
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [sessions, setSessions] = useState<PracticeSessionSummary[]>([]);
   const [workspaceSessions, setWorkspaceSessions] = useState<PracticeSessionSummary[]>([]);
+  const [interviewSessions, setInterviewSessions] = useState<PracticeSessionSummary[]>([]);
   const [problemsLoading, setProblemsLoading] = useState(true);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [workspaceSessionsLoading, setWorkspaceSessionsLoading] = useState(true);
+  const [interviewSessionsLoading, setInterviewSessionsLoading] = useState(true);
   const [problemsError, setProblemsError] = useState<string | null>(null);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [workspaceSessionsError, setWorkspaceSessionsError] = useState<string | null>(null);
+  const [interviewSessionsError, setInterviewSessionsError] = useState<string | null>(null);
   const [languageFilter, setLanguageFilter] = useState('');
 
   const loadProblems = useCallback(async () => {
@@ -146,21 +150,40 @@ export function ProblemListPage() {
     }
   }, []);
 
+  const loadInterviewSessions = useCallback(async () => {
+    setInterviewSessionsLoading(true);
+    setInterviewSessionsError(null);
+    try {
+      setInterviewSessions(
+        await api.get<PracticeSessionSummary[]>('/sessions?kind=interview&limit=50'),
+      );
+    } catch (error) {
+      setInterviewSessionsError(
+        error instanceof Error ? error.message : 'Could not load your interviews.',
+      );
+    } finally {
+      setInterviewSessionsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!apiAuthReady) {
       const message = 'Sign in to load your practice data.';
       setProblemsLoading(false);
       setSessionsLoading(false);
       setWorkspaceSessionsLoading(false);
+      setInterviewSessionsLoading(false);
       setProblemsError(message);
       setSessionsError(message);
       setWorkspaceSessionsError(message);
+      setInterviewSessionsError(message);
       return;
     }
     void loadProblems();
     void loadSessions();
     void loadWorkspaceSessions();
-  }, [apiAuthReady, loadProblems, loadSessions, loadWorkspaceSessions]);
+    void loadInterviewSessions();
+  }, [apiAuthReady, loadInterviewSessions, loadProblems, loadSessions, loadWorkspaceSessions]);
 
   const filteredProblems = useMemo(
     () =>
@@ -359,6 +382,62 @@ export function ProblemListPage() {
                     <Link to={`/marathon?session=${encodeURIComponent(session.id)}`}>
                       {status.action}
                       <ArrowRight data-icon="inline-end" />
+                    </Link>
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-7">
+        <WorkspaceSectionHeader
+          title="Interview history"
+          description={
+            !interviewSessionsLoading && !interviewSessionsError && interviewSessions.length > 0
+              ? `${interviewSessions.length} saved ${interviewSessions.length === 1 ? 'interview' : 'interviews'}`
+              : undefined
+          }
+        />
+        {interviewSessionsLoading ? (
+          <div className="overflow-hidden rounded-lg border" aria-label="Loading interview history">
+            <Skeleton className="h-14 w-full rounded-none" />
+          </div>
+        ) : interviewSessionsError ? (
+          <WorkspaceEmptyState
+            icon={<MessagesSquare size={20} strokeWidth={1.8} />}
+            title="Interview history is unavailable"
+            description={interviewSessionsError}
+            action={<Button variant="outline" size="sm" onClick={() => void loadInterviewSessions()}><RefreshCw data-icon="inline-start" />Try again</Button>}
+            className="min-h-32"
+          />
+        ) : interviewSessions.length === 0 ? (
+          <WorkspaceEmptyState
+            icon={<MessagesSquare size={20} strokeWidth={1.8} />}
+            title="No interviews yet"
+            description="Resumable and completed conversational interviews will collect here."
+            action={<Button size="sm" asChild><Link to="/generate">Start an interview</Link></Button>}
+            className="min-h-32"
+          />
+        ) : (
+          <div className="overflow-hidden rounded-lg border">
+            {interviewSessions.map((session) => {
+              const status = sessionStatus[session.status];
+              const StatusIcon = status.icon;
+              return (
+                <div key={session.id} className="flex min-h-14 items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
+                  <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md"><MessagesSquare size={16} strokeWidth={1.8} /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{session.title}</div>
+                    <div className="text-muted-foreground mt-0.5 truncate text-xs">{sessionDateLabel(session)}</div>
+                  </div>
+                  <Badge variant="outline" className="hidden rounded-md font-normal sm:inline-flex">
+                    <StatusIcon className={status.iconClassName} />{status.label}
+                  </Badge>
+                  <Button variant={session.status === 'active' ? 'default' : 'outline'} size="sm" asChild>
+                    <Link to={`/interviews/${encodeURIComponent(session.id)}`}>
+                      {session.status === 'active' ? 'Resume' : 'Transcript'}<ArrowRight data-icon="inline-end" />
                     </Link>
                   </Button>
                 </div>

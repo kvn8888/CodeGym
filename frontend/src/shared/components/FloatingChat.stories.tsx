@@ -6,6 +6,7 @@ const meta: Meta<typeof FloatingChat> = {
   component: FloatingChat,
   parameters: {
     layout: 'fullscreen',
+    initialPath: '/problems/two-sum?session=sess_api_cache_draft',
   },
 };
 

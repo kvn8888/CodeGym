@@ -7,6 +7,7 @@ import {
   type Transition,
 } from 'motion/react';
 import { Rnd } from 'react-rnd';
+import { useLocation } from 'react-router-dom';
 import { ChatPanel } from '../../features/chat/ChatPanel';
 import {
   BUBBLE_SIZE,
@@ -41,14 +42,23 @@ function ChatBubbleIcon() {
 
 function ChatChrome({
   onClose,
+  sessionId,
+  questionId,
   draggable = false,
 }: {
   onClose: () => void;
+  sessionId?: string;
+  questionId?: string;
   draggable?: boolean;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <ChatPanel onClose={onClose} draggable={draggable} />
+      <ChatPanel
+        sessionId={sessionId}
+        questionId={questionId}
+        onClose={onClose}
+        draggable={draggable}
+      />
     </div>
   );
 }
@@ -64,6 +74,10 @@ function initialOpenBounds() {
  * - Live window uses react-rnd for drag, resize, and corner snapping.
  */
 export function FloatingChat() {
+  const location = useLocation();
+  const query = new URLSearchParams(location.search);
+  const sessionId = query.get('session') ?? undefined;
+  const questionId = query.get('question') ?? undefined;
   const shouldReduceMotion = useReducedMotion();
   const [stage, setStage] = useState<ChatStage>('closed');
   const [snapTransitioning, setSnapTransitioning] = useState(false);
@@ -325,7 +339,12 @@ export function FloatingChat() {
           }`}
         >
           <div className="flex h-full min-h-0 flex-col">
-            <ChatChrome onClose={beginCloseMorph} draggable />
+                <ChatChrome
+                  onClose={beginCloseMorph}
+                  sessionId={sessionId}
+                  questionId={questionId}
+                  draggable
+                />
           </div>
         </Rnd>
       )}

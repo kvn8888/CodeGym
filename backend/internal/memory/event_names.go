@@ -25,6 +25,9 @@ const (
 	TypeMessageSent = "message_sent"
 	TypeAssistantReplied = "assistant_replied"
 	TypeThreadClosed = "thread_closed"
+	TypeInterviewStarted = "interview_started"
+	TypeInterviewCompleted = "interview_completed"
+	TypeInterviewExited = "interview_exited"
 	TypeProblemOpened = "problem_opened"
 	TypeAttemptStarted = "attempt_started"
 	TypeTestsRun = "tests_run"
@@ -62,6 +65,9 @@ var allowedEventTypesBySource = map[string]map[string]struct{}{
 		TypeMessageSent: {},
 		TypeAssistantReplied: {},
 		TypeThreadClosed: {},
+		TypeInterviewStarted: {},
+		TypeInterviewCompleted: {},
+		TypeInterviewExited: {},
 	},
 	SourceWorkspace: {
 		TypeProblemOpened: {},

@@ -107,6 +107,12 @@ export const GeneratedCodingFailure: Story = {
   parameters: { initialPath: '/generate?prompt=Graph%20shortest%20paths' },
 };
 
+export const InterviewFormat: Story = {
+  name: 'Interview · coding',
+  args: { initialFormat: 'interview' },
+  parameters: { initialPath: '/generate?prompt=Python%20algorithm%20reasoning' },
+};
+
 export const IntakeError: Story = {
   args: {
     initialIntake: intake({

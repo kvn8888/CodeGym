@@ -19,12 +19,12 @@ export const mockMcqQuestions: MockMcqQuestion[] = [
   {
     id: 'mq1',
     type: 'single_select',
-    text: 'What is the amortized time complexity of appending to a dynamic array?',
-    options: ['O(n)', 'O(1)', 'O(log n)', 'O(n log n)'],
+    text: 'What is the amortized time complexity of appending to a **dynamic array**?',
+    options: ['`O(n)`', '`O(1)`', '`O(log n)`', '`O(n log n)`'],
     correctIndex: 1,
     concept: 'Amortized Analysis',
     helpContent:
-      'Appends are O(1) most of the time; occasional resizes cost O(n) but happen so rarely that the average per-append cost stays constant.',
+      'Appends are `O(1)` most of the time; occasional resizes cost `O(n)` but happen so rarely that the average per-append cost stays constant.\n\n```ts\n// amortized O(1) append\narr.push(x)\n```',
   },
   {
     id: 'mq2',

@@ -1,6 +1,7 @@
 import { LightbulbIcon } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { MarkdownContent } from '@/shared/components/MarkdownContent';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,7 +35,9 @@ export function HelpFlashcard({ concept, explanation, onClose }: HelpFlashcardPr
         </DialogHeader>
 
         <div className="px-6 pt-4 pb-6">
-          <p className="text-muted-foreground text-sm leading-6">{explanation}</p>
+          <MarkdownContent className="text-muted-foreground text-sm leading-6">
+            {explanation}
+          </MarkdownContent>
         </div>
       </DialogContent>
     </Dialog>

@@ -8,6 +8,8 @@ import {
   MESSAGE_ANIMATIONS,
   type MessageAnimationPreset,
 } from '@/lib/message-animations';
+import { cn } from '@/lib/utils';
+import { MarkdownContent } from '@/shared/components/MarkdownContent';
 
 type MessageAnimatedPart = {
   type: string;
@@ -98,30 +100,26 @@ function MessageAnimatedRow({
   return (
     <Message align={isUserMessage ? 'end' : 'start'}>
       <MessageContent>
-        {textParts.map((part) => {
-          const paragraphs = part.text
-            .split(/\n\s*\n/)
-            .map((paragraph) => paragraph.trim())
-            .filter(Boolean);
-
-          return (
-            <Bubble
-              key={part.key}
-              variant={isUserMessage ? userVariant : assistantVariant}
+        {textParts.map((part) => (
+          <Bubble
+            key={part.key}
+            variant={isUserMessage ? userVariant : assistantVariant}
+          >
+            <BubbleContent
+              className={cn(
+                isUserMessage ? 'whitespace-pre-wrap' : 'max-w-none space-y-0',
+              )}
             >
-              <BubbleContent className="space-y-2">
-                {paragraphs.map((paragraph, paragraphIndex) => (
-                  <p
-                    key={`${part.key}-${paragraphIndex}`}
-                    className="whitespace-pre-wrap"
-                  >
-                    {paragraph}
-                  </p>
-                ))}
-              </BubbleContent>
-            </Bubble>
-          );
-        })}
+              {isUserMessage ? (
+                <p className="whitespace-pre-wrap">{part.text}</p>
+              ) : (
+                <MarkdownContent className="text-sm leading-relaxed">
+                  {part.text}
+                </MarkdownContent>
+              )}
+            </BubbleContent>
+          </Bubble>
+        ))}
       </MessageContent>
     </Message>
   );

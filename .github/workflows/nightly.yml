@@ -1,0 +1,70 @@
+name: Nightly integration
+
+# Manual-only until the required Actions secrets exist. Both jobs fail closed on
+# a missing secret, so enabling `schedule` before then would paint the repo red
+# every night and train reviewers to ignore it. Uncomment the schedule once
+# CODEGYM_TEST_DATABASE_URL and DAYTONA_API_KEY are configured.
+on:
+  # schedule:
+  #   - cron: '23 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  neon:
+    name: Neon integration
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CODEGYM_TEST_DATABASE_URL: ${{ secrets.CODEGYM_TEST_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Require Neon test database secret
+        run: |
+          if [ -z "$CODEGYM_TEST_DATABASE_URL" ]; then
+            echo "::error::CODEGYM_TEST_DATABASE_URL is not configured"
+            exit 1
+          fi
+
+      - name: Run Neon integration tests
+        run: go test ./internal/integration/... -run TestNeon -v
+
+  daytona:
+    name: Daytona integration
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Require Daytona API key
+        run: |
+          if [ -z "$DAYTONA_API_KEY" ]; then
+            echo "::error::DAYTONA_API_KEY is not configured"
+            exit 1
+          fi
+
+      - name: Run Daytona integration tests
+        run: go test ./internal/execution/... -run TestDaytona -v

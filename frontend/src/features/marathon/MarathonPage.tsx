@@ -1,20 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  CheckCircle2Icon,
   CircleAlertIcon,
   CircleHelpIcon,
   LoaderCircleIcon,
   LogOutIcon,
   SkipForwardIcon,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { HelpFlashcard } from './HelpFlashcard';
 import { api, createMemoryEvent } from '../../shared/api/client';
 import type { MCQQuestionType, NewPracticeConfig, PracticeSession } from '../../shared/api/types';
 import { MarkdownContent } from '../../shared/components/MarkdownContent';
+import { WorkflowProgress } from '../../shared/components/WorkflowProgress';
 import { WorkspacePage } from '../../shared/components/WorkspacePage';
+import {
+  useWorkflowProgress,
+  type WorkflowProgressState,
+} from '../../shared/hooks/useWorkflowProgress';
 import {
   buildGenerateEvent,
   buildMcqEvent,
@@ -113,8 +117,6 @@ interface MarathonLocationState {
     config: NewPracticeConfig;
   };
 }
-
-type MemoryUpdateStatus = 'updating' | 'updated' | 'failed' | null;
 
 interface PendingMemoryEvent {
   write: () => Promise<void>;
@@ -301,50 +303,22 @@ function SuccessCheck() {
   );
 }
 
-function MemoryUpdateToast({ status }: { status: MemoryUpdateStatus }) {
-  const content =
-    status === 'updating'
-      ? {
-          label: 'Updating memory',
-          description: 'Saving this question set before continuing.',
-          icon: <LoaderCircleIcon className="text-muted-foreground size-4 animate-spin" />,
-        }
-      : status === 'updated'
-        ? {
-            label: 'Memory updated',
-            description: 'The next question set will use your latest progress.',
-            icon: <CheckCircle2Icon className="size-4 text-green-700" />,
-          }
-        : status === 'failed'
-          ? {
-              label: 'Memory update failed',
-              description: 'Retry before creating the next question set.',
-              icon: <CircleAlertIcon className="text-destructive size-4" />,
-            }
-          : null;
-
+function WorkflowActivity({ state }: { state: WorkflowProgressState }) {
+  if (!state.visible || !state.kind) return null;
+  const title =
+    state.kind === 'memory_reflection'
+      ? 'Updating memory'
+      : state.kind === 'mcq_next_round'
+        ? 'Preparing next round'
+        : 'Preparing practice set';
   return (
-    <AnimatePresence>
-      {content && (
-        <motion.div
-          role="status"
-          aria-live="polite"
-          initial={{ opacity: 0, y: -8, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -6, scale: 0.98 }}
-          transition={{ duration: 0.18 }}
-          className="bg-popover text-popover-foreground fixed top-4 right-4 z-70 flex w-[min(22rem,calc(100vw-2rem))] items-start gap-3 rounded-lg border px-4 py-3 shadow-lg"
-        >
-          <span className="mt-0.5 shrink-0">{content.icon}</span>
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">{content.label}</span>
-            <span className="text-muted-foreground mt-0.5 block text-xs leading-4">
-              {content.description}
-            </span>
-          </span>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div className="fixed top-4 right-4 z-70 w-[min(22.5rem,calc(100vw-2rem))]">
+      <WorkflowProgress
+        title={title}
+        events={state.events}
+        connectionState={state.connectionState}
+      />
+    </div>
   );
 }
 
@@ -382,6 +356,7 @@ export function MarathonPage() {
   const [searchParams] = useSearchParams();
   const launch = (location.state as MarathonLocationState | null)?.newPractice;
   const requestedSessionId = searchParams.get('session') ?? '';
+  const workflowProgress = useWorkflowProgress();
 
   // Which phase the marathon is in.
   const [phase, setPhase] = useState<MarathonPhase>('loading');
@@ -430,7 +405,6 @@ export function MarathonPage() {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isExiting, setIsExiting] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
-  const [memoryUpdateStatus, setMemoryUpdateStatus] = useState<MemoryUpdateStatus>(null);
 
   // The user's free-text "what do you want to study?" ask; inserted into the
   // MCQ generation spec each round.
@@ -459,8 +433,6 @@ export function MarathonPage() {
   // older timer/selection write already in flight.
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const memoryToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Answer/start events remain non-blocking during a question, but every write
   // must settle successfully before the round-level memory refresh can run.
   const pendingMemoryEventsRef = useRef<PendingMemoryEvent[]>([]);
@@ -478,17 +450,6 @@ export function MarathonPage() {
       : currentQuestionType === 'multi_select'
         ? selectedIndices.length > 0
         : responseText.trim().length > 0;
-
-  const showMemoryUpdateStatus = (status: MemoryUpdateStatus) => {
-    if (memoryToastTimerRef.current) clearTimeout(memoryToastTimerRef.current);
-    setMemoryUpdateStatus(status);
-    if (status === 'updated' || status === 'failed') {
-      memoryToastTimerRef.current = setTimeout(
-        () => setMemoryUpdateStatus(null),
-        status === 'updated' ? 3000 : 5000,
-      );
-    }
-  };
 
   const trackMcqEvent = (type: MemoryEventType, summary: string, payload: Record<string, unknown>) => {
     const occurredAt = new Date().toISOString();
@@ -514,13 +475,6 @@ export function MarathonPage() {
     );
   };
 
-  useEffect(
-    () => () => {
-      if (memoryToastTimerRef.current) clearTimeout(memoryToastTimerRef.current);
-    },
-    [],
-  );
-
   // ── Timer logic ──────────────────────────────────────────────────────────
   useEffect(() => {
     // Timer runs only while the question is active and not yet confirmed.
@@ -540,17 +494,24 @@ export function MarathonPage() {
       count: questionCount,
       intakeId: intakeIdRef.current,
     },
+    operationId?: string,
+    signal?: AbortSignal,
   ) => {
-    const generated = await api.post<GenerateMcqResponse>('/generate', {
-      kind: 'mcq',
-      intake_id: config.intakeId,
-      spec: {
-        topic: '',
-        prompt: config.prompt.trim(),
-        count: config.count,
-        difficulty: config.difficulty,
-        round: roundNumber,
-      },
+    const generated = await api.request<GenerateMcqResponse>('/generate', {
+      method: 'POST',
+      signal,
+      body: JSON.stringify({
+        kind: 'mcq',
+        intake_id: config.intakeId,
+        operation_id: operationId,
+        spec: {
+          topic: '',
+          prompt: config.prompt.trim(),
+          count: config.count,
+          difficulty: config.difficulty,
+          round: roundNumber,
+        },
+      }),
     });
     if (!generated.questions?.length) {
       throw new Error('Generation returned an empty question set.');
@@ -705,34 +666,34 @@ export function MarathonPage() {
 
   /** Record the just-finished round, then await full profile synthesis so the
    *  next round reads the updated summary, skills, focus areas, and notes. */
-  const reflectOnRound = async () => {
+  const reflectOnRound = async (operationId?: string, signal?: AbortSignal) => {
     const roundResults = results.filter((r) => r.round === round);
     const roundSkips = skippedQuestions.filter((item) => item.round === round);
     const correctCount = roundResults.filter((r) => r.correct).length;
-    showMemoryUpdateStatus('updating');
-    try {
-      if (!completionEventRoundsRef.current.has(round)) {
-        trackMcqEvent(
-          'session_completed',
-          `Finished round ${round} with ${correctCount} of ${roundResults.length} answered correctly and ${roundSkips.length} skipped.`,
-          {
-            session_id: sessionIdRef.current,
-            question_count: roundResults.length + roundSkips.length,
-            answered_count: roundResults.length,
-            skipped_count: roundSkips.length,
-            correct_count: correctCount,
-            round,
-          },
-        );
-        completionEventRoundsRef.current.add(round);
-      }
-      await flushPendingMemoryEvents();
-      await api.post('/memory/profile/maintain', { session_id: sessionIdRef.current });
-      showMemoryUpdateStatus('updated');
-    } catch (err) {
-      showMemoryUpdateStatus('failed');
-      throw err;
+    if (!completionEventRoundsRef.current.has(round)) {
+      trackMcqEvent(
+        'session_completed',
+        `Finished round ${round} with ${correctCount} of ${roundResults.length} answered correctly and ${roundSkips.length} skipped.`,
+        {
+          session_id: sessionIdRef.current,
+          question_count: roundResults.length + roundSkips.length,
+          answered_count: roundResults.length,
+          skipped_count: roundSkips.length,
+          correct_count: correctCount,
+          round,
+        },
+      );
+      completionEventRoundsRef.current.add(round);
     }
+    await flushPendingMemoryEvents();
+    await api.request('/memory/profile/maintain', {
+      method: 'POST',
+      signal,
+      body: JSON.stringify({
+        session_id: sessionIdRef.current,
+        operation_id: operationId,
+      }),
+    });
   };
 
   /** Start the marathon at round 1. */
@@ -743,7 +704,6 @@ export function MarathonPage() {
     setGenerationPending(true);
     setIsFinishing(false);
     setSessionError(null);
-    showMemoryUpdateStatus(null);
     pendingMemoryEventsRef.current = [];
     completionEventRoundsRef.current.clear();
     exitEventQueuedRef.current = false;
@@ -757,7 +717,10 @@ export function MarathonPage() {
       baseIdRef.current = durableSessionId;
       setRound(1);
       try {
-        const { nextQuestions, fallback } = await generateRound(1, nextConfig);
+        const { nextQuestions, fallback } = await workflowProgress.run(
+          'mcq_generation',
+          (operationId, signal) => generateRound(1, nextConfig, operationId, signal),
+        );
         await enterGeneratedRound(1, nextQuestions, fallback, nextConfig);
       } catch (err) {
         recordGenerationFailed({
@@ -784,7 +747,11 @@ export function MarathonPage() {
     setGenerationPending(true);
     setSessionError(null);
     try {
-      const { nextQuestions, fallback } = await generateRound(failure.round, failure.config);
+      const { nextQuestions, fallback } = await workflowProgress.run(
+        'mcq_generation',
+        (operationId, signal) =>
+          generateRound(failure.round, failure.config, operationId, signal),
+      );
       await enterGeneratedRound(failure.round, nextQuestions, fallback, failure.config);
     } catch (err) {
       recordGenerationFailed({
@@ -908,23 +875,28 @@ export function MarathonPage() {
       count: questionCount,
     };
     const nextRound = round + 1;
-    try {
-      await reflectOnRound();
-    } catch (err) {
-      setSessionError(
-        err instanceof Error
-          ? err.message
-          : 'Could not update memory. Retry before creating the next question set.',
-      );
-      setPhase('active');
-      return;
-    }
-
     setGenerationPending(true);
+    let reflectionComplete = false;
     try {
-      const { nextQuestions, fallback } = await generateRound(nextRound, nextConfig);
+      const { nextQuestions, fallback } = await workflowProgress.run(
+        'mcq_next_round',
+        async (operationId, signal) => {
+          await reflectOnRound(operationId, signal);
+          reflectionComplete = true;
+          return generateRound(nextRound, nextConfig, operationId, signal);
+        },
+      );
       await enterGeneratedRound(nextRound, nextQuestions, fallback, nextConfig);
     } catch (err) {
+      if (!reflectionComplete) {
+        setSessionError(
+          err instanceof Error
+            ? err.message
+            : 'Could not update memory. Retry before creating the next question set.',
+        );
+        setPhase('active');
+        return;
+      }
       recordGenerationFailed({
         kind: 'next_round',
         message: err instanceof Error ? err.message : 'Could not generate the next question set.',
@@ -942,7 +914,9 @@ export function MarathonPage() {
     setPhase('loading');
     setSessionError(null);
     try {
-      await reflectOnRound();
+      await workflowProgress.run('memory_reflection', (operationId, signal) =>
+        reflectOnRound(operationId, signal),
+      );
     } catch (err) {
       setSessionError(
         err instanceof Error
@@ -1210,7 +1184,7 @@ export function MarathonPage() {
     const firstRound = round === 1 && results.length === 0;
     return (
       <WorkspacePage>
-        <MemoryUpdateToast status={memoryUpdateStatus} />
+        <WorkflowActivity state={workflowProgress.state} />
         <Card className="mx-auto max-w-xl gap-0 px-6 py-8 text-center">
           <div className="mx-auto mb-6 flex size-10 items-center justify-center">
             <Spinner className="text-muted-foreground size-8" />
@@ -1241,7 +1215,7 @@ export function MarathonPage() {
         : 'Couldn’t build your set';
     return (
       <WorkspacePage>
-        <MemoryUpdateToast status={memoryUpdateStatus} />
+        <WorkflowActivity state={workflowProgress.state} />
         <Card className="mx-auto max-w-xl gap-0 px-6 py-8">
           <div className="mb-4 flex items-start gap-3">
             <CircleAlertIcon className="text-destructive mt-0.5 size-5 shrink-0" />
@@ -1294,7 +1268,7 @@ export function MarathonPage() {
 
     return (
       <div className="mx-auto max-w-xl px-4 py-8 sm:px-6">
-        <MemoryUpdateToast status={memoryUpdateStatus} />
+        <WorkflowActivity state={workflowProgress.state} />
         <h1 className="mb-1 text-center text-[28px] leading-9 font-semibold">
           Results
         </h1>
@@ -1389,7 +1363,7 @@ export function MarathonPage() {
   // ── Active state: question display ───────────────────────────────────────
   return (
     <div className="mx-auto max-w-xl px-4 py-8 sm:px-6">
-      <MemoryUpdateToast status={memoryUpdateStatus} />
+      <WorkflowActivity state={workflowProgress.state} />
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <span className="text-muted-foreground text-sm font-medium">
           Round {round} · {questionIndex + 1} of {questions.length}

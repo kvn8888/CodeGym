@@ -15,6 +15,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/session"
 	"github.com/kvn8888/codegym/backend/internal/submission"
 	"github.com/kvn8888/codegym/backend/internal/usage"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
@@ -30,6 +31,7 @@ type Dependencies struct {
 	Submissions     *submission.Service
 	Intakes         *intake.Service
 	Chat            *chat.Service
+	Workflow        *workflow.Service
 	// Generation is nil when no GenAI provider is configured; the generate
 	// route stays registered and answers 503 so clients can fall back.
 	Generation           *generation.Orchestrator
@@ -80,7 +82,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/practice-intakes", intakeHandler.Prepare)
 	protected.HandleFunc("GET /api/v1/practice-intakes", intakeHandler.List)
 	protected.HandleFunc("PATCH /api/v1/practice-intakes/{id}", intakeHandler.Update)
-	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion, deps.Intakes, deps.Problems, deps.Sessions, deps.ExecutionRunner)
+	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion, deps.Intakes, deps.Problems, deps.Sessions, deps.ExecutionRunner, deps.Workflow)
 	protected.HandleFunc("POST /api/v1/generate", generateHandler.Generate)
 	protected.HandleFunc("POST /api/v1/mcq/evaluate", generateHandler.EvaluateFreeResponse)
 	protected.HandleFunc("POST /api/v1/memory/profile/maintain", generateHandler.MaintainProfile)
@@ -107,6 +109,10 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/chat/threads/{id}/reset", chatHandler.Reset)
 	protected.HandleFunc("POST /api/v1/chat/threads/{id}/finish", chatHandler.Finish)
 	protected.HandleFunc("POST /api/v1/chat/threads/{id}/exit", chatHandler.Exit)
+	workflowHandler := handlers.NewWorkflowHandler(deps.Workflow)
+	protected.HandleFunc("POST /api/v1/workflow-operations", workflowHandler.Create)
+	protected.HandleFunc("GET /api/v1/workflow-operations/{id}/events", workflowHandler.Events)
+	protected.HandleFunc("POST /api/v1/workflow-operations/{id}/cancel", workflowHandler.Cancel)
 
 	protectedChain := chain(
 		protected,

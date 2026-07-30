@@ -12,6 +12,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
@@ -39,11 +40,15 @@ func TestNeonIdentityAndMemoryBootstrap(t *testing.T) {
 
 	identityStore := identity.NewPostgresStore(pool)
 	memoryStore := memory.NewPostgresStore(pool)
+	workflowStore := workflow.NewPostgresStore(pool)
 	if err := identityStore.EnsureSchema(ctx); err != nil {
 		t.Fatalf("ensure identity schema: %v", err)
 	}
 	if err := memoryStore.EnsureSchema(ctx); err != nil {
 		t.Fatalf("ensure memory schema: %v", err)
+	}
+	if err := workflowStore.EnsureSchema(ctx); err != nil {
+		t.Fatalf("ensure workflow schema: %v", err)
 	}
 	assertConstraints(t, ctx, pool)
 
@@ -107,6 +112,28 @@ func TestNeonIdentityAndMemoryBootstrap(t *testing.T) {
 		t.Fatal("expected default memory profile summary")
 	}
 
+	workflowService := workflow.NewService(workflowStore, nil)
+	operation, err := workflowService.Create(
+		requestCtx, workflow.CreateInput{Kind: workflow.KindMCQGeneration},
+	)
+	if err != nil {
+		t.Fatalf("create workflow operation: %v", err)
+	}
+	reporter, err := workflowService.Attach(requestCtx, operation.Operation.ID)
+	if err != nil {
+		t.Fatalf("attach workflow operation: %v", err)
+	}
+	if err := reporter.Report(requestCtx, "load_context", workflow.StatusRunning, nil, false); err != nil {
+		t.Fatalf("append workflow event: %v", err)
+	}
+	workflowEvents, err := workflowService.Events(requestCtx, operation.Operation.ID, 5)
+	if err != nil {
+		t.Fatalf("list workflow events: %v", err)
+	}
+	if len(workflowEvents) != 1 || workflowEvents[0].Sequence != 6 {
+		t.Fatalf("workflow events = %#v", workflowEvents)
+	}
+
 	assertMembershipConstraint(t, ctx, pool)
 }
 
@@ -122,6 +149,7 @@ func assertConstraints(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		{name: "chk_workspace_memberships_role", table: "workspace_memberships"},
 		{name: "fk_user_memory_profiles_membership", table: "user_memory_profiles"},
 		{name: "fk_memory_events_membership", table: "memory_events"},
+		{name: "fk_workflow_operations_membership", table: "workflow_operations"},
 	} {
 		var exists bool
 		err := pool.QueryRow(ctx, `
@@ -207,6 +235,7 @@ func cleanupRows(t *testing.T, pool *pgxpool.Pool, workspaceID, userID string) {
 		args []any
 	}
 	statements := []cleanupStatement{
+		{sql: `DELETE FROM workflow_operations WHERE workspace_id = $1 AND user_id = $2`, args: []any{workspaceID, userID}},
 		{sql: `DELETE FROM memory_events WHERE workspace_id = $1 AND user_id = $2`, args: []any{workspaceID, userID}},
 		{sql: `DELETE FROM user_memory_profiles WHERE workspace_id = $1 AND user_id = $2`, args: []any{workspaceID, userID}},
 		{sql: `DELETE FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2`, args: []any{workspaceID, userID}},

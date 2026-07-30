@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 )
 
 // MCQSpec is the caller-supplied request for an MCQ set. Topic may be empty,
@@ -281,10 +283,21 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 	}
 
 	instructions := mcqSystemPrompt
+	profile, err := orchestrator.LoadProfile(ctx)
+	if err != nil {
+		return nil, GenerateResult{}, err
+	}
 	var lastErr error
 	var lastRawOutput string
 	for attempt := 1; attempt <= mcqMaxAttempts; attempt++ {
-		result, err := orchestrator.Generate(ctx, GenerateInput{
+		generationStep := "generate_questions"
+		if attempt > 1 {
+			generationStep = "repair_questions"
+		}
+		reportWorkflow(ctx, generationStep, workflow.StatusRunning, map[string]any{
+			"attempt": attempt, "max_attempts": mcqMaxAttempts,
+		}, false)
+		result, err := orchestrator.GenerateWithProfile(ctx, GenerateInput{
 			Kind: KindMCQ,
 			Spec: specJSON,
 			Schema: Schema{
@@ -297,19 +310,42 @@ func GenerateMCQSet(ctx context.Context, orchestrator *Orchestrator, spec MCQSpe
 			},
 			Instructions:  instructions,
 			IntakeContext: spec.IntakeContext,
-		})
+		}, profile)
 		if err != nil {
+			reportWorkflow(ctx, generationStep, workflow.StatusFailed, map[string]any{
+				"attempt": attempt, "max_attempts": mcqMaxAttempts,
+				"reason_code": "provider_failed", "retryable": true,
+			}, true)
 			log.Printf("mcq generation attempt %d failed class=%s detail=%s", attempt, DiagnosticClass(err), DiagnosticMessage(err))
 			return nil, GenerateResult{}, err
 		}
+		reportWorkflow(ctx, generationStep, workflow.StatusSucceeded, map[string]any{
+			"attempt": attempt, "max_attempts": mcqMaxAttempts,
+		}, false)
 
+		reportWorkflow(ctx, "validate_questions", workflow.StatusRunning, map[string]any{
+			"attempt": attempt, "max_attempts": mcqMaxAttempts,
+		}, false)
 		questions, validateErr := ValidateMCQSet(result.Object, spec.Count)
 		if validateErr == nil {
+			reportWorkflow(ctx, "validate_questions", workflow.StatusSucceeded, map[string]any{
+				"attempt": attempt, "max_attempts": mcqMaxAttempts,
+				"question_count": len(questions),
+			}, false)
+			if attempt == 1 {
+				reportWorkflow(ctx, "repair_questions", workflow.StatusSucceeded, map[string]any{
+					"skipped": true,
+				}, false)
+			}
 			return questions, result, nil
 		}
 
 		lastErr = validateErr
 		lastRawOutput = string(result.Object)
+		reportWorkflow(ctx, "validate_questions", workflow.StatusFailed, map[string]any{
+			"attempt": attempt, "max_attempts": mcqMaxAttempts,
+			"reason_code": "invalid_output", "retryable": attempt < mcqMaxAttempts,
+		}, attempt == mcqMaxAttempts)
 		log.Printf("mcq generation attempt %d failed class=invalid_output detail=%s",
 			attempt,
 			DiagnosticMessage(&InvalidOutputError{

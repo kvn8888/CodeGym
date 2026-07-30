@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 )
 
 func TestProfileSynthesizerCuratesAndPersistsFullProfile(t *testing.T) {
@@ -69,6 +70,53 @@ func TestProfileSynthesizerCuratesAndPersistsFullProfile(t *testing.T) {
 	}
 	if strings.Contains(string(request.Spec), "drop-me") {
 		t.Fatalf("unapproved payload key leaked into evidence: %s", request.Spec)
+	}
+}
+
+func TestProfileSynthesizerReportsEvidenceThroughPersistence(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: "mcq", Type: "answer_incorrect", Summary: "Missed a graph question.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{
+		"summary":"Graphs need practice.","strengths":[],"growth_edges":["Graphs"],
+		"skills":[{"id":"graphs","label":"Graphs","area":"DSA","level":2,"confidence":60,"trend":"flat"}],
+		"notes":[{"id":"note_graphs","title":"Graphs","summary":"Review traversal.","tags":["graphs"],"action":"review"}]
+	}`)}}
+	progress := workflow.NewService(workflow.NewInMemoryStore(), nil)
+	created, err := progress.Create(ctx, workflow.CreateInput{Kind: workflow.KindMemoryReflection})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reporter, err := progress.Attach(ctx, created.Operation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = workflow.WithReporter(ctx, reporter)
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).
+		WithClock(func() time.Time { return now })
+	if _, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := progress.Events(ctx, created.Operation.ID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"load_evidence", "load_evidence", "synthesize_profile", "synthesize_profile",
+		"validate_profile", "validate_profile", "save_profile", "save_profile",
+	}
+	if len(events) != len(want) {
+		t.Fatalf("events=%#v", events)
+	}
+	for index, stepID := range want {
+		if events[index].StepID != stepID {
+			t.Fatalf("event %d=%#v, want %s", index, events[index], stepID)
+		}
 	}
 }
 

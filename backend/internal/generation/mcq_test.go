@@ -11,6 +11,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
@@ -124,6 +125,59 @@ func TestGenerateMCQSetRetriesOnceOnInvalidOutput(t *testing.T) {
 	}
 	if !strings.Contains(generator.requests[1].Instructions, "previous output was rejected") {
 		t.Error("retry instructions do not carry the validation error back")
+	}
+}
+
+func TestGenerateMCQSetReportsOrderedObservableWorkflow(t *testing.T) {
+	generator := &scriptedGenerator{payloads: []json.RawMessage{
+		json.RawMessage(`[{"id":"mq1","text":"Q?","options":["a","b"],"correctIndex":0,"concept":"C","helpContent":"H"}]`),
+		validMCQJSON(2),
+	}}
+	orchestrator := newTestOrchestrator(generator)
+	progress := workflow.NewService(workflow.NewInMemoryStore(), nil)
+	ctx := scopedContext()
+	created, err := progress.Create(ctx, workflow.CreateInput{Kind: workflow.KindMCQGeneration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reporter, err := progress.Attach(ctx, created.Operation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = workflow.WithReporter(ctx, reporter)
+
+	if _, _, err := GenerateMCQSet(ctx, orchestrator, MCQSpec{Count: 2}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := progress.Events(ctx, created.Operation.ID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		step   string
+		status workflow.Status
+	}{
+		{"load_context", workflow.StatusRunning},
+		{"load_context", workflow.StatusSucceeded},
+		{"generate_questions", workflow.StatusRunning},
+		{"generate_questions", workflow.StatusSucceeded},
+		{"validate_questions", workflow.StatusRunning},
+		{"validate_questions", workflow.StatusFailed},
+		{"repair_questions", workflow.StatusRunning},
+		{"repair_questions", workflow.StatusSucceeded},
+		{"validate_questions", workflow.StatusRunning},
+		{"validate_questions", workflow.StatusSucceeded},
+	}
+	if len(events) != len(want) {
+		t.Fatalf("events=%#v", events)
+	}
+	for index, expected := range want {
+		if events[index].StepID != expected.step || events[index].Status != expected.status {
+			t.Fatalf("event %d=%#v, want %s/%s", index, events[index], expected.step, expected.status)
+		}
+		if events[index].Sequence != int64(index+6) {
+			t.Fatalf("event %d sequence=%d", index, events[index].Sequence)
+		}
 	}
 }
 

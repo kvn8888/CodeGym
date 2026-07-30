@@ -95,6 +95,36 @@ export interface ServerSentEvent<T = unknown> {
   data: T;
 }
 
+export type WorkflowKind = 'mcq_generation' | 'memory_reflection' | 'mcq_next_round';
+export type WorkflowStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface WorkflowOperation {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  kind: WorkflowKind;
+  status: WorkflowStatus;
+  last_sequence: number;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
+export interface WorkflowEvent {
+  operation_id: string;
+  sequence: number;
+  step_id: string;
+  label: string;
+  status: WorkflowStatus;
+  timestamp: string;
+  metadata?: Record<string, string | number | boolean>;
+}
+
+export interface WorkflowCreateResult {
+  operation: WorkflowOperation;
+  events: WorkflowEvent[];
+}
+
 export async function streamChatTurn(
   threadId: string,
   input: { client_message_id: string; message: string },
@@ -166,6 +196,71 @@ export async function streamChatTurn(
     }
     if (done) break;
   }
+}
+
+export async function streamWorkflowEvents(
+  operationId: string,
+  afterSequence: number,
+  onEvent: (event: WorkflowEvent) => void,
+  signal?: AbortSignal,
+) {
+  const token = await getBearerToken();
+  const headers = buildHeaders(undefined, token);
+  headers.set('Accept', 'text/event-stream');
+  if (afterSequence > 0) {
+    headers.set('Last-Event-ID', String(afterSequence));
+  }
+  const response = await fetch(
+    joinUrl(
+      resolveApiBaseUrl(),
+      `/workflow-operations/${encodeURIComponent(operationId)}/events`,
+    ),
+    { method: 'GET', headers, signal },
+  );
+  if (!response.ok || !response.body) {
+    const body = await readJson<{ error?: ApiErrorBody | null }>(response);
+    throw new ApiRequestError(
+      body.error?.code ?? `http_${response.status}`,
+      body.error?.message ?? response.statusText ?? 'Workflow progress is unavailable.',
+      response.status,
+      body.error ?? null,
+    );
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() ?? '';
+    for (const block of blocks) {
+      let eventType = 'message';
+      const dataLines: string[] = [];
+      for (const line of block.split(/\r?\n/)) {
+        if (line.startsWith('event:')) eventType = line.slice(6).trim();
+        if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+      }
+      if (eventType !== 'progress' || !dataLines.length) continue;
+      onEvent(JSON.parse(dataLines.join('\n')) as WorkflowEvent);
+    }
+    if (done) break;
+  }
+}
+
+export function createWorkflowOperation(kind: WorkflowKind) {
+  return request<WorkflowCreateResult>('/workflow-operations', {
+    method: 'POST',
+    body: JSON.stringify({ kind }),
+  });
+}
+
+export function cancelWorkflowOperation(operationId: string) {
+  return request<{ operation: WorkflowOperation; event: WorkflowEvent }>(
+    `/workflow-operations/${encodeURIComponent(operationId)}/cancel`,
+    { method: 'POST' },
+  );
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

@@ -14,9 +14,10 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/intake"
 	"github.com/kvn8888/codegym/backend/internal/memory"
-	"github.com/kvn8888/codegym/backend/internal/problemverify"
 	"github.com/kvn8888/codegym/backend/internal/problems"
+	"github.com/kvn8888/codegym/backend/internal/problemverify"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 )
 
 // GenerateHandler exposes the model-backed generation endpoint. The
@@ -31,24 +32,26 @@ type GenerateHandler struct {
 	problems               *problems.Service
 	sessions               *session.Service
 	runner                 execution.Runner
+	workflows              *workflow.Service
 }
 
 // NewGenerateHandler builds a generation handler. Both dependencies may be
 // used per-request with the caller's scoped context. runner is required for
 // kind "problem" verification before persist; when nil, problem generation
 // fails closed instead of shipping unverified tests.
-func NewGenerateHandler(orchestrator *generation.Orchestrator, memoryService *memory.Service, profiles *generation.ProfileSynthesizer, refreshOnSetCompletion bool, intakes *intake.Service, problemService *problems.Service, sessions *session.Service, runner execution.Runner) *GenerateHandler {
+func NewGenerateHandler(orchestrator *generation.Orchestrator, memoryService *memory.Service, profiles *generation.ProfileSynthesizer, refreshOnSetCompletion bool, intakes *intake.Service, problemService *problems.Service, sessions *session.Service, runner execution.Runner, workflows *workflow.Service) *GenerateHandler {
 	return &GenerateHandler{
 		orchestrator: orchestrator, memory: memoryService, profiles: profiles,
 		refreshOnSetCompletion: refreshOnSetCompletion, intakes: intakes, problems: problemService, sessions: sessions,
-		runner: runner,
+		runner: runner, workflows: workflows,
 	}
 }
 
 type generateRequestBody struct {
-	Kind     string          `json:"kind"`
-	Spec     json.RawMessage `json:"spec"`
-	IntakeID string          `json:"intake_id,omitempty"`
+	Kind        string          `json:"kind"`
+	Spec        json.RawMessage `json:"spec"`
+	IntakeID    string          `json:"intake_id,omitempty"`
+	OperationID string          `json:"operation_id,omitempty"`
 }
 
 type generateMCQResponse struct {
@@ -92,6 +95,28 @@ func (h *GenerateHandler) Generate(w http.ResponseWriter, r *http.Request) {
 
 	switch generation.Kind(body.Kind) {
 	case generation.KindMCQ:
+		reporter, err := h.attachWorkflow(r, body.OperationID, workflow.KindMCQGeneration, workflow.KindMCQNextRound)
+		if err != nil {
+			h.workflowAttachError(w, err)
+			return
+		}
+		if reporter != nil && reporter.Operation().Kind == workflow.KindMCQNextRound {
+			err = h.workflows.RequireSucceeded(
+				r.Context(), reporter.Operation().ID,
+				"load_evidence", "synthesize_profile", "validate_profile", "save_profile",
+			)
+			if err != nil {
+				response.Error(
+					w, http.StatusConflict, "workflow_prerequisite",
+					"Memory reflection must succeed before next-round generation begins.",
+				)
+				return
+			}
+		}
+		if reporter != nil {
+			r = r.WithContext(workflow.WithReporter(r.Context(), reporter))
+			defer ensureWorkflowTerminal(r, "questions_ready")()
+		}
 		h.generateMCQ(w, r, body.Spec, body.IntakeID)
 	case generation.KindProblem:
 		h.generateProblem(w, r, body.Spec, body.IntakeID)
@@ -224,6 +249,9 @@ func (h *GenerateHandler) generateMCQ(w http.ResponseWriter, r *http.Request, ra
 		})
 		return
 	}
+	reportWorkflowTerminal(r, "questions_ready", workflow.StatusSucceeded, map[string]any{
+		"question_count": len(questions),
+	})
 
 	h.recordEvent(r, memory.RecordEventInput{
 		Source:  memory.SourceGenerate,
@@ -286,7 +314,8 @@ func (h *GenerateHandler) EvaluateFreeResponse(w http.ResponseWriter, r *http.Re
 }
 
 type maintainProfileRequestBody struct {
-	SessionID string `json:"session_id"`
+	SessionID   string `json:"session_id"`
+	OperationID string `json:"operation_id,omitempty"`
 }
 
 // MaintainProfile runs full profile synthesis after a practice set. The
@@ -301,13 +330,32 @@ func (h *GenerateHandler) MaintainProfile(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	reporter, err := h.attachWorkflow(
+		r, body.OperationID, workflow.KindMemoryReflection, workflow.KindMCQNextRound,
+	)
+	if err != nil {
+		h.workflowAttachError(w, err)
+		return
+	}
+	if reporter != nil {
+		r = r.WithContext(workflow.WithReporter(r.Context(), reporter))
+		fallbackStep := "memory_ready"
+		if reporter.Operation().Kind == workflow.KindMCQNextRound {
+			fallbackStep = "save_profile"
+		}
+		defer ensureWorkflowTerminal(r, fallbackStep)()
+	}
 
 	if !h.refreshOnSetCompletion {
+		for _, stepID := range []string{"load_evidence", "synthesize_profile", "validate_profile", "save_profile"} {
+			reportWorkflowStep(r, stepID, workflow.StatusSucceeded, map[string]any{"skipped": true}, false)
+		}
 		profile, err := h.memory.GetProfile(r.Context())
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, "memory_profile_failed", "Could not load memory profile.")
 			return
 		}
+		completeMemoryWorkflow(r, false)
 		response.JSON(w, http.StatusOK, profile)
 		return
 	}
@@ -369,7 +417,83 @@ func (h *GenerateHandler) MaintainProfile(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	completeMemoryWorkflow(r, result.Changed)
 	response.JSON(w, http.StatusOK, result.Profile)
+}
+
+func (h *GenerateHandler) attachWorkflow(
+	r *http.Request,
+	operationID string,
+	kinds ...workflow.Kind,
+) (*workflow.Reporter, error) {
+	operationID = strings.TrimSpace(operationID)
+	if operationID == "" || h.workflows == nil {
+		return nil, nil
+	}
+	return h.workflows.Attach(r.Context(), operationID, kinds...)
+}
+
+func (h *GenerateHandler) workflowAttachError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, workflow.ErrNotFound):
+		response.Error(w, http.StatusNotFound, "workflow_not_found", "Workflow operation not found.")
+	case errors.Is(err, workflow.ErrTerminal):
+		response.Error(w, http.StatusConflict, "workflow_terminal", "Workflow operation is already complete.")
+	default:
+		response.Error(w, http.StatusBadRequest, "workflow_mismatch", err.Error())
+	}
+}
+
+func reportWorkflowStep(
+	r *http.Request,
+	stepID string,
+	status workflow.Status,
+	metadata map[string]any,
+	terminal bool,
+) {
+	reporter := workflow.ReporterFromContext(r.Context())
+	if reporter == nil {
+		return
+	}
+	if err := reporter.Report(r.Context(), stepID, status, metadata, terminal); err != nil &&
+		r.Context().Err() != nil {
+		_ = reporter.ReportDetached(stepID, status, metadata, terminal)
+	}
+}
+
+func reportWorkflowTerminal(
+	r *http.Request,
+	stepID string,
+	status workflow.Status,
+	metadata map[string]any,
+) {
+	reportWorkflowStep(r, stepID, status, metadata, true)
+}
+
+func completeMemoryWorkflow(r *http.Request, changed bool) {
+	reporter := workflow.ReporterFromContext(r.Context())
+	if reporter == nil || reporter.Operation().Kind == workflow.KindMCQNextRound {
+		return
+	}
+	reportWorkflowTerminal(r, "memory_ready", workflow.StatusSucceeded, map[string]any{
+		"changed": changed,
+	})
+}
+
+func ensureWorkflowTerminal(r *http.Request, fallbackStep string) func() {
+	return func() {
+		reporter := workflow.ReporterFromContext(r.Context())
+		if reporter == nil {
+			return
+		}
+		status := reporter.Operation().Status
+		if status == workflow.StatusSucceeded || status == workflow.StatusFailed {
+			return
+		}
+		_ = reporter.ReportDetached(fallbackStep, workflow.StatusFailed, map[string]any{
+			"reason_code": "operation_failed", "retryable": true,
+		}, true)
+	}
 }
 
 func firstNonEmptyString(values ...string) string {

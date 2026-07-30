@@ -44,6 +44,9 @@ Current routes:
 | `GET` | `/api/v1/chat/threads` | Yes | Find threads by kind, status, and practice session. |
 | `GET` | `/api/v1/chat/threads/{id}/messages` | Yes | Restore the append-only transcript. |
 | `POST` | `/api/v1/chat/threads/{id}/turns` | Yes | Send an idempotent user turn and receive `meta`, `delta`, `complete`, or `error` SSE events. |
+| `POST` | `/api/v1/workflow-operations` | Yes | Seed durable backend-owned steps for a long-running AI operation. |
+| `GET` | `/api/v1/workflow-operations/{id}/events` | Yes | Replay and follow ordered `progress` SSE events from `Last-Event-ID` or `after`. |
+| `POST` | `/api/v1/workflow-operations/{id}/cancel` | Yes | Terminate an unfinished scoped workflow operation. |
 | `POST` | `/api/v1/chat/threads/{id}/reset` | Yes | Close a thread and create a clean successor. |
 | `POST` | `/api/v1/chat/threads/{id}/finish` | Yes | Complete an interview, save its coarse assessment, and refresh memory. |
 | `POST` | `/api/v1/chat/threads/{id}/exit` | Yes | Record an interview exit while retaining resume state. |

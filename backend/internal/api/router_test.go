@@ -22,6 +22,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
@@ -46,27 +47,30 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 	}
 
 	required := map[string][]string{
-		"/health":                         {http.MethodGet},
-		"/ready":                          {http.MethodGet},
-		"/api/v1/me":                      {http.MethodGet, http.MethodPatch},
-		"/api/v1/cost":                    {http.MethodGet},
-		"/api/v1/memory/profile":          {http.MethodGet},
-		"/api/v1/memory/profile/refresh":  {http.MethodPost},
-		"/api/v1/memory/profile/maintain": {http.MethodPost},
-		"/api/v1/memory/events":           {http.MethodGet, http.MethodPost},
-		"/api/v1/sessions":                {http.MethodGet, http.MethodPost},
-		"/api/v1/sessions/{id}":           {http.MethodGet, http.MethodPatch},
-		"/api/v1/sessions/{id}/files":     {http.MethodPut},
-		"/api/v1/problems":                {http.MethodGet},
-		"/api/v1/problems/{id}":           {http.MethodGet},
-		"/api/v1/problems/{id}/skeleton":  {http.MethodGet},
-		"/api/v1/submissions":             {http.MethodPost},
-		"/api/v1/submissions/{id}":        {http.MethodGet},
-		"/api/v1/executions":              {http.MethodGet, http.MethodPost},
-		"/api/v1/executions/{id}":         {http.MethodGet},
-		"/api/v1/generate":                {http.MethodPost},
-		"/api/v1/mcq/evaluate":            {http.MethodPost},
-		"/api/v1/memory/notes/maintain":   {http.MethodPost},
+		"/health":                                 {http.MethodGet},
+		"/ready":                                  {http.MethodGet},
+		"/api/v1/me":                              {http.MethodGet, http.MethodPatch},
+		"/api/v1/cost":                            {http.MethodGet},
+		"/api/v1/memory/profile":                  {http.MethodGet},
+		"/api/v1/memory/profile/refresh":          {http.MethodPost},
+		"/api/v1/memory/profile/maintain":         {http.MethodPost},
+		"/api/v1/memory/events":                   {http.MethodGet, http.MethodPost},
+		"/api/v1/sessions":                        {http.MethodGet, http.MethodPost},
+		"/api/v1/sessions/{id}":                   {http.MethodGet, http.MethodPatch},
+		"/api/v1/sessions/{id}/files":             {http.MethodPut},
+		"/api/v1/problems":                        {http.MethodGet},
+		"/api/v1/problems/{id}":                   {http.MethodGet},
+		"/api/v1/problems/{id}/skeleton":          {http.MethodGet},
+		"/api/v1/submissions":                     {http.MethodPost},
+		"/api/v1/submissions/{id}":                {http.MethodGet},
+		"/api/v1/executions":                      {http.MethodGet, http.MethodPost},
+		"/api/v1/executions/{id}":                 {http.MethodGet},
+		"/api/v1/generate":                        {http.MethodPost},
+		"/api/v1/mcq/evaluate":                    {http.MethodPost},
+		"/api/v1/memory/notes/maintain":           {http.MethodPost},
+		"/api/v1/workflow-operations":             {http.MethodPost},
+		"/api/v1/workflow-operations/{id}/events": {http.MethodGet},
+		"/api/v1/workflow-operations/{id}/cancel": {http.MethodPost},
 	}
 
 	for path, methods := range required {
@@ -79,6 +83,52 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 				t.Fatalf("OpenAPI contract is missing %s %s", method, path)
 			}
 		}
+	}
+}
+
+func TestRouterWorkflowOperationsRequireAuthAndScope(t *testing.T) {
+	router := NewRouter(Dependencies{
+		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:      identity.NewService(identity.NewInMemoryStore()),
+		Workflow:      workflow.NewService(workflow.NewInMemoryStore(), nil),
+	})
+
+	unauthenticated := httptest.NewRecorder()
+	router.ServeHTTP(
+		unauthenticated,
+		httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/workflow-operations",
+			strings.NewReader(`{"kind":"mcq_generation"}`),
+		),
+	)
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status=%d body=%s", unauthenticated.Code, unauthenticated.Body.String())
+	}
+
+	create := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workflow-operations",
+		strings.NewReader(`{"kind":"mcq_generation"}`),
+	)
+	createRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(create, createRequest)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", create.Code, create.Body.String())
+	}
+	created := decodeEnvelopeData[workflow.CreateResult](t, create)
+
+	crossScope := httptest.NewRecorder()
+	crossScopeRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/workflow-operations/"+created.Operation.ID+"/events",
+		nil,
+	)
+	crossScopeRequest.Header.Set("Authorization", "Bearer dev:alec:personal-alec")
+	router.ServeHTTP(crossScope, crossScopeRequest)
+	if crossScope.Code != http.StatusNotFound {
+		t.Fatalf("cross-scope status=%d body=%s", crossScope.Code, crossScope.Body.String())
 	}
 }
 

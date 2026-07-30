@@ -24,6 +24,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/session"
 	"github.com/kvn8888/codegym/backend/internal/submission"
 	"github.com/kvn8888/codegym/backend/internal/usage"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 )
 
 // main wires configuration, persistence adapters, services, and the HTTP router,
@@ -47,6 +48,7 @@ func main() {
 	var problemStore problems.Store = problems.NewInMemoryStore()
 	var intakeStore intake.Store = intake.NewInMemoryStore()
 	var chatStore chat.Store = chat.NewInMemoryStore()
+	var workflowStore workflow.Store = workflow.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -67,6 +69,7 @@ func main() {
 		postgresProblemStore := problems.NewPostgresStore(pool)
 		postgresIntakeStore := intake.NewPostgresStore(pool)
 		postgresChatStore := chat.NewPostgresStore(pool)
+		postgresWorkflowStore := workflow.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -91,6 +94,9 @@ func main() {
 		if err := postgresChatStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap chat schema: %v", err)
 		}
+		if err := postgresWorkflowStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap workflow progress schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
@@ -100,6 +106,7 @@ func main() {
 		problemStore = postgresProblemStore
 		intakeStore = postgresIntakeStore
 		chatStore = postgresChatStore
+		workflowStore = postgresWorkflowStore
 		log.Print("CodeGym API using Postgres identity, memory, session, chat, genai usage, execution, and problem stores")
 	} else {
 		log.Print("CodeGym API using in-memory identity, memory, session, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
@@ -167,6 +174,7 @@ func main() {
 		log.Print("CodeGym generation disabled; set META_MUSE_SPARK_API, CODEGYM_GENAI_AZURE_API_KEY, or CODEGYM_GEMINI_API_KEY to enable POST /api/v1/generate")
 	}
 	profileSynthesizer := generation.NewProfileSynthesizer(generationOrchestrator, memoryService)
+	workflowService := workflow.NewService(workflowStore, nil)
 	intakeService := intake.NewService(intakeStore, memoryService, generationOrchestrator, nil)
 	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, profileSynthesizer)
 	chatService := chat.NewService(
@@ -199,6 +207,7 @@ func main() {
 		Submissions:          submissionService,
 		Intakes:              intakeService,
 		Chat:                 chatService,
+		Workflow:             workflowService,
 		Generation:           generationOrchestrator,
 		MemoryProfiles:       profileSynthesizer,
 		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,

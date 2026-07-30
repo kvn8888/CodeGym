@@ -140,7 +140,7 @@ func TestParseCuratedProfileReusesExistingNoteForDuplicateConcept(t *testing.T) 
 		"summary":"Join direction needs another pass.","strengths":[],"growth_edges":["SQL joins"],
 		"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":60,"trend":"flat"}],
 		"notes":[
-			{"id":"note_new_id","problem_id":"problem-sql-1","title":"SQL joins","summary":"Updated summary.","tags":["sql"],"action":"review"},
+			{"id":"note_new_id","problem_id":"problem-sql-1","title":"SQL joins","summary":"Updated summary with the earlier unmatched-row confusion still noted.","tags":["sql"],"action":"review"},
 			{"id":"note_duplicate","title":"SQL joins","summary":"Duplicate summary.","tags":["sql"],"action":"review"}
 		]
 	}`)
@@ -152,11 +152,55 @@ func TestParseCuratedProfileReusesExistingNoteForDuplicateConcept(t *testing.T) 
 	if len(profile.Notes) != 1 {
 		t.Fatalf("notes = %#v", profile.Notes)
 	}
-	if profile.Notes[0].ID != "note_sql_original" || profile.Notes[0].Summary != "Updated summary." {
+	if profile.Notes[0].ID != "note_sql_original" ||
+		!strings.Contains(profile.Notes[0].Summary, "Updated summary") {
 		t.Fatalf("note = %#v", profile.Notes[0])
 	}
 	if !profile.Notes[0].CreatedAt.Equal(createdAt) {
 		t.Fatalf("created_at = %s", profile.Notes[0].CreatedAt)
+	}
+}
+
+func TestParseCuratedProfileRejectsSummaryRegression(t *testing.T) {
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	current := memory.Profile{
+		Summary: strings.Repeat("Prior skill detail. ", 20), // >200 runes
+	}
+	raw := json.RawMessage(`{
+		"summary":"Latest set went okay.",
+		"strengths":[],"growth_edges":[],"skills":[],"notes":[]
+	}`)
+	_, err := ParseCuratedProfile(raw, current, memory.Profile{}, now)
+	if err == nil || !strings.Contains(err.Error(), "regresses living document") {
+		t.Fatalf("expected summary regression, got %v", err)
+	}
+}
+
+func TestParseCuratedProfileRejectsNoteSummaryRegression(t *testing.T) {
+	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	current := memory.Profile{Notes: []memory.Note{{
+		ID: "note_sql", Title: "SQL joins",
+		Summary: "Earlier sets showed confusion on unmatched rows and LEFT vs INNER; keep reviewing cardinality examples before the next SQL set.",
+		CreatedAt: now.Add(-time.Hour), Action: "review",
+	}}}
+	raw := json.RawMessage(`{
+		"summary":"SQL joins remain an open growth edge after the latest set.",
+		"strengths":[],"growth_edges":["SQL Joins"],"skills":[],
+		"notes":[{"id":"note_sql","title":"SQL joins","summary":"Review joins.","tags":["sql"],"action":"review"}]
+	}`)
+	_, err := ParseCuratedProfile(raw, current, memory.Profile{}, now)
+	if err == nil || !strings.Contains(err.Error(), "note summary regresses") {
+		t.Fatalf("expected note regression, got %v", err)
+	}
+}
+
+func TestProfileSystemPromptRequiresLivingSummary(t *testing.T) {
+	if !strings.Contains(profileSystemPrompt, "living document") ||
+		!strings.Contains(profileSystemPrompt, "three-sentence status blurb") {
+		t.Fatalf("profile prompt lost living-document guidance")
+	}
+	if strings.Contains(profileSystemPrompt, "summary is a short paragraph") {
+		t.Fatalf("profile prompt still asks for a short replacement paragraph")
 	}
 }
 

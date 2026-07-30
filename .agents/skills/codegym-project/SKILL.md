@@ -67,6 +67,9 @@ happen next. Do not present local-only work as finished repository work.
   filters maintenance/audit events, builds a bounded evidence digest, validates
   one structured LLM result, and atomically persists summary, Skill profile,
   Focus next (`growth_edges`), strengths, notes, and synthesis provenance.
+  The profile summary is a living skill document: synthesis revises the prior
+  summary in place, preserves still-true history, and rejects candidates that
+  collapse a rich summary into a short recap.
   `CODEGYM_MEMORY_REFRESH_TRIGGER=daily|set-completion|both` selects the trigger
   paths; `both` is the default. Completion synthesis finishes before the next
   generated set consumes memory. Provider or validation failure preserves an
@@ -75,9 +78,9 @@ happen next. Do not present local-only work as finished repository work.
   `skipped: true`; the UI may still reveal the correct answer after Skip, but
   personalization must not treat that reveal as a miss. Profile notes are a
   model-managed desired state: synthesis reuses
-  stable note identities, updates matching concepts in place, and omits stale
-  notes to prune them, while server-side normalization rejects exact concept
-  duplicates. The
+  stable note identities, revises matching concepts in place without erasing
+  still-true detail, and omits stale notes to prune them, while server-side
+  normalization rejects exact concept duplicates and note-summary regressions. The
   daily path first compares a SHA-256 digest of filtered learning evidence with
   persisted profile provenance. An unchanged digest makes zero model calls,
   uses zero tokens, and leaves profile timestamps untouched; a failed changed

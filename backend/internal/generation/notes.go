@@ -69,7 +69,7 @@ type MaintainNotesResult struct {
 const maxNotes = 20
 const maxNoteActions = 10
 
-const notesSystemPrompt = `You are the memory note maintainer for CodeGym, an interview-practice tool. Given a just-finished practice session and the user's existing notes (in the personalization context), decide which concept notes to create, update, or prune. Notes are the user's living study journal: short, high-signal reminders of what to remember or revisit. Return ONE JSON object.
+const notesSystemPrompt = `You are the memory note maintainer for CodeGym, an interview-practice tool. Given a just-finished practice session and the user's existing notes (in the personalization context), decide which concept notes to create, update, or prune. Notes are the user's living study journal: revise matching concepts in place, preserve still-true detail, and add new insight rather than replacing a useful note with one vague sentence. Return ONE JSON object.
 
 Output:
 {
@@ -79,7 +79,7 @@ Output:
       "note": {
         "id": "note_<slug>",        // for update/prune, an existing note id
         "title": "<=60 chars",
-        "summary": "one sentence on the insight or the gap. No code, no PII.",
+        "summary": "living reminder of the insight or gap; preserve prior true detail when updating. No code, no PII.",
         "tags": ["topic", ...],
         "action": "keep|review|prune"
       }

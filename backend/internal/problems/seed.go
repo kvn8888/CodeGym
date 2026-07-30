@@ -1,5 +1,11 @@
 package problems
 
+import (
+	"encoding/json"
+
+	"github.com/kvn8888/codegym/backend/internal/harness"
+)
+
 const twoSumSkeleton = `def two_sum(nums: list[int], target: int) -> list[int]:
     """Return the indices of two values whose sum equals target."""
     # TODO: implement this function.
@@ -16,59 +22,11 @@ const twoSumReferenceSolution = `def two_sum(nums: list[int], target: int) -> li
     return []
 `
 
-const twoSumHiddenTests = `import importlib
-import json
-import time
-
-PREFIX = "CODEGYM_RESULT "
-
-
-def emit(tests, compile_error=None):
-    print(PREFIX + json.dumps(
-        {"tests": tests, "compile_error": compile_error},
-        separators=(",", ":"),
-    ))
-
-
-try:
-    solution = importlib.import_module("solution")
-except Exception as exc:
-    emit([], f"{type(exc).__name__}: {exc}")
-    raise SystemExit(0)
-
-
-cases = [
-    ("finds a pair in a sorted-looking list", [2, 7, 11, 15], 9, [0, 1]),
-    ("finds a pair without relying on order", [3, 2, 4], 6, [1, 2]),
-    ("handles duplicate values", [3, 3], 6, [0, 1]),
-    ("handles negative values", [-3, 4, 3, 90], 0, [0, 2]),
-]
-
-results = []
-for name, nums, target, expected in cases:
-    started = time.perf_counter()
-    error = None
-    status = "pass"
-    try:
-        actual = solution.two_sum(nums, target)
-        if not isinstance(actual, list) or sorted(actual) != sorted(expected):
-            status = "fail"
-            error = f"expected {expected}, got {actual}"
-    except Exception as exc:
-        status = "fail"
-        error = f"{type(exc).__name__}: {exc}"
-    duration_ms = max(0, int((time.perf_counter() - started) * 1000))
-    results.append({
-        "name": name,
-        "status": status,
-        "duration_ms": duration_ms,
-        "error": error,
-    })
-
-emit(results)
-`
-
 func twoSumDefinition() Definition {
+	rendered, err := harness.Render(twoSumHarnessSpec())
+	if err != nil {
+		panic("render two-sum harness: " + err.Error())
+	}
 	return Definition{
 		Problem: Problem{
 			Summary: Summary{
@@ -117,10 +75,45 @@ Exactly one valid answer exists. You may not use the same array element twice, a
 			{Path: "solution.py", Content: twoSumSkeleton},
 		},
 		HiddenTestFiles: []File{
-			{Path: "test_solution.py", Content: twoSumHiddenTests},
+			{Path: rendered.Path, Content: rendered.Content},
 		},
 		ReferenceSolution: twoSumReferenceSolution,
 		Entrypoint:        "test_solution.py",
 		Visibility:        VisibilityGlobal,
+	}
+}
+
+func twoSumHarnessSpec() harness.Spec {
+	return harness.Spec{
+		Language:   harness.LanguagePython,
+		Module:     "solution",
+		EntryPoint: "two_sum",
+		ParamNames: []string{"nums", "target"},
+		Cases: []harness.Case{
+			{
+				Name:       "finds a pair in a sorted-looking list",
+				Args:       []json.RawMessage{json.RawMessage(`[2,7,11,15]`), json.RawMessage(`9`)},
+				Expected:   json.RawMessage(`[0,1]`),
+				Comparator: harness.ComparatorUnorderedList,
+			},
+			{
+				Name:       "finds a pair without relying on order",
+				Args:       []json.RawMessage{json.RawMessage(`[3,2,4]`), json.RawMessage(`6`)},
+				Expected:   json.RawMessage(`[1,2]`),
+				Comparator: harness.ComparatorUnorderedList,
+			},
+			{
+				Name:       "handles duplicate values",
+				Args:       []json.RawMessage{json.RawMessage(`[3,3]`), json.RawMessage(`6`)},
+				Expected:   json.RawMessage(`[0,1]`),
+				Comparator: harness.ComparatorUnorderedList,
+			},
+			{
+				Name:       "handles negative values",
+				Args:       []json.RawMessage{json.RawMessage(`[-3,4,3,90]`), json.RawMessage(`0`)},
+				Expected:   json.RawMessage(`[0,2]`),
+				Comparator: harness.ComparatorUnorderedList,
+			},
+		},
 	}
 }

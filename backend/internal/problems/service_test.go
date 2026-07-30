@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/harness"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
@@ -62,6 +63,21 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 	}
 	if len(skeleton.Files) != 1 || skeleton.Files[0].Content != twoSumSkeleton {
 		t.Fatalf("skeleton = %#v", skeleton)
+	}
+}
+
+func TestTwoSumSeedUsesRenderedHarness(t *testing.T) {
+	rendered, err := harness.Render(twoSumHarnessSpec())
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	definition := twoSumDefinition()
+	if len(definition.HiddenTestFiles) != 1 {
+		t.Fatalf("hidden tests = %#v", definition.HiddenTestFiles)
+	}
+	if definition.HiddenTestFiles[0].Path != rendered.Path ||
+		definition.HiddenTestFiles[0].Content != rendered.Content {
+		t.Fatal("two-sum seed does not use the canonical rendered harness")
 	}
 }
 

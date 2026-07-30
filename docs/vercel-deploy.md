@@ -90,7 +90,10 @@ production build.
    workspace execution → result resume. Repeat on Production after promotion;
    each browser must call its matching Render hostname and must not see the
    other environment's generated problems or sessions.
-6. Quick check:
+6. Start and resume an Interview in Preview, confirm streamed turns and finish
+   assessment, then repeat on Production. Verify the floating coach on Marathon
+   and coding pages is scoped to the active session.
+7. Quick check:
 
 ```sh
 curl -sS -o /dev/null -w "%{http_code}\n" https://code-gym-rho.vercel.app/

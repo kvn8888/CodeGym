@@ -8,6 +8,7 @@ import {
   Code2,
   History,
   ListChecks,
+  MessagesSquare,
   Plus,
   RefreshCw,
 } from 'lucide-react';
@@ -46,12 +47,17 @@ function sessionKindLabel(session: PracticeSessionSummary) {
 }
 
 function sessionIcon(session: PracticeSessionSummary) {
-  return session.kind === 'mcq' ? ListChecks : Code2;
+  if (session.kind === 'mcq') return ListChecks;
+  if (session.kind === 'interview') return MessagesSquare;
+  return Code2;
 }
 
 function sessionDestination(session: PracticeSessionSummary) {
   if (session.kind === 'mcq') return `/marathon?session=${encodeURIComponent(session.id)}`;
-  if (session.problem_id) return `/problems/${encodeURIComponent(session.problem_id)}`;
+  if (session.kind === 'interview') return `/interviews/${encodeURIComponent(session.id)}`;
+  if (session.problem_id) {
+    return `/problems/${encodeURIComponent(session.problem_id)}?session=${encodeURIComponent(session.id)}`;
+  }
   return '/';
 }
 

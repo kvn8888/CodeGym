@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Brain, Check, Clock3, Code2, ListChecks } from 'lucide-react';
+import { ArrowRight, Brain, Check, Clock3, Code2, ListChecks, MessagesSquare } from 'lucide-react';
 
 import { api } from '../../shared/api/client';
 import type {
   NewPracticeConfig,
   PracticeIntake,
   PracticeFormat,
+  InterviewMode,
   PracticeSession,
   PracticeSessionSummary,
   Problem,
@@ -36,6 +37,12 @@ const difficulties: Array<{ value: NewPracticeConfig['difficulty']; label: strin
   { value: 'medium', label: 'Medium' },
   { value: 'hard', label: 'Hard' },
 ];
+const interviewModes: Array<{ value: InterviewMode; label: string }> = [
+  { value: 'coding', label: 'Coding' },
+  { value: 'system_design', label: 'System design' },
+  { value: 'behavioral', label: 'Behavioral' },
+  { value: 'open_coaching', label: 'Open coaching' },
+];
 
 /** Stable start-flow status for New Practice (not an implicit boolean/string). */
 type StartStatus = 'idle' | 'pending' | 'failed';
@@ -61,12 +68,21 @@ const practiceFormats: Array<{
     description: 'LeetCode / HackerRank-style problem with an editor and test cases.',
     icon: Code2,
   },
+  {
+    value: 'interview',
+    label: 'Conversational interview',
+    shortLabel: 'Interview',
+    description: 'A resumable, memory-personalized interview with a saved transcript.',
+    icon: MessagesSquare,
+  },
 ];
 
 function sessionTitle(format: PracticeFormat, prompt: string) {
   const normalized = prompt.trim().replace(/\s+/g, ' ');
   if (!normalized) {
-    return format === 'coding' ? 'Personalized coding practice' : 'Personalized MCQ practice';
+    if (format === 'coding') return 'Personalized coding practice';
+    if (format === 'interview') return 'Personalized interview';
+    return 'Personalized MCQ practice';
   }
   return normalized.length > 64 ? `${normalized.slice(0, 61)}...` : normalized;
 }
@@ -84,7 +100,17 @@ function configFromIntake(
   intake: PracticeIntake,
 ): NewPracticeConfig & { format: PracticeFormat } {
   const seed = intake.practice_seed;
-  const seedFormat = seed.format === 'coding' || seed.format === 'mcq' ? seed.format : 'mcq';
+  const seedFormat =
+    seed.format === 'coding' || seed.format === 'mcq' || seed.format === 'interview'
+      ? seed.format
+      : 'mcq';
+  const seedMode =
+    seed.interviewMode === 'coding' ||
+    seed.interviewMode === 'system_design' ||
+    seed.interviewMode === 'behavioral' ||
+    seed.interviewMode === 'open_coaching'
+      ? seed.interviewMode
+      : 'coding';
   const seedDifficulty =
     seed.difficulty === 'easy' || seed.difficulty === 'hard' ? seed.difficulty : 'medium';
   const seedCount =
@@ -99,6 +125,7 @@ function configFromIntake(
     difficulty: seedDifficulty,
     count: seedCount,
     intakeId: intake.id,
+    interviewMode: seedMode,
   };
 }
 
@@ -122,6 +149,7 @@ export function GeneratePage({
     () => searchParams.get('prompt') ?? initialIntake?.original_topic ?? '',
   );
   const [difficulty, setDifficulty] = useState<NewPracticeConfig['difficulty']>('medium');
+  const [interviewMode, setInterviewMode] = useState<InterviewMode>('coding');
   const [count, setCount] = useState(5);
   const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
   const [recentSessions, setRecentSessions] = useState<PracticeSessionSummary[]>([]);
@@ -159,6 +187,7 @@ export function GeneratePage({
         setFormat(restoredConfig.format);
         setDifficulty(restoredConfig.difficulty);
         setCount(restoredConfig.count);
+        setInterviewMode(restoredConfig.interviewMode ?? 'coding');
       }
     });
     return () => {
@@ -179,7 +208,13 @@ export function GeneratePage({
 
   const recentForFormat = useMemo(() => {
     return recentSessions
-      .filter((session) => (format === 'mcq' ? session.kind === 'mcq' : session.kind === 'workspace'))
+      .filter((session) =>
+        format === 'mcq'
+          ? session.kind === 'mcq'
+          : format === 'interview'
+            ? session.kind === 'interview'
+            : session.kind === 'workspace',
+      )
       .slice(0, 4);
   }, [format, recentSessions]);
 
@@ -211,6 +246,23 @@ export function GeneratePage({
       navigate(`/marathon?session=${encodeURIComponent(session.id)}`, {
         state: { newPractice: { sessionId: session.id, config } },
       });
+      return;
+    }
+
+    if (config.format === 'interview') {
+      const session = await api.post<PracticeSession>('/sessions', {
+        kind: 'interview',
+        title: sessionTitle('interview', config.prompt),
+        state: {
+          schema_version: 1,
+          format: 'interview',
+          mode: config.interviewMode ?? 'coding',
+          topic: config.prompt,
+          intake_id: config.intakeId,
+          memory_update_status: 'idle',
+        },
+      });
+      navigate(`/interviews/${encodeURIComponent(session.id)}`);
       return;
     }
 
@@ -282,6 +334,7 @@ export function GeneratePage({
       prompt: prompt.trim(),
       difficulty,
       count: format === 'mcq' ? count : 1,
+      interviewMode: format === 'interview' ? interviewMode : undefined,
     };
     await prepareIntake(config);
   };
@@ -329,6 +382,8 @@ export function GeneratePage({
         description={
           format === 'coding'
             ? 'Generate a LeetCode-style coding problem personalized from your memory.'
+            : format === 'interview'
+              ? 'Start a resumable interview personalized from demonstrated memory.'
             : 'Set the focus for a personalized question session.'
         }
       />
@@ -392,6 +447,8 @@ export function GeneratePage({
                   placeholder={
                     format === 'coding'
                       ? 'Two-pointer array problems, hash maps, or graph BFS in Go...'
+                      : format === 'interview'
+                        ? 'Backend system design, behavioral leadership examples, or Python algorithms...'
                       : 'Go concurrency patterns, channel ownership, and cancellation...'
                   }
                   maxLength={500}
@@ -426,32 +483,54 @@ export function GeneratePage({
                   </fieldset>
                 )}
 
-                <fieldset className="p-4 sm:p-5">
-                  <legend className="mb-2 text-sm font-medium">Difficulty</legend>
-                  <ToggleGroup
-                    type="single"
-                    value={difficulty}
-                    onValueChange={(value) =>
-                      value && setDifficulty(value as NewPracticeConfig['difficulty'])
-                    }
-                    variant="outline"
-                    className="justify-start"
-                    aria-label="Difficulty"
-                  >
-                    {difficulties.map((item) => (
-                      <ToggleGroupItem key={item.value} value={item.value} className="px-3">
-                        {item.label}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </fieldset>
+                {format === 'interview' ? (
+                  <fieldset className="p-4 sm:p-5">
+                    <legend className="mb-2 text-sm font-medium">Interview mode</legend>
+                    <ToggleGroup
+                      type="single"
+                      value={interviewMode}
+                      onValueChange={(value) => value && setInterviewMode(value as InterviewMode)}
+                      variant="outline"
+                      className="flex-wrap justify-start"
+                      aria-label="Interview mode"
+                    >
+                      {interviewModes.map((item) => (
+                        <ToggleGroupItem key={item.value} value={item.value} className="px-3">
+                          {item.label}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </fieldset>
+                ) : (
+                  <fieldset className="p-4 sm:p-5">
+                    <legend className="mb-2 text-sm font-medium">Difficulty</legend>
+                    <ToggleGroup
+                      type="single"
+                      value={difficulty}
+                      onValueChange={(value) =>
+                        value && setDifficulty(value as NewPracticeConfig['difficulty'])
+                      }
+                      variant="outline"
+                      className="justify-start"
+                      aria-label="Difficulty"
+                    >
+                      {difficulties.map((item) => (
+                        <ToggleGroupItem key={item.value} value={item.value} className="px-3">
+                          {item.label}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </fieldset>
+                )}
               </div>
 
               <div className="bg-muted/20 flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-muted-foreground text-xs">
                   {format === 'coding'
                     ? 'Opens the coding workspace with an editor and tests.'
-                    : 'Progress is saved after every answer.'}
+                    : format === 'interview'
+                      ? 'Every turn is saved so you can resume from History.'
+                      : 'Progress is saved after every answer.'}
                 </div>
                 {prompt.trim() && (
                   <Button
@@ -466,6 +545,7 @@ export function GeneratePage({
                           prompt: prompt.trim(),
                           difficulty,
                           count: format === 'mcq' ? count : 1,
+                          interviewMode: format === 'interview' ? interviewMode : undefined,
                         },
                         true,
                       )
@@ -485,7 +565,9 @@ export function GeneratePage({
                       ? 'Retry'
                       : format === 'coding'
                         ? 'Start coding'
-                        : 'Start practice'}
+                        : format === 'interview'
+                          ? 'Start interview'
+                          : 'Start practice'}
                   {startStatus !== 'pending' && <ArrowRight data-icon="inline-end" />}
                 </Button>
               </div>

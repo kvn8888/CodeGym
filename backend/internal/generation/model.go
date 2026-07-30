@@ -18,6 +18,8 @@ const (
 	KindMCQEvaluation Kind = "mcq_evaluation"
 	// KindProfile is the internal full-profile memory synthesis pass.
 	KindProfile Kind = "memory_profile"
+	// KindInterviewAssessment is the internal validated interview reflection pass.
+	KindInterviewAssessment Kind = "interview_assessment"
 	// KindNotes is the internal memory note-maintenance pass; it is not
 	// exposed as a client-requestable kind on POST /api/v1/generate.
 	KindNotes Kind = "notes"
@@ -27,6 +29,35 @@ const (
 // Provider adapters implement this interface; orchestration code depends on it.
 type Generator interface {
 	Generate(ctx context.Context, request GenerateRequest) (GenerateResult, error)
+}
+
+// Streamer is the provider-neutral seam for conversational turns. Structured
+// generation stays on Generator; chat orchestration supplies explicit message
+// history and receives text deltas without depending on provider wire formats.
+type Streamer interface {
+	Stream(ctx context.Context, request StreamRequest, emit func(StreamDelta) error) (StreamResult, error)
+}
+
+type StreamRequest struct {
+	Instructions string          `json:"instructions"`
+	Messages     []StreamMessage `json:"messages"`
+	ModelPolicy  ModelPolicy     `json:"model_policy"`
+}
+
+type StreamMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type StreamDelta struct {
+	Content string `json:"content"`
+}
+
+type StreamResult struct {
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+	TokensIn  int    `json:"tokens_in"`
+	TokensOut int    `json:"tokens_out"`
 }
 
 type GenerateRequest struct {

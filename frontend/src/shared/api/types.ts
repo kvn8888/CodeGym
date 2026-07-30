@@ -160,16 +160,74 @@ export interface PracticeSession extends PracticeSessionSummary {
 }
 
 /** Practice format chosen on New practice. */
-export type PracticeFormat = 'mcq' | 'coding';
+export type PracticeFormat = 'mcq' | 'coding' | 'interview';
+export type InterviewMode = 'coding' | 'system_design' | 'behavioral' | 'open_coaching';
 export type MCQQuestionType = 'single_select' | 'multi_select' | 'free_response';
 
 export interface NewPracticeConfig {
-  /** `mcq` = multiple-choice marathon; `coding` = DSA / LeetCode-style workspace problem. */
+  /** Chosen New Practice surface. */
   format?: PracticeFormat;
+  interviewMode?: InterviewMode;
   prompt: string;
   difficulty: 'easy' | 'medium' | 'hard';
   count: number;
   intakeId?: string;
+}
+
+export type ChatKind = 'interview' | 'coach';
+export type ChatThreadStatus = 'active' | 'closed' | 'completed';
+export type ChatMessageStatus = 'complete' | 'interrupted';
+
+export interface ChatContextEnvelope {
+  version: 1;
+  session_id: string;
+  problem_id?: string;
+  question_id?: string;
+}
+
+export interface ChatThread {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  session_id: string;
+  kind: ChatKind;
+  mode?: InterviewMode;
+  status: ChatThreadStatus;
+  context: ChatContextEnvelope;
+  successor_id?: string;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  thread_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: ChatMessageStatus;
+  client_message_id?: string;
+  reply_to_message_id?: string;
+  created_at: string;
+}
+
+export interface ChatThreadWithMessages extends ChatThread {
+  messages: ChatMessage[];
+}
+
+export interface InterviewAssessment {
+  strengths: string[];
+  growth_edges: string[];
+  topic: string;
+  mode: InterviewMode;
+  turn_count: number;
+  duration_seconds: number;
+}
+
+export interface InterviewFinishResult {
+  thread: ChatThread;
+  assessment: InterviewAssessment;
+  memory_update_status: 'synced' | 'failed';
 }
 
 export type PracticeIntakeStatus = 'pending' | 'completed' | 'skipped';

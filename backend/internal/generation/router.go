@@ -117,6 +117,53 @@ func (r *Router) Generate(ctx context.Context, request GenerateRequest) (Generat
 	}
 }
 
+// Stream routes a conversational turn to the first eligible streaming-capable
+// provider. A provider may be retried only before it emits any text; once a
+// delta reaches the client, fallback would risk duplicating the answer.
+func (r *Router) Stream(ctx context.Context, request StreamRequest, emit func(StreamDelta) error) (StreamResult, error) {
+	if r == nil || len(r.providers) == 0 {
+		return StreamResult{}, errors.New("generation router has no providers")
+	}
+	eligible := r.selectProviders(request.ModelPolicy)
+	if len(eligible) == 0 {
+		return StreamResult{}, &ProviderError{Message: "no eligible GenAI providers for this request"}
+	}
+
+	var lastErr error
+	for index, provider := range eligible {
+		streamer, ok := provider.Generator.(Streamer)
+		if !ok {
+			continue
+		}
+		emitted := false
+		result, err := streamer.Stream(ctx, request, func(delta StreamDelta) error {
+			if delta.Content != "" {
+				emitted = true
+			}
+			return emit(delta)
+		})
+		if err == nil {
+			if strings.TrimSpace(result.Provider) == "" {
+				result.Provider = provider.Name
+			}
+			return result, nil
+		}
+		lastErr = err
+		log.Printf("genai stream provider=%s failed class=%s detail=%s",
+			provider.Name, DiagnosticClass(err), DiagnosticMessage(err))
+		if emitted || ctx.Err() != nil {
+			return StreamResult{}, err
+		}
+		if index+1 < len(eligible) {
+			log.Printf("genai stream fallback next=%s", eligible[index+1].Name)
+		}
+	}
+	if lastErr == nil {
+		lastErr = errors.New("no configured provider supports streaming")
+	}
+	return StreamResult{}, &ProviderError{Message: "all streaming providers failed", Err: lastErr}
+}
+
 func (r *Router) selectProviders(policy ModelPolicy) []NamedGenerator {
 	allowed := normalizeNameSet(policy.AllowedProviders)
 	preferred := strings.ToLower(strings.TrimSpace(policy.PreferredProvider))

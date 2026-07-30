@@ -5,7 +5,8 @@
 `frontend/src/shared/components/FloatingChat.tsx`). Acts as an interviewer +
 coach, personalized by memory. This is a **streaming chat** service, not a JSON
 generator — the system prompt sets persona and behavior; the conversation is the
-output. It emits `chat` memory events (see the naming guide) as a side channel.
+output. The server persists the transcript as session product state and emits
+only compact lifecycle events. Transcript content never enters memory events.
 
 **Modes** (`{{MODE}}`): `coding` (talk through a problem), `system_design`,
 `behavioral`, or `open_coaching`.
@@ -50,19 +51,25 @@ up), end your turn with a short coaching recap: 1 strength shown, 1 growth edge,
 1 concrete next practice suggestion.
 ```
 
-### Optional: structured memory side-channel
+### Validated completion assessment
 
-If your orchestrator wants the chat to also emit a memory event, run a **second,
-separate** call (don't mix JSON into the streamed reply) with this instruction:
+When the user explicitly finishes an Interview, run a **second, separate**
+structured-output call. Do not mix JSON into the streamed reply:
 
 ```
-From the transcript below, output ONE memory event JSON per the CodeGym event
-naming guide, source "chat". No prose.
-{ "source":"chat", "type":"assistant_replied|message_sent",
-  "summary":"<=1 sentence, no code/PII",
-  "payload": {"thread_id":"{{THREAD_ID}}","topic":"<coarse topic>","mode":"{{MODE}}","schema_version":1} }
+Assess the completed interview transcript. Return only:
+{ "strengths":["<=3 coarse labels"], "growth_edges":["<=3 coarse labels"],
+  "topic":"<coarse topic>" }
+Never quote or paraphrase the transcript. Do not return code, identifiers,
+personal details, numeric scores, mode, duration, or turn count; the server owns
+those fields and adds them after validation.
 TRANSCRIPT: {{TRANSCRIPT}}
 ```
+
+The resulting `chat.interview_completed` event contains only the validated
+coarse labels plus server-owned mode, turn count, and duration. If profile
+maintenance fails, interview completion remains durable and the client exposes
+a retryable memory-update state.
 
 ---
 

@@ -4,6 +4,8 @@ import { mockMemoryProfile } from './memoryFixtures';
 import { mockMemoryEvents, mockSessions } from './activityFixtures';
 import type {
   MemoryEvent,
+  ChatMessage,
+  ChatThreadWithMessages,
   PracticeIntake,
   PracticeSession,
   Problem,
@@ -30,6 +32,7 @@ let mockUserProfile: UserProfile = {
 
 let sessions: PracticeSession[] = structuredClone(mockSessions);
 let practiceIntakes: PracticeIntake[] = [];
+let chatThreads: ChatThreadWithMessages[] = [];
 
 const mockIntakeQuestions = [
   {
@@ -140,6 +143,37 @@ export function setMockApiScenario(scenario: MockApiScenario) {
   sessions = structuredClone(mockSessions);
   memoryEvents = scenario === 'empty' ? [] : createMemoryEventSeed();
   practiceIntakes = [];
+  chatThreads = [{
+    id: 'mock-thread-completed',
+    workspace_id: mockUserProfile.default_workspace_id,
+    user_id: mockUserProfile.user_id,
+    session_id: 'sess_interview_completed',
+    kind: 'interview',
+    mode: 'behavioral',
+    status: 'completed',
+    context: { version: 1, session_id: 'sess_interview_completed' },
+    created_at: '2026-07-09T18:00:00.000Z',
+    updated_at: '2026-07-09T18:24:00.000Z',
+    closed_at: '2026-07-09T18:24:00.000Z',
+    messages: [
+      {
+        id: 'mock-completed-opening',
+        thread_id: 'mock-thread-completed',
+        role: 'assistant',
+        content: 'Tell me about a time you changed a team’s technical direction.',
+        status: 'complete',
+        created_at: '2026-07-09T18:00:00.000Z',
+      },
+      {
+        id: 'mock-completed-answer',
+        thread_id: 'mock-thread-completed',
+        role: 'user',
+        content: 'I aligned the team around a smaller migration with measurable checkpoints.',
+        status: 'complete',
+        created_at: '2026-07-09T18:03:00.000Z',
+      },
+    ],
+  }];
 }
 
 function json<T>(data: T, init?: ResponseInit): Response {
@@ -438,6 +472,133 @@ export async function mockApiFetch(
     };
     sessions[sessionIndex] = updated;
     return json(updated);
+  }
+
+  if (method === 'GET' && path === '/chat/threads') {
+    const kind = url.searchParams.get('kind');
+    const status = url.searchParams.get('status');
+    const sessionId = url.searchParams.get('session_id');
+    return json({
+      threads: chatThreads
+        .filter((thread) => !kind || thread.kind === kind)
+        .filter((thread) => !status || thread.status === status)
+        .filter((thread) => !sessionId || thread.session_id === sessionId)
+        .map((thread) => ({
+          id: thread.id,
+          workspace_id: thread.workspace_id,
+          user_id: thread.user_id,
+          session_id: thread.session_id,
+          kind: thread.kind,
+          mode: thread.mode,
+          status: thread.status,
+          context: thread.context,
+          successor_id: thread.successor_id,
+          created_at: thread.created_at,
+          updated_at: thread.updated_at,
+          closed_at: thread.closed_at,
+        })),
+    });
+  }
+
+  if (method === 'POST' && path === '/chat/threads') {
+    const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+      kind?: 'interview' | 'coach';
+      mode?: 'coding' | 'system_design' | 'behavioral' | 'open_coaching';
+      session_id?: string;
+    };
+    const existing = chatThreads.find(
+      (thread) =>
+        thread.kind === (body.kind ?? 'coach') &&
+        thread.session_id === body.session_id &&
+        thread.status === 'active',
+    );
+    if (existing) return json(existing, { status: 201 });
+    const now = new Date().toISOString();
+    const id = `mock-thread-${Date.now()}`;
+    const opening: ChatMessage[] =
+      body.kind === 'interview'
+        ? [{
+            id: `${id}-opening`,
+            thread_id: id,
+            role: 'assistant',
+            content: 'Walk me through how you would approach this interview topic before choosing an implementation.',
+            status: 'complete',
+            created_at: now,
+          }]
+        : [];
+    const thread: ChatThreadWithMessages = {
+      id,
+      workspace_id: mockUserProfile.default_workspace_id,
+      user_id: mockUserProfile.user_id,
+      session_id: body.session_id ?? '',
+      kind: body.kind ?? 'coach',
+      mode: body.mode,
+      status: 'active',
+      context: { version: 1, session_id: body.session_id ?? '' },
+      created_at: now,
+      updated_at: now,
+      messages: opening,
+    };
+    chatThreads = [thread, ...chatThreads];
+    return json(thread, { status: 201 });
+  }
+
+  const chatMessagesMatch = path.match(/^\/chat\/threads\/([^/]+)\/messages$/);
+  if (method === 'GET' && chatMessagesMatch) {
+    const thread = chatThreads.find((candidate) => candidate.id === chatMessagesMatch[1]);
+    return thread
+      ? json({ messages: thread.messages })
+      : error('chat_thread_not_found', 'Conversation not found.', 404);
+  }
+
+  const chatActionMatch = path.match(/^\/chat\/threads\/([^/]+)\/(reset|finish|exit)$/);
+  if (method === 'POST' && chatActionMatch) {
+    const thread = chatThreads.find((candidate) => candidate.id === chatActionMatch[1]);
+    if (!thread) return error('chat_thread_not_found', 'Conversation not found.', 404);
+    if (chatActionMatch[2] === 'reset') {
+      thread.status = 'closed';
+      const now = new Date().toISOString();
+      const successor: ChatThreadWithMessages = {
+        ...thread,
+        id: `mock-thread-${Date.now()}`,
+        status: 'active',
+        created_at: now,
+        updated_at: now,
+        closed_at: undefined,
+        successor_id: undefined,
+        messages:
+          thread.kind === 'interview'
+            ? [{
+                id: `mock-opening-${Date.now()}`,
+                thread_id: `mock-thread-${Date.now()}`,
+                role: 'assistant',
+                content: 'Let’s begin again. What would you clarify first?',
+                status: 'complete',
+                created_at: now,
+              }]
+            : [],
+      };
+      chatThreads = [successor, ...chatThreads];
+      return json(successor, { status: 201 });
+    }
+    if (chatActionMatch[2] === 'finish') {
+      thread.status = 'completed';
+      const practiceSession = sessions.find((candidate) => candidate.id === thread.session_id);
+      if (practiceSession) practiceSession.status = 'completed';
+      return json({
+        thread,
+        assessment: {
+          strengths: ['Clear decomposition'],
+          growth_edges: ['Tradeoff depth'],
+          topic: 'Algorithms',
+          mode: thread.mode ?? 'open_coaching',
+          turn_count: 1,
+          duration_seconds: 120,
+        },
+        memory_update_status: 'synced',
+      });
+    }
+    return json({ thread });
   }
 
   if (method === 'GET' && path === '/problems') {

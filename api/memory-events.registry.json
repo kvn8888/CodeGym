@@ -105,6 +105,24 @@
       "goConst": "TypeThreadClosed"
     },
     {
+      "source": "chat",
+      "key": "interviewStarted",
+      "value": "interview_started",
+      "goConst": "TypeInterviewStarted"
+    },
+    {
+      "source": "chat",
+      "key": "interviewCompleted",
+      "value": "interview_completed",
+      "goConst": "TypeInterviewCompleted"
+    },
+    {
+      "source": "chat",
+      "key": "interviewExited",
+      "value": "interview_exited",
+      "goConst": "TypeInterviewExited"
+    },
+    {
       "source": "workspace",
       "key": "problemOpened",
       "value": "problem_opened",

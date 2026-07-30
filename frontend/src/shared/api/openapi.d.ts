@@ -197,6 +197,128 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Find chat threads within the authenticated workspace-user scope. */
+        get: operations["listChatThreads"];
+        put?: never;
+        /**
+         * Create or resume a scoped interview or contextual-coach thread.
+         * @description The server resolves authoritative session, problem, question, and memory context; clients never send DOM, source files, or hidden tests.
+         */
+        post: operations["createOrResumeChatThread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/threads/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        /** Restore the append-only transcript for one scoped thread. */
+        get: operations["listChatMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/threads/{id}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append one idempotent user message and stream the assistant reply.
+         * @description Emits versioned `meta`, `delta`, `complete`, and retryable `error` SSE events. Reusing client_message_id replays an already completed reply without duplicating the user message.
+         */
+        post: operations["streamChatTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/threads/{id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close the current thread and create a clean successor. */
+        post: operations["resetChatThread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/threads/{id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete an interview and persist a validated coarse assessment event.
+         * @description Completion remains durable when best-effort memory maintenance fails.
+         */
+        post: operations["finishInterview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/threads/{id}/exit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a compact exit event while leaving the interview resumable. */
+        post: operations["exitInterview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/problems": {
         parameters: {
             query?: never;
@@ -710,6 +832,103 @@ export interface components {
                 content: string;
             }[];
         };
+        /** @enum {string} */
+        ChatKind: "interview" | "coach";
+        /** @enum {string} */
+        ChatThreadStatus: "active" | "closed" | "completed";
+        /** @enum {string} */
+        ChatMessageStatus: "complete" | "interrupted";
+        /** @enum {string} */
+        InterviewMode: "coding" | "system_design" | "behavioral" | "open_coaching";
+        ChatContextEnvelope: {
+            /** @enum {integer} */
+            version: 1;
+            session_id: string;
+            problem_id?: string;
+            question_id?: string;
+        };
+        ChatThread: {
+            id: string;
+            workspace_id: string;
+            user_id: string;
+            session_id: string;
+            kind: components["schemas"]["ChatKind"];
+            mode?: components["schemas"]["InterviewMode"];
+            status: components["schemas"]["ChatThreadStatus"];
+            context: components["schemas"]["ChatContextEnvelope"];
+            successor_id?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            closed_at?: string;
+        };
+        ChatMessage: {
+            id: string;
+            thread_id: string;
+            /** @enum {string} */
+            role: "user" | "assistant";
+            content: string;
+            status: components["schemas"]["ChatMessageStatus"];
+            client_message_id?: string;
+            reply_to_message_id?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ChatThreadWithMessages: components["schemas"]["ChatThread"] & {
+            messages: components["schemas"]["ChatMessage"][];
+        };
+        CreateChatThreadInput: {
+            kind: components["schemas"]["ChatKind"];
+            mode?: components["schemas"]["InterviewMode"];
+            session_id: string;
+            question_id?: string;
+        };
+        ChatTurnInput: {
+            client_message_id: string;
+            message: string;
+        };
+        InterviewAssessment: {
+            strengths: string[];
+            growth_edges: string[];
+            topic: string;
+            mode: components["schemas"]["InterviewMode"];
+            turn_count: number;
+            duration_seconds: number;
+        };
+        InterviewFinishResult: {
+            thread: components["schemas"]["ChatThread"];
+            assessment: components["schemas"]["InterviewAssessment"];
+            /** @enum {string} */
+            memory_update_status: "synced" | "failed";
+        };
+        ChatThreadWithMessagesEnvelope: {
+            data: components["schemas"]["ChatThreadWithMessages"];
+            error: null;
+        };
+        ChatThreadEnvelope: {
+            data: {
+                thread: components["schemas"]["ChatThread"];
+            };
+            error: null;
+        };
+        ChatThreadListEnvelope: {
+            data: {
+                threads: components["schemas"]["ChatThread"][];
+            };
+            error: null;
+        };
+        ChatMessagesEnvelope: {
+            data: {
+                messages: components["schemas"]["ChatMessage"][];
+            };
+            error: null;
+        };
+        InterviewFinishEnvelope: {
+            data: components["schemas"]["InterviewFinishResult"];
+            error: null;
+        };
         ProblemSummary: {
             /** @example two-sum */
             id: string;
@@ -1095,6 +1314,7 @@ export interface components {
         /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
         WorkspaceHeader: string;
         SessionID: string;
+        ChatThreadID: string;
     };
     requestBodies: never;
     headers: never;
@@ -1492,6 +1712,197 @@ export interface operations {
             403: components["responses"]["WorkspaceForbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    listChatThreads: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["ChatKind"];
+                status?: components["schemas"]["ChatThreadStatus"];
+                session_id?: string;
+                limit?: number;
+            };
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching thread summaries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatThreadListEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+        };
+    };
+    createOrResumeChatThread: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChatThreadInput"];
+            };
+        };
+        responses: {
+            /** @description Active thread and its persisted transcript. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatThreadWithMessagesEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+        };
+    };
+    listChatMessages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Transcript restored in creation order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessagesEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    streamChatTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatTurnInput"];
+            };
+        };
+        responses: {
+            /** @description Server-sent event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    resetChatThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successor thread and opening transcript. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatThreadWithMessagesEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    finishInterview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed interview, coarse assessment, and memory update status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterviewFinishEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    exitInterview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ChatThreadID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active interview retained for resume. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatThreadEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     listProblems: {

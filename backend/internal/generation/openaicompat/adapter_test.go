@@ -265,6 +265,44 @@ func TestGenerateSurfacesProviderError(t *testing.T) {
 	}
 }
 
+func TestStreamEmitsOpenAICompatibleDeltas(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&requestBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"model\":\"stream-model\",\"choices\":[{\"delta\":{\"content\":\"Think \"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"in invariants.\"}}],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":4}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+	adapter, err := New(Config{BaseURL: server.URL, APIKey: "k", Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var content strings.Builder
+	result, err := adapter.Stream(context.Background(), generation.StreamRequest{
+		Instructions: "Be Socratic.",
+		Messages: []generation.StreamMessage{
+			{Role: "user", Content: "Help me reason."},
+		},
+	}, func(delta generation.StreamDelta) error {
+		content.WriteString(delta.Content)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestBody["stream"] != true {
+		t.Fatalf("stream = %#v", requestBody["stream"])
+	}
+	if content.String() != "Think in invariants." {
+		t.Fatalf("content = %q", content.String())
+	}
+	if result.Model != "stream-model" || result.TokensIn != 12 || result.TokensOut != 4 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestGeneratePrefersModelPolicyModel(t *testing.T) {
 	var gotModel string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

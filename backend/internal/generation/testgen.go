@@ -105,23 +105,26 @@ func GenerateTestSuite(
 	ctx context.Context,
 	orchestrator *Orchestrator,
 	spec TestGenerationSpec,
-) (TestSuite, GenerateResult, error) {
+) (TestSuite, harness.Rendered, GenerateResult, error) {
 	spec.ProblemID = strings.TrimSpace(spec.ProblemID)
 	spec.Module = strings.TrimSpace(spec.Module)
 	spec.EntryPoint = strings.TrimSpace(spec.EntryPoint)
 	spec.Description = strings.TrimSpace(spec.Description)
 	if spec.ProblemID == "" {
-		return TestSuite{}, GenerateResult{}, errors.New("problem_id is required")
+		return TestSuite{}, harness.Rendered{}, GenerateResult{}, errors.New("problem_id is required")
 	}
 	if spec.Language == "" {
 		spec.Language = harness.LanguagePython
 	}
 	if len(spec.ParamNames) == 0 {
-		return TestSuite{}, GenerateResult{}, errors.New("param_names must not be empty")
+		return TestSuite{}, harness.Rendered{}, GenerateResult{}, errors.New("param_names must not be empty")
+	}
+	if err := validateTestGenerationSpec(spec); err != nil {
+		return TestSuite{}, harness.Rendered{}, GenerateResult{}, err
 	}
 	specJSON, err := json.Marshal(spec)
 	if err != nil {
-		return TestSuite{}, GenerateResult{}, fmt.Errorf("encode test generation spec: %w", err)
+		return TestSuite{}, harness.Rendered{}, GenerateResult{}, fmt.Errorf("encode test generation spec: %w", err)
 	}
 
 	instructions := testGenInstructions()
@@ -140,22 +143,79 @@ func GenerateTestSuite(
 			Instructions: instructions,
 		})
 		if generateErr != nil {
-			return TestSuite{}, GenerateResult{}, generateErr
+			return TestSuite{}, harness.Rendered{}, GenerateResult{}, generateErr
 		}
 		suite, validateErr := ValidateTestSuite(result.Object, spec.ProblemID, spec.ParamNames)
 		if validateErr == nil {
-			return suite, result, nil
+			harnessSpec, buildErr := HarnessSpecFromSuite(spec, suite)
+			if buildErr == nil {
+				rendered, renderErr := harness.Render(harnessSpec)
+				if renderErr == nil {
+					return suite, rendered, result, nil
+				}
+				buildErr = renderErr
+			}
+			validateErr = buildErr
 		}
 		lastErr = validateErr
 		lastRaw = string(result.Object)
 		instructions = testGenInstructions() + "\n\nYour previous output was rejected: " +
 			validateErr.Error() + ". Return one complete corrected test suite."
 	}
-	return TestSuite{}, GenerateResult{}, &InvalidOutputError{
+	return TestSuite{}, harness.Rendered{}, GenerateResult{}, &InvalidOutputError{
 		Reason:    fmt.Sprintf("test generation produced invalid output after %d attempts", testGenMaxAttempts),
 		RawOutput: lastRaw,
 		Err:       lastErr,
 	}
+}
+
+func HarnessSpecFromSuite(spec TestGenerationSpec, suite TestSuite) (harness.Spec, error) {
+	if strings.TrimSpace(suite.ProblemID) != strings.TrimSpace(spec.ProblemID) {
+		return harness.Spec{}, fmt.Errorf("suite problem_id %q does not match %q", suite.ProblemID, spec.ProblemID)
+	}
+	cases := make([]harness.Case, 0, len(suite.Cases))
+	for _, testCase := range suite.Cases {
+		args, err := harness.BindArgs(spec.ParamNames, testCase.Input)
+		if err != nil {
+			return harness.Spec{}, fmt.Errorf("bind case %q: %w", testCase.Name, err)
+		}
+		cases = append(cases, harness.Case{
+			Name:       testCase.Name,
+			Args:       args,
+			Expected:   append(json.RawMessage(nil), testCase.Expected...),
+			Comparator: testCase.Comparator,
+		})
+	}
+	harnessSpec := harness.Spec{
+		Language:   spec.Language,
+		Module:     spec.Module,
+		EntryPoint: spec.EntryPoint,
+		ParamNames: append([]string(nil), spec.ParamNames...),
+		Cases:      cases,
+	}
+	if err := harness.Validate(harnessSpec); err != nil {
+		return harness.Spec{}, err
+	}
+	return harnessSpec, nil
+}
+
+func validateTestGenerationSpec(spec TestGenerationSpec) error {
+	args := make([]json.RawMessage, len(spec.ParamNames))
+	for index := range args {
+		args[index] = json.RawMessage(`null`)
+	}
+	return harness.Validate(harness.Spec{
+		Language:   spec.Language,
+		Module:     spec.Module,
+		EntryPoint: spec.EntryPoint,
+		ParamNames: spec.ParamNames,
+		Cases: []harness.Case{{
+			Name:       "spec-validation",
+			Args:       args,
+			Expected:   json.RawMessage(`null`),
+			Comparator: harness.ComparatorEqual,
+		}},
+	})
 }
 
 func ValidateTestSuite(

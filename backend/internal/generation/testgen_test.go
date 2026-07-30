@@ -46,7 +46,7 @@ func validTestSuiteJSON() json.RawMessage {
 func TestGenerateTestSuiteHappyPath(t *testing.T) {
 	generator := &scriptedGenerator{payloads: []json.RawMessage{validTestSuiteJSON()}}
 
-	suite, result, err := GenerateTestSuite(
+	suite, rendered, result, err := GenerateTestSuite(
 		scopedContext(),
 		newTestOrchestrator(generator),
 		validTestGenerationSpec(),
@@ -56,6 +56,9 @@ func TestGenerateTestSuiteHappyPath(t *testing.T) {
 	}
 	if len(suite.Cases) != testGenMinCases || result.Provider != "scripted" {
 		t.Fatalf("suite=%#v result=%#v", suite, result)
+	}
+	if rendered.Path != "test_solution.py" {
+		t.Fatalf("rendered = %#v", rendered)
 	}
 	if len(generator.requests) != 1 {
 		t.Fatalf("requests = %d", len(generator.requests))
@@ -76,7 +79,7 @@ func TestGenerateTestSuiteRetriesOnceOnInvalidOutput(t *testing.T) {
 		validTestSuiteJSON(),
 	}}
 
-	suite, _, err := GenerateTestSuite(
+	suite, _, _, err := GenerateTestSuite(
 		scopedContext(),
 		newTestOrchestrator(generator),
 		validTestGenerationSpec(),
@@ -94,7 +97,7 @@ func TestGenerateTestSuiteRetriesOnceOnInvalidOutput(t *testing.T) {
 
 func TestGenerateTestSuiteFailsAfterRetryBudget(t *testing.T) {
 	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{}`)}}
-	_, _, err := GenerateTestSuite(
+	_, _, _, err := GenerateTestSuite(
 		scopedContext(),
 		newTestOrchestrator(generator),
 		validTestGenerationSpec(),
@@ -113,7 +116,7 @@ func TestGenerateTestSuiteSurfacesProviderErrorsWithoutRetry(t *testing.T) {
 		payloads: []json.RawMessage{json.RawMessage(`{}`)},
 		errs:     []error{providerErr},
 	}
-	_, _, err := GenerateTestSuite(
+	_, _, _, err := GenerateTestSuite(
 		scopedContext(),
 		newTestOrchestrator(generator),
 		validTestGenerationSpec(),
@@ -171,12 +174,31 @@ func TestGenerateTestSuiteRejectsModelSuppliedComparatorCode(t *testing.T) {
 		json.RawMessage(injected),
 		json.RawMessage(injected),
 	}}
-	_, _, err := GenerateTestSuite(
+	_, _, _, err := GenerateTestSuite(
 		scopedContext(),
 		newTestOrchestrator(generator),
 		validTestGenerationSpec(),
 	)
 	if err == nil || DiagnosticClass(err) != "invalid_output" || len(generator.requests) != 2 {
 		t.Fatalf("err=%v class=%q requests=%d", err, DiagnosticClass(err), len(generator.requests))
+	}
+}
+
+func TestGenerateTestSuiteReturnsRunnableHarness(t *testing.T) {
+	generator := &scriptedGenerator{payloads: []json.RawMessage{validTestSuiteJSON()}}
+	suite, rendered, _, err := GenerateTestSuite(
+		scopedContext(),
+		newTestOrchestrator(generator),
+		validTestGenerationSpec(),
+	)
+	if err != nil {
+		t.Fatalf("GenerateTestSuite: %v", err)
+	}
+	if len(suite.Cases) != testGenMinCases {
+		t.Fatalf("cases = %d", len(suite.Cases))
+	}
+	if rendered.Path != "test_solution.py" ||
+		!strings.Contains(rendered.Content, `PREFIX = "CODEGYM_RESULT "`) {
+		t.Fatalf("rendered harness = %#v", rendered)
 	}
 }

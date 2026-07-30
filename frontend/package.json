@@ -9,6 +9,8 @@
     "build": "npm run typecheck:build && vite build",
     "typecheck": "tsc -b",
     "typecheck:build": "node ./node_modules/typescript7/bin/tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint .",
     "api:lint": "npx @redocly/cli@latest lint ../api/openapi.yaml",
     "api:types": "npx openapi-typescript@latest ../api/openapi.yaml -o src/shared/api/openapi.d.ts",
@@ -56,6 +58,10 @@
     "@storybook/addon-docs": "^10.2.19",
     "@storybook/react-vite": "^10.2.19",
     "@tailwindcss/vite": "^4.3.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -65,11 +71,13 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "eslint-plugin-storybook": "^10.2.19",
     "globals": "^17.4.0",
+    "jsdom": "^30.0.1",
     "storybook": "^10.2.19",
     "tailwindcss": "^4.3.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
     "typescript7": "npm:typescript@~7.0.2",
-    "vite": "^7.3.5"
+    "vite": "^7.3.5",
+    "vitest": "^3.2.4"
   }
 }

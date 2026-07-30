@@ -7,6 +7,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/usage"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 )
 
 type MemoryService interface {
@@ -41,11 +42,46 @@ func (o *Orchestrator) Generate(ctx context.Context, input GenerateInput) (Gener
 		return GenerateResult{}, errors.New("generation orchestrator requires memory")
 	}
 
-	profile, err := o.memory.GetProfile(ctx)
+	profile, err := o.LoadProfile(ctx)
 	if err != nil {
 		return GenerateResult{}, err
 	}
 	return o.GenerateWithProfile(ctx, input, profile)
+}
+
+// LoadProfile resolves the authenticated workspace's persisted personalization
+// context. Structured workflows call it once before bounded provider retries so
+// progress remains ordered and every retry uses the same evidence snapshot.
+func (o *Orchestrator) LoadProfile(ctx context.Context) (memory.Profile, error) {
+	if o == nil || o.memory == nil {
+		return memory.Profile{}, errors.New("generation orchestrator requires memory")
+	}
+	reportWorkflow(ctx, "load_context", workflow.StatusRunning, nil, false)
+	profile, err := o.memory.GetProfile(ctx)
+	if err != nil {
+		reportWorkflow(ctx, "load_context", workflow.StatusFailed, map[string]any{
+			"reason_code": "context_unavailable", "retryable": true,
+		}, true)
+		return memory.Profile{}, err
+	}
+	reportWorkflow(ctx, "load_context", workflow.StatusSucceeded, nil, false)
+	return profile, nil
+}
+
+func reportWorkflow(
+	ctx context.Context,
+	stepID string,
+	status workflow.Status,
+	metadata map[string]any,
+	terminal bool,
+) {
+	reporter := workflow.ReporterFromContext(ctx)
+	if reporter == nil {
+		return
+	}
+	if err := reporter.Report(ctx, stepID, status, metadata, terminal); err != nil && ctx.Err() != nil {
+		_ = reporter.ReportDetached(stepID, status, metadata, terminal)
+	}
 }
 
 // Stream delegates a conversational turn through the configured provider

@@ -14,6 +14,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
@@ -72,17 +73,28 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 	}
 
 	now := s.now().UTC()
+	reportWorkflow(ctx, "load_evidence", workflow.StatusRunning, nil, false)
 	current, events, persisted, err := s.memory.ProfileInputs(ctx)
 	if err != nil {
+		reportWorkflow(ctx, "load_evidence", workflow.StatusFailed, map[string]any{
+			"reason_code": "evidence_unavailable", "retryable": true,
+		}, true)
 		return ProfileRefreshResult{}, err
 	}
 	evidenceEvents := profileEvidenceEvents(events)
+	reportWorkflow(ctx, "load_evidence", workflow.StatusSucceeded, map[string]any{
+		"event_count": len(evidenceEvents),
+	}, false)
 	fallback := memory.Summarize(current, profileSignalEvents(evidenceEvents), now)
 
 	if len(evidenceEvents) == 0 {
+		skipProfileWorkflow(ctx)
 		return s.fallback(current, "no memory evidence to synthesize"), nil
 	}
 	if s.orchestrator == nil {
+		reportWorkflow(ctx, "synthesize_profile", workflow.StatusFailed, map[string]any{
+			"reason_code": "generation_unconfigured", "retryable": true,
+		}, true)
 		return s.fallback(current, "generation is not configured"), nil
 	}
 
@@ -93,6 +105,7 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 	}
 	if strings.TrimSpace(input.Trigger) == "daily" && persisted && current.Provenance != nil &&
 		current.Provenance.EvidenceDigest != "" && current.Provenance.EvidenceDigest == evidenceDigest {
+		skipProfileWorkflow(ctx)
 		return ProfileRefreshResult{Profile: current, Skipped: "memory evidence is unchanged"}, nil
 	}
 	evidenceInput.SessionID = strings.TrimSpace(input.SessionID)
@@ -100,6 +113,7 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 	if err != nil {
 		return ProfileRefreshResult{}, fmt.Errorf("encode profile evidence: %w", err)
 	}
+	reportWorkflow(ctx, "synthesize_profile", workflow.StatusRunning, nil, false)
 	generated, err := s.orchestrator.GenerateWithProfile(ctx, GenerateInput{
 		Kind:         KindProfile,
 		Spec:         evidence,
@@ -107,13 +121,22 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		Instructions: profileSystemPrompt,
 	}, current)
 	if err != nil {
+		reportWorkflow(ctx, "synthesize_profile", workflow.StatusFailed, map[string]any{
+			"reason_code": "provider_failed", "retryable": true,
+		}, true)
 		return s.fallback(current, "profile generation failed: "+err.Error()), nil
 	}
+	reportWorkflow(ctx, "synthesize_profile", workflow.StatusSucceeded, nil, false)
 
+	reportWorkflow(ctx, "validate_profile", workflow.StatusRunning, nil, false)
 	next, err := ParseCuratedProfile(generated.Object, current, fallback, now)
 	if err != nil {
+		reportWorkflow(ctx, "validate_profile", workflow.StatusFailed, map[string]any{
+			"reason_code": "invalid_output", "retryable": true,
+		}, true)
 		return s.fallback(current, "generated profile was invalid: "+err.Error()), nil
 	}
+	reportWorkflow(ctx, "validate_profile", workflow.StatusSucceeded, nil, false)
 	next.Provenance = &memory.ProfileProvenance{
 		SchemaVersion:   1,
 		Trigger:         firstProfileValue(strings.TrimSpace(input.Trigger), "manual"),
@@ -124,16 +147,29 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		EventCount:      len(evidenceEvents),
 		EvidenceDigest:  evidenceDigest,
 	}
+	reportWorkflow(ctx, "save_profile", workflow.StatusRunning, nil, false)
 	updated, err := s.memory.ReplaceProfile(ctx, next)
 	if err != nil {
+		reportWorkflow(ctx, "save_profile", workflow.StatusFailed, map[string]any{
+			"reason_code": "persistence_failed", "retryable": true,
+		}, true)
 		return ProfileRefreshResult{}, err
 	}
+	reportWorkflow(ctx, "save_profile", workflow.StatusSucceeded, map[string]any{
+		"changed": true,
+	}, false)
 
 	return ProfileRefreshResult{
 		Profile:        updated,
 		AppliedActions: diffNoteActions(current.Notes, updated.Notes),
 		Changed:        true,
 	}, nil
+}
+
+func skipProfileWorkflow(ctx context.Context) {
+	for _, stepID := range []string{"synthesize_profile", "validate_profile", "save_profile"} {
+		reportWorkflow(ctx, stepID, workflow.StatusSucceeded, map[string]any{"skipped": true}, false)
+	}
 }
 
 func (s *ProfileSynthesizer) fallback(current memory.Profile, reason string) ProfileRefreshResult {

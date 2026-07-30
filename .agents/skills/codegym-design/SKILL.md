@@ -129,11 +129,11 @@ to a relevant practice setup when possible.
 
 ### New Practice
 
-Configures a real session. The current supported format is MCQ; do not render
-problem or interview as functional controls until the backend implements them.
+Configures a real session. Supported formats are MCQ, DSA coding, and
+Interview; keep future formats disabled until their corresponding flow exists.
 Keep configuration on the main column and memory-derived personalization
 context in a secondary column. Starting practice creates a durable session and
-hands execution to Marathon.
+hands execution to the selected practice workspace.
 
 ### Marathon
 

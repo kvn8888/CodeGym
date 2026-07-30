@@ -319,6 +319,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a durable deterministic progress operation.
+         * @description Seeds backend-owned queued steps for MCQ generation, memory reflection, or the ordered next-round reflection-plus-generation workflow. The operation is scoped to the authenticated user and workspace.
+         */
+        post: operations["createWorkflowOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-operations/{id}/events": {
+        parameters: {
+            query?: {
+                /** @description Query cursor equivalent to Last-Event-ID, primarily for clients that cannot set the header. */
+                after?: number;
+            };
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+                /** @description Last applied monotonic sequence; already-seen events are not replayed. */
+                "Last-Event-ID"?: number;
+            };
+            path: {
+                id: components["parameters"]["WorkflowOperationID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Replay and follow ordered progress events for one scoped operation.
+         * @description Emits `progress` SSE events with an `id` equal to the event sequence. The stream closes after the terminal event or client disconnect. Events report observable product steps only—never model reasoning, prompts, private records, source code, secrets, or stack traces.
+         */
+        get: operations["streamWorkflowEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-operations/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path: {
+                id: components["parameters"]["WorkflowOperationID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark the current observable step and operation as cancelled. */
+        post: operations["cancelWorkflowOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/problems": {
         parameters: {
             query?: never;
@@ -1101,6 +1173,8 @@ export interface components {
             spec?: components["schemas"]["MCQSpec"] | components["schemas"]["ProblemGenerationSpec"];
             /** @description Optional completed intake in the caller's workspace. Its self-report remains separate from demonstrated memory. */
             intake_id?: string;
+            /** @description Optional scoped workflow operation receiving deterministic MCQ progress events. */
+            operation_id?: string;
         };
         PreparePracticeIntakeInput: {
             /** @description Original user-entered practice topic. The server derives an exact normalized topic identity. */
@@ -1190,6 +1264,62 @@ export interface components {
              * @example mcq_abc123_r2
              */
             session_id?: string;
+            /** @description Optional scoped memory_reflection or mcq_next_round workflow operation. */
+            operation_id?: string;
+        };
+        /** @enum {string} */
+        WorkflowKind: "mcq_generation" | "memory_reflection" | "mcq_next_round";
+        /** @enum {string} */
+        WorkflowStatus: "queued" | "running" | "succeeded" | "failed";
+        CreateWorkflowOperationInput: {
+            kind: components["schemas"]["WorkflowKind"];
+        };
+        WorkflowOperation: {
+            id: string;
+            workspace_id: string;
+            user_id: string;
+            kind: components["schemas"]["WorkflowKind"];
+            status: components["schemas"]["WorkflowStatus"];
+            /** Format: int64 */
+            last_sequence: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            completed_at?: string;
+        };
+        WorkflowProgressEvent: {
+            operation_id: string;
+            /** Format: int64 */
+            sequence: number;
+            /** @description Stable backend-owned product step identifier. */
+            step_id: string;
+            /** @description Backend-owned user-facing product step label. */
+            label: string;
+            status: components["schemas"]["WorkflowStatus"];
+            /** Format: date-time */
+            timestamp: string;
+            /** @description Allowlisted safe scalar metadata only. terminal=true identifies the final event. */
+            metadata?: {
+                [key: string]: string | number | boolean;
+            };
+        };
+        WorkflowCreateResult: {
+            operation: components["schemas"]["WorkflowOperation"];
+            events: components["schemas"]["WorkflowProgressEvent"][];
+        };
+        WorkflowCreateEnvelope: {
+            data: components["schemas"]["WorkflowCreateResult"];
+            error: null;
+        };
+        WorkflowCancelResult: {
+            operation: components["schemas"]["WorkflowOperation"];
+            event: components["schemas"]["WorkflowProgressEvent"];
+        };
+        WorkflowCancelEnvelope: {
+            data: components["schemas"]["WorkflowCancelResult"];
+            error: null;
         };
         MCQQuestion: {
             /** @example mq1 */
@@ -1315,6 +1445,7 @@ export interface components {
         WorkspaceHeader: string;
         SessionID: string;
         ChatThreadID: string;
+        WorkflowOperationID: string;
     };
     requestBodies: never;
     headers: never;
@@ -1903,6 +2034,107 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    createWorkflowOperation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkflowOperationInput"];
+            };
+        };
+        responses: {
+            /** @description Scoped operation and its initial queued step events. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowCreateEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+        };
+    };
+    streamWorkflowEvents: {
+        parameters: {
+            query?: {
+                /** @description Query cursor equivalent to Last-Event-ID, primarily for clients that cannot set the header. */
+                after?: number;
+            };
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+                /** @description Last applied monotonic sequence; already-seen events are not replayed. */
+                "Last-Event-ID"?: number;
+            };
+            path: {
+                id: components["parameters"]["WorkflowOperationID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent workflow event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    cancelWorkflowOperation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional workspace-scope override. Product flows should normally omit it so the backend uses the authenticated principal's default personal workspace. The legacy header name X-CodeGym-Tenant-ID is still accepted by the server for compatibility. */
+                "X-CodeGym-Workspace-ID"?: components["parameters"]["WorkspaceHeader"];
+            };
+            path: {
+                id: components["parameters"]["WorkflowOperationID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Terminal failed operation and cancellation event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowCancelEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["WorkspaceForbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The operation already reached a terminal state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     listProblems: {

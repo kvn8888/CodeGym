@@ -194,6 +194,7 @@ func main() {
 		Memory:               memoryService,
 		Sessions:             sessionService,
 		Execution:            executionService,
+		ExecutionRunner:      executionRunner,
 		Problems:             problemService,
 		Submissions:          submissionService,
 		Intakes:              intakeService,

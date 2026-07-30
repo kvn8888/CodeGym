@@ -24,8 +24,9 @@ type Dependencies struct {
 	Identity      *identity.Service
 	Memory        *memory.Service
 	Sessions      *session.Service
-	Execution     *execution.Service
-	Problems      *problems.Service
+	Execution            *execution.Service
+	ExecutionRunner      execution.Runner
+	Problems             *problems.Service
 	Submissions   *submission.Service
 	Intakes       *intake.Service
 	Chat          *chat.Service
@@ -79,7 +80,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/practice-intakes", intakeHandler.Prepare)
 	protected.HandleFunc("GET /api/v1/practice-intakes", intakeHandler.List)
 	protected.HandleFunc("PATCH /api/v1/practice-intakes/{id}", intakeHandler.Update)
-	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion, deps.Intakes, deps.Problems, deps.Sessions)
+	generateHandler := handlers.NewGenerateHandler(deps.Generation, deps.Memory, profiles, refreshOnSetCompletion, deps.Intakes, deps.Problems, deps.Sessions, deps.ExecutionRunner)
 	protected.HandleFunc("POST /api/v1/generate", generateHandler.Generate)
 	protected.HandleFunc("POST /api/v1/mcq/evaluate", generateHandler.EvaluateFreeResponse)
 	protected.HandleFunc("POST /api/v1/memory/profile/maintain", generateHandler.MaintainProfile)

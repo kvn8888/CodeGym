@@ -50,7 +50,7 @@ learning evidence.
 
 ```json
 {
-  "summary": "SQL join direction is the current priority.",
+  "summary": "Has steady two-pointer fluency on array scans and keeps using hash maps for complement lookup. Recent misses concentrate on SQL join direction and unmatched-row preservation; LEFT vs INNER still needs deliberate practice before the next set. Queue ordering and BFS layering remain open growth edges from earlier rounds and should stay in the document until correct evidence accumulates.",
   "strengths": ["Two Pointers"],
   "growth_edges": ["SQL Joins"],
   "skills": [
@@ -67,7 +67,7 @@ learning evidence.
     {
       "id":"note_sql-joins",
       "title":"SQL join direction",
-      "summary":"Review which side preserves unmatched rows.",
+      "summary":"Earlier sets showed confusion on which side preserves unmatched rows. Review LEFT vs INNER before the next SQL set, and re-check examples where the right table can be null.",
       "tags":["sql","joins"],
       "action":"review"
     }
@@ -82,28 +82,40 @@ profile `provenance` are server-owned and are not model output.
 
 ```text
 You curate the long-lived learning profile for CodeGym, an interview-practice
-application. Deterministic events are evidence, not conclusions. Interpret the
-bounded evidence into one concise, coherent profile that future practice
-generation can trust.
+application. Deterministic events are evidence, not conclusions. Treat the
+existing profile as a living document of the learner's skill trajectory.
+Integrate new EVENT_EVIDENCE by revising that document in place — do not
+replace a rich summary with a short recap.
 
 Return exactly one JSON object with summary, strengths, growth_edges, skills,
 and notes.
 
 Rules:
 - Base every conclusion on repeated or recent evidence. Do not invent experience.
-- summary is a short paragraph describing current practice patterns and priorities.
-- strengths and growth_edges contain at most 5 concise concepts each.
+- summary is a living skill document, not a three-sentence status blurb. Start
+  from the current profile summary when one exists. Preserve durable prior
+  observations that remain true (topics practiced, recurring strengths/gaps,
+  calibrated levels, useful techniques). Fold in new evidence by expanding or
+  revising sections. Remove or rewrite only what new evidence contradicts or
+  makes obsolete. As practice accumulates, grow toward 2–4 short paragraphs
+  rather than collapsing history.
+- strengths and growth_edges contain at most 5 concise concepts each; they are
+  the current focus lists, while summary keeps the longer narrative.
 - skills contain at most 30 evidence-backed skills. level is 1..5, confidence
-  is 0..100, and trend is up|flat|down.
+  is 0..100, and trend is up|flat|down. Reuse existing skill ids/labels when the
+  same concept continues; update level/confidence/trend from the full evidence
+  history, not only the latest session.
 - `question_skipped` and outcome `skipped` are neutral coverage signals, never
   correct or incorrect answers. The UI reveals the correct answer after a skip;
   that reveal is not learner performance. Do not create or retain a growth edge
   or review note from skips alone. Later correct evidence resolves skip-only
   uncertainty unless actual incorrect evidence remains.
-- notes are a CRUD-managed desired state, not an append-only log. Keep an
-  unchanged note's existing id, update the same semantic concept in place,
-  omit stale notes to prune them, and never create a second note for the same
-  concept. Return at most 20.
+- notes are a CRUD-managed desired state for concept reminders, not an
+  append-only log and not a wipe-rewrite. Keep an unchanged note's existing id.
+  When updating a concept, revise the note summary like a living study entry:
+  preserve still-true details and add the new insight; do not shrink a useful
+  note into one vague sentence. Omit stale notes to prune them, and never
+  create a second note for the same concept. Return at most 20.
 - action is internal maintenance metadata: review for an active gap, keep for a
   durable useful observation, prune only when the returned note should be
   removed. Normally omit pruned notes from the returned list.
@@ -118,6 +130,11 @@ Rules:
 - Missing required fields, invalid enums/ranges, unsupported skills, and
   malformed JSON reject the entire candidate.
 - Existing note IDs retain their server-owned creation timestamp.
+- A candidate summary that collapses a rich prior summary (about half length or
+  less once the prior is already substantial) is rejected as regression so the
+  existing living document is preserved.
+- Updating an existing note with a similarly collapsed summary is rejected the
+  same way.
 - Provider or validation failure preserves an existing profile exactly.
 - Cold start without a usable provider stays unpersisted. Deterministic signals
   are evidence for synthesis, never durable user-facing conclusions.
@@ -129,8 +146,8 @@ Rules:
 | Data | Owner | Persistence behavior |
 |---|---|---|
 | Raw events, outcomes, skips, counts, and event times | Product code | Append-only deterministic evidence |
-| Summary, strengths, Focus next, skill labels/areas/levels/confidence/trends | LLM profile synthesizer | Replaced atomically after validated output |
-| Memory note title, summary, tags, and disposition | LLM profile synthesizer | CRUD-managed desired state; stable concept identity is enforced server-side |
+| Summary, strengths, Focus next, skill labels/areas/levels/confidence/trends | LLM profile synthesizer | Replaced atomically after validated living-document output |
+| Memory note title, summary, tags, and disposition | LLM profile synthesizer | CRUD-managed desired state; stable concept identity is enforced server-side; updates must not erase still-true detail |
 | Skill `last_practiced`, note `created_at`, profile refresh times, and provenance | Server | Derived or stamped deterministically |
 | Evidence allowlisting, bounds, digests, and skill-support checks | Server | Deterministic validation and token-control guardrails |
 

@@ -55,7 +55,8 @@ const COACH_WELCOME: ChatMessage = {
   id: 'coach-welcome',
   thread_id: '',
   role: 'assistant',
-  content: 'I can help you reason through this session. What feels stuck?',
+  content:
+    'I can help you reason through this session.\n\nShare what feels stuck, a concept to review, or a snippet:\n\n```ts\nfunction twoSum(nums: number[], target: number) {\n  // ...\n}\n```\n\nWhat are you working on?',
   status: 'complete',
   created_at: '',
 };

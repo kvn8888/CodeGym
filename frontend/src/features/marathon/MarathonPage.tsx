@@ -13,6 +13,7 @@ import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-route
 import { HelpFlashcard } from './HelpFlashcard';
 import { api, createMemoryEvent } from '../../shared/api/client';
 import type { MCQQuestionType, NewPracticeConfig, PracticeSession } from '../../shared/api/types';
+import { MarkdownContent } from '../../shared/components/MarkdownContent';
 import { WorkspacePage } from '../../shared/components/WorkspacePage';
 import {
   buildGenerateEvent,
@@ -214,16 +215,16 @@ function emitMcqEvent(
 const MOCK_QUESTIONS: MarathonQuestion[] = [
   {
     id: 'mq1',
-    text: 'What is the time complexity of binary search?',
-    options: ['O(n)', 'O(log n)', 'O(n log n)', 'O(1)'],
+    text: 'What is the time complexity of **binary search**?',
+    options: ['`O(n)`', '`O(log n)`', '`O(n log n)`', '`O(1)`'],
     correctIndex: 1,
     concept: 'Binary Search Complexity',
     helpContent:
-      'Binary search works by repeatedly halving the search space. Each comparison eliminates half of the remaining elements, so the number of steps is proportional to log₂(n).',
+      'Binary search works by repeatedly **halving** the search space. Each comparison eliminates half of the remaining elements, so the number of steps is proportional to `log₂(n)`.\n\n```ts\nwhile (lo <= hi) {\n  const mid = (lo + hi) >> 1;\n  // ...\n}\n```',
   },
   {
     id: 'mq2',
-    text: 'Which data structure uses FIFO ordering?',
+    text: 'Which data structure uses **FIFO** ordering?',
     options: ['Stack', 'Queue', 'Heap', 'Hash Map'],
     correctIndex: 1,
     concept: 'Queue Data Structure',
@@ -234,15 +235,15 @@ const MOCK_QUESTIONS: MarathonQuestion[] = [
     id: 'mq3',
     text: 'What does the "two pointer" technique typically optimize?',
     options: [
-      'Space complexity from O(n) to O(1)',
-      'Time complexity from O(n²) to O(n)',
+      'Space complexity from `O(n)` to `O(1)`',
+      'Time complexity from `O(n²)` to `O(n)`',
       'Both time and space',
       'Neither — it simplifies code',
     ],
     correctIndex: 1,
     concept: 'Two Pointer Technique',
     helpContent:
-      'The two pointer technique uses two references that move through the data structure, usually from opposite ends or at different speeds. It commonly reduces nested loops (O(n²)) to a single pass (O(n)).',
+      'The two pointer technique uses two references that move through the data structure, usually from opposite ends or at different speeds. It commonly reduces nested loops (`O(n²)`) to a single pass (`O(n)`).',
   },
   {
     id: 'mq4',
@@ -262,12 +263,12 @@ const MOCK_QUESTIONS: MarathonQuestion[] = [
   {
     id: 'mq5',
     type: 'free_response',
-    text: 'Why does breadth-first search find a shortest path in an unweighted graph?',
+    text: 'Why does **breadth-first search** find a shortest path in an unweighted graph?',
     expectedAnswer: 'BFS explores vertices in increasing distance from the source, level by level.',
     rubric: 'Must explain that BFS processes nodes by nondecreasing edge distance or levels.',
     concept: 'Breadth-First Search',
     helpContent:
-      'Consider the order in which a queue exposes vertices at distance 1, then distance 2, and so on.',
+      'Consider the order in which a queue exposes vertices at distance `1`, then distance `2`, and so on.',
   },
 ];
 
@@ -1434,7 +1435,9 @@ export function MarathonPage() {
             ? 'Written response'
             : 'Single answer'}
       </div>
-      <h2 className="mb-5 text-xl leading-7 font-semibold">{currentQ.text}</h2>
+      <h2 className="mb-5 text-xl leading-7 font-semibold">
+        <MarkdownContent variant="title">{currentQ.text}</MarkdownContent>
+      </h2>
 
       {currentQuestionType === 'free_response' ? (
         <div className="mb-6">
@@ -1462,7 +1465,9 @@ export function MarathonPage() {
               role="status"
             >
               <div className="font-medium">{evaluationResult.correct ? 'Correct' : 'Not yet'}</div>
-              <p className="mt-1">{evaluationResult.feedback}</p>
+              <MarkdownContent className="mt-1 text-sm leading-5">
+                {evaluationResult.feedback}
+              </MarkdownContent>
             </div>
           )}
         </div>
@@ -1500,10 +1505,10 @@ export function MarathonPage() {
                   stateClasses,
                 )}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-start gap-3">
                   <div
                     className={cn(
-                      'flex size-4 shrink-0 items-center justify-center border-2 transition-colors',
+                      'mt-0.5 flex size-4 shrink-0 items-center justify-center border-2 transition-colors',
                       currentQuestionType === 'multi_select' ? 'rounded-sm' : 'rounded-full',
                       confirmed
                         ? isCorrect
@@ -1530,14 +1535,18 @@ export function MarathonPage() {
                       />
                     )}
                   </div>
-                  {option}
+                  <MarkdownContent variant="inline" className="min-w-0 flex-1">
+                    {option}
+                  </MarkdownContent>
                   {confirmed && isCorrect && (
-                    <span className="ml-auto flex items-center gap-1 text-xs font-semibold text-green-700">
+                    <span className="ml-auto flex shrink-0 items-center gap-1 self-center text-xs font-semibold text-green-700">
                       <SuccessCheck /> Correct
                     </span>
                   )}
                   {confirmed && isSelected && !isCorrect && (
-                    <span className="ml-auto text-xs font-semibold text-red-900">✗ Wrong</span>
+                    <span className="ml-auto shrink-0 self-center text-xs font-semibold text-red-900">
+                      ✗ Wrong
+                    </span>
                   )}
                 </div>
               </button>

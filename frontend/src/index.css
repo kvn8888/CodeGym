@@ -566,7 +566,51 @@ pre,
   background: none;
   border: 0;
   padding: 0;
+  color: inherit;
 }
+
+/* highlight.js tokens inside prose code blocks (rehype-highlight) */
+:where(.prose-brutalist, .prose-geist) pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 0;
+  background: transparent;
+  color: oklch(0.92 0 0);
+}
+:where(.prose-brutalist, .prose-geist) .hljs-comment,
+:where(.prose-brutalist, .prose-geist) .hljs-quote {
+  color: oklch(0.72 0 0);
+  font-style: italic;
+}
+:where(.prose-brutalist, .prose-geist) .hljs-keyword,
+:where(.prose-brutalist, .prose-geist) .hljs-selector-tag,
+:where(.prose-brutalist, .prose-geist) .hljs-literal,
+:where(.prose-brutalist, .prose-geist) .hljs-section,
+:where(.prose-brutalist, .prose-geist) .hljs-link {
+  color: oklch(0.78 0.12 280);
+}
+:where(.prose-brutalist, .prose-geist) .hljs-string,
+:where(.prose-brutalist, .prose-geist) .hljs-title,
+:where(.prose-brutalist, .prose-geist) .hljs-name,
+:where(.prose-brutalist, .prose-geist) .hljs-type,
+:where(.prose-brutalist, .prose-geist) .hljs-attribute,
+:where(.prose-brutalist, .prose-geist) .hljs-symbol,
+:where(.prose-brutalist, .prose-geist) .hljs-bullet,
+:where(.prose-brutalist, .prose-geist) .hljs-addition,
+:where(.prose-brutalist, .prose-geist) .hljs-variable,
+:where(.prose-brutalist, .prose-geist) .hljs-template-tag,
+:where(.prose-brutalist, .prose-geist) .hljs-template-variable {
+  color: oklch(0.82 0.12 145);
+}
+:where(.prose-brutalist, .prose-geist) .hljs-number,
+:where(.prose-brutalist, .prose-geist) .hljs-built_in,
+:where(.prose-brutalist, .prose-geist) .hljs-builtin-name,
+:where(.prose-brutalist, .prose-geist) .hljs-meta,
+:where(.prose-brutalist, .prose-geist) .hljs-deletion {
+  color: oklch(0.8 0.12 55);
+}
+:where(.prose-brutalist, .prose-geist) .hljs-emphasis { font-style: italic; }
+:where(.prose-brutalist, .prose-geist) .hljs-strong { font-weight: 600; }
 
 :where(.prose-brutalist, .prose-geist) ul,
 :where(.prose-brutalist, .prose-geist) ol {

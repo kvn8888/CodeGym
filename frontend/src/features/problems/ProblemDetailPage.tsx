@@ -7,11 +7,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
 import Editor from '@monaco-editor/react';
 import { api, createMemoryEvent } from '../../shared/api/client';
 import { buildWorkspaceEvent, memoryEventTypes } from '../../shared/api/memoryEvents';
 import { useCodeGymAuthState } from '../../shared/auth/authState';
+import { MarkdownContent } from '../../shared/components/MarkdownContent';
 import type {
   PracticeSession,
   PracticeSessionSummary,
@@ -580,9 +580,9 @@ export function ProblemDetailPage({
             </span>
           )}
         </div>
-        <div className="prose-geist text-sm text-gray-900">
-          <ReactMarkdown>{problem.description}</ReactMarkdown>
-        </div>
+        <MarkdownContent className="text-sm text-gray-900">
+          {problem.description}
+        </MarkdownContent>
 
         {/* Hints */}
         {problem.hints && problem.hints.length > 0 && (

@@ -23,6 +23,9 @@ const (
 	// KindNotes is the internal memory note-maintenance pass; it is not
 	// exposed as a client-requestable kind on POST /api/v1/generate.
 	KindNotes Kind = "notes"
+	// KindTests is the internal structured hidden-test generation pass. It is
+	// not exposed as a client-requestable kind on POST /api/v1/generate.
+	KindTests Kind = "tests"
 )
 
 // Generator is the provider-neutral seam for all model-backed generation.

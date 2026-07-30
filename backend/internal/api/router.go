@@ -20,16 +20,16 @@ import (
 
 // Dependencies contains services and middleware inputs required to build the API router.
 type Dependencies struct {
-	Authenticator auth.Authenticator
-	Identity      *identity.Service
-	Memory        *memory.Service
-	Sessions      *session.Service
-	Execution            *execution.Service
-	ExecutionRunner      execution.Runner
-	Problems             *problems.Service
-	Submissions   *submission.Service
-	Intakes       *intake.Service
-	Chat          *chat.Service
+	Authenticator   auth.Authenticator
+	Identity        *identity.Service
+	Memory          *memory.Service
+	Sessions        *session.Service
+	Execution       *execution.Service
+	ExecutionRunner execution.Runner
+	Problems        *problems.Service
+	Submissions     *submission.Service
+	Intakes         *intake.Service
+	Chat            *chat.Service
 	// Generation is nil when no GenAI provider is configured; the generate
 	// route stays registered and answers 503 so clients can fall back.
 	Generation           *generation.Orchestrator

@@ -241,6 +241,89 @@ func TestStreamingCancellationPersistsRetryableInterruptedTurn(t *testing.T) {
 	}
 }
 
+func TestCoachContextIncludesWorkspaceDraftCode(t *testing.T) {
+	now := time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC)
+	ctx := scopedContext("workspace-a", "user-a")
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	sessionService := session.NewService(session.NewInMemoryStore(), func() time.Time { return now })
+	problemService := problems.NewService(problems.NewInMemoryStore())
+	if err := problemService.EnsureSeed(ctx); err != nil {
+		t.Fatal(err)
+	}
+	practiceSession, err := sessionService.Create(ctx, session.CreateInput{
+		Kind: session.KindWorkspace, ProblemID: "two-sum", Title: "Two Sum",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	practiceSession, err = sessionService.UpsertFiles(ctx, practiceSession.ID, session.UpsertFilesInput{
+		Files: []session.FileInput{{Path: "solution.py", Content: "def two_sum(nums, target):\n    return [0, 1]\n"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(
+		NewInMemoryStore(), sessionService, problemService,
+		memoryService, &testStreamer{}, nil, nil, func() time.Time { return now },
+	)
+	thread, err := service.CreateOrResume(ctx, CreateThreadInput{
+		Kind: KindCoach, SessionID: practiceSession.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	instructions, err := service.instructions(ctx, thread.Thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(instructions, `"source":"draft"`) ||
+		!strings.Contains(instructions, "def two_sum(nums, target):") ||
+		!strings.Contains(instructions, "return [0, 1]") {
+		t.Fatalf("instructions missing draft code: %s", instructions)
+	}
+	if strings.Contains(instructions, "test_solution") ||
+		strings.Contains(instructions, "CODEGYM_RESULT") ||
+		strings.Contains(instructions, "Reference") {
+		t.Fatalf("instructions leaked hidden tests or reference: %s", instructions)
+	}
+}
+
+func TestCoachContextFallsBackToSkeletonWhenDraftEmpty(t *testing.T) {
+	now := time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC)
+	ctx := scopedContext("workspace-a", "user-a")
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	sessionService := session.NewService(session.NewInMemoryStore(), func() time.Time { return now })
+	problemService := problems.NewService(problems.NewInMemoryStore())
+	if err := problemService.EnsureSeed(ctx); err != nil {
+		t.Fatal(err)
+	}
+	practiceSession, err := sessionService.Create(ctx, session.CreateInput{
+		Kind: session.KindWorkspace, ProblemID: "two-sum", Title: "Two Sum",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(
+		NewInMemoryStore(), sessionService, problemService,
+		memoryService, &testStreamer{}, nil, nil, func() time.Time { return now },
+	)
+	thread, err := service.CreateOrResume(ctx, CreateThreadInput{
+		Kind: KindCoach, SessionID: practiceSession.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	instructions, err := service.instructions(ctx, thread.Thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(instructions, `"source":"skeleton"`) ||
+		!strings.Contains(instructions, "solution.py") ||
+		!strings.Contains(instructions, "def two_sum") {
+		t.Fatalf("instructions missing skeleton fallback: %s", instructions)
+	}
+}
+
 func TestCoachContextUsesAuthoritativeMCQQuestionWithoutRawAnswer(t *testing.T) {
 	now := time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC)
 	ctx := scopedContext("workspace-a", "user-a")

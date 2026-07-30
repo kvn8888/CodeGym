@@ -59,7 +59,7 @@ func TestGenerateProblemRepairsOnceAndBuildsControlledHarness(t *testing.T) {
 	orchestrator := NewOrchestrator(memory.NewService(memory.NewInMemoryStore(), nil), generator)
 	ctx := generationTestContext()
 
-	definition, _, err := GenerateProblem(ctx, orchestrator, ProblemSpec{Topic: "hash maps"})
+	definition, _, _, err := GenerateProblem(ctx, orchestrator, ProblemSpec{Topic: "hash maps"})
 	if err != nil {
 		t.Fatalf("GenerateProblem: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestValidateGeneratedProblemRejectsMismatchedTypedCases(t *testing.T) {
 func TestGenerateProblemStopsAfterOneRepair(t *testing.T) {
 	generator := &problemSequenceGenerator{payloads: []string{`{}`, `{}`}}
 	orchestrator := NewOrchestrator(memory.NewService(memory.NewInMemoryStore(), nil), generator)
-	_, _, err := GenerateProblem(generationTestContext(), orchestrator, ProblemSpec{})
+	_, _, _, err := GenerateProblem(generationTestContext(), orchestrator, ProblemSpec{})
 	if err == nil || len(generator.requests) != 2 {
 		t.Fatalf("err=%v requests=%d", err, len(generator.requests))
 	}

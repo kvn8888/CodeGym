@@ -252,14 +252,14 @@ func validProblemJSONType(raw json.RawMessage, expected string) bool {
 	}
 }
 
-func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec ProblemSpec) (problems.Definition, GenerateResult, error) {
+func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec ProblemSpec) (problems.Definition, GeneratedProblem, GenerateResult, error) {
 	spec, err := NormalizeProblemSpec(spec)
 	if err != nil {
-		return problems.Definition{}, GenerateResult{}, err
+		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, err
 	}
 	specJSON, err := json.Marshal(spec)
 	if err != nil {
-		return problems.Definition{}, GenerateResult{}, fmt.Errorf("encode problem spec: %w", err)
+		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, fmt.Errorf("encode problem spec: %w", err)
 	}
 	instructions := problemSystemPrompt
 	var lastErr error
@@ -274,31 +274,42 @@ func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec Probl
 			IntakeContext: spec.IntakeContext,
 		})
 		if generateErr != nil {
-			return problems.Definition{}, GenerateResult{}, generateErr
+			return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, generateErr
 		}
 		output, validateErr := ValidateGeneratedProblem(result.Object)
 		if validateErr == nil {
-			definition, buildErr := buildProblemDefinition(output)
-			return definition, result, buildErr
+			definition, buildErr := BuildProblemDefinition(output)
+			return definition, output, result, buildErr
 		}
 		lastErr, lastRaw = validateErr, string(result.Object)
 		instructions = problemSystemPrompt + "\n\nYour previous output was rejected: " + validateErr.Error() + ". Return a complete corrected object."
 	}
-	return problems.Definition{}, GenerateResult{}, &InvalidOutputError{
+	return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, &InvalidOutputError{
 		Reason:    "problem generation produced invalid output after 2 attempts",
 		RawOutput: lastRaw,
 		Err:       lastErr,
 	}
 }
 
+// BuildProblemDefinition turns a validated model payload into the catalog
+// Definition (skeleton + CODEGYM_RESULT harness). Exported for verification repairs.
+func BuildProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
+	return buildProblemDefinition(output)
+}
+
 func buildProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
 	type runnerCase struct {
+		Name     string            `json:"name"`
 		Args     []json.RawMessage `json:"args"`
 		Expected json.RawMessage   `json:"expected"`
 	}
 	runnerCases := make([]runnerCase, 0, len(output.TestCases))
-	for _, test := range output.TestCases {
-		runnerCases = append(runnerCases, runnerCase{Args: test.Args, Expected: test.Expected})
+	for index, test := range output.TestCases {
+		name := strings.TrimSpace(test.Name)
+		if name == "" {
+			name = fmt.Sprintf("case-%d", index+1)
+		}
+		runnerCases = append(runnerCases, runnerCase{Name: name, Args: test.Args, Expected: test.Expected})
 	}
 	casesJSON, err := json.Marshal(runnerCases)
 	if err != nil {
@@ -315,6 +326,7 @@ func buildProblemDefinition(output GeneratedProblem) (problems.Definition, error
 	}
 	skeleton := fmt.Sprintf("def %s(%s) -> %s:\n    \"\"\"Implement the solution described in the problem.\"\"\"\n    # TODO: implement this function.\n    raise NotImplementedError\n",
 		output.FunctionName, strings.Join(parameters, ", "), output.ReturnType)
+	// Named cases + expected/got in failure text so verification can adjudicate.
 	runner := fmt.Sprintf(`import base64
 import importlib
 import json
@@ -338,15 +350,16 @@ for index, case in enumerate(CASES):
     started = time.perf_counter()
     error = None
     status = "pass"
+    name = case.get("name") or f"case-{index + 1}"
     try:
         actual = target(*case["args"])
         if actual != case["expected"]:
             status = "fail"
-            error = "output did not match the expected result"
+            error = f"expected {json.dumps(case['expected'], separators=(',', ':'))}, got {json.dumps(actual, separators=(',', ':'))}"
     except Exception as exc:
         status = "fail"
         error = f"{type(exc).__name__}: {exc}"
-    results.append({"name": f"Hidden case {index + 1}", "status": status, "duration_ms": max(0, int((time.perf_counter() - started) * 1000)), "error": error})
+    results.append({"name": name, "status": status, "duration_ms": max(0, int((time.perf_counter() - started) * 1000)), "error": error})
 
 emit(results)
 `, encodedCases, output.FunctionName)

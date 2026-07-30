@@ -23,6 +23,9 @@ const (
 	// KindNotes is the internal memory note-maintenance pass; it is not
 	// exposed as a client-requestable kind on POST /api/v1/generate.
 	KindNotes Kind = "notes"
+	// KindProblemVerification is the internal adjudicator that repairs or
+	// rejects failing generated test cases after a reference sandbox run.
+	KindProblemVerification Kind = "problem_verification"
 )
 
 // Generator is the provider-neutral seam for all model-backed generation.

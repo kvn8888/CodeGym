@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/memory"
@@ -30,6 +31,16 @@ func (s staticGenerator) Generate(_ context.Context, _ generation.GenerateReques
 	}, nil
 }
 
+type passingVerifyRunner struct{}
+
+func (passingVerifyRunner) Run(_ context.Context, _ execution.RunSpec) (execution.RunOutcome, error) {
+	return execution.RunOutcome{
+		ExitCode: 0,
+		Output: `CODEGYM_RESULT {"tests":[{"name":"one","status":"pass","duration_ms":1,"error":null},{"name":"single","status":"pass","duration_ms":1,"error":null},{"name":"spaces","status":"pass","duration_ms":1,"error":null},{"name":"empty","status":"pass","duration_ms":1,"error":null}],"compile_error":null}`,
+		Duration: time.Millisecond,
+	}, nil
+}
+
 func newGenerateTestRouter(t *testing.T, orchestrator *generation.Orchestrator, memoryService *memory.Service) http.Handler {
 	t.Helper()
 	problemService := problems.NewService(problems.NewInMemoryStore())
@@ -37,12 +48,13 @@ func newGenerateTestRouter(t *testing.T, orchestrator *generation.Orchestrator, 
 		t.Fatal(err)
 	}
 	return NewRouter(Dependencies{
-		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
-		Identity:      identity.NewService(identity.NewInMemoryStore()),
-		Memory:        memoryService,
-		Sessions:      session.NewService(session.NewInMemoryStore(), nil),
-		Generation:    orchestrator,
-		Problems:      problemService,
+		Authenticator:   auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:        identity.NewService(identity.NewInMemoryStore()),
+		Memory:          memoryService,
+		Sessions:        session.NewService(session.NewInMemoryStore(), nil),
+		Generation:      orchestrator,
+		Problems:        problemService,
+		ExecutionRunner: passingVerifyRunner{},
 	})
 }
 

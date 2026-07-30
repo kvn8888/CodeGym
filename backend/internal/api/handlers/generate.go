@@ -10,9 +10,11 @@ import (
 	"strings"
 
 	"github.com/kvn8888/codegym/backend/internal/api/response"
+	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/intake"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/problemverify"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
 )
@@ -28,14 +30,18 @@ type GenerateHandler struct {
 	intakes                *intake.Service
 	problems               *problems.Service
 	sessions               *session.Service
+	runner                 execution.Runner
 }
 
 // NewGenerateHandler builds a generation handler. Both dependencies may be
-// used per-request with the caller's scoped context.
-func NewGenerateHandler(orchestrator *generation.Orchestrator, memoryService *memory.Service, profiles *generation.ProfileSynthesizer, refreshOnSetCompletion bool, intakes *intake.Service, problemService *problems.Service, sessions *session.Service) *GenerateHandler {
+// used per-request with the caller's scoped context. runner is required for
+// kind "problem" verification before persist; when nil, problem generation
+// fails closed instead of shipping unverified tests.
+func NewGenerateHandler(orchestrator *generation.Orchestrator, memoryService *memory.Service, profiles *generation.ProfileSynthesizer, refreshOnSetCompletion bool, intakes *intake.Service, problemService *problems.Service, sessions *session.Service, runner execution.Runner) *GenerateHandler {
 	return &GenerateHandler{
 		orchestrator: orchestrator, memory: memoryService, profiles: profiles,
 		refreshOnSetCompletion: refreshOnSetCompletion, intakes: intakes, problems: problemService, sessions: sessions,
+		runner: runner,
 	}
 }
 
@@ -135,13 +141,28 @@ func (h *GenerateHandler) generateProblem(w http.ResponseWriter, r *http.Request
 		}
 		spec.IntakeContext = intakeContext
 	}
-	definition, result, err := generation.GenerateProblem(r.Context(), h.orchestrator, spec)
+	definition, generated, result, err := generation.GenerateProblem(r.Context(), h.orchestrator, spec)
 	if err != nil {
 		if r.Context().Err() != nil {
 			return
 		}
 		log.Printf("problem generation failed class=%s detail=%s", generation.DiagnosticClass(err), generation.DiagnosticMessage(err))
 		response.Error(w, http.StatusBadGateway, "generation_failed", "The model did not return a usable coding problem. Try again or adjust the topic.")
+		return
+	}
+	definition, _, err = problemverify.Verify(r.Context(), h.orchestrator, h.runner, definition, generated)
+	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+		log.Printf("problem verification failed: %v", err)
+		if errors.Is(err, problemverify.ErrUnavailable) {
+			response.Error(w, http.StatusServiceUnavailable, "verification_unconfigured",
+				"Problem verification requires an execution runner. Set DAYTONA_API_KEY to enable coding-problem generation.")
+			return
+		}
+		response.Error(w, http.StatusBadGateway, "verification_failed",
+			"The generated problem did not pass reference verification. Try again or adjust the topic.")
 		return
 	}
 	problem, err := h.problems.PersistGenerated(r.Context(), definition)

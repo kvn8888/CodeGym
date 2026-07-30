@@ -63,7 +63,7 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 		"file_count": len(input.Files),
 	})
 
-	files, err := assembleFiles(input.Files, definition.HiddenTestFiles)
+	files, err := AssembleFiles(input.Files, definition.HiddenTestFiles)
 	if err != nil {
 		return Accepted{}, err
 	}
@@ -223,7 +223,9 @@ func (s *Service) validateSession(ctx context.Context, sessionID, problemID stri
 	return nil
 }
 
-func assembleFiles(userFiles []execution.File, hiddenFiles []problems.File) ([]execution.File, error) {
+// AssembleFiles merges learner files with server-owned hidden tests. Hidden
+// paths are reserved so user uploads cannot overwrite the harness.
+func AssembleFiles(userFiles []execution.File, hiddenFiles []problems.File) ([]execution.File, error) {
 	hiddenPaths := make(map[string]struct{}, len(hiddenFiles))
 	for _, file := range hiddenFiles {
 		hiddenPaths[file.Path] = struct{}{}

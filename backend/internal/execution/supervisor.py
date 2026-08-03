@@ -260,6 +260,8 @@ def classify_death(timed_out: bool, returncode: int, saw_memory_error: bool) -> 
             signal_name = f"SIG{-returncode}"
     if timed_out:
         return "timeout", signal_name
+    if signal_name == "SIGALRM":
+        return "timeout", signal_name
     if signal_name == "SIGKILL" or saw_memory_error:
         return "out_of_memory", signal_name
     return "crashed", signal_name

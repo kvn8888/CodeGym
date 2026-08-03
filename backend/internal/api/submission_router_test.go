@@ -103,7 +103,7 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 
 	foundHiddenTest := false
 	for _, file := range runner.spec.Files {
-		if file.Path == "test_solution.py" && strings.Contains(file.Content, "CODEGYM_RESULT") {
+		if file.Path == "test_solution.py" && strings.Contains(file.Content, "cases.jsonl") && strings.Contains(file.Content, "verdict.json") {
 			foundHiddenTest = true
 		}
 		if strings.Contains(file.Content, "seen[complement]") {

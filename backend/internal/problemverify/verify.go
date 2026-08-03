@@ -217,7 +217,12 @@ func runReference(ctx context.Context, runner execution.Runner, definition probl
 	if err != nil {
 		return submission.TestResult{}, fmt.Errorf("verification sandbox run failed: %w", err)
 	}
-	parsed, err := submission.ParseTestResult(outcome.Output)
+	var parsed submission.TestResult
+	if outcome.Result.Schema == execution.JudgeSchema {
+		parsed, err = submission.TestResultFromJudge(outcome.Result)
+	} else {
+		parsed, err = submission.ParseTestResult(outcome.Output)
+	}
 	if err != nil {
 		return submission.TestResult{}, fmt.Errorf("%w: %v", ErrRejected, err)
 	}

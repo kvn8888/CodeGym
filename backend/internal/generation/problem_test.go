@@ -3,6 +3,9 @@ package generation
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,11 +73,65 @@ func TestGenerateProblemRepairsOnceAndBuildsControlledHarness(t *testing.T) {
 		t.Fatalf("definition missing controlled runner: %#v", definition)
 	}
 	runner := definition.HiddenTestFiles[0].Content
-	if !strings.Contains(runner, `PREFIX = "CODEGYM_RESULT "`) || !strings.Contains(runner, "base64.b64decode") {
+	for _, protocol := range []string{"cases.jsonl", "verdict.json", "signal.setitimer", "base64.b64decode"} {
+		if !strings.Contains(runner, protocol) {
+			t.Fatalf("runner is missing %q: %s", protocol, runner)
+		}
+	}
+	if strings.Contains(runner, "CODEGYM_RESULT") {
 		t.Fatalf("runner is not controlled: %s", runner)
 	}
 	if strings.Contains(runner, "Track values already seen") {
 		t.Fatal("runner unexpectedly contains public hint text")
+	}
+}
+
+func TestGeneratedHarnessWritesIncrementalCasesAndFinalVerdict(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is required to execute the generated harness")
+	}
+	generated, err := ValidateGeneratedProblem(json.RawMessage(validProblemPayload))
+	if err != nil {
+		t.Fatalf("ValidateGeneratedProblem: %v", err)
+	}
+	definition, err := BuildProblemDefinition(generated)
+	if err != nil {
+		t.Fatalf("BuildProblemDefinition: %v", err)
+	}
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".codegym"), 0o700); err != nil {
+		t.Fatalf("mkdir protocol dir: %v", err)
+	}
+	for _, file := range []struct{ name, content string }{
+		{"solution.py", definition.ReferenceSolution},
+		{"test_solution.py", definition.HiddenTestFiles[0].Content},
+	} {
+		if err := os.WriteFile(filepath.Join(root, file.name), []byte(file.content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", file.name, err)
+		}
+	}
+	command := exec.Command(python, "test_solution.py")
+	command.Dir = root
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("generated harness failed: %v\n%s", err, output)
+	}
+	progress, err := os.ReadFile(filepath.Join(root, ".codegym", "cases.jsonl"))
+	if err != nil {
+		t.Fatalf("read cases.jsonl: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(progress)), "\n")
+	if len(lines) != len(generated.TestCases)*2 || !strings.Contains(lines[0], `"event":"case_start"`) ||
+		!strings.Contains(lines[1], `"event":"case_result"`) {
+		t.Fatalf("unexpected progress log: %s", progress)
+	}
+	verdict, err := os.ReadFile(filepath.Join(root, ".codegym", "verdict.json"))
+	if err != nil {
+		t.Fatalf("read verdict.json: %v", err)
+	}
+	if !strings.Contains(string(verdict), `"schema":1`) || !strings.Contains(string(verdict), `"status":"passed"`) ||
+		strings.Contains(string(verdict), "CODEGYM_RESULT") {
+		t.Fatalf("unexpected verdict: %s", verdict)
 	}
 }
 

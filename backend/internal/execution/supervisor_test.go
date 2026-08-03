@@ -67,6 +67,20 @@ os.abort()
 			timeout: "3", memoryMB: "256", wantStatus: JudgeStatusCrashed, wantCase: "abort-case", wantSignal: true,
 		},
 		{
+			name: "per-case alarm",
+			child: `import json, pathlib, signal, time
+p = pathlib.Path(".codegym")
+p.mkdir(exist_ok=True)
+with (p / "cases.jsonl").open("a", encoding="utf-8") as f:
+    f.write(json.dumps({"event":"case_start","name":"alarm-case"}) + "\n")
+    f.flush()
+signal.signal(signal.SIGALRM, signal.SIG_DFL)
+signal.setitimer(signal.ITIMER_REAL, 0.05)
+time.sleep(60)
+`,
+			timeout: "3", memoryMB: "256", wantStatus: JudgeStatusTimeout, wantCase: "alarm-case", wantSignal: true,
+		},
+		{
 			name: "out of memory",
 			child: `import json, pathlib, sys
 p = pathlib.Path(".codegym")

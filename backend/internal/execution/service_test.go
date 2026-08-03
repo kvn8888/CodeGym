@@ -36,6 +36,7 @@ func pythonInput() SubmitRunInput {
 			{Path: "solution.py", Content: "def two_sum(nums, target): ..."},
 			{Path: "test_solution.py", Content: "import solution"},
 		},
+		Limits: Limits{TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: NetworkModeBlockAll},
 	}
 }
 
@@ -146,6 +147,13 @@ func TestSubmitRunValidation(t *testing.T) {
 		mutate func(*SubmitRunInput)
 	}{
 		{"unknown language", func(in *SubmitRunInput) { in.Language = "cobol" }},
+		{"missing limits", func(in *SubmitRunInput) { in.Limits = Limits{} }},
+		{"zero timeout", func(in *SubmitRunInput) { in.Limits.TimeoutSeconds = 0 }},
+		{"negative timeout", func(in *SubmitRunInput) { in.Limits.TimeoutSeconds = -1 }},
+		{"zero memory", func(in *SubmitRunInput) { in.Limits.MemoryMB = 0 }},
+		{"negative memory", func(in *SubmitRunInput) { in.Limits.MemoryMB = -1 }},
+		{"missing network mode", func(in *SubmitRunInput) { in.Limits.NetworkMode = "" }},
+		{"unsupported network mode", func(in *SubmitRunInput) { in.Limits.NetworkMode = "bridge" }},
 		{"missing entrypoint", func(in *SubmitRunInput) { in.Entrypoint = "" }},
 		{"entrypoint not among files", func(in *SubmitRunInput) { in.Entrypoint = "other.py" }},
 		{"empty files", func(in *SubmitRunInput) { in.Files = nil }},
@@ -254,6 +262,9 @@ func TestRunnerReceivesResolvedSpec(t *testing.T) {
 	}
 	if len(runner.lastSpec.Files) != 2 {
 		t.Fatalf("expected 2 files, got %d", len(runner.lastSpec.Files))
+	}
+	if runner.lastSpec.Limits != (Limits{TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: NetworkModeBlockAll}) {
+		t.Fatalf("unexpected limits %#v", runner.lastSpec.Limits)
 	}
 	if got := runner.lastSpec.Language.RunCommand("test_solution.py"); got != "cd ~/work && python3 test_solution.py" {
 		t.Fatalf("unexpected run command %q", got)

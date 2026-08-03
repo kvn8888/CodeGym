@@ -73,6 +73,11 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 		Language:   definition.Language,
 		Entrypoint: definition.Entrypoint,
 		Files:      files,
+		Limits: execution.Limits{
+			TimeoutSeconds: definition.Runtime.TimeoutSeconds,
+			MemoryMB:       definition.Runtime.MemoryMB,
+			NetworkMode:    definition.Runtime.NetworkMode,
+		},
 	})
 	if err != nil {
 		return Accepted{}, err

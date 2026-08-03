@@ -52,6 +52,9 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 	if s.runner == nil {
 		return Run{}, ErrRunnerUnavailable
 	}
+	if err := validateLimits(input.Limits); err != nil {
+		return Run{}, err
+	}
 
 	lang, ok := LanguageFor(strings.TrimSpace(input.Language))
 	if !ok {
@@ -81,13 +84,14 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		return Run{}, err
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, lang.ExecTimeout+runnerOverhead)
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(input.Limits.TimeoutSeconds)*time.Second+runnerOverhead)
 	defer cancel()
 
 	outcome, runErr := s.runner.Run(runCtx, RunSpec{
 		Language:   lang,
 		Files:      input.Files,
 		Entrypoint: input.Entrypoint,
+		Limits:     input.Limits,
 	})
 
 	completed := s.now().UTC()
@@ -123,6 +127,19 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		return Run{}, err
 	}
 	return run, nil
+}
+
+func validateLimits(limits Limits) error {
+	if limits.TimeoutSeconds <= 0 {
+		return errors.New("limits.timeout_seconds must be positive")
+	}
+	if limits.MemoryMB <= 0 {
+		return errors.New("limits.memory_mb must be positive")
+	}
+	if limits.NetworkMode != NetworkModeBlockAll {
+		return fmt.Errorf("limits.network_mode must be %q", NetworkModeBlockAll)
+	}
+	return nil
 }
 
 func (s *Service) GetRun(ctx context.Context, id string) (Run, error) {

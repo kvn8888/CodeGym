@@ -1155,6 +1155,13 @@ export interface components {
             language: string;
             entrypoint: string;
             files: components["schemas"]["SubmissionFile"][];
+            limits: components["schemas"]["ExecutionLimits"];
+        };
+        ExecutionLimits: {
+            timeout_seconds: number;
+            memory_mb: number;
+            /** @enum {string} */
+            network_mode: "block-all";
         };
         ExecutionRunEnvelope: {
             data: components["schemas"]["ExecutionRun"];

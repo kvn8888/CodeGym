@@ -26,12 +26,12 @@ var ErrRejected = errors.New("problem verification rejected the generated proble
 var ErrUnavailable = errors.New("problem verification runner is not configured")
 
 type verificationResult struct {
-	Verdict          string                     `json:"verdict"`
-	Reason           string                     `json:"reason"`
+	Verdict          string                       `json:"verdict"`
+	Reason           string                       `json:"reason"`
 	RepairedCases    []generation.ProblemTestCase `json:"repaired_cases,omitempty"`
-	DropCaseNames    []string                   `json:"drop_case_names,omitempty"`
-	ProblemPatch     *problemPatch              `json:"problem_patch,omitempty"`
-	RegenerateReason string                     `json:"regenerate_reason,omitempty"`
+	DropCaseNames    []string                     `json:"drop_case_names,omitempty"`
+	ProblemPatch     *problemPatch                `json:"problem_patch,omitempty"`
+	RegenerateReason string                       `json:"regenerate_reason,omitempty"`
 }
 
 type problemPatch struct {
@@ -208,6 +208,11 @@ func runReference(ctx context.Context, runner execution.Runner, definition probl
 		Language:   language,
 		Files:      files,
 		Entrypoint: definition.Entrypoint,
+		Limits: execution.Limits{
+			TimeoutSeconds: definition.Runtime.TimeoutSeconds,
+			MemoryMB:       definition.Runtime.MemoryMB,
+			NetworkMode:    definition.Runtime.NetworkMode,
+		},
 	})
 	if err != nil {
 		return submission.TestResult{}, fmt.Errorf("verification sandbox run failed: %w", err)

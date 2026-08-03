@@ -113,6 +113,9 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	if !foundHiddenTest || runner.spec.Entrypoint != "test_solution.py" {
 		t.Fatalf("captured run spec = %#v", runner.spec)
 	}
+	if runner.spec.Limits != (execution.Limits{TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: execution.NetworkModeBlockAll}) {
+		t.Fatalf("problem runtime did not reach the runner: %#v", runner.spec.Limits)
+	}
 
 	getSubmission := authedRequest(t, router, http.MethodGet, "/api/v1/submissions/"+accepted.SubmissionID, "")
 	if getSubmission.Code != http.StatusOK {

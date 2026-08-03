@@ -27,6 +27,17 @@ type File struct {
 	Content string `json:"content"`
 }
 
+const NetworkModeBlockAll = "block-all"
+
+// Limits are mandatory per-run capabilities supplied by the problem runtime.
+// They intentionally have no permissive defaults: zero values are rejected so
+// callers cannot silently drop a problem's execution policy.
+type Limits struct {
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	MemoryMB       int    `json:"memory_mb"`
+	NetworkMode    string `json:"network_mode"`
+}
+
 // Run is one execution of a submission in an isolated sandbox.
 //
 // Per-case test counts (v1 had total_tests/passed_tests) are deferred until
@@ -59,4 +70,5 @@ type SubmitRunInput struct {
 	Language   string `json:"language"`
 	Entrypoint string `json:"entrypoint"`
 	Files      []File `json:"files"`
+	Limits     Limits `json:"limits"`
 }

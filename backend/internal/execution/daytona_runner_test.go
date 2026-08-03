@@ -92,6 +92,23 @@ func pythonSpec(solution, tests string) RunSpec {
 			{Path: "solution.py", Content: solution},
 			{Path: "test_solution.py", Content: tests},
 		},
+		Limits: Limits{TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: NetworkModeBlockAll},
+	}
+}
+
+func TestBuildSupervisorCommandUsesRunLimits(t *testing.T) {
+	spec := pythonSpec(passingSolution, solutionTests)
+	spec.Limits = Limits{TimeoutSeconds: 7, MemoryMB: 144, NetworkMode: NetworkModeBlockAll}
+	command := buildSupervisorCommand(spec)
+	for _, expected := range []string{
+		"'--timeout-seconds' '7'",
+		"'--memory-mb' '144'",
+		"'--output-cap-bytes' '65536'",
+		"'--' 'python3' 'test_solution.py'",
+	} {
+		if !strings.Contains(command, expected) {
+			t.Fatalf("supervisor command %q does not contain %q", command, expected)
+		}
 	}
 }
 

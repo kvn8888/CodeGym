@@ -2261,7 +2261,7 @@ components:
 
     SubmitExecutionInput:
       type: object
-      required: [problem_id, language, entrypoint, files]
+      required: [problem_id, language, entrypoint, files, limits]
       properties:
         problem_id:
           type: string
@@ -2274,6 +2274,22 @@ components:
           minItems: 1
           items:
             $ref: "#/components/schemas/SubmissionFile"
+        limits:
+          $ref: "#/components/schemas/ExecutionLimits"
+
+    ExecutionLimits:
+      type: object
+      required: [timeout_seconds, memory_mb, network_mode]
+      properties:
+        timeout_seconds:
+          type: integer
+          minimum: 1
+        memory_mb:
+          type: integer
+          minimum: 1
+        network_mode:
+          type: string
+          enum: [block-all]
 
     ExecutionRunEnvelope:
       type: object

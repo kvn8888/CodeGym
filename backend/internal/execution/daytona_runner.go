@@ -26,7 +26,6 @@ import (
 const (
 	supervisorRemotePath   = "work/.codegym/supervisor.py"
 	resultRemotePath       = "work/.codegym/result.json"
-	defaultMemoryMB        = 256
 	defaultOutputCapBytes  = 64 * 1024
 	supervisorExecOverhead = 15 * time.Second
 )
@@ -56,18 +55,22 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	if r == nil || r.client == nil {
 		return RunOutcome{}, errors.New("Daytona runner is not initialized")
 	}
+	if err := validateLimits(spec.Limits); err != nil {
+		return RunOutcome{}, err
+	}
 
 	startedAt := time.Now()
 	lang := spec.Language.Name
-	log.Printf("daytona run start language=%s entrypoint=%s files=%d timeout=%s",
-		lang, spec.Entrypoint, len(spec.Files), spec.Language.ExecTimeout)
+	timeout := time.Duration(spec.Limits.TimeoutSeconds) * time.Second
+	log.Printf("daytona run start language=%s entrypoint=%s files=%d timeout=%s memory_mb=%d network_mode=%s",
+		lang, spec.Entrypoint, len(spec.Files), timeout, spec.Limits.MemoryMB, spec.Limits.NetworkMode)
 
 	createStarted := time.Now()
 	sb, err := r.client.Create(ctx, types.SnapshotParams{
 		Snapshot: spec.Language.Snapshot,
 		SandboxBaseParams: types.SandboxBaseParams{
 			Labels:          map[string]string{"codegym": "submission"},
-			NetworkBlockAll: true,
+			NetworkBlockAll: spec.Limits.NetworkMode == NetworkModeBlockAll,
 			Ephemeral:       true,
 		},
 	})
@@ -122,8 +125,8 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	execStarted := time.Now()
 	execResult, err := sb.Process.ExecuteCommand(
 		ctx,
-		buildSupervisorCommand(spec, spec.Language.ExecTimeout, defaultMemoryMB, defaultOutputCapBytes),
-		options.WithExecuteTimeout(spec.Language.ExecTimeout+supervisorExecOverhead),
+		buildSupervisorCommand(spec),
+		options.WithExecuteTimeout(timeout+supervisorExecOverhead),
 	)
 	execMS := time.Since(execStarted).Milliseconds()
 	if err != nil {
@@ -161,13 +164,13 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	}, nil
 }
 
-func buildSupervisorCommand(spec RunSpec, timeout time.Duration, memoryMB, outputCapBytes int) string {
+func buildSupervisorCommand(spec RunSpec) string {
 	args := []string{
 		"python3", ".codegym/supervisor.py",
 		"--work-dir", ".codegym",
-		"--timeout-seconds", strconv.FormatFloat(timeout.Seconds(), 'f', -1, 64),
-		"--memory-mb", strconv.Itoa(memoryMB),
-		"--output-cap-bytes", strconv.Itoa(outputCapBytes),
+		"--timeout-seconds", strconv.Itoa(spec.Limits.TimeoutSeconds),
+		"--memory-mb", strconv.Itoa(spec.Limits.MemoryMB),
+		"--output-cap-bytes", strconv.Itoa(defaultOutputCapBytes),
 		"--",
 	}
 	args = append(args, spec.Language.ChildCommand(spec.Entrypoint)...)

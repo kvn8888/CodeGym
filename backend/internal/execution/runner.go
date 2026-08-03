@@ -10,6 +10,7 @@ type RunSpec struct {
 	Language   Language
 	Files      []File
 	Entrypoint string
+	Limits     Limits
 }
 
 // RunOutcome is the result of executing a submission in a sandbox.

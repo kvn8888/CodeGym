@@ -113,6 +113,35 @@ func TestSubmitRunUsesStructuredJudgeStatus(t *testing.T) {
 	}
 }
 
+func TestSubmitRunMapsSupervisorDeathStatuses(t *testing.T) {
+	tests := []struct {
+		judge JudgeStatus
+		want  Status
+	}{
+		{JudgeStatusTimeout, StatusTimeout},
+		{JudgeStatusOutOfMemory, StatusOutOfMemory},
+		{JudgeStatusCrashed, StatusCrashed},
+	}
+	for _, test := range tests {
+		t.Run(string(test.judge), func(t *testing.T) {
+			detail := "died during case 'case-2'"
+			runner := &fakeRunner{outcome: RunOutcome{Result: JudgeResult{
+				Schema: JudgeSchema, Status: test.judge, Cases: []CaseResult{},
+				FailureDetail: &detail, Stdout: "debug output",
+			}}}
+			service := NewService(NewInMemoryStore(), runner, fixedClock())
+
+			run, err := service.SubmitRun(scopedContext(), pythonInput())
+			if err != nil {
+				t.Fatalf("SubmitRun returned error: %v", err)
+			}
+			if run.Status != test.want || run.JudgeResult == nil || run.JudgeResult.Stdout != "debug output" {
+				t.Fatalf("run = %#v", run)
+			}
+		})
+	}
+}
+
 func TestSubmitRunRunnerErrorYieldsErrorStatus(t *testing.T) {
 	runner := &fakeRunner{err: errors.New("sandbox create failed")}
 	store := NewInMemoryStore()

@@ -2147,16 +2147,24 @@ components:
 
     SubmissionStatus:
       type: string
-      enum: [pending, running, completed, error]
+      enum: [pending, running, completed, timeout, out_of_memory, crashed, error]
 
     Submission:
       type: object
-      required: [status]
+      required: [status, stdout, output_truncated]
       properties:
         status:
           $ref: "#/components/schemas/SubmissionStatus"
         result:
           $ref: "#/components/schemas/TestResult"
+        failure_detail:
+          type: string
+        stdout:
+          type: string
+          description: Learner program stdout, captured separately from the judge verdict.
+        output_truncated:
+          type: boolean
+          description: True when stdout or stderr exceeded the configured byte cap.
 
     TestResult:
       type: object
@@ -2212,7 +2220,7 @@ components:
 
     ExecutionStatus:
       type: string
-      enum: [queued, running, passed, failed, error]
+      enum: [queued, running, passed, failed, timeout, out_of_memory, crashed, error]
 
     ExecutionRun:
       type: object

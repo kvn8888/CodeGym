@@ -251,7 +251,8 @@ func AssembleFiles(userFiles []execution.File, hiddenFiles []problems.File) ([]e
 
 func isTerminal(status execution.Status) bool {
 	switch status {
-	case execution.StatusPassed, execution.StatusFailed, execution.StatusError:
+	case execution.StatusPassed, execution.StatusFailed, execution.StatusTimeout,
+		execution.StatusOutOfMemory, execution.StatusCrashed, execution.StatusError:
 		return true
 	default:
 		return false
@@ -259,21 +260,49 @@ func isTerminal(status execution.Status) bool {
 }
 
 func viewFromRun(run execution.Run) View {
+	view := View{}
+	if run.JudgeResult != nil {
+		view.Stdout = run.JudgeResult.Stdout
+		view.OutputTruncated = run.JudgeResult.OutputTruncated
+		view.FailureDetail = run.JudgeResult.FailureDetail
+	}
 	switch run.Status {
 	case execution.StatusQueued:
-		return View{Status: StatusPending}
+		view.Status = StatusPending
+		return view
 	case execution.StatusRunning:
-		return View{Status: StatusRunning}
+		view.Status = StatusRunning
+		return view
 	case execution.StatusError:
-		return View{Status: StatusError}
+		view.Status = StatusError
+		return view
+	case execution.StatusTimeout:
+		view.Status = StatusTimeout
+		return view
+	case execution.StatusOutOfMemory:
+		view.Status = StatusOutOfMemory
+		return view
+	case execution.StatusCrashed:
+		view.Status = StatusCrashed
+		return view
 	case execution.StatusPassed, execution.StatusFailed:
-		result, err := ParseTestResult(run.Output)
+		var result TestResult
+		var err error
+		if run.JudgeResult != nil {
+			result, err = TestResultFromJudge(*run.JudgeResult)
+		} else {
+			result, err = ParseTestResult(run.Output)
+		}
 		if err != nil {
-			return View{Status: StatusError}
+			view.Status = StatusError
+			return view
 		}
 		result.DurationMs = run.DurationMs
-		return View{Status: StatusCompleted, Result: &result}
+		view.Status = StatusCompleted
+		view.Result = &result
+		return view
 	default:
-		return View{Status: StatusError}
+		view.Status = StatusError
+		return view
 	}
 }

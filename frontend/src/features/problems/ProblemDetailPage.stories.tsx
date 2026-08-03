@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { ProblemDetailPage } from './ProblemDetailPage';
-import type { Problem, SubmissionFile, TestResult } from '../../shared/api/types';
+import type { Problem, Submission, SubmissionFile, TestResult } from '../../shared/api/types';
 import { setMockProblemFixture } from '../../mocks/apiProxy';
 
 const meta: Meta<typeof ProblemDetailPage> = {
@@ -183,6 +183,54 @@ const compileErrorResult: TestResult = {
 ./solution.go:6:1: syntax error: non-declaration statement outside function body`,
 };
 
+const passedSubmission: Submission = {
+  status: 'completed',
+  result: passedResult,
+  stdout: 'map size after case 5: 8\n',
+  output_truncated: false,
+};
+
+const failedSubmission: Submission = {
+  status: 'completed',
+  result: failedResult,
+  stdout: 'checking target=6 with 3 candidates\n',
+  output_truncated: false,
+};
+
+const compileErrorSubmission: Submission = {
+  status: 'completed',
+  result: compileErrorResult,
+  stdout: '',
+  output_truncated: false,
+};
+
+const timeoutSubmission: Submission = {
+  status: 'timeout',
+  failure_detail: "timed out after 5001ms during case 'TestNegativeNumbers'",
+  stdout: 'entered twoSum with 4 values\nstill searching...\n',
+  output_truncated: false,
+};
+
+const outOfMemorySubmission: Submission = {
+  status: 'out_of_memory',
+  failure_detail: "memory limit exceeded during case 'TestLargerArray'",
+  stdout: 'allocated 192 MB\nallocated 224 MB\n',
+  output_truncated: true,
+};
+
+const crashedSubmission: Submission = {
+  status: 'crashed',
+  failure_detail: "submission terminated by SIGSEGV during case 'TestSameValues'",
+  stdout: 'about to inspect duplicate values\n',
+  output_truncated: false,
+};
+
+const platformErrorSubmission: Submission = {
+  status: 'error',
+  stdout: '',
+  output_truncated: false,
+};
+
 function withProblemFixture(
   problem: Problem,
   skeleton: { files: SubmissionFile[] },
@@ -202,25 +250,50 @@ export const GoTwoSum: Story = {
 
 export const GoTwoSumPassed: Story = {
   name: 'Go – All Tests Passed',
-  args: { initialResult: passedResult, initialMemoryUpdateStatus: 'synced' },
+  args: { initialSubmission: passedSubmission, initialMemoryUpdateStatus: 'synced' },
   decorators: [withProblemFixture(twoSum, goSkeleton, passedResult)],
 };
 
 export const GoTwoSumFailed: Story = {
   name: 'Go – Tests Failed',
-  args: { initialResult: failedResult, initialMemoryUpdateStatus: 'synced' },
+  args: { initialSubmission: failedSubmission, initialMemoryUpdateStatus: 'synced' },
   decorators: [withProblemFixture(twoSum, goSkeleton, failedResult)],
 };
 
 export const ResultSavedMemoryRetry: Story = {
   name: 'Result saved – Memory retry',
-  args: { initialResult: passedResult, initialMemoryUpdateStatus: 'failed' },
+  args: { initialSubmission: passedSubmission, initialMemoryUpdateStatus: 'failed' },
   decorators: [withProblemFixture(twoSum, goSkeleton, passedResult)],
 };
 
 export const GoTwoSumCompileError: Story = {
   name: 'Go – Compile Error',
+  args: { initialSubmission: compileErrorSubmission },
   decorators: [withProblemFixture(twoSum, goSkeleton, compileErrorResult)],
+};
+
+export const GoTwoSumTimedOut: Story = {
+  name: 'Go – Time Limit',
+  args: { initialSubmission: timeoutSubmission },
+  decorators: [withProblemFixture(twoSum, goSkeleton)],
+};
+
+export const GoTwoSumOutOfMemory: Story = {
+  name: 'Go – Memory Limit',
+  args: { initialSubmission: outOfMemorySubmission },
+  decorators: [withProblemFixture(twoSum, goSkeleton)],
+};
+
+export const GoTwoSumCrashed: Story = {
+  name: 'Go – Process Crashed',
+  args: { initialSubmission: crashedSubmission },
+  decorators: [withProblemFixture(twoSum, goSkeleton)],
+};
+
+export const GoTwoSumPlatformError: Story = {
+  name: 'Go – Platform Error',
+  args: { initialSubmission: platformErrorSubmission },
+  decorators: [withProblemFixture(twoSum, goSkeleton)],
 };
 
 export const GoTwoSumResumed: Story = {

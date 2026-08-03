@@ -15,8 +15,13 @@ const (
 	// StatusFailed means the run command exited nonzero — a normal result
 	// (e.g. an assertion failure), not an infrastructure problem.
 	StatusFailed Status = "failed"
+	// These statuses are supervisor-reported user-code deaths, not platform
+	// faults. Partial case progress remains available in Run.JudgeResult.
+	StatusTimeout     Status = "timeout"
+	StatusOutOfMemory Status = "out_of_memory"
+	StatusCrashed     Status = "crashed"
 	// StatusError means the runner itself failed (sandbox create, upload,
-	// timeout, …); details are in Run.Error.
+	// result readback, …); details are in Run.Error.
 	StatusError Status = "error"
 )
 
@@ -54,14 +59,17 @@ type Run struct {
 	Entrypoint string `json:"entrypoint"`
 	// Files are persisted for execution diagnostics but never serialized:
 	// submission runs include server-only hidden tests.
-	Files       []File     `json:"-"`
-	Status      Status     `json:"status"`
-	ExitCode    *int       `json:"exit_code,omitempty"`
-	Output      string     `json:"output"`
-	Error       string     `json:"error,omitempty"`
-	DurationMs  int64      `json:"duration_ms"`
-	CreatedAt   time.Time  `json:"created_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Files    []File `json:"-"`
+	Status   Status `json:"status"`
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Output   string `json:"output"`
+	// JudgeResult is persisted for submission views but never serialized from
+	// raw execution endpoints; it can contain server-owned hidden case names.
+	JudgeResult *JudgeResult `json:"-"`
+	Error       string       `json:"error,omitempty"`
+	DurationMs  int64        `json:"duration_ms"`
+	CreatedAt   time.Time    `json:"created_at"`
+	CompletedAt *time.Time   `json:"completed_at,omitempty"`
 }
 
 // SubmitRunInput is the request payload for running a submission.

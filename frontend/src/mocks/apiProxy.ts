@@ -9,6 +9,7 @@ import type {
   PracticeIntake,
   PracticeSession,
   Problem,
+  Submission,
   SubmissionFile,
   TestResult,
   UserMemoryProfile,
@@ -649,10 +650,13 @@ export async function mockApiFetch(
 
   const submissionMatch = path.match(/^\/submissions\/([^/]+)$/);
   if (method === 'GET' && submissionMatch) {
-    return json({
+    const submission: Submission = {
       status: 'completed',
       result: mockProblemFixture?.result ?? mockPassingResult,
-    });
+      stdout: '',
+      output_truncated: false,
+    };
+    return json(submission);
   }
 
   // Memory event writes are retained for the lifetime of the mock scenario.

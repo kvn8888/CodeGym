@@ -5,10 +5,13 @@ import "github.com/kvn8888/codegym/backend/internal/execution"
 type Status string
 
 const (
-	StatusPending   Status = "pending"
-	StatusRunning   Status = "running"
-	StatusCompleted Status = "completed"
-	StatusError     Status = "error"
+	StatusPending     Status = "pending"
+	StatusRunning     Status = "running"
+	StatusCompleted   Status = "completed"
+	StatusTimeout     Status = "timeout"
+	StatusOutOfMemory Status = "out_of_memory"
+	StatusCrashed     Status = "crashed"
+	StatusError       Status = "error"
 )
 
 type SubmitInput struct {
@@ -23,8 +26,11 @@ type Accepted struct {
 }
 
 type View struct {
-	Status Status      `json:"status"`
-	Result *TestResult `json:"result,omitempty"`
+	Status          Status      `json:"status"`
+	Result          *TestResult `json:"result,omitempty"`
+	FailureDetail   *string     `json:"failure_detail,omitempty"`
+	Stdout          string      `json:"stdout"`
+	OutputTruncated bool        `json:"output_truncated"`
 }
 
 type TestResult struct {

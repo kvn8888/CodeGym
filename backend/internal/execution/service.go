@@ -103,12 +103,21 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		run.Output = outcome.Output
 		run.DurationMs = outcome.Duration.Milliseconds()
 		if outcome.Result.Schema == JudgeSchema {
+			judgeResult := outcome.Result
+			run.JudgeResult = &judgeResult
 			run.ExitCode = outcome.Result.ExitCode
 			run.DurationMs = outcome.Result.DurationMs
-			if outcome.Result.Status == JudgeStatusPassed {
+			switch outcome.Result.Status {
+			case JudgeStatusPassed:
 				run.Status = StatusPassed
-			} else {
+			case JudgeStatusFailed:
 				run.Status = StatusFailed
+			case JudgeStatusTimeout:
+				run.Status = StatusTimeout
+			case JudgeStatusOutOfMemory:
+				run.Status = StatusOutOfMemory
+			case JudgeStatusCrashed:
+				run.Status = StatusCrashed
 			}
 		} else {
 			exitCode := outcome.ExitCode

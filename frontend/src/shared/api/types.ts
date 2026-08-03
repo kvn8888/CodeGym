@@ -51,8 +51,6 @@ export interface TestResult {
   duration_ms: number;
   test_cases: TestCaseResult[];
   compile_error?: string;
-  stderr?: string;
-  stdout?: string;
 }
 
 export interface TestCaseResult {
@@ -65,17 +63,21 @@ export interface TestCaseResult {
   error?: string;
 }
 
+export type SubmissionStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'timeout'
+  | 'out_of_memory'
+  | 'crashed'
+  | 'error';
+
 export interface Submission {
-  id: string;
-  problem_id: string;
-  status: string;
-  language: string;
-  submitted_at: string;
-  completed_at?: string;
-  duration_ms?: number;
-  total_tests?: number;
-  passed_tests?: number;
+  status: SubmissionStatus;
   result?: TestResult;
+  failure_detail?: string;
+  stdout: string;
+  output_truncated: boolean;
 }
 
 export interface UserProfile {

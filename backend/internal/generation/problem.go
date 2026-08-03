@@ -375,6 +375,8 @@ for index, case in enumerate(CASES):
         if actual != case["expected"]:
             status = "fail"
             error = f"expected {json.dumps(case['expected'], separators=(',', ':'))}, got {json.dumps(actual, separators=(',', ':'))}"
+    except MemoryError:
+        raise
     except Exception as exc:
         status = "fail"
         error = f"{type(exc).__name__}: {exc}"

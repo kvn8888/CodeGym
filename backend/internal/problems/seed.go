@@ -69,6 +69,8 @@ for name, nums, target, expected in cases:
         if not isinstance(actual, list) or sorted(actual) != sorted(expected):
             status = "fail"
             error = f"expected {expected}, got {actual}"
+    except MemoryError:
+        raise
     except Exception as exc:
         status = "fail"
         error = f"{type(exc).__name__}: {exc}"

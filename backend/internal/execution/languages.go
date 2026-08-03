@@ -8,8 +8,10 @@ import (
 // Language describes how to execute a submission for one runtime.
 type Language struct {
 	Name string
+	// ChildCommand builds argv for the supervisor to execute without a shell.
+	ChildCommand func(entrypoint string) []string
 	// RunCommand builds the shell command executed inside the sandbox.
-	// Files are uploaded under ~/work, so commands address them there.
+	// Kept for compatibility with callers outside DaytonaRunner.
 	RunCommand func(entrypoint string) string
 	// Snapshot names the Daytona snapshot to boot from; empty means the
 	// platform default. This is the extension point for the hybrid flow:
@@ -24,6 +26,9 @@ type Language struct {
 var languages = map[string]Language{
 	"python": {
 		Name: "python",
+		ChildCommand: func(entrypoint string) []string {
+			return []string{"python3", entrypoint}
+		},
 		RunCommand: func(entrypoint string) string {
 			return fmt.Sprintf("cd ~/work && python3 %s", entrypoint)
 		},

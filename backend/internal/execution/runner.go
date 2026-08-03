@@ -15,9 +15,15 @@ type RunSpec struct {
 // RunOutcome is the result of executing a submission in a sandbox.
 type RunOutcome struct {
 	ExitCode int
-	// Output is the combined stdout+stderr of the run command.
+	// Result is the authoritative out-of-band supervisor result. A zero Schema
+	// means a compatibility Runner returned only the legacy fields below.
+	Result JudgeResult
+	Stdout string
+	Stderr string
+	// Output retains combined stdout+stderr compatibility for callers that have
+	// not moved to Result yet. New code should use Result and the split streams.
 	Output string
-	// Duration is the sandbox-side wall time (create through exec).
+	// Duration is the child-process wall time reported by the supervisor.
 	Duration time.Duration
 }
 

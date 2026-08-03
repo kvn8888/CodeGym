@@ -86,6 +86,32 @@ func TestSubmitRunFailsOnNonzeroExit(t *testing.T) {
 	}
 }
 
+func TestSubmitRunUsesStructuredJudgeStatus(t *testing.T) {
+	exitCode := 0
+	runner := &fakeRunner{outcome: RunOutcome{
+		ExitCode: 0,
+		Result: JudgeResult{
+			Schema:   JudgeSchema,
+			Status:   JudgeStatusFailed,
+			Cases:    []CaseResult{{Name: "case-1", Status: "fail", DurationMs: 2}},
+			ExitCode: &exitCode,
+		},
+		Output: "learner output",
+	}}
+	service := NewService(NewInMemoryStore(), runner, fixedClock())
+
+	run, err := service.SubmitRun(scopedContext(), pythonInput())
+	if err != nil {
+		t.Fatalf("SubmitRun returned error: %v", err)
+	}
+	if run.Status != StatusFailed {
+		t.Fatalf("expected structured status %s, got %s", StatusFailed, run.Status)
+	}
+	if run.ExitCode == nil || *run.ExitCode != 0 {
+		t.Fatalf("expected child exit code 0, got %v", run.ExitCode)
+	}
+}
+
 func TestSubmitRunRunnerErrorYieldsErrorStatus(t *testing.T) {
 	runner := &fakeRunner{err: errors.New("sandbox create failed")}
 	store := NewInMemoryStore()
@@ -126,6 +152,7 @@ func TestSubmitRunValidation(t *testing.T) {
 		{"absolute path", func(in *SubmitRunInput) { in.Files[0].Path = "/etc/passwd" }},
 		{"parent traversal", func(in *SubmitRunInput) { in.Files[0].Path = "../escape.py" }},
 		{"home prefix", func(in *SubmitRunInput) { in.Files[0].Path = "~/escape.py" }},
+		{"reserved protocol directory", func(in *SubmitRunInput) { in.Files[0].Path = ".codegym/result.json" }},
 		{"duplicate paths", func(in *SubmitRunInput) { in.Files[1].Path = in.Files[0].Path }},
 	}
 	for _, tc := range cases {

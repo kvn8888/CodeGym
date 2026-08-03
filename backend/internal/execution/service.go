@@ -96,14 +96,24 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		run.Status = StatusError
 		run.Error = runErr.Error()
 	} else {
-		exitCode := outcome.ExitCode
-		run.ExitCode = &exitCode
 		run.Output = outcome.Output
 		run.DurationMs = outcome.Duration.Milliseconds()
-		if exitCode == 0 {
-			run.Status = StatusPassed
+		if outcome.Result.Schema == JudgeSchema {
+			run.ExitCode = outcome.Result.ExitCode
+			run.DurationMs = outcome.Result.DurationMs
+			if outcome.Result.Status == JudgeStatusPassed {
+				run.Status = StatusPassed
+			} else {
+				run.Status = StatusFailed
+			}
 		} else {
-			run.Status = StatusFailed
+			exitCode := outcome.ExitCode
+			run.ExitCode = &exitCode
+			if exitCode == 0 {
+				run.Status = StatusPassed
+			} else {
+				run.Status = StatusFailed
+			}
 		}
 	}
 
@@ -176,7 +186,11 @@ func validatePath(path string) error {
 	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~") {
 		return fmt.Errorf("file path %q must be relative", path)
 	}
-	for _, part := range strings.Split(path, "/") {
+	parts := strings.Split(path, "/")
+	if parts[0] == ".codegym" {
+		return fmt.Errorf("file path %q uses the reserved judge protocol directory", path)
+	}
+	for _, part := range parts {
 		if part == ".." || part == "." || part == "" {
 			return fmt.Errorf("file path %q must not contain empty, '.' or '..' segments", path)
 		}

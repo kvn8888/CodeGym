@@ -28,22 +28,29 @@ const brokenSolution = `def two_sum(nums, target):
     return []
 `
 
-const solutionTests = `import solution
+const solutionTests = `import json
+import solution
+import time
 
 cases = [
-    (([2, 7, 11, 15], 9), [0, 1]),
-    (([3, 2, 4], 6), [1, 2]),
-    (([3, 3], 6), [0, 1]),
+    ("basic", ([2, 7, 11, 15], 9), [0, 1]),
+    ("unordered", ([3, 2, 4], 6), [1, 2]),
+    ("duplicates", ([3, 3], 6), [0, 1]),
 ]
-for args, want in cases:
+results = []
+for name, args, want in cases:
+    started = time.perf_counter()
     got = solution.two_sum(*args)
-    assert got == want, f"two_sum{args}: got {got}, want {want}"
-print(f"PASS {len(cases)} cases")
+    passed = got == want
+    results.append({"name": name, "status": "pass" if passed else "fail", "duration_ms": int((time.perf_counter() - started) * 1000), "error": None if passed else f"got {got}, want {want}"})
+print("CODEGYM_RESULT " + json.dumps({"tests": results, "compile_error": None}, separators=(",", ":")))
+print(f"finished {len(cases)} cases")
 `
 
 // networkProbe must FAIL inside the sandbox: submission runs are created
 // with NetworkBlockAll and may not reach the internet.
-const networkProbe = `import urllib.request
+const networkProbe = `import json
+import urllib.request
 
 try:
     urllib.request.urlopen("https://registry.npmjs.org/", timeout=8)
@@ -53,6 +60,7 @@ except SystemExit:
     raise
 except Exception as exc:
     print(f"BLOCKED: {type(exc).__name__}")
+    print("CODEGYM_RESULT " + json.dumps({"tests":[{"name":"network","status":"pass","duration_ms":0,"error":None}],"compile_error":None}, separators=(",", ":")))
 `
 
 func daytonaRunner(t *testing.T) *DaytonaRunner {
@@ -97,7 +105,10 @@ func TestDaytonaRunnerPassingSubmission(t *testing.T) {
 	if outcome.ExitCode != 0 {
 		t.Fatalf("expected exit code 0, got %d (output: %s)", outcome.ExitCode, outcome.Output)
 	}
-	if !strings.Contains(outcome.Output, "PASS 3 cases") {
+	if outcome.Result.Status != JudgeStatusPassed {
+		t.Fatalf("expected judge status passed, got %s", outcome.Result.Status)
+	}
+	if !strings.Contains(outcome.Output, "finished 3 cases") {
 		t.Fatalf("expected passing output, got: %s", outcome.Output)
 	}
 	if outcome.Duration <= 0 {
@@ -112,11 +123,11 @@ func TestDaytonaRunnerFailingSubmission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run must not error on a failing submission (nonzero exit is a result): %v", err)
 	}
-	if outcome.ExitCode == 0 {
-		t.Fatalf("expected nonzero exit code, got 0 (output: %s)", outcome.Output)
+	if outcome.Result.Status != JudgeStatusFailed {
+		t.Fatalf("expected failed judge status, got %s (output: %s)", outcome.Result.Status, outcome.Output)
 	}
-	if !strings.Contains(outcome.Output, "AssertionError") {
-		t.Fatalf("expected AssertionError in output, got: %s", outcome.Output)
+	if len(outcome.Result.Cases) != 3 || outcome.Result.Cases[0].Status != "fail" {
+		t.Fatalf("expected structured failing cases, got: %#v", outcome.Result.Cases)
 	}
 }
 
@@ -133,5 +144,8 @@ func TestDaytonaRunnerNetworkBlocked(t *testing.T) {
 	}
 	if !strings.Contains(outcome.Output, "BLOCKED") {
 		t.Fatalf("expected blocked-egress output, got (exit %d): %s", outcome.ExitCode, outcome.Output)
+	}
+	if outcome.Result.Status != JudgeStatusPassed {
+		t.Fatalf("expected passed network probe result, got %s", outcome.Result.Status)
 	}
 }

@@ -292,7 +292,8 @@ func TestGoHTTPStrategyBuildsAndRunsServerDefinition(t *testing.T) {
 	if definition.Language != "go" || definition.Framework != "net/http" || definition.TestConfig.Strategy != problems.TestStrategyHTTP {
 		t.Fatalf("Go HTTP definition = %#v", definition)
 	}
-	if definition.Entrypoint != goHTTPLauncherPath || definition.Files.Skeleton[0].Path != "main.go" || definition.TestConfig.ReadinessTimeoutSeconds != 10 {
+	if definition.Entrypoint != goHTTPLauncherPath || definition.Files.Skeleton[0].Path != "main.go" ||
+		definition.TestConfig.ReadinessTimeoutSeconds != 10 || definition.Runtime.TimeoutSeconds != 60 {
 		t.Fatalf("Go HTTP wiring = %#v", definition)
 	}
 	if len(definition.HiddenTestFiles) != 4 || !strings.Contains(hiddenFileContent(t, definition, goHTTPCasesPath), "creates-item") {

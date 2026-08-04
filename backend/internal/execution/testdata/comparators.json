@@ -1,0 +1,36 @@
+[
+  {"kind":"exact","expected":{"items":[1,[2,3]],"ok":true},"actual":{"items":[1,[2,3]],"ok":true},"want_equal":true,"note":"nested structures match"},
+  {"kind":"exact","expected":{"items":[1,[2,3]]},"actual":{"items":[1,[3,2]]},"want_equal":false,"note":"nested sequence order is significant"},
+  {"kind":"exact","expected":[],"actual":[],"want_equal":true,"note":"empty collections match"},
+  {"kind":"exact","expected":null,"actual":null,"want_equal":true,"note":"null values match"},
+  {"kind":"exact","expected":true,"actual":1,"want_equal":false,"note":"booleans are not numbers"},
+  {"kind":"exact","expected":"1","actual":1,"want_equal":false,"note":"mixed scalar types differ"},
+  {"kind":"exact","expected":1,"actual":1.0,"want_equal":true,"note":"JSON numeric representations compare by value"},
+
+  {"kind":"set","expected":[1,2,2,3],"actual":[3,2,1],"want_equal":true,"note":"set ignores order and duplicates"},
+  {"kind":"set","expected":[1,2],"actual":[1,3],"want_equal":false,"note":"set preserves membership"},
+  {"kind":"set","expected":[[1,2],{"x":3}],"actual":[{"x":3},[1,2],[1,2]],"want_equal":true,"note":"set supports nested unhashable elements"},
+  {"kind":"set","expected":[],"actual":[],"want_equal":true,"note":"empty sets match"},
+
+  {"kind":"multiset","expected":[1,2,2,3],"actual":[2,3,2,1],"want_equal":true,"note":"multiset ignores order"},
+  {"kind":"multiset","expected":[1,2,2],"actual":[1,2],"want_equal":false,"note":"multiset preserves duplicate counts"},
+  {"kind":"multiset","expected":[[1],[1],{"x":2}],"actual":[{"x":2},[1],[1]],"want_equal":true,"note":"multiset counts nested values"},
+  {"kind":"multiset","expected":[],"actual":[],"want_equal":true,"note":"empty multisets match"},
+
+  {"kind":"sorted","expected":[3,1,2],"actual":[2,3,1],"want_equal":true,"note":"sorted normalizes top-level order"},
+  {"kind":"sorted","expected":[[2,1],[1,2]],"actual":[[1,2],[2,1]],"want_equal":true,"note":"sorted orders nested sequences as atomic values"},
+  {"kind":"sorted","expected":[[2,1],[1,2]],"actual":[[1,2],[1,2]],"want_equal":false,"note":"sorted does not reorder inside nested sequences"},
+  {"kind":"sorted","expected":[1,"1",null,true],"actual":[true,null,"1",1],"want_equal":true,"note":"sorted has deterministic mixed-type ordering"},
+  {"kind":"sorted","expected":[],"actual":[],"want_equal":true,"note":"empty sorted sequences match"},
+
+  {"kind":"float","epsilon":0.125,"expected":1.0,"actual":1.125,"want_equal":true,"note":"float accepts the epsilon boundary"},
+  {"kind":"float","epsilon":0.125,"expected":1.0,"actual":1.124,"want_equal":true,"note":"float accepts just inside epsilon"},
+  {"kind":"float","epsilon":0.125,"expected":1.0,"actual":1.126,"want_equal":false,"note":"float rejects just outside epsilon"},
+  {"kind":"float","expected":{"values":[1.0,[2.0,3.0]],"label":"x"},"actual":{"values":[1.0000005,[2.0,2.9999995]],"label":"x"},"want_equal":true,"note":"default epsilon applies through nested structures"},
+  {"kind":"float","epsilon":0.001,"expected":[1.0,null,"x"],"actual":[1.0005,null,"x"],"want_equal":true,"note":"float preserves null and nonnumeric equality"},
+  {"kind":"float","epsilon":0.001,"expected":true,"actual":1,"want_equal":false,"note":"float does not coerce booleans to numbers"},
+  {"kind":"float","expected":{"$codegym_number":"nan"},"actual":{"$codegym_number":"nan"},"want_equal":false,"note":"NaN never equals NaN"},
+  {"kind":"float","expected":{"$codegym_number":"+inf"},"actual":{"$codegym_number":"+inf"},"want_equal":true,"note":"same-sign infinity matches"},
+  {"kind":"float","expected":{"$codegym_number":"+inf"},"actual":{"$codegym_number":"-inf"},"want_equal":false,"note":"opposite infinities differ"},
+  {"kind":"float","expected":{"$codegym_number":"+inf"},"actual":1.0,"want_equal":false,"note":"infinity differs from finite numbers"}
+]

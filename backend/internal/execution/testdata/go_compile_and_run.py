@@ -36,8 +36,11 @@ def truncate(data: bytes) -> str:
 def main() -> int:
     PROTOCOL_DIR.mkdir(exist_ok=True)
     try:
+        sources = list(SOURCES)
+        if pathlib.Path("checker.go").exists():
+            sources.append("checker.go")
         completed = subprocess.run(
-            ["go", "build", "-o", str(BINARY_PATH), *SOURCES],
+            ["go", "build", "-o", str(BINARY_PATH), *sources],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,

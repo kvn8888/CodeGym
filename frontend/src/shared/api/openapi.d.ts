@@ -1395,6 +1395,8 @@ export interface components {
             prompt?: string;
             /** @enum {string} */
             difficulty?: "easy" | "medium" | "hard";
+            /** @default python */
+            language?: "python" | "go";
         };
         GenerateProblemResult: {
             /** @enum {string} */

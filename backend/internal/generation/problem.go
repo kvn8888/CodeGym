@@ -28,10 +28,12 @@ type ProblemSpec struct {
 	Topic         string                 `json:"topic"`
 	Prompt        string                 `json:"prompt,omitempty"`
 	Difficulty    string                 `json:"difficulty,omitempty"`
+	Language      string                 `json:"language,omitempty"`
 	IntakeContext *PracticeIntakeContext `json:"-"`
 }
 
 type GeneratedProblem struct {
+	Language          string              `json:"language,omitempty"`
 	Title             string              `json:"title"`
 	Description       string              `json:"description"`
 	Category          string              `json:"category"`
@@ -61,7 +63,7 @@ type ProblemTestCase struct {
 	Comparator *problems.Comparator `json:"comparator,omitempty"`
 }
 
-const problemSystemPrompt = `You generate one safe Python coding problem for CodeGym.
+const pythonProblemSystemPrompt = `You generate one safe Python coding problem for CodeGym.
 Return one JSON object matching the supplied schema. Do not return markdown.
 
 Rules:
@@ -98,7 +100,7 @@ var problemJSONSchema = json.RawMessage(`{
   }
 }`)
 
-var allowedProblemTypes = map[string]bool{
+var allowedPythonProblemTypes = map[string]bool{
 	"int": true, "str": true, "bool": true, "list[int]": true, "list[str]": true,
 }
 
@@ -117,10 +119,27 @@ func NormalizeProblemSpec(spec ProblemSpec) (ProblemSpec, error) {
 	default:
 		return spec, errors.New("difficulty must be easy, medium, or hard")
 	}
+	spec.Language = strings.ToLower(strings.TrimSpace(spec.Language))
+	if spec.Language == "" {
+		spec.Language = "python"
+	}
+	if _, err := problemStrategyFor(spec.Language); err != nil {
+		return spec, err
+	}
 	return spec, nil
 }
 
 func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
+	return ValidateGeneratedProblemForLanguage(raw, "python")
+}
+
+// ValidateGeneratedProblemForLanguage validates the model payload against the
+// selected language's identifier, type, source, and JSON-mapping rules.
+func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (GeneratedProblem, error) {
+	strategy, err := problemStrategyFor(language)
+	if err != nil {
+		return GeneratedProblem{}, err
+	}
 	var output GeneratedProblem
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -138,6 +157,14 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 	output.ReturnType = strings.TrimSpace(output.ReturnType)
 	output.ReferenceSolution = strings.TrimSpace(output.ReferenceSolution)
 	output.Checker = strings.TrimSpace(output.Checker)
+	if output.Language == "" {
+		output.Language = strategy.language
+	} else {
+		output.Language = strings.ToLower(strings.TrimSpace(output.Language))
+		if output.Language != strategy.language {
+			return output, fmt.Errorf("generated language %q does not match requested language %q", output.Language, strategy.language)
+		}
+	}
 	if output.Title == "" || output.Description == "" || output.Category == "" {
 		return output, errors.New("title, description, and category are required")
 	}
@@ -159,23 +186,23 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 	if output.EstimatedMinutes < 10 || output.EstimatedMinutes > 90 {
 		return output, errors.New("estimated_minutes must be 10..90")
 	}
-	if !pythonIdentifier.MatchString(output.FunctionName) {
-		return output, errors.New("function_name is not a valid Python identifier")
+	if !strategy.validIdentifier(output.FunctionName) {
+		return output, fmt.Errorf("function_name is not a valid %s identifier", strategy.language)
 	}
 	if len(output.Parameters) < 1 || len(output.Parameters) > 5 {
 		return output, errors.New("parameters must contain 1..5 entries")
 	}
 	seen := map[string]bool{}
 	for _, parameter := range output.Parameters {
-		if !pythonIdentifier.MatchString(parameter.Name) || seen[parameter.Name] {
-			return output, errors.New("parameter names must be unique Python identifiers")
+		if !strategy.validIdentifier(parameter.Name) || seen[parameter.Name] {
+			return output, fmt.Errorf("parameter names must be unique %s identifiers", strategy.language)
 		}
-		if !allowedProblemTypes[parameter.Type] {
+		if !strategy.validType(parameter.Type) {
 			return output, fmt.Errorf("unsupported parameter type %q", parameter.Type)
 		}
 		seen[parameter.Name] = true
 	}
-	if !allowedProblemTypes[output.ReturnType] {
+	if !strategy.validType(output.ReturnType) {
 		return output, fmt.Errorf("unsupported return type %q", output.ReturnType)
 	}
 	if len(output.Hints) < 1 || len(output.Hints) > 3 {
@@ -201,11 +228,11 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 		}
 		for argumentIndex, arg := range test.Args {
 			if len(arg) == 0 || !json.Valid(arg) ||
-				!validProblemJSONType(arg, output.Parameters[argumentIndex].Type) {
+				!strategy.validJSONType(arg, output.Parameters[argumentIndex].Type) {
 				return output, fmt.Errorf("test case %d argument %d does not match %s", index+1, argumentIndex+1, output.Parameters[argumentIndex].Type)
 			}
 		}
-		if !validProblemJSONType(test.Expected, output.ReturnType) {
+		if !strategy.validJSONType(test.Expected, output.ReturnType) {
 			return output, fmt.Errorf("test case %d expected value does not match %s", index+1, output.ReturnType)
 		}
 		resolved, err := problems.ResolveComparator(output.Comparator, test.Comparator)
@@ -219,7 +246,7 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 		usesChecker = usesChecker || resolved.Kind == problems.ComparatorChecker
 	}
 	lowerSolution := strings.ToLower(output.ReferenceSolution)
-	if !strings.Contains(output.ReferenceSolution, "def "+output.FunctionName+"(") {
+	if !strategy.referenceDefines(output.ReferenceSolution, output.FunctionName) {
 		return output, errors.New("reference_solution does not define function_name")
 	}
 	if len(output.ReferenceSolution) > 12000 {
@@ -231,8 +258,8 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 		}
 	}
 	if usesChecker {
-		if !strings.Contains(output.Checker, "def check(") {
-			return output, errors.New("checker comparator requires checker to define check(args, actual, expected)")
+		if !strategy.checkerDefines(output.Checker) {
+			return output, fmt.Errorf("checker comparator requires %s", strategy.checkerDescription)
 		}
 		if len(output.Checker) > 12000 {
 			return output, errors.New("checker exceeds allowed length")
@@ -249,7 +276,7 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 	return output, nil
 }
 
-func validProblemJSONType(raw json.RawMessage, expected string) bool {
+func validPythonProblemJSONType(raw json.RawMessage, expected string) bool {
 	var value any
 	if json.Unmarshal(raw, &value) != nil {
 		return false
@@ -301,7 +328,11 @@ func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec Probl
 	if err != nil {
 		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, fmt.Errorf("encode problem spec: %w", err)
 	}
-	instructions := problemSystemPrompt
+	strategy, err := problemStrategyFor(spec.Language)
+	if err != nil {
+		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, err
+	}
+	instructions := strategy.systemPrompt
 	var lastErr error
 	var lastRaw string
 	for attempt := 1; attempt <= problemMaxAttempts; attempt++ {
@@ -316,13 +347,13 @@ func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec Probl
 		if generateErr != nil {
 			return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, generateErr
 		}
-		output, validateErr := ValidateGeneratedProblem(result.Object)
+		output, validateErr := ValidateGeneratedProblemForLanguage(result.Object, spec.Language)
 		if validateErr == nil {
 			definition, buildErr := BuildProblemDefinition(output)
 			return definition, output, result, buildErr
 		}
 		lastErr, lastRaw = validateErr, string(result.Object)
-		instructions = problemSystemPrompt + "\n\nYour previous output was rejected: " + validateErr.Error() + ". Return a complete corrected object."
+		instructions = strategy.systemPrompt + "\n\nYour previous output was rejected: " + validateErr.Error() + ". Return a complete corrected object."
 	}
 	return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, &InvalidOutputError{
 		Reason:    "problem generation produced invalid output after 2 attempts",
@@ -334,10 +365,15 @@ func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec Probl
 // BuildProblemDefinition turns a validated model payload into the catalog
 // Definition (skeleton + out-of-band verdict harness). Exported for verification repairs.
 func BuildProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
-	return buildProblemDefinition(output)
+	strategy, err := problemStrategyFor(output.Language)
+	if err != nil {
+		return problems.Definition{}, err
+	}
+	output.Language = strategy.language
+	return strategy.build(output)
 }
 
-func buildProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
+func buildPythonProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
 	comparator, err := problems.NormalizeComparator(output.Comparator)
 	if err != nil {
 		return problems.Definition{}, err

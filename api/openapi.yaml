@@ -2754,6 +2754,10 @@ components:
         difficulty:
           type: string
           enum: [easy, medium, hard]
+        language:
+          type: string
+          enum: [python, go]
+          default: python
 
     GenerateProblemResult:
       type: object

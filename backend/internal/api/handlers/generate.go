@@ -148,7 +148,7 @@ func (h *GenerateHandler) generateProblem(w http.ResponseWriter, r *http.Request
 	var spec generation.ProblemSpec
 	if len(rawSpec) > 0 {
 		if err := json.Unmarshal(rawSpec, &spec); err != nil {
-			response.Error(w, http.StatusBadRequest, "invalid_spec", "spec must be an object with topic, prompt, and difficulty fields.")
+			response.Error(w, http.StatusBadRequest, "invalid_spec", "spec must be an object with topic, prompt, difficulty, and language fields.")
 			return
 		}
 	}
@@ -202,7 +202,8 @@ func (h *GenerateHandler) generateProblem(w http.ResponseWriter, r *http.Request
 		Summary: "Generated a personalized coding problem.",
 		Payload: mustJSON(map[string]any{
 			"problem_id": problem.ID, "topic": spec.Topic, "difficulty": spec.Difficulty,
-			"concept": problem.Subcategory, "provider": result.Provider, "model": result.Model,
+			"language": spec.Language,
+			"concept":  problem.Subcategory, "provider": result.Provider, "model": result.Model,
 			"schema_version": 1,
 		}),
 	})

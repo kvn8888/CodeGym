@@ -14,7 +14,9 @@ PROTOCOL_DIR = pathlib.Path(".codegym")
 VERDICT_PATH = PROTOCOL_DIR / "verdict.json"
 SERVER_BINARY = PROTOCOL_DIR / "http_server"
 HARNESS_BINARY = PROTOCOL_DIR / "http_harness"
-CONFIG_PATH = PROTOCOL_DIR / "http_cases.json"
+CONFIG_PATH = pathlib.Path("codegym_http_cases.json")
+HARNESS_SOURCE = pathlib.Path("codegym_http_harness.go")
+COMPARATOR_SOURCE = pathlib.Path("codegym_http_comparator.go")
 COMPILE_ERROR_CAP_BYTES = 16 * 1024
 
 
@@ -49,7 +51,8 @@ def compile_binary(output: pathlib.Path, sources: list[str]) -> subprocess.Compl
 def main() -> int:
     PROTOCOL_DIR.mkdir(exist_ok=True)
     try:
-        server_sources = sorted(glob.glob("*.go"))
+        hidden_sources = {str(HARNESS_SOURCE), str(COMPARATOR_SOURCE)}
+        server_sources = [source for source in sorted(glob.glob("*.go")) if source not in hidden_sources]
         if not server_sources:
             write_compile_error("go build: no Go source files were submitted")
             return 0
@@ -65,7 +68,7 @@ def main() -> int:
     try:
         completed = compile_binary(
             HARNESS_BINARY,
-            [str(PROTOCOL_DIR / "http_harness.go"), str(PROTOCOL_DIR / "codegym_comparator.go")],
+            [str(HARNESS_SOURCE), str(COMPARATOR_SOURCE)],
         )
     except Exception as exc:
         write_compile_error(f"HTTP harness compile failed: {type(exc).__name__}: {exc}")

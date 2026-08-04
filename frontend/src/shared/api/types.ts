@@ -16,7 +16,10 @@ export interface Problem extends ProblemSummary {
   subcategory?: string;
   runtime: RuntimeConfig;
   files: { skeleton: FileRef[] };
-  test_config: { strategy: string };
+  test_config: {
+    strategy: 'unit' | 'http';
+    readiness_timeout_seconds?: number;
+  };
   hints?: Hint[];
 }
 

@@ -215,11 +215,11 @@ func runLocalHTTPHarness(t *testing.T, serverSource string, config localHTTPHarn
 		t.Fatalf("marshal HTTP config: %v", err)
 	}
 	files := map[string]string{
-		"main.go":                          serverSource,
-		".codegym/http_cases.json":         string(configData),
-		".codegym/http_harness.go":         GoHTTPHarnessSource,
-		".codegym/codegym_comparator.go":   GoComparatorSource,
-		".codegym/compile_and_run_http.py": GoHTTPCompileRunnerSource,
+		"main.go":                    serverSource,
+		"codegym_http_cases.json":    string(configData),
+		"codegym_http_harness.go":    GoHTTPHarnessSource,
+		"codegym_http_comparator.go": GoComparatorSource,
+		"codegym_http_compile.py":    GoHTTPCompileRunnerSource,
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte(content), 0o600); err != nil {
@@ -228,7 +228,7 @@ func runLocalHTTPHarness(t *testing.T, serverSource string, config localHTTPHarn
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "python3", ".codegym/compile_and_run_http.py")
+	command := exec.CommandContext(ctx, "python3", "codegym_http_compile.py")
 	command.Dir = root
 	output, err := command.CombinedOutput()
 	if err != nil {

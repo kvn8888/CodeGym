@@ -33,22 +33,26 @@ type ProblemSpec struct {
 }
 
 type GeneratedProblem struct {
-	Language          string              `json:"language,omitempty"`
-	Title             string              `json:"title"`
-	Description       string              `json:"description"`
-	Category          string              `json:"category"`
-	Subcategory       string              `json:"subcategory"`
-	Tags              []string            `json:"tags"`
-	Difficulty        int                 `json:"difficulty"`
-	EstimatedMinutes  int                 `json:"estimated_minutes"`
-	FunctionName      string              `json:"function_name"`
-	Parameters        []ProblemParameter  `json:"parameters"`
-	ReturnType        string              `json:"return_type"`
-	Hints             []string            `json:"hints"`
-	ReferenceSolution string              `json:"reference_solution"`
-	Comparator        problems.Comparator `json:"comparator,omitempty"`
-	Checker           string              `json:"checker,omitempty"`
-	TestCases         []ProblemTestCase   `json:"test_cases"`
+	Language          string                `json:"language,omitempty"`
+	Strategy          problems.TestStrategy `json:"strategy,omitempty"`
+	Title             string                `json:"title"`
+	Description       string                `json:"description"`
+	Category          string                `json:"category"`
+	Subcategory       string                `json:"subcategory"`
+	Tags              []string              `json:"tags"`
+	Difficulty        int                   `json:"difficulty"`
+	EstimatedMinutes  int                   `json:"estimated_minutes"`
+	FunctionName      string                `json:"function_name"`
+	Parameters        []ProblemParameter    `json:"parameters"`
+	ReturnType        string                `json:"return_type"`
+	Hints             []string              `json:"hints"`
+	ReferenceSolution string                `json:"reference_solution"`
+	Comparator        problems.Comparator   `json:"comparator,omitempty"`
+	Checker           string                `json:"checker,omitempty"`
+	TestCases         []ProblemTestCase     `json:"test_cases"`
+	Entrypoint        string                `json:"entrypoint,omitempty"`
+	StarterCode       string                `json:"starter_code,omitempty"`
+	HTTPTestCases     []problems.HTTPCase   `json:"http_test_cases,omitempty"`
 }
 
 type ProblemParameter struct {
@@ -157,6 +161,12 @@ func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (
 	output.ReturnType = strings.TrimSpace(output.ReturnType)
 	output.ReferenceSolution = strings.TrimSpace(output.ReferenceSolution)
 	output.Checker = strings.TrimSpace(output.Checker)
+	output.Entrypoint = strings.TrimSpace(output.Entrypoint)
+	output.StarterCode = strings.TrimSpace(output.StarterCode)
+	output.Strategy = problems.TestStrategy(strings.ToLower(strings.TrimSpace(string(output.Strategy))))
+	if output.Strategy == "" {
+		output.Strategy = problems.TestStrategyUnit
+	}
 	if output.Language == "" {
 		output.Language = strategy.language
 	} else {
@@ -186,6 +196,26 @@ func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (
 	if output.EstimatedMinutes < 10 || output.EstimatedMinutes > 90 {
 		return output, errors.New("estimated_minutes must be 10..90")
 	}
+	if len(output.Hints) < 1 || len(output.Hints) > 3 {
+		return output, errors.New("hints must contain 1..3 entries")
+	}
+	for _, hint := range output.Hints {
+		if strings.TrimSpace(hint) == "" {
+			return output, errors.New("hints must not be empty")
+		}
+	}
+	if output.Strategy == problems.TestStrategyHTTP {
+		if strategy.language != "go" {
+			return output, errors.New("http problem generation is currently supported only for Go")
+		}
+		return validateGeneratedHTTPProblem(output)
+	}
+	if output.Strategy != problems.TestStrategyUnit {
+		return output, fmt.Errorf("test strategy must be unit or http, got %q", output.Strategy)
+	}
+	if output.Entrypoint != "" || output.StarterCode != "" || len(output.HTTPTestCases) > 0 {
+		return output, errors.New("unit problems must not include HTTP entrypoint, starter_code, or http_test_cases")
+	}
 	if !strategy.validIdentifier(output.FunctionName) {
 		return output, fmt.Errorf("function_name is not a valid %s identifier", strategy.language)
 	}
@@ -204,14 +234,6 @@ func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (
 	}
 	if !strategy.validType(output.ReturnType) {
 		return output, fmt.Errorf("unsupported return type %q", output.ReturnType)
-	}
-	if len(output.Hints) < 1 || len(output.Hints) > 3 {
-		return output, errors.New("hints must contain 1..3 entries")
-	}
-	for _, hint := range output.Hints {
-		if strings.TrimSpace(hint) == "" {
-			return output, errors.New("hints must not be empty")
-		}
 	}
 	if len(output.TestCases) < 4 || len(output.TestCases) > 12 {
 		return output, errors.New("test_cases must contain 4..12 entries")
@@ -339,7 +361,7 @@ func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec Probl
 		result, generateErr := orchestrator.Generate(ctx, GenerateInput{
 			Kind:          KindProblem,
 			Spec:          specJSON,
-			Schema:        Schema{Name: "generated_problem", Version: "1", JSONSchema: problemJSONSchema},
+			Schema:        Schema{Name: "generated_problem", Version: "1", JSONSchema: strategy.jsonSchema},
 			ModelPolicy:   ModelPolicy{MaxTokens: problemDefaultMaxTokens},
 			Instructions:  instructions,
 			IntakeContext: spec.IntakeContext,

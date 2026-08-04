@@ -1049,9 +1049,11 @@ export interface components {
             readonly?: boolean;
         };
         ProblemTestConfig: {
-            /** @example hidden */
-            strategy: string;
+            /** @enum {string} */
+            strategy: "unit" | "http";
             comparator: components["schemas"]["AcceptanceComparator"];
+            /** @description HTTP server readiness deadline in seconds; defaults to 10 for the http strategy. */
+            readiness_timeout_seconds?: number;
         };
         AcceptanceComparator: {
             /** @enum {string} */

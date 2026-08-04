@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -34,6 +35,22 @@ type Config struct {
 	// GenAIProviderOrder is the configured priority list (may include names
 	// that are not currently enabled).
 	GenAIProviderOrder []string
+	Relay              RelayConfig
+}
+
+// RelayConfig configures the sandbox-facing single-operation model relay.
+type RelayConfig struct {
+	TokenSecret      string
+	TokenTTL         time.Duration
+	MaxTotalTokens   int64
+	MaxCostUSDMicros int64
+	MaxWallClock     time.Duration
+	PublicModel      string
+}
+
+// Enabled reports whether relay token signing is configured.
+func (r RelayConfig) Enabled() bool {
+	return strings.TrimSpace(r.TokenSecret) != ""
 }
 
 type WorkerConfig struct {
@@ -184,6 +201,14 @@ func Load() Config {
 		GenAI:              legacyGenAI,
 		GenAIProviders:     providers,
 		GenAIProviderOrder: order,
+		Relay: RelayConfig{
+			TokenSecret:      firstEnv("CODEGYM_RELAY_TOKEN_SECRET"),
+			TokenTTL:         positiveDurationEnv("CODEGYM_RELAY_TOKEN_TTL", 15*time.Minute),
+			MaxTotalTokens:   int64Env("CODEGYM_RELAY_MAX_TOTAL_TOKENS", 100_000),
+			MaxCostUSDMicros: usdMicrosEnv("CODEGYM_RELAY_MAX_COST_USD", 5_000_000),
+			MaxWallClock:     positiveDurationEnv("CODEGYM_RELAY_MAX_WALL_CLOCK", 10*time.Minute),
+			PublicModel:      env("CODEGYM_RELAY_MODEL", "codegym-agent"),
+		},
 	}
 }
 
@@ -302,6 +327,38 @@ func intEnv(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func int64Env(key string, fallback int64) int64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func usdMicrosEnv(key string, fallback int64) int64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || parsed <= 0 || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return fallback
+	}
+	return int64(parsed*1_000_000 + 0.5)
+}
+
+func positiveDurationEnv(key string, fallback time.Duration) time.Duration {
+	duration := durationEnv(key, fallback)
+	if duration <= 0 {
+		return fallback
+	}
+	return duration
 }
 
 // Addr returns the listen address in host:port form.

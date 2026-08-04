@@ -1,6 +1,7 @@
 package agentrelay
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -104,7 +105,7 @@ func (h *HTTPHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if stream {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "streaming_unavailable", "Streaming is not available.", "stream")
+		h.streamChatCompletions(w, r, body)
 		return
 	}
 
@@ -137,6 +138,68 @@ func (h *HTTPHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(responseBody)
+}
+
+func (h *HTTPHandler) streamChatCompletions(w http.ResponseWriter, r *http.Request, body []byte) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeOpenAIError(w, http.StatusInternalServerError, "api_error", "streaming_unsupported", "Streaming is not available.", "stream")
+		return
+	}
+	upstreamResponse, err := h.upstream.RelayChatCompletion(r.Context(), body, true)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadGateway, "api_error", "upstream_unavailable", "The upstream model is unavailable.", "")
+		return
+	}
+	defer func() { _ = upstreamResponse.Body.Close() }()
+	if upstreamResponse.StatusCode < 200 || upstreamResponse.StatusCode >= 300 {
+		responseBody, readErr := io.ReadAll(io.LimitReader(upstreamResponse.Body, maxRelayBodyBytes+1))
+		if readErr == nil && len(responseBody) <= maxRelayBodyBytes {
+			responseBody = h.upstream.RedactProviderSecrets(responseBody)
+			if isOpenAIErrorEnvelope(responseBody) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(upstreamResponse.StatusCode)
+				_, _ = w.Write(responseBody)
+				return
+			}
+		}
+		writeOpenAIError(w, http.StatusBadGateway, "api_error", "upstream_error", "The upstream model request failed.", "")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// Relay complete SSE lines as they arrive. This preserves tool-call deltas
+	// and usage frames while allowing provider credentials to be redacted before
+	// any line crosses the sandbox-facing boundary.
+	scanner := bufio.NewScanner(upstreamResponse.Body)
+	scanner.Buffer(make([]byte, 0, 64<<10), maxRelayBodyBytes)
+	sawDone := false
+	for scanner.Scan() {
+		line := h.upstream.RedactProviderSecrets(scanner.Bytes())
+		if strings.TrimSpace(string(line)) == "data: [DONE]" {
+			sawDone = true
+		}
+		if _, err := w.Write(append(append([]byte(nil), line...), '\n')); err != nil {
+			return
+		}
+		if len(line) == 0 {
+			flusher.Flush()
+		}
+	}
+	if !sawDone {
+		errorFrame, _ := json.Marshal(map[string]any{"error": map[string]any{
+			"message": "The upstream model stream ended unexpectedly.",
+			"type":    "api_error", "param": nil, "code": "upstream_stream_ended",
+		}})
+		_, _ = w.Write([]byte("data: " + string(errorFrame) + "\n\ndata: [DONE]\n\n"))
+		flusher.Flush()
+	}
 }
 
 func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (Authorization, bool) {

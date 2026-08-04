@@ -156,6 +156,52 @@ func TestChatCompletionsRejectsUnknownModelAndRedactsProviderCredential(t *testi
 	}
 }
 
+func TestChatCompletionsStreamsWellFormedSSEThroughDone(t *testing.T) {
+	const providerSecret = "provider-secret-must-never-leave-the-backend"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["stream"] != true {
+			t.Fatalf("upstream stream flag = %#v", body["stream"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-stream","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_progress","type":"function","function":{"name":"report_progress","arguments":"{\"step_id\":\"environment\"}"}}]},"finish_reason":null}]}`+"\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-stream","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":37,"completion_tokens":11,"total_tokens":48}}`+"\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer upstream.Close()
+	handler, token := newTestHTTPHandler(t, upstream.URL, providerSecret)
+
+	response := relayRequest(t, handler, token, `{"model":"codegym-agent","stream":true,"messages":[{"role":"user","content":"report"}],"tools":[{"type":"function","function":{"name":"report_progress","parameters":{"type":"object"}}}]}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("stream response = %d %s", response.Code, response.Body.String())
+	}
+	if contentType := response.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("stream content type = %q", contentType)
+	}
+	frames := strings.Split(strings.TrimSpace(response.Body.String()), "\n\n")
+	if len(frames) != 3 {
+		t.Fatalf("SSE frames = %d: %q", len(frames), response.Body.String())
+	}
+	for index, frame := range frames[:2] {
+		if !strings.HasPrefix(frame, "data: ") || !json.Valid([]byte(strings.TrimPrefix(frame, "data: "))) {
+			t.Fatalf("frame %d is not valid SSE JSON: %q", index, frame)
+		}
+	}
+	if !strings.Contains(frames[0], `"tool_calls"`) {
+		t.Fatalf("streamed tool call was lost: %q", frames[0])
+	}
+	if frames[2] != "data: [DONE]" {
+		t.Fatalf("terminal frame = %q", frames[2])
+	}
+}
+
 func newTestHTTPHandler(t *testing.T, upstreamURL, providerSecret string) (*HTTPHandler, string) {
 	t.Helper()
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)

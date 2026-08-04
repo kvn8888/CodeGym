@@ -4,6 +4,8 @@ import "github.com/kvn8888/codegym/backend/internal/execution"
 
 type Status string
 
+type Mode string
+
 const (
 	StatusPending     Status = "pending"
 	StatusRunning     Status = "running"
@@ -14,10 +16,16 @@ const (
 	StatusError       Status = "error"
 )
 
+const (
+	ModeRun    Mode = "run"
+	ModeSubmit Mode = "submit"
+)
+
 type SubmitInput struct {
 	ProblemID string           `json:"problem_id"`
 	SessionID string           `json:"session_id,omitempty"`
 	Files     []execution.File `json:"files"`
+	Mode      Mode             `json:"mode,omitempty"`
 }
 
 type Accepted struct {
@@ -27,6 +35,8 @@ type Accepted struct {
 
 type View struct {
 	Status          Status      `json:"status"`
+	Mode            Mode        `json:"mode"`
+	ExecutedCount   int         `json:"executed_count"`
 	Result          *TestResult `json:"result,omitempty"`
 	FailureDetail   *string     `json:"failure_detail,omitempty"`
 	Stdout          string      `json:"stdout"`

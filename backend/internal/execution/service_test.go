@@ -52,6 +52,9 @@ func TestSubmitRunPasses(t *testing.T) {
 	if run.Status != StatusPassed {
 		t.Fatalf("expected status %s, got %s", StatusPassed, run.Status)
 	}
+	if run.Mode != "submit" {
+		t.Fatalf("absent mode resolved to %q, want submit", run.Mode)
+	}
 	if !strings.HasPrefix(run.ID, "exec_run_") {
 		t.Fatalf("unexpected run id %q", run.ID)
 	}
@@ -178,6 +181,7 @@ func TestSubmitRunValidation(t *testing.T) {
 	}{
 		{"unknown language", func(in *SubmitRunInput) { in.Language = "cobol" }},
 		{"unknown strategy", func(in *SubmitRunInput) { in.Strategy = "custom" }},
+		{"unknown submission mode", func(in *SubmitRunInput) { in.Mode = "preview" }},
 		{"missing limits", func(in *SubmitRunInput) { in.Limits = Limits{} }},
 		{"zero timeout", func(in *SubmitRunInput) { in.Limits.TimeoutSeconds = 0 }},
 		{"negative timeout", func(in *SubmitRunInput) { in.Limits.TimeoutSeconds = -1 }},

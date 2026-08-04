@@ -1,7 +1,9 @@
 package submission
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kvn8888/codegym/backend/internal/execution"
 )
@@ -33,6 +35,24 @@ func TestViewFromRunSurfacesSupervisorDeathsAndStdout(t *testing.T) {
 				t.Fatalf("view output = %#v", view)
 			}
 		})
+	}
+}
+
+func TestViewFromRunTruncatesRevealedFailureValues(t *testing.T) {
+	huge := "expected " + strings.Repeat("界", MaxRevealedFailureBytes) + ", got a different stress result"
+	view := viewFromRun(execution.Run{
+		Mode: "submit", Status: execution.StatusFailed,
+		JudgeResult: &execution.JudgeResult{
+			Schema: execution.JudgeSchema, Status: execution.JudgeStatusFailed,
+			Cases: []execution.CaseResult{{Name: "hidden-stress", Status: "fail", Error: &huge}},
+		},
+	})
+	if view.Result == nil || len(view.Result.TestCases) != 1 || view.Result.TestCases[0].Error == nil {
+		t.Fatalf("view = %#v", view)
+	}
+	detail := *view.Result.TestCases[0].Error
+	if len(detail) > MaxRevealedFailureBytes || !utf8.ValidString(detail) || !strings.HasPrefix(detail, "expected ") || !strings.HasSuffix(detail, "... [truncated]") {
+		t.Fatalf("truncated failure bytes=%d valid=%v detail=%q", len(detail), utf8.ValidString(detail), detail)
 	}
 }
 

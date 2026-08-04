@@ -115,6 +115,9 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	for _, file := range runner.spec.Files {
 		if file.Path == "test_solution.py" && strings.Contains(file.Content, "cases.jsonl") && strings.Contains(file.Content, "verdict.json") {
 			foundHiddenTest = true
+			if !strings.Contains(file.Content, "handles duplicate values") {
+				t.Fatal("default submission did not receive the full hidden suite")
+			}
 		}
 		if strings.Contains(file.Content, "seen[complement]") {
 			t.Fatal("reference solution was assembled into the user execution")
@@ -133,7 +136,8 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	}
 	view := decodeEnvelopeData[submission.View](t, getSubmission)
 	if view.Status != submission.StatusCompleted || view.Result == nil ||
-		view.Result.Status != "pass" || view.Result.Passed != 2 || view.Stdout != "learner debug\n" {
+		view.Result.Status != "pass" || view.Result.Passed != 2 || view.Stdout != "learner debug\n" ||
+		view.Mode != submission.ModeSubmit || view.ExecutedCount != 2 {
 		t.Fatalf("submission view = %#v", view)
 	}
 
@@ -164,6 +168,97 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	if strings.Contains(eventsResponse.Body.String(), "def two_sum") ||
 		strings.Contains(eventsResponse.Body.String(), "CODEGYM_RESULT") {
 		t.Fatalf("memory event leaked code or hidden tests: %s", eventsResponse.Body.String())
+	}
+}
+
+func TestRunModeUsesOnlyPublicCasesWithoutSubmissionSideEffects(t *testing.T) {
+	problemService := problems.NewService(problems.NewInMemoryStore())
+	if err := problemService.EnsureSeed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	sessionService := session.NewService(session.NewInMemoryStore(), nil)
+	runner := &capturingRunner{}
+	executionService := execution.NewService(execution.NewInMemoryStore(), runner, nil)
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, nil)
+	router := NewRouter(Dependencies{
+		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:      identity.NewService(identity.NewInMemoryStore()), Memory: memoryService,
+		Sessions: sessionService, Execution: executionService, Problems: problemService, Submissions: submissionService,
+	})
+
+	create := authedRequest(t, router, http.MethodPost, "/api/v1/sessions",
+		`{"kind":"workspace","title":"Two Sum run","problem_id":"two-sum","state":{"schema_version":1}}`)
+	created := decodeEnvelopeData[session.Session](t, create)
+	runResponse := authedRequest(t, router, http.MethodPost, "/api/v1/submissions",
+		`{"problem_id":"two-sum","session_id":"`+created.ID+`","mode":"run","files":[{"path":"solution.py","content":"def two_sum(nums,target): return [0,1]"}]}`)
+	if runResponse.Code != http.StatusAccepted {
+		t.Fatalf("run status=%d body=%s", runResponse.Code, runResponse.Body.String())
+	}
+	accepted := decodeEnvelopeData[submission.Accepted](t, runResponse)
+	if accepted.MemoryUpdateStatus != "" {
+		t.Fatalf("run memory status = %q", accepted.MemoryUpdateStatus)
+	}
+	publicHarness := ""
+	for _, file := range runner.spec.Files {
+		if file.Path == "test_solution.py" {
+			publicHarness = file.Content
+		}
+	}
+	if publicHarness == "" || !strings.Contains(publicHarness, "finds a pair without relying on order") ||
+		strings.Contains(publicHarness, "handles duplicate values") || strings.Contains(publicHarness, "handles negative values") {
+		t.Fatalf("run received wrong unit suite: %s", publicHarness)
+	}
+
+	viewResponse := authedRequest(t, router, http.MethodGet, "/api/v1/submissions/"+accepted.SubmissionID, "")
+	view := decodeEnvelopeData[submission.View](t, viewResponse)
+	if view.Mode != submission.ModeRun || view.ExecutedCount != 2 || view.Result == nil || view.Result.Total != 2 {
+		t.Fatalf("run view = %#v", view)
+	}
+	storedSession := decodeEnvelopeData[session.Session](t,
+		authedRequest(t, router, http.MethodGet, "/api/v1/sessions/"+created.ID, ""))
+	if storedSession.Status != session.StatusActive || len(storedSession.Files) != 0 || strings.Contains(string(storedSession.State), "last_submission_id") {
+		t.Fatalf("run mutated session = %#v", storedSession)
+	}
+	events := authedRequest(t, router, http.MethodGet, "/api/v1/memory/events", "")
+	for _, forbidden := range []string{"attempt_started", "attempt_submitted", "tests_run", "attempt_solved", "attempt_failed"} {
+		if strings.Contains(events.Body.String(), forbidden) {
+			t.Fatalf("run emitted %s: %s", forbidden, events.Body.String())
+		}
+	}
+
+	httpRun := authedRequest(t, router, http.MethodPost, "/api/v1/submissions",
+		`{"problem_id":"go-http-items","mode":"run","files":[{"path":"main.go","content":"package main\\nfunc main() {}\\n"}]}`)
+	if httpRun.Code != http.StatusAccepted {
+		t.Fatalf("HTTP run status=%d body=%s", httpRun.Code, httpRun.Body.String())
+	}
+	httpCases := ""
+	for _, file := range runner.spec.Files {
+		if file.Path == "codegym_http_cases.json" {
+			httpCases = file.Content
+		}
+	}
+	if runner.spec.Strategy != execution.TestStrategyHTTP || !strings.Contains(httpCases, "gets-the-created-item") ||
+		strings.Contains(httpCases, "returns-not-found-for-an-unknown-item") || strings.Contains(httpCases, "increments-item-identifiers") {
+		t.Fatalf("run received wrong HTTP suite: strategy=%s cases=%s", runner.spec.Strategy, httpCases)
+	}
+}
+
+func TestSubmissionRejectsUnknownMode(t *testing.T) {
+	problemService := problems.NewService(problems.NewInMemoryStore())
+	if err := problemService.EnsureSeed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	executionService := execution.NewService(execution.NewInMemoryStore(), &capturingRunner{}, nil)
+	router := NewRouter(Dependencies{
+		Authenticator: auth.NewDevAuthenticator(auth.DevAuthenticatorConfig{}),
+		Identity:      identity.NewService(identity.NewInMemoryStore()), Problems: problemService,
+		Execution: executionService, Submissions: submission.NewService(problemService, executionService, nil, nil, nil),
+	})
+	response := authedRequest(t, router, http.MethodPost, "/api/v1/submissions",
+		`{"problem_id":"two-sum","mode":"preview","files":[{"path":"solution.py","content":"pass"}]}`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid mode status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

@@ -52,6 +52,9 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 	if s.runner == nil {
 		return Run{}, ErrRunnerUnavailable
 	}
+	if err := validateLimits(input.Limits); err != nil {
+		return Run{}, err
+	}
 
 	lang, ok := LanguageFor(strings.TrimSpace(input.Language))
 	if !ok {
@@ -81,13 +84,14 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		return Run{}, err
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, lang.ExecTimeout+runnerOverhead)
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(input.Limits.TimeoutSeconds)*time.Second+runnerOverhead)
 	defer cancel()
 
 	outcome, runErr := s.runner.Run(runCtx, RunSpec{
 		Language:   lang,
 		Files:      input.Files,
 		Entrypoint: input.Entrypoint,
+		Limits:     input.Limits,
 	})
 
 	completed := s.now().UTC()
@@ -96,14 +100,33 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		run.Status = StatusError
 		run.Error = runErr.Error()
 	} else {
-		exitCode := outcome.ExitCode
-		run.ExitCode = &exitCode
 		run.Output = outcome.Output
 		run.DurationMs = outcome.Duration.Milliseconds()
-		if exitCode == 0 {
-			run.Status = StatusPassed
+		if outcome.Result.Schema == JudgeSchema {
+			judgeResult := outcome.Result
+			run.JudgeResult = &judgeResult
+			run.ExitCode = outcome.Result.ExitCode
+			run.DurationMs = outcome.Result.DurationMs
+			switch outcome.Result.Status {
+			case JudgeStatusPassed:
+				run.Status = StatusPassed
+			case JudgeStatusFailed:
+				run.Status = StatusFailed
+			case JudgeStatusTimeout:
+				run.Status = StatusTimeout
+			case JudgeStatusOutOfMemory:
+				run.Status = StatusOutOfMemory
+			case JudgeStatusCrashed:
+				run.Status = StatusCrashed
+			}
 		} else {
-			run.Status = StatusFailed
+			exitCode := outcome.ExitCode
+			run.ExitCode = &exitCode
+			if exitCode == 0 {
+				run.Status = StatusPassed
+			} else {
+				run.Status = StatusFailed
+			}
 		}
 	}
 
@@ -113,6 +136,19 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		return Run{}, err
 	}
 	return run, nil
+}
+
+func validateLimits(limits Limits) error {
+	if limits.TimeoutSeconds <= 0 {
+		return errors.New("limits.timeout_seconds must be positive")
+	}
+	if limits.MemoryMB <= 0 {
+		return errors.New("limits.memory_mb must be positive")
+	}
+	if limits.NetworkMode != NetworkModeBlockAll {
+		return fmt.Errorf("limits.network_mode must be %q", NetworkModeBlockAll)
+	}
+	return nil
 }
 
 func (s *Service) GetRun(ctx context.Context, id string) (Run, error) {
@@ -176,7 +212,11 @@ func validatePath(path string) error {
 	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "~") {
 		return fmt.Errorf("file path %q must be relative", path)
 	}
-	for _, part := range strings.Split(path, "/") {
+	parts := strings.Split(path, "/")
+	if parts[0] == ".codegym" {
+		return fmt.Errorf("file path %q uses the reserved judge protocol directory", path)
+	}
+	for _, part := range parts {
 		if part == ".." || part == "." || part == "" {
 			return fmt.Errorf("file path %q must not contain empty, '.' or '..' segments", path)
 		}

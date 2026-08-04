@@ -33,9 +33,19 @@ func (s *failingEventStore) AppendEvent(context.Context, memory.Event) error {
 
 func (r *capturingRunner) Run(_ context.Context, spec execution.RunSpec) (execution.RunOutcome, error) {
 	r.spec = spec
+	exitCode := 0
 	return execution.RunOutcome{
 		ExitCode: 0,
-		Output:   `CODEGYM_RESULT {"tests":[{"name":"basic","status":"pass","duration_ms":3,"error":null},{"name":"duplicates","status":"pass","duration_ms":4,"error":null}],"compile_error":null}`,
+		Result: execution.JudgeResult{
+			Schema: execution.JudgeSchema, Status: execution.JudgeStatusPassed,
+			ExitCode: &exitCode, DurationMs: 125, Stdout: "learner debug\n",
+			Cases: []execution.CaseResult{
+				{Name: "basic", Status: "pass", DurationMs: 3},
+				{Name: "duplicates", Status: "pass", DurationMs: 4},
+			},
+		},
+		Stdout:   "learner debug\n",
+		Output:   "learner debug\n",
 		Duration: 125 * time.Millisecond,
 	}, nil
 }
@@ -103,7 +113,7 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 
 	foundHiddenTest := false
 	for _, file := range runner.spec.Files {
-		if file.Path == "test_solution.py" && strings.Contains(file.Content, "CODEGYM_RESULT") {
+		if file.Path == "test_solution.py" && strings.Contains(file.Content, "cases.jsonl") && strings.Contains(file.Content, "verdict.json") {
 			foundHiddenTest = true
 		}
 		if strings.Contains(file.Content, "seen[complement]") {
@@ -113,6 +123,9 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	if !foundHiddenTest || runner.spec.Entrypoint != "test_solution.py" {
 		t.Fatalf("captured run spec = %#v", runner.spec)
 	}
+	if runner.spec.Limits != (execution.Limits{TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: execution.NetworkModeBlockAll}) {
+		t.Fatalf("problem runtime did not reach the runner: %#v", runner.spec.Limits)
+	}
 
 	getSubmission := authedRequest(t, router, http.MethodGet, "/api/v1/submissions/"+accepted.SubmissionID, "")
 	if getSubmission.Code != http.StatusOK {
@@ -120,7 +133,7 @@ func TestRouterTwoSumSubmissionAndSessionCompletion(t *testing.T) {
 	}
 	view := decodeEnvelopeData[submission.View](t, getSubmission)
 	if view.Status != submission.StatusCompleted || view.Result == nil ||
-		view.Result.Status != "pass" || view.Result.Passed != 2 {
+		view.Result.Status != "pass" || view.Result.Passed != 2 || view.Stdout != "learner debug\n" {
 		t.Fatalf("submission view = %#v", view)
 	}
 

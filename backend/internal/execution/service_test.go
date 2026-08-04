@@ -36,6 +36,7 @@ func pythonInput() SubmitRunInput {
 			{Path: "solution.py", Content: "def two_sum(nums, target): ..."},
 			{Path: "test_solution.py", Content: "import solution"},
 		},
+		Limits: Limits{TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: NetworkModeBlockAll},
 	}
 }
 
@@ -86,6 +87,61 @@ func TestSubmitRunFailsOnNonzeroExit(t *testing.T) {
 	}
 }
 
+func TestSubmitRunUsesStructuredJudgeStatus(t *testing.T) {
+	exitCode := 0
+	runner := &fakeRunner{outcome: RunOutcome{
+		ExitCode: 0,
+		Result: JudgeResult{
+			Schema:   JudgeSchema,
+			Status:   JudgeStatusFailed,
+			Cases:    []CaseResult{{Name: "case-1", Status: "fail", DurationMs: 2}},
+			ExitCode: &exitCode,
+		},
+		Output: "learner output",
+	}}
+	service := NewService(NewInMemoryStore(), runner, fixedClock())
+
+	run, err := service.SubmitRun(scopedContext(), pythonInput())
+	if err != nil {
+		t.Fatalf("SubmitRun returned error: %v", err)
+	}
+	if run.Status != StatusFailed {
+		t.Fatalf("expected structured status %s, got %s", StatusFailed, run.Status)
+	}
+	if run.ExitCode == nil || *run.ExitCode != 0 {
+		t.Fatalf("expected child exit code 0, got %v", run.ExitCode)
+	}
+}
+
+func TestSubmitRunMapsSupervisorDeathStatuses(t *testing.T) {
+	tests := []struct {
+		judge JudgeStatus
+		want  Status
+	}{
+		{JudgeStatusTimeout, StatusTimeout},
+		{JudgeStatusOutOfMemory, StatusOutOfMemory},
+		{JudgeStatusCrashed, StatusCrashed},
+	}
+	for _, test := range tests {
+		t.Run(string(test.judge), func(t *testing.T) {
+			detail := "died during case 'case-2'"
+			runner := &fakeRunner{outcome: RunOutcome{Result: JudgeResult{
+				Schema: JudgeSchema, Status: test.judge, Cases: []CaseResult{},
+				FailureDetail: &detail, Stdout: "debug output",
+			}}}
+			service := NewService(NewInMemoryStore(), runner, fixedClock())
+
+			run, err := service.SubmitRun(scopedContext(), pythonInput())
+			if err != nil {
+				t.Fatalf("SubmitRun returned error: %v", err)
+			}
+			if run.Status != test.want || run.JudgeResult == nil || run.JudgeResult.Stdout != "debug output" {
+				t.Fatalf("run = %#v", run)
+			}
+		})
+	}
+}
+
 func TestSubmitRunRunnerErrorYieldsErrorStatus(t *testing.T) {
 	runner := &fakeRunner{err: errors.New("sandbox create failed")}
 	store := NewInMemoryStore()
@@ -120,12 +176,20 @@ func TestSubmitRunValidation(t *testing.T) {
 		mutate func(*SubmitRunInput)
 	}{
 		{"unknown language", func(in *SubmitRunInput) { in.Language = "cobol" }},
+		{"missing limits", func(in *SubmitRunInput) { in.Limits = Limits{} }},
+		{"zero timeout", func(in *SubmitRunInput) { in.Limits.TimeoutSeconds = 0 }},
+		{"negative timeout", func(in *SubmitRunInput) { in.Limits.TimeoutSeconds = -1 }},
+		{"zero memory", func(in *SubmitRunInput) { in.Limits.MemoryMB = 0 }},
+		{"negative memory", func(in *SubmitRunInput) { in.Limits.MemoryMB = -1 }},
+		{"missing network mode", func(in *SubmitRunInput) { in.Limits.NetworkMode = "" }},
+		{"unsupported network mode", func(in *SubmitRunInput) { in.Limits.NetworkMode = "bridge" }},
 		{"missing entrypoint", func(in *SubmitRunInput) { in.Entrypoint = "" }},
 		{"entrypoint not among files", func(in *SubmitRunInput) { in.Entrypoint = "other.py" }},
 		{"empty files", func(in *SubmitRunInput) { in.Files = nil }},
 		{"absolute path", func(in *SubmitRunInput) { in.Files[0].Path = "/etc/passwd" }},
 		{"parent traversal", func(in *SubmitRunInput) { in.Files[0].Path = "../escape.py" }},
 		{"home prefix", func(in *SubmitRunInput) { in.Files[0].Path = "~/escape.py" }},
+		{"reserved protocol directory", func(in *SubmitRunInput) { in.Files[0].Path = ".codegym/result.json" }},
 		{"duplicate paths", func(in *SubmitRunInput) { in.Files[1].Path = in.Files[0].Path }},
 	}
 	for _, tc := range cases {
@@ -227,6 +291,9 @@ func TestRunnerReceivesResolvedSpec(t *testing.T) {
 	}
 	if len(runner.lastSpec.Files) != 2 {
 		t.Fatalf("expected 2 files, got %d", len(runner.lastSpec.Files))
+	}
+	if runner.lastSpec.Limits != (Limits{TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: NetworkModeBlockAll}) {
+		t.Fatalf("unexpected limits %#v", runner.lastSpec.Limits)
 	}
 	if got := runner.lastSpec.Language.RunCommand("test_solution.py"); got != "cd ~/work && python3 test_solution.py" {
 		t.Fatalf("unexpected run command %q", got)

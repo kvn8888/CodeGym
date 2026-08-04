@@ -16,9 +16,10 @@ import type {
   PracticeSession,
   PracticeSessionSummary,
   Problem,
+  Submission,
   SubmissionFile,
+  SubmissionStatus,
   TestCaseResult,
-  TestResult,
 } from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 
@@ -61,12 +62,66 @@ function restoredHintCount(state: Record<string, unknown>, availableHints: numbe
 }
 
 interface ProblemDetailPageProps {
-  initialResult?: TestResult | null;
+  initialSubmission?: Submission | null;
   initialMemoryUpdateStatus?: 'idle' | 'pending' | 'synced' | 'failed';
 }
 
+type TerminalFailureStatus = Extract<
+  SubmissionStatus,
+  'timeout' | 'out_of_memory' | 'crashed' | 'error'
+>;
+
+const terminalFailurePresentation: Record<
+  TerminalFailureStatus,
+  { label: string; fallback: string; tone: string }
+> = {
+  timeout: {
+    label: 'TIME LIMIT',
+    fallback: 'The submission exceeded its wall-clock limit.',
+    tone: 'text-[#dcdcaa]',
+  },
+  out_of_memory: {
+    label: 'MEMORY LIMIT',
+    fallback: 'The submission exceeded its memory limit.',
+    tone: 'text-[#ce9178]',
+  },
+  crashed: {
+    label: 'PROCESS CRASHED',
+    fallback: 'The submission process exited before the test harness completed.',
+    tone: 'text-[#f14c4c]',
+  },
+  error: {
+    label: 'PLATFORM ERROR',
+    fallback: 'CodeGym could not complete this run. Try again.',
+    tone: 'text-[#f14c4c]',
+  },
+};
+
+function isTerminalFailureSubmission(
+  submission: Submission,
+): submission is Submission & { status: TerminalFailureStatus } {
+  return submission.status in terminalFailurePresentation;
+}
+
+function CapturedStdout({ submission }: { submission: Submission }) {
+  if (!submission.stdout && !submission.output_truncated) return null;
+  return (
+    <div className="border-t border-[#333]">
+      <div className="flex items-center gap-2 border-b border-[#2a2a2a] px-4 py-1.5">
+        <span className="font-mono text-[10px] font-semibold text-[#858585]">STDOUT</span>
+        {submission.output_truncated && (
+          <span className="font-mono text-[10px] text-[#dcdcaa]">OUTPUT TRUNCATED</span>
+        )}
+      </div>
+      <pre className="max-h-36 overflow-auto whitespace-pre-wrap px-4 py-2 font-mono text-[11px] leading-5 text-[#b8b8b8]">
+        {submission.stdout || '(no stdout captured)'}
+      </pre>
+    </div>
+  );
+}
+
 export function ProblemDetailPage({
-  initialResult = null,
+  initialSubmission = null,
   initialMemoryUpdateStatus = 'idle',
 }: ProblemDetailPageProps = {}) {
   const { configured: authConfigured, isAuthenticated } = useCodeGymAuthState();
@@ -88,7 +143,7 @@ export function ProblemDetailPage({
   const [resumedDraft, setResumedDraft] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<TestResult | null>(initialResult);
+  const [submission, setSubmission] = useState<Submission | null>(initialSubmission);
   const [hintsRevealed, setHintsRevealed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [descriptionWidth, setDescriptionWidth] = useState(DEFAULT_DESCRIPTION_WIDTH);
@@ -112,7 +167,7 @@ export function ProblemDetailPage({
     setSessionId(null);
     setResumedDraft(false);
     setSaveStatus('idle');
-    setResult(initialResult);
+    setSubmission(initialSubmission);
     setError(null);
     setActiveFile(0);
 
@@ -185,14 +240,18 @@ export function ProblemDetailPage({
             ? restoredMemoryStatus
             : initialMemoryUpdateStatus,
         );
-        if (typeof state.last_submission_id === 'string' && !initialResult) {
+        if (typeof state.last_submission_id === 'string' && !initialSubmission) {
           void api
-            .get<{ status: string; result?: TestResult }>(
+            .get<Submission>(
               `/submissions/${encodeURIComponent(state.last_submission_id)}`,
             )
             .then((submission) => {
-              if (!cancelled && submission.status === 'completed' && submission.result) {
-                setResult(submission.result);
+              if (
+                !cancelled &&
+                submission.status !== 'pending' &&
+                submission.status !== 'running'
+              ) {
+                setSubmission(submission);
               }
             })
             .catch(() => {
@@ -247,7 +306,7 @@ export function ProblemDetailPage({
     apiAuthReady,
     id,
     initialMemoryUpdateStatus,
-    initialResult,
+    initialSubmission,
     requestedSessionId,
     searchParams,
     setSearchParams,
@@ -451,7 +510,7 @@ export function ProblemDetailPage({
     runRequestRef.current = requestID;
     const submittedFiles = filesRef.current;
     setSubmitting(true);
-    setResult(null);
+    setSubmission(null);
     setError(null);
     try {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
@@ -477,19 +536,19 @@ export function ProblemDetailPage({
       }
 
       while (runRequestRef.current === requestID) {
-        const sub = await api.get<{ status: string; result?: TestResult }>(
+        const sub = await api.get<Submission>(
           `/submissions/${res.submission_id}`,
         );
         if (sub.status === 'pending' || sub.status === 'running') {
           await new Promise((resolve) => setTimeout(resolve, 1000));
           continue;
         }
-        if (sub.status === 'completed' && sub.result) {
-          setResult(sub.result);
-          await persistDraft(filesRef.current, hintsRef.current);
-          break;
+        if (sub.status === 'completed' && !sub.result) {
+          throw new Error('The execution completed without test results.');
         }
-        throw new Error('The execution could not produce test results.');
+        setSubmission(sub);
+        await persistDraft(filesRef.current, hintsRef.current);
+        break;
       }
     } catch (err) {
       if (runRequestRef.current === requestID) {
@@ -540,7 +599,10 @@ export function ProblemDetailPage({
 
   const monacoLang = languageMap[problem.language] ?? 'plaintext';
   const editorWidth = 100 - descriptionWidth;
-  const hasTestPanel = submitting || Boolean(error) || Boolean(result);
+  const result = submission?.result ?? null;
+  const terminalFailure =
+    submission && isTerminalFailureSubmission(submission) ? submission : null;
+  const hasTestPanel = submitting || Boolean(error) || Boolean(submission);
 
   return (
     <div ref={pageRef} className="h-screen flex">
@@ -721,7 +783,7 @@ export function ProblemDetailPage({
                 </div>
               )}
 
-              {result && !submitting && !error && (
+              {result && submission && !submitting && !error && (
                 <div className="h-full overflow-y-auto">
                   <div className="px-4 py-2 border-b border-[#333] flex items-center gap-3">
                     <span
@@ -782,6 +844,24 @@ export function ProblemDetailPage({
                       {result.compile_error}
                     </pre>
                   )}
+                  <CapturedStdout submission={submission} />
+                </div>
+              )}
+
+              {terminalFailure && !submitting && !error && (
+                <div className="h-full overflow-y-auto">
+                  <div className="flex items-center gap-3 border-b border-[#333] px-4 py-2">
+                    <span
+                      className={`text-xs font-bold ${terminalFailurePresentation[terminalFailure.status].tone}`}
+                    >
+                      {terminalFailurePresentation[terminalFailure.status].label}
+                    </span>
+                  </div>
+                  <p className="px-4 py-3 font-mono text-[11px] leading-5 text-[#b8b8b8]">
+                    {terminalFailure.failure_detail ||
+                      terminalFailurePresentation[terminalFailure.status].fallback}
+                  </p>
+                  <CapturedStdout submission={terminalFailure} />
                 </div>
               )}
             </div>

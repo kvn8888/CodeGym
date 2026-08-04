@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "model": "codegym-relay/spike-model",
+  "provider": {
+    "codegym-relay": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "CodeGym local isolation recorder",
+      "options": {
+        "baseURL": "http://127.0.0.1:50603/v1",
+        "apiKey": "sk-isolation-not-a-real-key"
+      },
+      "models": {
+        "spike-model": {
+          "name": "Isolation spike model",
+          "limit": {
+            "context": 32768,
+            "output": 4096
+          }
+        }
+      }
+    }
+  }
+}

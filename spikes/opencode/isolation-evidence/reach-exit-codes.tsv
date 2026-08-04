@@ -1,0 +1,13 @@
+invocation	exit_code
+permissive_read_spec_control	0
+permissive_read_reference	0
+permissive_bash_cat_reference	0
+permissive_bash_grep_tmp	0
+permissive_read_home	0
+permissive_bash_session_storage	0
+locked_read_spec_control	0
+locked_read_reference	0
+locked_bash_cat_reference	0
+locked_bash_grep_tmp	0
+locked_read_home	0
+locked_bash_session_storage	0

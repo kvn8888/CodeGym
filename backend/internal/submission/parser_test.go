@@ -3,6 +3,8 @@ package submission
 import (
 	"strings"
 	"testing"
+
+	"github.com/kvn8888/codegym/backend/internal/execution"
 )
 
 func TestParseTestResultUsesLastStructuredLine(t *testing.T) {
@@ -46,5 +48,41 @@ func TestParseTestResultCompileError(t *testing.T) {
 	if result.Status != "fail" || result.CompileError == nil ||
 		*result.CompileError != "SyntaxError: invalid syntax" {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestTestResultFromJudge(t *testing.T) {
+	compileError := "SyntaxError: invalid syntax"
+	tests := []struct {
+		name   string
+		judge  execution.JudgeResult
+		status string
+		total  int
+	}{
+		{
+			name: "cases",
+			judge: execution.JudgeResult{Schema: execution.JudgeSchema, Status: execution.JudgeStatusFailed, DurationMs: 9, Cases: []execution.CaseResult{
+				{Name: "one", Status: "pass", DurationMs: 2},
+				{Name: "two", Status: "fail", DurationMs: 3},
+			}},
+			status: "fail", total: 2,
+		},
+		{
+			name: "compile error",
+			judge: execution.JudgeResult{Schema: execution.JudgeSchema, Status: execution.JudgeStatusFailed,
+				Cases: []execution.CaseResult{}, CompileError: &compileError},
+			status: "fail",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := TestResultFromJudge(test.judge)
+			if err != nil {
+				t.Fatalf("TestResultFromJudge: %v", err)
+			}
+			if result.Status != test.status || result.Total != test.total {
+				t.Fatalf("result = %#v", result)
+			}
+		})
 	}
 }

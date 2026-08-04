@@ -95,6 +95,11 @@ func TestNeonExecutionBootstrap(t *testing.T) {
 	run.Status = execution.StatusPassed
 	run.ExitCode = &exitCode
 	run.Output = "PASS 3 cases\n"
+	run.JudgeResult = &execution.JudgeResult{
+		Schema: execution.JudgeSchema, Status: execution.JudgeStatusPassed,
+		ExitCode: &exitCode, DurationMs: 1500, Stdout: "debug\n",
+		Cases: []execution.CaseResult{{Name: "case-1", Status: "pass", DurationMs: 2}},
+	}
 	run.DurationMs = 1500
 	run.CompletedAt = &completed
 	if err := executionStore.UpdateRun(ctx, run); err != nil {
@@ -107,6 +112,9 @@ func TestNeonExecutionBootstrap(t *testing.T) {
 	}
 	if fetched.Status != execution.StatusPassed || fetched.ExitCode == nil || *fetched.ExitCode != 0 {
 		t.Fatalf("terminal state did not round-trip: %+v", fetched)
+	}
+	if fetched.JudgeResult == nil || fetched.JudgeResult.Status != execution.JudgeStatusPassed || fetched.JudgeResult.Stdout != "debug\n" {
+		t.Fatalf("judge result did not round-trip: %+v", fetched.JudgeResult)
 	}
 	if fetched.CompletedAt == nil || !fetched.CompletedAt.Equal(completed) {
 		t.Fatalf("expected completed_at %s, got %v", completed, fetched.CompletedAt)

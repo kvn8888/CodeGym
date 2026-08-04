@@ -44,6 +44,15 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 	if definition.ReferenceSolution == "" || len(definition.HiddenTestFiles) == 0 {
 		t.Fatal("seed is missing server-only execution artifacts")
 	}
+	seedHarness := definition.HiddenTestFiles[0].Content
+	for _, protocol := range []string{"cases.jsonl", "verdict.json", "signal.setitimer"} {
+		if !strings.Contains(seedHarness, protocol) {
+			t.Fatalf("seed harness is missing %q", protocol)
+		}
+	}
+	if strings.Contains(seedHarness, "CODEGYM_RESULT") {
+		t.Fatal("seed harness still uses the in-band result protocol")
+	}
 
 	publicJSON, err := json.Marshal(problem)
 	if err != nil {

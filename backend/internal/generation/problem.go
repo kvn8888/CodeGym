@@ -292,7 +292,7 @@ func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec Probl
 }
 
 // BuildProblemDefinition turns a validated model payload into the catalog
-// Definition (skeleton + CODEGYM_RESULT harness). Exported for verification repairs.
+// Definition (skeleton + out-of-band verdict harness). Exported for verification repairs.
 func BuildProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
 	return buildProblemDefinition(output)
 }
@@ -326,42 +326,67 @@ func buildProblemDefinition(output GeneratedProblem) (problems.Definition, error
 	}
 	skeleton := fmt.Sprintf("def %s(%s) -> %s:\n    \"\"\"Implement the solution described in the problem.\"\"\"\n    # TODO: implement this function.\n    raise NotImplementedError\n",
 		output.FunctionName, strings.Join(parameters, ", "), output.ReturnType)
-	// Named cases + expected/got in failure text so verification can adjudicate.
+	// Named, incrementally flushed cases let the out-of-process supervisor
+	// attribute timeout/OOM/crash deaths before the final verdict exists.
+	// Expected/got remains in failure text so verification can adjudicate.
 	runner := fmt.Sprintf(`import base64
 import importlib
 import json
+import pathlib
+import signal
 import time
 
-PREFIX = "CODEGYM_RESULT "
 CASES = json.loads(base64.b64decode(%q).decode("utf-8"))
+PROTOCOL_DIR = pathlib.Path(".codegym")
+CASES_PATH = PROTOCOL_DIR / "cases.jsonl"
+VERDICT_PATH = PROTOCOL_DIR / "verdict.json"
+CASE_TIMEOUT_SECONDS = 5
 
-def emit(tests, compile_error=None):
-    print(PREFIX + json.dumps({"tests": tests, "compile_error": compile_error}, separators=(",", ":")))
+def append_event(event):
+    with CASES_PATH.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(event, separators=(",", ":")) + "\n")
+        stream.flush()
 
+def write_verdict(status, cases, compile_error=None):
+    VERDICT_PATH.write_text(json.dumps(
+        {"schema": 1, "status": status, "compile_error": compile_error, "cases": cases},
+        separators=(",", ":"),
+    ), encoding="utf-8")
+
+PROTOCOL_DIR.mkdir(exist_ok=True)
 try:
     solution = importlib.import_module("solution")
     target = getattr(solution, %q)
 except Exception as exc:
-    emit([], f"{type(exc).__name__}: {exc}")
+    write_verdict("failed", [], f"{type(exc).__name__}: {exc}")
     raise SystemExit(0)
 
+signal.signal(signal.SIGALRM, signal.SIG_DFL)
 results = []
 for index, case in enumerate(CASES):
+    name = case.get("name") or f"case-{index + 1}"
+    append_event({"event": "case_start", "name": name})
     started = time.perf_counter()
     error = None
     status = "pass"
-    name = case.get("name") or f"case-{index + 1}"
+    signal.setitimer(signal.ITIMER_REAL, CASE_TIMEOUT_SECONDS)
     try:
         actual = target(*case["args"])
         if actual != case["expected"]:
             status = "fail"
             error = f"expected {json.dumps(case['expected'], separators=(',', ':'))}, got {json.dumps(actual, separators=(',', ':'))}"
+    except MemoryError:
+        raise
     except Exception as exc:
         status = "fail"
         error = f"{type(exc).__name__}: {exc}"
-    results.append({"name": name, "status": status, "duration_ms": max(0, int((time.perf_counter() - started) * 1000)), "error": error})
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+    result = {"name": name, "status": status, "duration_ms": max(0, int((time.perf_counter() - started) * 1000)), "error": error}
+    results.append(result)
+    append_event({"event": "case_result", **result})
 
-emit(results)
+write_verdict("passed" if all(case["status"] == "pass" for case in results) else "failed", results)
 `, encodedCases, output.FunctionName)
 	return problems.Definition{
 		Problem: problems.Problem{

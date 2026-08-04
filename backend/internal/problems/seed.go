@@ -18,22 +18,34 @@ const twoSumReferenceSolution = `def two_sum(nums: list[int], target: int) -> li
 
 const twoSumHiddenTests = `import importlib
 import json
+import pathlib
+import signal
 import time
 
-PREFIX = "CODEGYM_RESULT "
+PROTOCOL_DIR = pathlib.Path(".codegym")
+CASES_PATH = PROTOCOL_DIR / "cases.jsonl"
+VERDICT_PATH = PROTOCOL_DIR / "verdict.json"
+CASE_TIMEOUT_SECONDS = 5
 
 
-def emit(tests, compile_error=None):
-    print(PREFIX + json.dumps(
-        {"tests": tests, "compile_error": compile_error},
+def append_event(event):
+    with CASES_PATH.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(event, separators=(",", ":")) + "\n")
+        stream.flush()
+
+
+def write_verdict(status, cases, compile_error=None):
+    VERDICT_PATH.write_text(json.dumps(
+        {"schema": 1, "status": status, "compile_error": compile_error, "cases": cases},
         separators=(",", ":"),
-    ))
+    ), encoding="utf-8")
 
 
+PROTOCOL_DIR.mkdir(exist_ok=True)
 try:
     solution = importlib.import_module("solution")
 except Exception as exc:
-    emit([], f"{type(exc).__name__}: {exc}")
+    write_verdict("failed", [], f"{type(exc).__name__}: {exc}")
     raise SystemExit(0)
 
 
@@ -44,28 +56,36 @@ cases = [
     ("handles negative values", [-3, 4, 3, 90], 0, [0, 2]),
 ]
 
+signal.signal(signal.SIGALRM, signal.SIG_DFL)
 results = []
 for name, nums, target, expected in cases:
+    append_event({"event": "case_start", "name": name})
     started = time.perf_counter()
     error = None
     status = "pass"
+    signal.setitimer(signal.ITIMER_REAL, CASE_TIMEOUT_SECONDS)
     try:
         actual = solution.two_sum(nums, target)
         if not isinstance(actual, list) or sorted(actual) != sorted(expected):
             status = "fail"
             error = f"expected {expected}, got {actual}"
+    except MemoryError:
+        raise
     except Exception as exc:
         status = "fail"
         error = f"{type(exc).__name__}: {exc}"
-    duration_ms = max(0, int((time.perf_counter() - started) * 1000))
-    results.append({
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+    result = {
         "name": name,
         "status": status,
-        "duration_ms": duration_ms,
+        "duration_ms": max(0, int((time.perf_counter() - started) * 1000)),
         "error": error,
-    })
+    }
+    results.append(result)
+    append_event({"event": "case_result", **result})
 
-emit(results)
+write_verdict("passed" if all(case["status"] == "pass" for case in results) else "failed", results)
 `
 
 func twoSumDefinition() Definition {

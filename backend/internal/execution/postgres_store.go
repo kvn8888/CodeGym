@@ -32,6 +32,7 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			status text NOT NULL,
 			exit_code int,
 			output text NOT NULL DEFAULT '',
+			judge_result jsonb,
 			error text NOT NULL DEFAULT '',
 			duration_ms bigint NOT NULL DEFAULT 0,
 			created_at timestamptz NOT NULL,
@@ -54,6 +55,7 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 				ALTER TABLE execution_runs DROP CONSTRAINT IF EXISTS fk_execution_runs_membership;
 			END IF;
 		END $$`,
+		`ALTER TABLE execution_runs ADD COLUMN IF NOT EXISTS judge_result jsonb`,
 		`CREATE INDEX IF NOT EXISTS idx_execution_runs_scope_created_at ON execution_runs (workspace_id, user_id, created_at DESC)`,
 		`DO $$
 		BEGIN
@@ -72,16 +74,20 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			END IF;
 		END $$`,
 		`DO $$
+		DECLARE
+			definition text;
 		BEGIN
-			IF NOT EXISTS (
-				SELECT 1
-				FROM pg_constraint
-				WHERE conname = 'chk_execution_runs_status'
-					AND conrelid = 'execution_runs'::regclass
-			) THEN
+			SELECT pg_get_constraintdef(oid)
+			INTO definition
+			FROM pg_constraint
+			WHERE conname = 'chk_execution_runs_status'
+				AND conrelid = 'execution_runs'::regclass;
+
+			IF definition IS NULL OR definition NOT LIKE '%out_of_memory%' THEN
+				ALTER TABLE execution_runs DROP CONSTRAINT IF EXISTS chk_execution_runs_status;
 				ALTER TABLE execution_runs
-				ADD CONSTRAINT chk_execution_runs_status
-				CHECK (status IN ('queued', 'running', 'passed', 'failed', 'error'));
+					ADD CONSTRAINT chk_execution_runs_status
+					CHECK (status IN ('queued', 'running', 'passed', 'failed', 'timeout', 'out_of_memory', 'crashed', 'error'));
 			END IF;
 		END $$`,
 	}
@@ -99,6 +105,10 @@ func (s *PostgresStore) CreateRun(ctx context.Context, run Run) error {
 	if err != nil {
 		return fmt.Errorf("encode execution files: %w", err)
 	}
+	judgeResultJSON, err := encodeJudgeResult(run.JudgeResult)
+	if err != nil {
+		return err
+	}
 
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO execution_runs (
@@ -112,30 +122,36 @@ func (s *PostgresStore) CreateRun(ctx context.Context, run Run) error {
 			status,
 			exit_code,
 			output,
+			judge_result,
 			error,
 			duration_ms,
 			created_at,
 			completed_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12, $13, $14, $15)
 	`, run.ID, run.WorkspaceID, run.UserID, run.ProblemID, run.Language, run.Entrypoint,
-		string(filesJSON), string(run.Status), run.ExitCode, run.Output, run.Error,
-		run.DurationMs, run.CreatedAt.UTC(), completedAtUTC(run.CompletedAt))
+		string(filesJSON), string(run.Status), run.ExitCode, run.Output, judgeResultJSON,
+		run.Error, run.DurationMs, run.CreatedAt.UTC(), completedAtUTC(run.CompletedAt))
 	return err
 }
 
 func (s *PostgresStore) UpdateRun(ctx context.Context, run Run) error {
+	judgeResultJSON, err := encodeJudgeResult(run.JudgeResult)
+	if err != nil {
+		return err
+	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE execution_runs
 		SET status = $4,
 			exit_code = $5,
 			output = $6,
-			error = $7,
-			duration_ms = $8,
-			completed_at = $9
+			judge_result = $7::jsonb,
+			error = $8,
+			duration_ms = $9,
+			completed_at = $10
 		WHERE id = $1 AND workspace_id = $2 AND user_id = $3
 	`, run.ID, run.WorkspaceID, run.UserID, string(run.Status), run.ExitCode,
-		run.Output, run.Error, run.DurationMs, completedAtUTC(run.CompletedAt))
+		run.Output, judgeResultJSON, run.Error, run.DurationMs, completedAtUTC(run.CompletedAt))
 	if err != nil {
 		return err
 	}
@@ -195,6 +211,7 @@ const selectRunColumns = `
 		status,
 		exit_code,
 		output,
+		judge_result::text,
 		error,
 		duration_ms,
 		created_at,
@@ -204,6 +221,7 @@ const selectRunColumns = `
 func scanRun(row pgx.Row) (Run, error) {
 	var run Run
 	var filesJSON string
+	var judgeResultJSON *string
 	var status string
 	if err := row.Scan(
 		&run.ID,
@@ -216,6 +234,7 @@ func scanRun(row pgx.Row) (Run, error) {
 		&status,
 		&run.ExitCode,
 		&run.Output,
+		&judgeResultJSON,
 		&run.Error,
 		&run.DurationMs,
 		&run.CreatedAt,
@@ -227,7 +246,26 @@ func scanRun(row pgx.Row) (Run, error) {
 	if err := json.Unmarshal([]byte(filesJSON), &run.Files); err != nil {
 		return Run{}, fmt.Errorf("decode execution files: %w", err)
 	}
+	if judgeResultJSON != nil {
+		var judgeResult JudgeResult
+		if err := json.Unmarshal([]byte(*judgeResultJSON), &judgeResult); err != nil {
+			return Run{}, fmt.Errorf("decode judge result: %w", err)
+		}
+		run.JudgeResult = &judgeResult
+	}
 	return run, nil
+}
+
+func encodeJudgeResult(result *JudgeResult) (*string, error) {
+	if result == nil {
+		return nil, nil
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode judge result: %w", err)
+	}
+	value := string(encoded)
+	return &value, nil
 }
 
 func completedAtUTC(t *time.Time) *time.Time {

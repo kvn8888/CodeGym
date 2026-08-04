@@ -1101,10 +1101,15 @@ export interface components {
             error: null;
         };
         /** @enum {string} */
-        SubmissionStatus: "pending" | "running" | "completed" | "error";
+        SubmissionStatus: "pending" | "running" | "completed" | "timeout" | "out_of_memory" | "crashed" | "error";
         Submission: {
             status: components["schemas"]["SubmissionStatus"];
             result?: components["schemas"]["TestResult"];
+            failure_detail?: string;
+            /** @description Learner program stdout, captured separately from the judge verdict. */
+            stdout: string;
+            /** @description True when stdout or stderr exceeded the configured byte cap. */
+            output_truncated: boolean;
         };
         TestResult: {
             /** @enum {string} */
@@ -1130,7 +1135,7 @@ export interface components {
             error: null;
         };
         /** @enum {string} */
-        ExecutionStatus: "queued" | "running" | "passed" | "failed" | "error";
+        ExecutionStatus: "queued" | "running" | "passed" | "failed" | "timeout" | "out_of_memory" | "crashed" | "error";
         ExecutionRun: {
             /** @example exec_run_0123456789abcdef */
             id: string;
@@ -1155,6 +1160,13 @@ export interface components {
             language: string;
             entrypoint: string;
             files: components["schemas"]["SubmissionFile"][];
+            limits: components["schemas"]["ExecutionLimits"];
+        };
+        ExecutionLimits: {
+            timeout_seconds: number;
+            memory_mb: number;
+            /** @enum {string} */
+            network_mode: "block-all";
         };
         ExecutionRunEnvelope: {
             data: components["schemas"]["ExecutionRun"];

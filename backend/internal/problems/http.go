@@ -18,6 +18,7 @@ const (
 // HTTPCase is a server-owned request and expectation. It is rendered into a
 // hidden harness artifact and must never be included in the public Problem.
 type HTTPCase struct {
+	CaseMetadata
 	Name       string          `json:"name"`
 	Request    HTTPRequest     `json:"request"`
 	Expect     HTTPExpectation `json:"expect"`

@@ -60,12 +60,7 @@ type ProblemParameter struct {
 	Type string `json:"type"`
 }
 
-type ProblemTestCase struct {
-	Name       string               `json:"name"`
-	Args       []json.RawMessage    `json:"args"`
-	Expected   json.RawMessage      `json:"expected"`
-	Comparator *problems.Comparator `json:"comparator,omitempty"`
-}
+type ProblemTestCase = problems.UnitCase
 
 const pythonProblemSystemPrompt = `You generate one safe Python coding problem for CodeGym.
 Return one JSON object matching the supplied schema. Do not return markdown.

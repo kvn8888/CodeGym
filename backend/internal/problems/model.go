@@ -78,6 +78,7 @@ type Skeleton struct {
 type Definition struct {
 	Problem
 	SkeletonFiles     []File     `json:"-"`
+	PublicTestFiles   []File     `json:"-"`
 	HiddenTestFiles   []File     `json:"-"`
 	ReferenceSolution string     `json:"-"`
 	Entrypoint        string     `json:"-"`

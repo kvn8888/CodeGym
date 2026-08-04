@@ -66,6 +66,7 @@ func cloneDefinition(definition Definition) Definition {
 	definition.Hints = append([]Hint(nil), definition.Hints...)
 	definition.Files.Skeleton = append([]FileRef(nil), definition.Files.Skeleton...)
 	definition.SkeletonFiles = append([]File(nil), definition.SkeletonFiles...)
+	definition.PublicTestFiles = append([]File(nil), definition.PublicTestFiles...)
 	definition.HiddenTestFiles = append([]File(nil), definition.HiddenTestFiles...)
 	return definition
 }

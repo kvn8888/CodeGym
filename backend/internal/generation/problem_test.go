@@ -11,6 +11,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
@@ -69,10 +70,10 @@ func TestGenerateProblemRepairsOnceAndBuildsControlledHarness(t *testing.T) {
 	if len(generator.requests) != 2 || !strings.Contains(generator.requests[1].Instructions, "previous output was rejected") {
 		t.Fatalf("requests = %#v", generator.requests)
 	}
-	if definition.Entrypoint != "test_solution.py" || len(definition.HiddenTestFiles) != 1 {
+	if definition.Entrypoint != "test_solution.py" || len(definition.HiddenTestFiles) != 2 {
 		t.Fatalf("definition missing controlled runner: %#v", definition)
 	}
-	runner := definition.HiddenTestFiles[0].Content
+	runner := hiddenFileContent(t, definition, "test_solution.py")
 	for _, protocol := range []string{"cases.jsonl", "verdict.json", "signal.setitimer", "base64.b64decode"} {
 		if !strings.Contains(runner, protocol) {
 			t.Fatalf("runner is missing %q: %s", protocol, runner)
@@ -103,10 +104,11 @@ func TestGeneratedHarnessWritesIncrementalCasesAndFinalVerdict(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, ".codegym"), 0o700); err != nil {
 		t.Fatalf("mkdir protocol dir: %v", err)
 	}
-	for _, file := range []struct{ name, content string }{
-		{"solution.py", definition.ReferenceSolution},
-		{"test_solution.py", definition.HiddenTestFiles[0].Content},
-	} {
+	files := []struct{ name, content string }{{"solution.py", definition.ReferenceSolution}}
+	for _, hidden := range definition.HiddenTestFiles {
+		files = append(files, struct{ name, content string }{hidden.Path, hidden.Content})
+	}
+	for _, file := range files {
 		if err := os.WriteFile(filepath.Join(root, file.name), []byte(file.content), 0o600); err != nil {
 			t.Fatalf("write %s: %v", file.name, err)
 		}
@@ -135,6 +137,26 @@ func TestGeneratedHarnessWritesIncrementalCasesAndFinalVerdict(t *testing.T) {
 	}
 }
 
+func TestValidateGeneratedProblemRejectsInvalidComparators(t *testing.T) {
+	for _, replacement := range []string{
+		`"comparator":{"kind":"approximately"},`,
+		`"comparator":{"kind":"float","epsilon":0},`,
+		`"comparator":{"kind":"exact","epsilon":0.1},`,
+	} {
+		payload := strings.Replace(validProblemPayload, `"reference_solution":`, replacement+`"reference_solution":`, 1)
+		if _, err := ValidateGeneratedProblem(json.RawMessage(payload)); err == nil {
+			t.Fatalf("expected invalid comparator to fail: %s", replacement)
+		}
+	}
+}
+
+func TestValidateGeneratedProblemRequiresCheckerSource(t *testing.T) {
+	payload := strings.Replace(validProblemPayload, `"reference_solution":`, `"comparator":{"kind":"checker"},"reference_solution":`, 1)
+	if _, err := ValidateGeneratedProblem(json.RawMessage(payload)); err == nil || !strings.Contains(err.Error(), "requires checker") {
+		t.Fatalf("err = %v, want checker source rejection", err)
+	}
+}
+
 func TestValidateGeneratedProblemRejectsFreeFormRunnerTokens(t *testing.T) {
 	payload := strings.Replace(validProblemPayload,
 		`"reference_solution":"def has_pair_difference`,
@@ -158,4 +180,15 @@ func TestGenerateProblemStopsAfterOneRepair(t *testing.T) {
 	if err == nil || len(generator.requests) != 2 {
 		t.Fatalf("err=%v requests=%d", err, len(generator.requests))
 	}
+}
+
+func hiddenFileContent(t *testing.T, definition problems.Definition, path string) string {
+	t.Helper()
+	for _, file := range definition.HiddenTestFiles {
+		if file.Path == path {
+			return file.Content
+		}
+	}
+	t.Fatalf("hidden file %q not found", path)
+	return ""
 }

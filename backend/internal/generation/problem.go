@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 )
 
@@ -31,19 +32,21 @@ type ProblemSpec struct {
 }
 
 type GeneratedProblem struct {
-	Title             string             `json:"title"`
-	Description       string             `json:"description"`
-	Category          string             `json:"category"`
-	Subcategory       string             `json:"subcategory"`
-	Tags              []string           `json:"tags"`
-	Difficulty        int                `json:"difficulty"`
-	EstimatedMinutes  int                `json:"estimated_minutes"`
-	FunctionName      string             `json:"function_name"`
-	Parameters        []ProblemParameter `json:"parameters"`
-	ReturnType        string             `json:"return_type"`
-	Hints             []string           `json:"hints"`
-	ReferenceSolution string             `json:"reference_solution"`
-	TestCases         []ProblemTestCase  `json:"test_cases"`
+	Title             string              `json:"title"`
+	Description       string              `json:"description"`
+	Category          string              `json:"category"`
+	Subcategory       string              `json:"subcategory"`
+	Tags              []string            `json:"tags"`
+	Difficulty        int                 `json:"difficulty"`
+	EstimatedMinutes  int                 `json:"estimated_minutes"`
+	FunctionName      string              `json:"function_name"`
+	Parameters        []ProblemParameter  `json:"parameters"`
+	ReturnType        string              `json:"return_type"`
+	Hints             []string            `json:"hints"`
+	ReferenceSolution string              `json:"reference_solution"`
+	Comparator        problems.Comparator `json:"comparator,omitempty"`
+	Checker           string              `json:"checker,omitempty"`
+	TestCases         []ProblemTestCase   `json:"test_cases"`
 }
 
 type ProblemParameter struct {
@@ -52,9 +55,10 @@ type ProblemParameter struct {
 }
 
 type ProblemTestCase struct {
-	Name     string            `json:"name"`
-	Args     []json.RawMessage `json:"args"`
-	Expected json.RawMessage   `json:"expected"`
+	Name       string               `json:"name"`
+	Args       []json.RawMessage    `json:"args"`
+	Expected   json.RawMessage      `json:"expected"`
+	Comparator *problems.Comparator `json:"comparator,omitempty"`
 }
 
 const problemSystemPrompt = `You generate one safe Python coding problem for CodeGym.
@@ -67,6 +71,8 @@ Rules:
 - Allowed parameter and return types: int, str, bool, list[int], list[str].
 - Include 1..3 progressive hints.
 - Include 4..12 deterministic test cases. Each args array has exactly one value per parameter and expected matches return_type.
+- comparator is part of the problem specification. Use exact (the default), set, multiset, sorted, float with an optional positive finite epsilon (default 1e-6), or checker. A test case may override the problem comparator.
+- Use checker when several structurally different answers are valid. Then checker must contain a Python function check(args, actual, expected) returning bool or (bool, reason). CodeGym places it only in the hidden test file.
 - reference_solution contains only the Python function definition and helpers it needs. It must define function_name.
 - Never produce a test runner, imports of hidden tests, shell commands, CODEGYM_RESULT, eval, exec, open, subprocess, socket, or network/file access. CodeGym builds the hidden runner itself.`
 
@@ -86,7 +92,9 @@ var problemJSONSchema = json.RawMessage(`{
     "return_type":{"type":"string"},
     "hints":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"string"}},
     "reference_solution":{"type":"string"},
-    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","args","expected"]}}
+    "comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}},
+    "checker":{"type":"string"},
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","args","expected"],"properties":{"name":{"type":"string"},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
   }
 }`)
 
@@ -129,6 +137,7 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 	output.FunctionName = strings.TrimSpace(output.FunctionName)
 	output.ReturnType = strings.TrimSpace(output.ReturnType)
 	output.ReferenceSolution = strings.TrimSpace(output.ReferenceSolution)
+	output.Checker = strings.TrimSpace(output.Checker)
 	if output.Title == "" || output.Description == "" || output.Category == "" {
 		return output, errors.New("title, description, and category are required")
 	}
@@ -180,6 +189,12 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 	if len(output.TestCases) < 4 || len(output.TestCases) > 12 {
 		return output, errors.New("test_cases must contain 4..12 entries")
 	}
+	comparator, err := problems.NormalizeComparator(output.Comparator)
+	if err != nil {
+		return output, err
+	}
+	output.Comparator = comparator
+	usesChecker := comparator.Kind == problems.ComparatorChecker
 	for index, test := range output.TestCases {
 		if strings.TrimSpace(test.Name) == "" || len(test.Name) > 80 || len(test.Args) != len(output.Parameters) || len(test.Expected) == 0 || !json.Valid(test.Expected) {
 			return output, fmt.Errorf("test case %d has invalid name, args, or expected value", index+1)
@@ -193,6 +208,15 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 		if !validProblemJSONType(test.Expected, output.ReturnType) {
 			return output, fmt.Errorf("test case %d expected value does not match %s", index+1, output.ReturnType)
 		}
+		resolved, err := problems.ResolveComparator(output.Comparator, test.Comparator)
+		if err != nil {
+			return output, fmt.Errorf("test case %d: %w", index+1, err)
+		}
+		if test.Comparator != nil {
+			normalized := resolved
+			output.TestCases[index].Comparator = &normalized
+		}
+		usesChecker = usesChecker || resolved.Kind == problems.ComparatorChecker
 	}
 	lowerSolution := strings.ToLower(output.ReferenceSolution)
 	if !strings.Contains(output.ReferenceSolution, "def "+output.FunctionName+"(") {
@@ -205,6 +229,22 @@ func ValidateGeneratedProblem(raw json.RawMessage) (GeneratedProblem, error) {
 		if strings.Contains(lowerSolution, forbidden) {
 			return output, fmt.Errorf("reference_solution contains forbidden token %q", forbidden)
 		}
+	}
+	if usesChecker {
+		if !strings.Contains(output.Checker, "def check(") {
+			return output, errors.New("checker comparator requires checker to define check(args, actual, expected)")
+		}
+		if len(output.Checker) > 12000 {
+			return output, errors.New("checker exceeds allowed length")
+		}
+		lowerChecker := strings.ToLower(output.Checker)
+		for _, forbidden := range []string{"codegym_result", "subprocess", "socket", "open(", "eval(", "exec(", "__import__"} {
+			if strings.Contains(lowerChecker, forbidden) {
+				return output, fmt.Errorf("checker contains forbidden token %q", forbidden)
+			}
+		}
+	} else if output.Checker != "" {
+		return output, errors.New("checker source is only allowed when a checker comparator is used")
 	}
 	return output, nil
 }
@@ -298,10 +338,16 @@ func BuildProblemDefinition(output GeneratedProblem) (problems.Definition, error
 }
 
 func buildProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
+	comparator, err := problems.NormalizeComparator(output.Comparator)
+	if err != nil {
+		return problems.Definition{}, err
+	}
+	output.Comparator = comparator
 	type runnerCase struct {
-		Name     string            `json:"name"`
-		Args     []json.RawMessage `json:"args"`
-		Expected json.RawMessage   `json:"expected"`
+		Name       string              `json:"name"`
+		Args       []json.RawMessage   `json:"args"`
+		Expected   json.RawMessage     `json:"expected"`
+		Comparator problems.Comparator `json:"comparator"`
 	}
 	runnerCases := make([]runnerCase, 0, len(output.TestCases))
 	for index, test := range output.TestCases {
@@ -309,7 +355,11 @@ func buildProblemDefinition(output GeneratedProblem) (problems.Definition, error
 		if name == "" {
 			name = fmt.Sprintf("case-%d", index+1)
 		}
-		runnerCases = append(runnerCases, runnerCase{Name: name, Args: test.Args, Expected: test.Expected})
+		comparator, err := problems.ResolveComparator(output.Comparator, test.Comparator)
+		if err != nil {
+			return problems.Definition{}, fmt.Errorf("case %q comparator: %w", name, err)
+		}
+		runnerCases = append(runnerCases, runnerCase{Name: name, Args: test.Args, Expected: test.Expected, Comparator: comparator})
 	}
 	casesJSON, err := json.Marshal(runnerCases)
 	if err != nil {
@@ -335,6 +385,10 @@ import json
 import pathlib
 import signal
 import time
+
+from codegym_comparator import compare_values
+
+%s
 
 CASES = json.loads(base64.b64decode(%q).decode("utf-8"))
 PROTOCOL_DIR = pathlib.Path(".codegym")
@@ -372,9 +426,23 @@ for index, case in enumerate(CASES):
     signal.setitimer(signal.ITIMER_REAL, CASE_TIMEOUT_SECONDS)
     try:
         actual = target(*case["args"])
-        if actual != case["expected"]:
+        comparator = case["comparator"]
+        reason = None
+        if comparator["kind"] == "checker":
+            checked = check(case["args"], actual, case["expected"])
+            if isinstance(checked, tuple):
+                if len(checked) != 2 or not isinstance(checked[0], bool) or (checked[1] is not None and not isinstance(checked[1], str)):
+                    raise TypeError("check must return bool or (bool, reason)")
+                equal, reason = checked
+            elif isinstance(checked, bool):
+                equal = checked
+            else:
+                raise TypeError("check must return bool or (bool, reason)")
+        else:
+            equal = compare_values(comparator["kind"], case["expected"], actual, comparator.get("epsilon"))
+        if not equal:
             status = "fail"
-            error = f"expected {json.dumps(case['expected'], separators=(',', ':'))}, got {json.dumps(actual, separators=(',', ':'))}"
+            error = reason or f"expected {json.dumps(case['expected'], separators=(',', ':'))}, got {json.dumps(actual, separators=(',', ':'))}"
     except MemoryError:
         raise
     except Exception as exc:
@@ -387,7 +455,7 @@ for index, case in enumerate(CASES):
     append_event({"event": "case_result", **result})
 
 write_verdict("passed" if all(case["status"] == "pass" for case in results) else "failed", results)
-`, encodedCases, output.FunctionName)
+`, output.Checker, encodedCases, output.FunctionName)
 	return problems.Definition{
 		Problem: problems.Problem{
 			Summary: problems.Summary{
@@ -398,10 +466,13 @@ write_verdict("passed" if all(case["status"] == "pass" for case in results) else
 			Version: "1.0.0", Description: output.Description, Subcategory: output.Subcategory,
 			Runtime:    problems.Runtime{Image: "python312", TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: "block-all"},
 			Files:      problems.FileManifest{Skeleton: []problems.FileRef{{Path: "solution.py", Entry: true}}},
-			TestConfig: problems.TestConfig{Strategy: "unit"}, Hints: hints,
+			TestConfig: problems.TestConfig{Strategy: "unit", Comparator: output.Comparator}, Hints: hints,
 		},
-		SkeletonFiles:     []problems.File{{Path: "solution.py", Content: skeleton}},
-		HiddenTestFiles:   []problems.File{{Path: "test_solution.py", Content: runner}},
+		SkeletonFiles: []problems.File{{Path: "solution.py", Content: skeleton}},
+		HiddenTestFiles: []problems.File{
+			{Path: "test_solution.py", Content: runner},
+			{Path: "codegym_comparator.py", Content: execution.PythonComparatorSource},
+		},
 		ReferenceSolution: output.ReferenceSolution + "\n",
 		Entrypoint:        "test_solution.py",
 	}, nil

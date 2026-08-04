@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
 
@@ -20,6 +24,55 @@ type fakeRunner struct {
 	calls    int
 	lastSpec execution.RunSpec
 	err      error
+}
+
+type localPythonRunner struct {
+	t *testing.T
+}
+
+func (r localPythonRunner) Run(_ context.Context, spec execution.RunSpec) (execution.RunOutcome, error) {
+	r.t.Helper()
+	root := r.t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".codegym"), 0o700); err != nil {
+		return execution.RunOutcome{}, err
+	}
+	for _, file := range spec.Files {
+		path := filepath.Join(root, filepath.FromSlash(file.Path))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return execution.RunOutcome{}, err
+		}
+		if err := os.WriteFile(path, []byte(file.Content), 0o600); err != nil {
+			return execution.RunOutcome{}, err
+		}
+	}
+	commandArgs := spec.Language.ChildCommand(spec.Entrypoint)
+	command := exec.Command(commandArgs[0], commandArgs[1:]...)
+	command.Dir = root
+	output, runErr := command.CombinedOutput()
+	exitCode := 0
+	if runErr != nil {
+		var exitError *exec.ExitError
+		if !errors.As(runErr, &exitError) {
+			return execution.RunOutcome{}, runErr
+		}
+		exitCode = exitError.ExitCode()
+	}
+	verdictData, err := os.ReadFile(filepath.Join(root, ".codegym", "verdict.json"))
+	if err != nil {
+		return execution.RunOutcome{}, errors.Join(runErr, err)
+	}
+	var verdict execution.HarnessVerdict
+	if err := json.Unmarshal(verdictData, &verdict); err != nil {
+		return execution.RunOutcome{}, err
+	}
+	return execution.RunOutcome{
+		ExitCode: exitCode,
+		Result: execution.JudgeResult{
+			Schema: verdict.Schema, Status: verdict.Status, Cases: verdict.Cases,
+			CompileError: verdict.CompileError, ExitCode: &exitCode,
+		},
+		Output: string(output),
+	}, nil
 }
 
 func (f *fakeRunner) Run(_ context.Context, spec execution.RunSpec) (execution.RunOutcome, error) {
@@ -192,5 +245,74 @@ func TestVerifyUnavailableWithoutRunner(t *testing.T) {
 	_, _, err = Verify(testContext(), nil, nil, definition, generated)
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}
+
+func TestVerifyAcceptsDifferentValidAnswerWithChecker(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is required for comparator verification regression")
+	}
+	_ = python
+
+	generated := multiAnswerGenerated(problems.Comparator{Kind: problems.ComparatorChecker})
+	rawGenerated, err := json.Marshal(generated)
+	if err != nil {
+		t.Fatalf("marshal generated problem: %v", err)
+	}
+	generated, err = generation.ValidateGeneratedProblem(rawGenerated)
+	if err != nil {
+		t.Fatalf("ValidateGeneratedProblem: %v", err)
+	}
+	definition, err := generation.BuildProblemDefinition(generated)
+	if err != nil {
+		t.Fatalf("BuildProblemDefinition: %v", err)
+	}
+	if _, _, err := Verify(testContext(), nil, localPythonRunner{t: t}, definition, generated); err != nil {
+		t.Fatalf("checker verification rejected a different valid pair: %v", err)
+	}
+
+	exact := multiAnswerGenerated(problems.Comparator{Kind: problems.ComparatorExact})
+	exact.Checker = ""
+	exactDefinition, err := generation.BuildProblemDefinition(exact)
+	if err != nil {
+		t.Fatalf("BuildProblemDefinition exact: %v", err)
+	}
+	if _, _, err := Verify(testContext(), nil, localPythonRunner{t: t}, exactDefinition, exact); !errors.Is(err, ErrRejected) {
+		t.Fatalf("exact verification err = %v, want ErrRejected", err)
+	}
+}
+
+func multiAnswerGenerated(comparator problems.Comparator) generation.GeneratedProblem {
+	return generation.GeneratedProblem{
+		Title: "Any Pair", Description: "Return the indices of any distinct pair whose values sum to target.",
+		Category: "algorithms", Subcategory: "arrays", Tags: []string{"arrays"},
+		Difficulty: 2, EstimatedMinutes: 20, FunctionName: "any_pair",
+		Parameters: []generation.ProblemParameter{
+			{Name: "nums", Type: "list[int]"}, {Name: "target", Type: "int"},
+		},
+		ReturnType: "list[int]", Hints: []string{"Track complements."}, Comparator: comparator,
+		ReferenceSolution: `def any_pair(nums: list[int], target: int) -> list[int]:
+    for right in range(len(nums) - 1, -1, -1):
+        for left in range(right - 1, -1, -1):
+            if nums[left] + nums[right] == target:
+                return [left, right]
+    return []`,
+		Checker: `def check(args, actual, expected):
+    nums, target = args
+    if not isinstance(actual, list) or len(actual) != 2:
+        return False, "answer must contain two indices"
+    left, right = actual
+    if not isinstance(left, int) or isinstance(left, bool) or not isinstance(right, int) or isinstance(right, bool):
+        return False, "indices must be integers"
+    if left == right or left < 0 or right < 0 or left >= len(nums) or right >= len(nums):
+        return False, "indices must be distinct and in range"
+    return nums[left] + nums[right] == target, "selected values do not sum to target"`,
+		TestCases: []generation.ProblemTestCase{
+			{Name: "first", Args: raws([]any{[]int{1, 4, 2, 3}, 5}), Expected: raw([]int{0, 1})},
+			{Name: "second", Args: raws([]any{[]int{2, 6, 3, 5}, 8}), Expected: raw([]int{0, 1})},
+			{Name: "negative", Args: raws([]any{[]int{-1, 5, 1, 3}, 4}), Expected: raw([]int{0, 1})},
+			{Name: "zero", Args: raws([]any{[]int{0, 10, 4, 6}, 10}), Expected: raw([]int{0, 1})},
+		},
 	}
 }

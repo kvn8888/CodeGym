@@ -25,6 +25,7 @@ type Problem struct {
 	Runtime     Runtime      `json:"runtime"`
 	Files       FileManifest `json:"files"`
 	TestConfig  TestConfig   `json:"test_config"`
+	PublicCases []PublicCase `json:"public_cases"`
 	Hints       []Hint       `json:"hints,omitempty"`
 }
 

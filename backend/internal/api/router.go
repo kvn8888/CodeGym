@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/kvn8888/codegym/backend/internal/agentrelay"
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/chat"
@@ -40,6 +41,7 @@ type Dependencies struct {
 	Usage                *usage.Service
 	CORSAllowedOrigins   []string
 	DatabaseURL          string
+	AgentRelay           *agentrelay.HTTPHandler
 }
 
 // NewRouter builds the top-level HTTP handler tree for public and protected
@@ -56,6 +58,14 @@ func NewRouter(deps Dependencies) http.Handler {
 
 	mux.HandleFunc("GET /health", handlers.Health)
 	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.DatabaseURL))
+	// The sandbox-facing relay is deliberately outside the Auth0/identity/
+	// workspace chain. It authenticates short-lived operation tokens itself.
+	mux.HandleFunc("GET /api/v1/agent-relay/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		deps.AgentRelay.Models(w, r)
+	})
+	mux.HandleFunc("POST /api/v1/agent-relay/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		deps.AgentRelay.ChatCompletions(w, r)
+	})
 
 	protected := http.NewServeMux()
 	profileHandler := handlers.NewProfileHandler(deps.Identity)

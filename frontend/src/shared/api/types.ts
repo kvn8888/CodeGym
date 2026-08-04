@@ -16,7 +16,10 @@ export interface Problem extends ProblemSummary {
   subcategory?: string;
   runtime: RuntimeConfig;
   files: { skeleton: FileRef[] };
-  test_config: { strategy: string };
+  test_config: {
+    strategy: 'unit' | 'http';
+    readiness_timeout_seconds?: number;
+  };
   hints?: Hint[];
 }
 
@@ -163,6 +166,7 @@ export interface PracticeSession extends PracticeSessionSummary {
 
 /** Practice format chosen on New practice. */
 export type PracticeFormat = 'mcq' | 'coding' | 'interview';
+export type ProblemLanguage = 'python' | 'go';
 export type InterviewMode = 'coding' | 'system_design' | 'behavioral' | 'open_coaching';
 export type MCQQuestionType = 'single_select' | 'multi_select' | 'free_response';
 
@@ -173,6 +177,7 @@ export interface NewPracticeConfig {
   prompt: string;
   difficulty: 'easy' | 'medium' | 'hard';
   count: number;
+  language?: ProblemLanguage;
   intakeId?: string;
 }
 

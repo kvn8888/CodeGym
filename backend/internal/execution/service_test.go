@@ -32,6 +32,7 @@ func pythonInput() SubmitRunInput {
 		ProblemID:  "two-sum",
 		Language:   "python",
 		Entrypoint: "test_solution.py",
+		Strategy:   string(TestStrategyUnit),
 		Files: []File{
 			{Path: "solution.py", Content: "def two_sum(nums, target): ..."},
 			{Path: "test_solution.py", Content: "import solution"},
@@ -176,6 +177,7 @@ func TestSubmitRunValidation(t *testing.T) {
 		mutate func(*SubmitRunInput)
 	}{
 		{"unknown language", func(in *SubmitRunInput) { in.Language = "cobol" }},
+		{"unknown strategy", func(in *SubmitRunInput) { in.Strategy = "custom" }},
 		{"missing limits", func(in *SubmitRunInput) { in.Limits = Limits{} }},
 		{"zero timeout", func(in *SubmitRunInput) { in.Limits.TimeoutSeconds = 0 }},
 		{"negative timeout", func(in *SubmitRunInput) { in.Limits.TimeoutSeconds = -1 }},
@@ -288,6 +290,9 @@ func TestRunnerReceivesResolvedSpec(t *testing.T) {
 	}
 	if runner.lastSpec.Entrypoint != "test_solution.py" {
 		t.Fatalf("unexpected entrypoint %q", runner.lastSpec.Entrypoint)
+	}
+	if runner.lastSpec.Strategy != TestStrategyUnit {
+		t.Fatalf("unexpected strategy %q", runner.lastSpec.Strategy)
 	}
 	if len(runner.lastSpec.Files) != 2 {
 		t.Fatalf("expected 2 files, got %d", len(runner.lastSpec.Files))

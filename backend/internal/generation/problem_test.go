@@ -62,6 +62,29 @@ const validGoProblemPayload = `{
   ]
 }`
 
+const validGoHTTPProblemPayload = `{
+  "language":"go",
+  "strategy":"http",
+  "title":"Build an Item API",
+  "description":"Implement a small in-memory item API with health, create, and fetch routes.",
+  "category":"backend",
+  "subcategory":"http-servers",
+  "tags":["go","net-http","json"],
+  "difficulty":2,
+  "estimated_minutes":35,
+  "hints":["Use an http.ServeMux.","Protect shared state with a mutex."],
+  "entrypoint":"main.go",
+  "starter_code":"package main\n\nimport (\n    \"log\"\n    \"net/http\"\n    \"os\"\n)\n\nfunc main() {\n    port := os.Getenv(\"PORT\")\n    mux := http.NewServeMux()\n    mux.HandleFunc(\"GET /health\", func(w http.ResponseWriter, r *http.Request) {\n        // TODO: return the health response.\n        http.Error(w, \"not implemented\", http.StatusNotImplemented)\n    })\n    mux.HandleFunc(\"POST /items\", func(w http.ResponseWriter, r *http.Request) {\n        // TODO: create an item.\n        http.Error(w, \"not implemented\", http.StatusNotImplemented)\n    })\n    mux.HandleFunc(\"GET /items/{id}\", func(w http.ResponseWriter, r *http.Request) {\n        // TODO: fetch an item.\n        http.Error(w, \"not implemented\", http.StatusNotImplemented)\n    })\n    if err := http.ListenAndServe(\":\"+port, mux); err != nil { log.Fatal(err) }\n}",
+  "reference_solution":"package main\n\nimport (\n    \"encoding/json\"\n    \"log\"\n    \"net/http\"\n    \"os\"\n    \"sync\"\n)\n\nfunc main() {\n    port := os.Getenv(\"PORT\")\n    mux := http.NewServeMux()\n    var mu sync.Mutex\n    items := map[string]map[string]string{}\n    mux.HandleFunc(\"GET /health\", func(w http.ResponseWriter, r *http.Request) {\n        w.Header().Set(\"Content-Type\", \"application/json\")\n        _ = json.NewEncoder(w).Encode(map[string]string{\"status\": \"ok\"})\n    })\n    mux.HandleFunc(\"POST /items\", func(w http.ResponseWriter, r *http.Request) {\n        input := map[string]string{}\n        if json.NewDecoder(r.Body).Decode(&input) != nil { http.Error(w, \"bad request\", 400); return }\n        created := map[string]string{\"id\": \"1\", \"name\": input[\"name\"]}\n        mu.Lock(); items[created[\"id\"]] = created; mu.Unlock()\n        w.Header().Set(\"Content-Type\", \"application/json\")\n        w.WriteHeader(http.StatusCreated)\n        _ = json.NewEncoder(w).Encode(created)\n    })\n    mux.HandleFunc(\"GET /items/{id}\", func(w http.ResponseWriter, r *http.Request) {\n        mu.Lock(); found, ok := items[r.PathValue(\"id\")]; mu.Unlock()\n        if !ok { http.NotFound(w, r); return }\n        w.Header().Set(\"Content-Type\", \"application/json\")\n        _ = json.NewEncoder(w).Encode(found)\n    })\n    if err := http.ListenAndServe(\":\"+port, mux); err != nil { log.Fatal(err) }\n}",
+  "comparator":{"kind":"exact"},
+  "http_test_cases":[
+    {"name":"health","request":{"method":"GET","path":"/health"},"expect":{"status":200,"json":{"status":"ok"},"headers":{"content-type":"application/json"}}},
+    {"name":"creates-item","request":{"method":"POST","path":"/items","headers":{"content-type":"application/json"},"body":{"name":"book"}},"expect":{"status":201,"json":{"id":"1","name":"book"}}},
+    {"name":"gets-item","request":{"method":"GET","path":"/items/1"},"expect":{"status":200,"json":{"name":"book","id":"1"}}},
+    {"name":"missing-item","request":{"method":"GET","path":"/items/404"},"expect":{"status":404,"body":"404 page not found\n"}}
+  ]
+}`
+
 type problemSequenceGenerator struct {
 	payloads []string
 	requests []GenerateRequest
@@ -121,6 +144,9 @@ func TestGeneratedHarnessWritesIncrementalCasesAndFinalVerdict(t *testing.T) {
 	generated, err := ValidateGeneratedProblem(json.RawMessage(validProblemPayload))
 	if err != nil {
 		t.Fatalf("ValidateGeneratedProblem: %v", err)
+	}
+	if generated.Strategy != problems.TestStrategyUnit || generated.Entrypoint != "" || generated.StarterCode != "" || len(generated.HTTPTestCases) != 0 {
+		t.Fatalf("legacy Python generation shape changed: %#v", generated)
 	}
 	definition, err := BuildProblemDefinition(generated)
 	if err != nil {
@@ -245,6 +271,94 @@ func TestGoStrategyBuildsTypedRunnableDefinition(t *testing.T) {
 	compileSkeleton.Dir = root
 	if output, err := compileSkeleton.CombinedOutput(); err != nil {
 		t.Fatalf("generated Go skeleton does not compile: %v\n%s", err, output)
+	}
+}
+
+func TestGoHTTPStrategyBuildsAndRunsServerDefinition(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go is required for generated Go HTTP validation")
+	}
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is required for the Go HTTP compile wrapper")
+	}
+	generated, err := ValidateGeneratedProblemForLanguage(json.RawMessage(validGoHTTPProblemPayload), "go")
+	if err != nil {
+		t.Fatalf("ValidateGeneratedProblemForLanguage: %v", err)
+	}
+	definition, err := BuildProblemDefinition(generated)
+	if err != nil {
+		t.Fatalf("BuildProblemDefinition: %v", err)
+	}
+	if definition.Language != "go" || definition.Framework != "net/http" || definition.TestConfig.Strategy != problems.TestStrategyHTTP {
+		t.Fatalf("Go HTTP definition = %#v", definition)
+	}
+	if definition.Entrypoint != goHTTPLauncherPath || definition.Files.Skeleton[0].Path != "main.go" ||
+		definition.TestConfig.ReadinessTimeoutSeconds != 10 || definition.Runtime.TimeoutSeconds != 60 {
+		t.Fatalf("Go HTTP wiring = %#v", definition)
+	}
+	if len(definition.HiddenTestFiles) != 4 || !strings.Contains(hiddenFileContent(t, definition, goHTTPCasesPath), "creates-item") {
+		t.Fatalf("Go HTTP hidden files = %#v", definition.HiddenTestFiles)
+	}
+	public, err := json.Marshal(definition.Problem)
+	if err != nil {
+		t.Fatalf("marshal public problem: %v", err)
+	}
+	if strings.Contains(string(public), "creates-item") {
+		t.Fatalf("public problem leaked HTTP cases: %s", public)
+	}
+
+	root := t.TempDir()
+	files := []problems.File{{Path: "main.go", Content: definition.ReferenceSolution}}
+	files = append(files, definition.HiddenTestFiles...)
+	for _, file := range files {
+		path := filepath.Join(root, filepath.FromSlash(file.Path))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatalf("mkdir %s: %v", file.Path, err)
+		}
+		if err := os.WriteFile(path, []byte(file.Content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", file.Path, err)
+		}
+	}
+	command := exec.Command("python3", definition.Entrypoint)
+	command.Dir = root
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("run generated Go HTTP harness: %v\n%s", err, output)
+	}
+	verdict, err := os.ReadFile(filepath.Join(root, ".codegym", "verdict.json"))
+	if err != nil || !strings.Contains(string(verdict), `"status":"passed"`) {
+		t.Fatalf("Go HTTP verdict = %s, %v", verdict, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(definition.SkeletonFiles[0].Content), 0o600); err != nil {
+		t.Fatalf("write Go HTTP skeleton: %v", err)
+	}
+	compileSkeleton := exec.Command("go", "build", "-o", filepath.Join(root, ".codegym", "skeleton"), "main.go")
+	compileSkeleton.Dir = root
+	if output, err := compileSkeleton.CombinedOutput(); err != nil {
+		t.Fatalf("generated Go HTTP skeleton does not compile: %v\n%s", err, output)
+	}
+}
+
+func TestGoHTTPStrategyRejectsEntrypointThatDoesNotStartServer(t *testing.T) {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(validGoHTTPProblemPayload), &payload); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	payload["starter_code"] = "package main\n\nimport (\"net/http\"; \"os\")\n\nfunc main() { _ = http.MethodGet; _ = os.Getenv }\n"
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encode fixture: %v", err)
+	}
+	_, err = ValidateGeneratedProblemForLanguage(raw, "go")
+	if err == nil || !strings.Contains(err.Error(), "starter_code entrypoint must read PORT and start an HTTP server") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestProblemLanguageSchemasAreValidJSON(t *testing.T) {
+	for name, schema := range map[string]json.RawMessage{"python": problemJSONSchema, "go": goProblemJSONSchema} {
+		if !json.Valid(schema) {
+			t.Fatalf("%s problem schema is invalid JSON", name)
+		}
 	}
 }
 

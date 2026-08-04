@@ -72,6 +72,7 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 		ProblemID:  problemID,
 		Language:   definition.Language,
 		Entrypoint: definition.Entrypoint,
+		Strategy:   string(definition.TestConfig.Strategy),
 		Files:      files,
 		Limits: execution.Limits{
 			TimeoutSeconds: definition.Runtime.TimeoutSeconds,

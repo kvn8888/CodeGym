@@ -168,8 +168,9 @@ func buildGoDefinition(t *testing.T, generated generation.GeneratedProblem) prob
 
 func runGoDefinition(t *testing.T, runner execution.Runner, definition problems.Definition, solution string, timeoutSeconds int) execution.RunOutcome {
 	t.Helper()
+	solutionPath := definition.Files.Skeleton[0].Path
 	files, err := submission.AssembleFiles(
-		[]execution.File{{Path: "solution.go", Content: solution}},
+		[]execution.File{{Path: solutionPath, Content: solution}},
 		definition.HiddenTestFiles,
 	)
 	if err != nil {
@@ -189,6 +190,7 @@ func runGoDefinition(t *testing.T, runner execution.Runner, definition problems.
 	defer cancel()
 	outcome, err := runner.Run(ctx, execution.RunSpec{
 		Language: language, Files: files, Entrypoint: definition.Entrypoint,
+		Strategy: execution.TestStrategy(definition.TestConfig.Strategy),
 		Limits: execution.Limits{
 			TimeoutSeconds: timeoutSeconds,
 			MemoryMB:       definition.Runtime.MemoryMB,

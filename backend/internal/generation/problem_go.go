@@ -10,6 +10,9 @@ import (
 )
 
 func buildGoProblemDefinition(output GeneratedProblem) (problems.Definition, error) {
+	if output.Strategy == problems.TestStrategyHTTP {
+		return buildGoHTTPProblemDefinition(output)
+	}
 	comparator, err := problems.NormalizeComparator(output.Comparator)
 	if err != nil {
 		return problems.Definition{}, err

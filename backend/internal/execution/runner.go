@@ -10,6 +10,7 @@ type RunSpec struct {
 	Language   Language
 	Files      []File
 	Entrypoint string
+	Strategy   TestStrategy
 	Limits     Limits
 }
 

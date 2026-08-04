@@ -18,3 +18,15 @@ var GoComparatorSource string
 //
 //go:embed testdata/go_compile_and_run.py
 var GoCompileRunnerSource string
+
+// GoHTTPHarnessSource starts a compiled learner server, owns its process group,
+// and evaluates hidden HTTP cases with the same Go comparator as unit problems.
+//
+//go:embed testdata/http_harness.go
+var GoHTTPHarnessSource string
+
+// GoHTTPCompileRunnerSource compiles the learner server and HTTP harness before
+// delegating lifecycle and case execution to the harness binary.
+//
+//go:embed testdata/go_http_compile_and_run.py
+var GoHTTPCompileRunnerSource string

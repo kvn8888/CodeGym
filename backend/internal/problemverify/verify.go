@@ -221,6 +221,7 @@ func runReference(ctx context.Context, runner execution.Runner, definition probl
 		Language:   language,
 		Files:      files,
 		Entrypoint: definition.Entrypoint,
+		Strategy:   execution.TestStrategy(definition.TestConfig.Strategy),
 		Limits: execution.Limits{
 			TimeoutSeconds: definition.Runtime.TimeoutSeconds,
 			MemoryMB:       definition.Runtime.MemoryMB,

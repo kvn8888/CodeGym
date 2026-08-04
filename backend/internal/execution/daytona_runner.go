@@ -58,6 +58,11 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	if err := validateLimits(spec.Limits); err != nil {
 		return RunOutcome{}, err
 	}
+	strategy, err := normalizeTestStrategy(string(spec.Strategy))
+	if err != nil {
+		return RunOutcome{}, err
+	}
+	spec.Strategy = strategy
 
 	startedAt := time.Now()
 	lang := spec.Language.Name
@@ -173,12 +178,26 @@ func buildSupervisorCommand(spec RunSpec) string {
 		"--output-cap-bytes", strconv.Itoa(defaultOutputCapBytes),
 		"--",
 	}
-	args = append(args, spec.Language.ChildCommand(spec.Entrypoint)...)
+	args = append(args, childCommandForStrategy(spec.Language, spec.Strategy, spec.Entrypoint)...)
 	quoted := make([]string, 0, len(args))
 	for _, arg := range args {
 		quoted = append(quoted, shellQuote(arg))
 	}
 	return "cd ~/work && " + strings.Join(quoted, " ")
+}
+
+func childCommandForStrategy(language Language, strategy TestStrategy, entrypoint string) []string {
+	switch strategy {
+	case TestStrategyHTTP:
+		// HTTP entrypoints are server-owned compile-and-harness launchers. They
+		// use the same language command seam while selecting a different hidden
+		// artifact in submission assembly.
+		return language.ChildCommand(entrypoint)
+	case TestStrategyUnit, "":
+		return language.ChildCommand(entrypoint)
+	default:
+		return nil
+	}
 }
 
 func shellQuote(value string) string {

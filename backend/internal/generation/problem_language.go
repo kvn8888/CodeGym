@@ -19,19 +19,61 @@ Return one JSON object matching the supplied schema. Do not return markdown.
 Rules:
 - Choose a focused problem that follows the learner's prompt and memory profile. Demonstrated evidence outranks the self-reported baseline.
 - difficulty is 1, 2, or 3. estimated_minutes is 10..90.
+- Include 1..3 progressive hints.
+- comparator is part of the problem specification. Use exact (the default), set, multiset, sorted, float with an optional positive finite epsilon (default 1e-6), or checker. A test case may override the problem comparator.
+
+For strategy "unit" (the default when omitted):
 - function_name and parameter names are valid Go identifiers and are not keywords.
 - Allowed parameter and return types are int, float64, bool, string, slices of those, nested slices, and maps whose keys are string or int. Use Go syntax such as []int, [][]float64, map[string]int, or map[int][]string.
-- Linked lists, trees, graphs, pointers, interfaces, structs, functions, channels, and cyclic structures are unsupported. Reject the idea by returning only supported types; CodeGym will reject any unsupported type.
-- Include 1..3 progressive hints.
-- Include 4..12 deterministic JSON test cases. Each args array has exactly one value per parameter and expected matches return_type.
-- comparator is part of the problem specification. Use exact (the default), set, multiset, sorted, float with an optional positive finite epsilon (default 1e-6), or checker. A test case may override the problem comparator.
-- Use checker when several structurally different answers are valid. Then checker must contain a complete Go source file in package main defining func check(args []any, actual, expected any) (bool, string). An empty string means no authored failure reason. CodeGym places it only in the hidden test files.
-- reference_solution contains a complete Go source file in package main, including only imports and helpers it needs. It must define function_name with the exact typed signature.
-- Never produce a test runner, hidden-test imports, shell commands, CODEGYM_RESULT, os/exec, net, filesystem access, unsafe, cgo, or network access. CodeGym builds the hidden runner itself.`
+- Linked lists, trees, graphs, pointers, interfaces, structs, functions, channels, and cyclic structures are unsupported.
+- Include 4..12 deterministic JSON test_cases. Each args array has exactly one value per parameter and expected matches return_type.
+- Use checker when several structurally different answers are valid. Then checker must contain a complete Go source file in package main defining func check(args []any, actual, expected any) (bool, string).
+- reference_solution is a complete package main source file defining function_name with the exact typed signature.
+- Never produce a test runner, hidden-test imports, shell commands, CODEGYM_RESULT, os/exec, net, filesystem access, unsafe, cgo, or network access.
+
+For strategy "http":
+- Use only the Go standard library and net/http. checker is unsupported.
+- entrypoint is "main.go". starter_code and reference_solution are complete package main source files whose main reads PORT from the environment and starts an HTTP server.
+- starter_code must compile and expose the described routes, leaving the exercise behavior as clear TODOs without embedding hidden expectations.
+- Include 1..12 deterministic http_test_cases. Each case has name, request {method,path,headers?,body?}, expect {status,json?,headers?,body?}, and an optional comparator override.
+- request.body is JSON. expect.headers is a subset. expect.json and expect.body are mutually exclusive.
+- Never produce a test runner, hidden-test imports, fixed ports, shell commands, CODEGYM_RESULT, os/exec, unsafe, cgo, or external network access. CodeGym builds and owns the HTTP harness.`
+
+var goProblemJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["title","description","category","subcategory","tags","difficulty","estimated_minutes","hints","reference_solution"],
+  "properties":{
+    "language":{"type":"string","enum":["go"]},
+    "strategy":{"type":"string","enum":["unit","http"]},
+    "title":{"type":"string"},
+    "description":{"type":"string"},
+    "category":{"type":"string"},
+    "subcategory":{"type":"string"},
+    "tags":{"type":"array","items":{"type":"string"}},
+    "difficulty":{"type":"integer","minimum":1,"maximum":3},
+    "estimated_minutes":{"type":"integer","minimum":10,"maximum":90},
+    "hints":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"string"}},
+    "reference_solution":{"type":"string"},
+    "comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}},
+    "function_name":{"type":"string"},
+    "parameters":{"type":"array","minItems":1,"maxItems":5,"items":{"type":"object","required":["name","type"]}},
+    "return_type":{"type":"string"},
+    "checker":{"type":"string"},
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","args","expected"],"properties":{"name":{"type":"string"},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}},
+    "entrypoint":{"type":"string"},
+    "starter_code":{"type":"string"},
+    "http_test_cases":{"type":"array","minItems":1,"maxItems":12,"items":{"type":"object","required":["name","request","expect"],"properties":{"name":{"type":"string"},"request":{"type":"object","required":["method","path"],"properties":{"method":{"type":"string"},"path":{"type":"string"},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{}}},"expect":{"type":"object","required":["status"],"properties":{"status":{"type":"integer","minimum":100,"maximum":599},"json":{},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"string"}}},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+  },
+  "oneOf":[
+    {"required":["function_name","parameters","return_type","test_cases"]},
+    {"required":["strategy","entrypoint","starter_code","http_test_cases"],"properties":{"strategy":{"const":"http"}}}
+  ]
+}`)
 
 type problemLanguageStrategy struct {
 	language           string
 	systemPrompt       string
+	jsonSchema         json.RawMessage
 	validIdentifier    func(string) bool
 	validType          func(string) bool
 	validJSONType      func(json.RawMessage, string) bool
@@ -49,7 +91,7 @@ func problemStrategyFor(language string) (problemLanguageStrategy, error) {
 	switch language {
 	case "python":
 		return problemLanguageStrategy{
-			language: "python", systemPrompt: pythonProblemSystemPrompt,
+			language: "python", systemPrompt: pythonProblemSystemPrompt, jsonSchema: problemJSONSchema,
 			validIdentifier: func(value string) bool { return pythonIdentifier.MatchString(value) },
 			validType:       func(value string) bool { return allowedPythonProblemTypes[value] },
 			validJSONType:   validPythonProblemJSONType,
@@ -62,7 +104,7 @@ func problemStrategyFor(language string) (problemLanguageStrategy, error) {
 		}, nil
 	case "go":
 		return problemLanguageStrategy{
-			language: "go", systemPrompt: goProblemSystemPrompt,
+			language: "go", systemPrompt: goProblemSystemPrompt, jsonSchema: goProblemJSONSchema,
 			validIdentifier: validGoIdentifier,
 			validType: func(value string) bool {
 				_, err := parseGoProblemType(value, 0)

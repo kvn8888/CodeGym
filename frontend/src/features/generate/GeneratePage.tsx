@@ -7,6 +7,7 @@ import type {
   NewPracticeConfig,
   PracticeIntake,
   PracticeFormat,
+  ProblemLanguage,
   InterviewMode,
   PracticeSession,
   PracticeSessionSummary,
@@ -36,6 +37,10 @@ const difficulties: Array<{ value: NewPracticeConfig['difficulty']; label: strin
   { value: 'easy', label: 'Easy' },
   { value: 'medium', label: 'Medium' },
   { value: 'hard', label: 'Hard' },
+];
+const problemLanguages: Array<{ value: ProblemLanguage; label: string }> = [
+  { value: 'python', label: 'Python' },
+  { value: 'go', label: 'Go' },
 ];
 const interviewModes: Array<{ value: InterviewMode; label: string }> = [
   { value: 'coding', label: 'Coding' },
@@ -113,6 +118,7 @@ function configFromIntake(
       : 'coding';
   const seedDifficulty =
     seed.difficulty === 'easy' || seed.difficulty === 'hard' ? seed.difficulty : 'medium';
+  const seedLanguage = seed.language === 'go' ? seed.language : 'python';
   const seedCount =
     typeof seed.count === 'number' && Number.isInteger(seed.count) && seed.count > 0
       ? seed.count
@@ -124,6 +130,7 @@ function configFromIntake(
     prompt: intake.original_topic,
     difficulty: seedDifficulty,
     count: seedCount,
+    language: seedLanguage,
     intakeId: intake.id,
     interviewMode: seedMode,
   };
@@ -149,6 +156,7 @@ export function GeneratePage({
     () => searchParams.get('prompt') ?? initialIntake?.original_topic ?? '',
   );
   const [difficulty, setDifficulty] = useState<NewPracticeConfig['difficulty']>('medium');
+  const [language, setLanguage] = useState<ProblemLanguage>('python');
   const [interviewMode, setInterviewMode] = useState<InterviewMode>('coding');
   const [count, setCount] = useState(5);
   const [profile, setProfile] = useState<UserMemoryProfile | null>(null);
@@ -186,6 +194,7 @@ export function GeneratePage({
         setPrompt(restoredConfig.prompt);
         setFormat(restoredConfig.format);
         setDifficulty(restoredConfig.difficulty);
+        setLanguage(restoredConfig.language ?? 'python');
         setCount(restoredConfig.count);
         setInterviewMode(restoredConfig.interviewMode ?? 'coding');
       }
@@ -279,6 +288,7 @@ export function GeneratePage({
         topic: config.prompt,
         prompt: config.prompt,
         difficulty: config.difficulty,
+        language: config.language ?? 'python',
       },
     });
     const session = await api.post<PracticeSession>('/sessions', {
@@ -334,6 +344,7 @@ export function GeneratePage({
       prompt: prompt.trim(),
       difficulty,
       count: format === 'mcq' ? count : 1,
+      language: format === 'coding' ? language : undefined,
       interviewMode: format === 'interview' ? interviewMode : undefined,
     };
     await prepareIntake(config);
@@ -462,7 +473,7 @@ export function GeneratePage({
                 </div>
               </div>
 
-              <div className={`grid border-t ${format === 'mcq' ? 'sm:grid-cols-2' : ''}`}>
+              <div className={`grid border-t ${format === 'mcq' || format === 'coding' ? 'sm:grid-cols-2' : ''}`}>
                 {format === 'mcq' && (
                   <fieldset className="border-b p-4 sm:border-r sm:border-b-0 sm:p-5">
                     <legend className="mb-2 text-sm font-medium">Questions</legend>
@@ -477,6 +488,26 @@ export function GeneratePage({
                       {questionCounts.map((value) => (
                         <ToggleGroupItem key={value} value={String(value)} className="min-w-11">
                           {value}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </fieldset>
+                )}
+
+                {format === 'coding' && (
+                  <fieldset className="border-b p-4 sm:border-r sm:border-b-0 sm:p-5">
+                    <legend className="mb-2 text-sm font-medium">Language</legend>
+                    <ToggleGroup
+                      type="single"
+                      value={language}
+                      onValueChange={(value) => value && setLanguage(value as ProblemLanguage)}
+                      variant="outline"
+                      className="justify-start"
+                      aria-label="Language"
+                    >
+                      {problemLanguages.map((item) => (
+                        <ToggleGroupItem key={item.value} value={item.value} className="px-3">
+                          {item.label}
                         </ToggleGroupItem>
                       ))}
                     </ToggleGroup>
@@ -545,6 +576,7 @@ export function GeneratePage({
                           prompt: prompt.trim(),
                           difficulty,
                           count: format === 'mcq' ? count : 1,
+                          language: format === 'coding' ? language : undefined,
                           interviewMode: format === 'interview' ? interviewMode : undefined,
                         },
                         true,

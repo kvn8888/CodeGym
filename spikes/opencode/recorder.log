@@ -1,0 +1,4 @@
+2026/08/03 16:21:13 recorder listening on http://127.0.0.1:65006
+2026/08/03 16:21:15 POST /v1/chat/completions body=2543 tool_result=absent
+2026/08/03 16:21:16 POST /v1/chat/completions body=9764 tool_result=absent
+2026/08/03 16:21:16 POST /v1/chat/completions body=10123 tool_result=valid

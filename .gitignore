@@ -1,5 +1,6 @@
 # Binaries
 backend/bin/
+spikes/opencode/.bin/
 *.exe
 *.dll
 *.so

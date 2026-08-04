@@ -1,0 +1,25 @@
+home       /tmp/opencode-isolation-62722/home
+data       /tmp/opencode-isolation-62722/home/.local/share/opencode
+bin        /tmp/opencode-isolation-62722/home/.cache/opencode/bin
+log        /tmp/opencode-isolation-62722/home/.local/share/opencode/log
+repos      /tmp/opencode-isolation-62722/home/.local/share/opencode/repos
+cache      /tmp/opencode-isolation-62722/home/.cache/opencode
+config     /tmp/opencode-isolation-62722/home/.config/opencode
+state      /tmp/opencode-isolation-62722/home/.local/state/opencode
+tmp        /tmp/opencode
+
+database_file
+/tmp/opencode-isolation-62722/home/.local/share/opencode/opencode.db: SQLite 3.x database, last written using SQLite version 3054000, writer version 2, read version 2, file counter 1, database pages 1, cookie 0, schema 0, unknown 0 encoding, version-valid-for 1
+
+tables
+account             event              permission                session_input
+account_state       event_sequence     project                   session_message
+control_account     message            project_directory         session_share
+credential          migration          session                   todo
+data_migration      part               session_context_epoch     workspace
+
+canary_prompt_rows
+[{"session_id":"ses_0369a7035ffeZsLujQVhskjTIx","text":"\"Invocation A contains CANARY_REFERENCE_9f3a2b.\""}]
+
+binary_scan
+/tmp/opencode-isolation-62722/home/.local/share/opencode/opencode.db

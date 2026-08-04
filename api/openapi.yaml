@@ -7,8 +7,8 @@ info:
     identifier: AGPL-3.0-or-later
   description: >
     Initial contract for the CodeGym v2 frontend and Go backend integration.
-    The backend currently wraps every JSON response in a `{ data, error }`
-    envelope.
+    Product JSON responses use a `{ data, error }` envelope. The sandbox-facing
+    model relay deliberately uses the native OpenAI response and error shapes.
 servers:
   - url: /
     description: Same-origin frontend proxy
@@ -531,6 +531,99 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /api/v1/agent-relay/v1/models:
+    get:
+      operationId: listAgentRelayModels
+      summary: List the single server-managed model exposed to one workflow operation.
+      description: >
+        This route is outside Auth0. It accepts only a short-lived relay bearer
+        token scoped to one workflow operation, workspace, and user.
+      security:
+        - relayOperationAuth: []
+      responses:
+        "200":
+          description: OpenAI-compatible model list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIModelList"
+        "401":
+          description: Relay token is missing, invalid, expired, revoked, or terminal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorEnvelope"
+
+  /api/v1/agent-relay/v1/chat/completions:
+    post:
+      operationId: createAgentRelayChatCompletion
+      summary: Relay an OpenAI-compatible chat completion for one workflow operation.
+      description: >
+        Preserves tools, tool_choice, assistant tool_calls, role=tool
+        continuations, and streaming SSE. The requested public model is mapped
+        to the server-configured provider deployment; caller-supplied upstream
+        routing is rejected. Usage is accumulated against the token operation.
+      security:
+        - relayOperationAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAIChatCompletionRequest"
+      responses:
+        "200":
+          description: OpenAI-compatible completion JSON or SSE stream through data [DONE].
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIChatCompletionResponse"
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Invalid OpenAI request or caller-supplied upstream routing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorEnvelope"
+        "401":
+          description: Relay token is missing, invalid, expired, revoked, or terminal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorEnvelope"
+        "404":
+          description: Requested public model is not exposed by the relay.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorEnvelope"
+        "408":
+          description: The workflow operation wall-clock deadline has passed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorEnvelope"
+        "429":
+          description: The operation token or cost ceiling is exhausted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorEnvelope"
+        "500":
+          description: Relay usage accounting failed closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorEnvelope"
+        "502":
+          description: Configured model provider failed or returned an invalid response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorEnvelope"
 
   /api/v1/workflow-operations:
     post:
@@ -1086,6 +1179,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: dev-token-or-jwt
+    relayOperationAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: single-operation-token
+      description: Short-lived token scoped to one workflow operation, workspace, and user.
 
   parameters:
     WorkspaceHeader:
@@ -1174,6 +1272,108 @@ components:
           type: "null"
         error:
           $ref: "#/components/schemas/ApiError"
+
+    OpenAIErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, type, param, code]
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            param:
+              type: [string, "null"]
+            code:
+              type: string
+
+    OpenAIModelList:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, object, created, owned_by]
+            properties:
+              id:
+                type: string
+                example: codegym-agent
+              object:
+                type: string
+                const: model
+              created:
+                type: integer
+                format: int64
+              owned_by:
+                type: string
+                const: codegym
+
+    OpenAIChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      additionalProperties: true
+      properties:
+        model:
+          type: string
+          example: codegym-agent
+        messages:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: true
+        tools:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        tool_choice:
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+        temperature:
+          type: number
+        max_tokens:
+          type: integer
+          minimum: 1
+        max_completion_tokens:
+          type: integer
+          minimum: 1
+        stream:
+          type: boolean
+          default: false
+        stream_options:
+          type: object
+          additionalProperties: true
+
+    OpenAIChatCompletionResponse:
+      type: object
+      required: [id, object, choices]
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        usage:
+          type: object
+          additionalProperties: true
 
     HealthEnvelope:
       type: object
@@ -2602,6 +2802,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowProgressEvent"
+        relay:
+          $ref: "#/components/schemas/WorkflowRelayAccess"
+
+    WorkflowRelayAccess:
+      type: object
+      required: [token, expires_at, deadline, max_total_tokens, max_cost_usd_micros]
+      properties:
+        token:
+          type: string
+          description: Short-lived single-operation bearer token for the sandbox model relay.
+        expires_at:
+          type: string
+          format: date-time
+        deadline:
+          type: string
+          format: date-time
+        max_total_tokens:
+          type: integer
+          format: int64
+          minimum: 1
+        max_cost_usd_micros:
+          type: integer
+          format: int64
+          minimum: 1
 
     WorkflowCreateEnvelope:
       type: object

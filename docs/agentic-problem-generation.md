@@ -285,11 +285,46 @@ real filesystem and a real shell to scaffold, build, and iterate.
   network dependency and latency to every generation.
 - **Model access goes through a CodeGym relay, not a key in the sandbox.** The
   backend exposes an OpenAI-compatible endpoint scoped to one workflow
-  operation; the sandbox authenticates with a short-lived, single-operation
-  token. The relay translates to Azure using the transport already implemented
-  in `generation/openaicompat/adapter.go` — `CODEGYM_GENAI_AZURE_BASE_URL`,
-  `_API_KEY`, `_MODEL`, `_API_VERSION` (`config.go:213-218`), with Meta
-  (`CODEGYM_GENAI_META_*`) as fallback per `DefaultGenAIProviderOrder`.
+  operation. Configure the sandbox provider with:
+
+  ```json
+  {
+    "options": {
+      "baseURL": "https://<backend>/api/v1/agent-relay/v1",
+      "apiKey": "<workflow relay token>"
+    },
+    "models": { "codegym-agent": { "name": "CodeGym agent" } }
+  }
+  ```
+
+  The implemented surface is `GET /api/v1/agent-relay/v1/models` and
+  `POST /api/v1/agent-relay/v1/chat/completions`. It is deliberately outside
+  the Auth0 middleware chain and accepts only `Authorization: Bearer <token>`.
+  Chat completions preserve tools, assistant `tool_calls`, `role:"tool"`
+  continuations, and incremental `stream:true` SSE through `[DONE]`.
+
+  `POST /api/v1/workflow-operations` issues the token with the operation. It is
+  HMAC-signed over `{operation_id, workspace_id, user_id}`, validated
+  statelessly for signature and expiry, then checked against workspace-scoped
+  revocation/budget state and live workflow status. Terminal success, failure,
+  or cancellation revokes it. `CODEGYM_RELAY_TOKEN_SECRET` must be at least 32
+  bytes; `CODEGYM_RELAY_TOKEN_TTL` defaults to `15m`.
+
+  The caller may request only `CODEGYM_RELAY_MODEL` (default
+  `codegym-agent`). The relay replaces it with the first enabled provider and
+  deployment in `CODEGYM_GENAI_PROVIDER_ORDER` (default `meta,azure,gemini`)
+  and uses the owned `generation/openaicompat` transport. In particular, Azure
+  uses `CODEGYM_GENAI_AZURE_BASE_URL`, `_API_KEY`, `_MODEL`, and `_API_VERSION`
+  and receives the deployment-compatible max-token field. A request can never
+  supply an upstream URL or select an arbitrary deployment.
+
+  Per-operation defaults are 100,000 total tokens
+  (`CODEGYM_RELAY_MAX_TOTAL_TOKENS`), USD 5
+  (`CODEGYM_RELAY_MAX_COST_USD`), and 10 minutes from operation creation
+  (`CODEGYM_RELAY_MAX_WALL_CLOCK`). The relay rejects new calls after any
+  ceiling is reached. It records total/input/output/reasoning/cache-read/
+  cache-write counts through `usage`, ignores provider-reported cost, and
+  applies CodeGym's own provider/model rate table.
 
   This one decision resolves four problems at once: the long-lived Azure key
   never enters a sandbox that is running agent-authored shell commands; the
@@ -306,10 +341,9 @@ real filesystem and a real shell to scaffold, build, and iterate.
 - Cost: agent runs are far more expensive than a single completion. `usage`
   service must record per-operation token and sandbox-second cost.
 
-Feasibility of this section is being researched separately before implementation
-(opencode's non-interactive/headless mode, custom OpenAI-compatible provider
-config, tool-call surfacing, and whether it can run under a sandbox user with no
-outbound network after setup).
+The gated acceptance test `internal/agentrelay/TestOpenCodeThroughRelayToolRoundTrip`
+uses the pinned opencode binary with an isolated `/tmp` HOME and proves the full
+opencode → relay → fake Azure tool round trip plus operation-scoped usage.
 
 ## 9. Capability policy per step
 
@@ -350,8 +384,9 @@ Ordered by dependency, not by value. Each is a board item.
    `report_progress` tool bridge (§3).
 5. **Stack registry + EnvironmentBuilder** (§7). Implements `Build`/`Promote`/
    `Destroy`; populates `Language.Snapshot`.
-6. **Model relay + single-operation tokens** (§8). Prerequisite for any agent
-   runtime; also where aggregate token/cost/wall-clock ceilings live.
+6. ~~**Model relay + single-operation tokens** (§8).~~ **DONE 2026-08-03** —
+   OpenAI-compatible tools/streaming, operation token lifecycle, aggregate
+   token/cost/deadline enforcement, raw usage pricing, and a real opencode gate.
 7. **Agent runtime**, decided by benchmark (§8, §12). Build the purpose-built
    tool-calling loop on `openaicompat`, and spike opencode alongside it on the
    same three tasks (Spring Boot, Go, Express). Adopt opencode only if it is
@@ -386,9 +421,10 @@ next. Nothing here bakes opencode into the production pipeline.
      (`total/input/output/reasoning/cache`); `cost` is `0` for a custom
      provider, confirming we must apply our own pricing table at the relay.
    - Egress during the isolated run: localhost only. The disable flags hold.
-2. **Headless run.** One `opencode run --format json --auto` in a disposable
-   network-enabled sandbox under an external timeout. Capture exit code and
-   every event type.
+2. ~~**Headless run.**~~ **DONE 2026-08-03** — the relay acceptance test runs
+   one `opencode run --format json --auto` from an isolated `/tmp` HOME under
+   GNU `timeout`, asserts exit 0, the `report_progress` invocation and tool
+   result continuation, and operation-scoped usage.
 3. **Semantic failure.** Give it a build that must fail. Determine whether the
    process still exits 0 — it likely does, since exit status reflects runner
    failure, not task failure. This is why §3 requires a backend-verified result

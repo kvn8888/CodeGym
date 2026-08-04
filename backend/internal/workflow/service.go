@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -16,8 +17,17 @@ import (
 const maxEventsPerRead = 500
 
 type Service struct {
-	store Store
-	now   func() time.Time
+	store  Store
+	now    func() time.Time
+	tokens OperationTokenLifecycle
+}
+
+// WithOperationTokens attaches the single-operation relay token lifecycle.
+func (s *Service) WithOperationTokens(tokens OperationTokenLifecycle) *Service {
+	if s != nil {
+		s.tokens = tokens
+	}
+	return s
 }
 
 func NewService(store Store, clock func() time.Time) *Service {
@@ -57,7 +67,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (CreateResult, 
 		}
 		events = append(events, event)
 	}
-	return CreateResult{Operation: operation, Events: events}, nil
+	result := CreateResult{Operation: operation, Events: events}
+	if s.tokens != nil {
+		relay, issueErr := s.tokens.IssueOperationToken(ctx, operation)
+		if issueErr != nil {
+			return CreateResult{}, fmt.Errorf("issue workflow relay token: %w", issueErr)
+		}
+		result.Relay = &relay
+	}
+	return result, nil
 }
 
 func (s *Service) Get(ctx context.Context, operationID string) (Operation, error) {
@@ -230,9 +248,23 @@ func (s *Service) appendScoped(
 		StepID: stepID, Label: label, Status: status,
 		Timestamp: s.now().UTC(), Metadata: safeMetadata,
 	}
-	return s.store.AppendEvent(
+	updated, appended, err := s.store.AppendEvent(
 		ctx, scope.workspaceID, scope.userID, operation.ID, event, operationStatus,
 	)
+	if err != nil {
+		return Operation{}, Event{}, err
+	}
+	if terminal && s.tokens != nil {
+		revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		revokeErr := s.tokens.RevokeOperationToken(revokeCtx, updated)
+		cancel()
+		if revokeErr != nil {
+			// OperationActive remains the load-bearing authorization check, so a
+			// failed revocation write cannot make a terminal token usable.
+			log.Printf("workflow relay token revocation failed operation_id=%s: %v", updated.ID, revokeErr)
+		}
+	}
+	return updated, appended, nil
 }
 
 func labelFor(kind Kind, stepID string) (string, bool) {

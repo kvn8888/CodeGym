@@ -46,8 +46,19 @@ type CreateInput struct {
 }
 
 type CreateResult struct {
-	Operation Operation `json:"operation"`
-	Events    []Event   `json:"events"`
+	Operation Operation    `json:"operation"`
+	Events    []Event      `json:"events"`
+	Relay     *RelayAccess `json:"relay,omitempty"`
+}
+
+// RelayAccess is the short-lived sandbox credential issued with a workflow
+// operation when the model relay is configured.
+type RelayAccess struct {
+	Token            string    `json:"token"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	Deadline         time.Time `json:"deadline"`
+	MaxTotalTokens   int64     `json:"max_total_tokens"`
+	MaxCostUSDMicros int64     `json:"max_cost_usd_micros"`
 }
 
 type stepDefinition struct {

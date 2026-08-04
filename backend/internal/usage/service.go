@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
@@ -40,6 +41,20 @@ func (s *Service) Record(ctx context.Context, input RecordInput) (Record, error)
 	if err != nil {
 		return Record{}, err
 	}
+	return s.RecordScoped(ctx, Scope{WorkspaceID: identity.workspaceID, UserID: identity.userID}, input)
+}
+
+// RecordScoped appends usage for a server-authenticated non-browser caller,
+// such as the single-operation model relay.
+func (s *Service) RecordScoped(ctx context.Context, scope Scope, input RecordInput) (Record, error) {
+	if s == nil || s.store == nil {
+		return Record{}, errors.New("usage service is not configured")
+	}
+	scope.WorkspaceID = strings.TrimSpace(scope.WorkspaceID)
+	scope.UserID = strings.TrimSpace(scope.UserID)
+	if scope.WorkspaceID == "" || scope.UserID == "" {
+		return Record{}, errors.New("usage workspace and user scope are required")
+	}
 
 	tokensIn := input.TokensIn
 	if tokensIn < 0 {
@@ -49,18 +64,21 @@ func (s *Service) Record(ctx context.Context, input RecordInput) (Record, error)
 	if tokensOut < 0 {
 		tokensOut = 0
 	}
+	totalTokens := input.TotalTokens
+	if totalTokens <= 0 {
+		totalTokens = tokensIn + tokensOut
+	}
 
 	record := Record{
-		ID:            newID(),
-		WorkspaceID:   identity.workspaceID,
-		UserID:        identity.userID,
-		Provider:      input.Provider,
-		Model:         input.Model,
-		Kind:          input.Kind,
-		TokensIn:      tokensIn,
-		TokensOut:     tokensOut,
-		CostUSDMicros: EstimateCostMicros(input.Provider, input.Model, tokensIn, tokensOut),
-		CreatedAt:     s.now().UTC(),
+		ID: newID(), WorkspaceID: scope.WorkspaceID, UserID: scope.UserID,
+		OperationID: strings.TrimSpace(input.OperationID),
+		Provider:    input.Provider, Model: input.Model, Kind: input.Kind,
+		TotalTokens: totalTokens, TokensIn: tokensIn, TokensOut: tokensOut,
+		ReasoningTokens:  maxInt(0, input.ReasoningTokens),
+		CacheReadTokens:  maxInt(0, input.CacheReadTokens),
+		CacheWriteTokens: maxInt(0, input.CacheWriteTokens),
+		CostUSDMicros:    EstimateCostMicros(input.Provider, input.Model, tokensIn, tokensOut),
+		CreatedAt:        s.now().UTC(),
 	}
 	if err := s.store.Append(ctx, record); err != nil {
 		return Record{}, err

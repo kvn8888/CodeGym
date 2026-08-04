@@ -153,6 +153,34 @@ func TestLoadExecutionAndDemoConfig(t *testing.T) {
 	}
 }
 
+func TestLoadRelayConfig(t *testing.T) {
+	clearConfigEnv(t)
+
+	cfg := Load()
+	if cfg.Relay.Enabled() {
+		t.Fatal("relay should be disabled without a token secret")
+	}
+	if cfg.Relay.TokenTTL != 15*time.Minute || cfg.Relay.MaxWallClock != 10*time.Minute ||
+		cfg.Relay.MaxTotalTokens != 100_000 || cfg.Relay.MaxCostUSDMicros != 5_000_000 ||
+		cfg.Relay.PublicModel != "codegym-agent" {
+		t.Fatalf("unexpected relay defaults: %#v", cfg.Relay)
+	}
+
+	t.Setenv("CODEGYM_RELAY_TOKEN_SECRET", "test-secret")
+	t.Setenv("CODEGYM_RELAY_TOKEN_TTL", "7m")
+	t.Setenv("CODEGYM_RELAY_MAX_TOTAL_TOKENS", "12345")
+	t.Setenv("CODEGYM_RELAY_MAX_COST_USD", "1.25")
+	t.Setenv("CODEGYM_RELAY_MAX_WALL_CLOCK", "6m")
+	t.Setenv("CODEGYM_RELAY_MODEL", "sandbox-model")
+	cfg = Load()
+	if !cfg.Relay.Enabled() || cfg.Relay.TokenSecret != "test-secret" ||
+		cfg.Relay.TokenTTL != 7*time.Minute || cfg.Relay.MaxTotalTokens != 12_345 ||
+		cfg.Relay.MaxCostUSDMicros != 1_250_000 || cfg.Relay.MaxWallClock != 6*time.Minute ||
+		cfg.Relay.PublicModel != "sandbox-model" {
+		t.Fatalf("unexpected relay config: %#v", cfg.Relay)
+	}
+}
+
 func TestMemoryRefreshTriggerModes(t *testing.T) {
 	tests := []struct {
 		trigger        string
@@ -220,6 +248,12 @@ func clearConfigEnv(t *testing.T) {
 		"CODEGYM_GENAI_GEMINI_API_KEY",
 		"CODEGYM_GENAI_GEMINI_BASE_URL",
 		"CODEGYM_GENAI_GEMINI_MODEL",
+		"CODEGYM_RELAY_TOKEN_SECRET",
+		"CODEGYM_RELAY_TOKEN_TTL",
+		"CODEGYM_RELAY_MAX_TOTAL_TOKENS",
+		"CODEGYM_RELAY_MAX_COST_USD",
+		"CODEGYM_RELAY_MAX_WALL_CLOCK",
+		"CODEGYM_RELAY_MODEL",
 	} {
 		t.Setenv(key, "")
 	}

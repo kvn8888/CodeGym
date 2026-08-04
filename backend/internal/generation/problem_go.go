@@ -167,7 +167,7 @@ func main() {
 				EstimatedMinutes: output.EstimatedMinutes, Type: "coding",
 			},
 			Version: "1.0.0", Description: output.Description, Subcategory: output.Subcategory,
-			Runtime:    problems.Runtime{Image: "go1.25.4", TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: "block-all"},
+			Runtime:    problems.Runtime{Image: "go1.25.4", TimeoutSeconds: 30, MemoryMB: 1024, NetworkMode: "block-all"},
 			Files:      problems.FileManifest{Skeleton: []problems.FileRef{{Path: "solution.go", Entry: true}}},
 			TestConfig: problems.TestConfig{Strategy: "unit", Comparator: output.Comparator}, Hints: hints,
 		},

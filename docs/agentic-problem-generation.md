@@ -250,6 +250,12 @@ The pre-build probe confirmed that default image had no usable `go`; the final
 network-blocked gate reported `go version go1.25.4 linux/amd64` and successfully
 compiled and ran the fresh smoke program.
 
+Go problem runs use a 1,024 MB supervised address-space ceiling. The 2026-08-03
+acceptance run proved that 256 MB caused `go build` to fail before the harness
+started; at 1,024 MB the same network-blocked snapshot passed solution, failure,
+compile-error, timeout, checker, and exact-comparator paths. Compilation remains
+inside the unchanged language-agnostic supervisor's wall-clock budget.
+
 The builder is deliberately opt-in and re-runnable:
 
 ```bash

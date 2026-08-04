@@ -174,7 +174,7 @@ func Verify(
 			if err != nil {
 				return problems.Definition{}, generation.GeneratedProblem{}, err
 			}
-			validated, validateErr := generation.ValidateGeneratedProblem(raw)
+			validated, validateErr := generation.ValidateGeneratedProblemForLanguage(raw, currentGen.Language)
 			if validateErr != nil {
 				return problems.Definition{}, generation.GeneratedProblem{}, fmt.Errorf("%w: repaired problem failed validation: %v", ErrRejected, validateErr)
 			}
@@ -197,8 +197,21 @@ func runReference(ctx context.Context, runner execution.Runner, definition probl
 	if !ok {
 		return submission.TestResult{}, fmt.Errorf("%w: unsupported language %q", ErrRejected, definition.Language)
 	}
+	solutionPath := ""
+	for _, file := range definition.Files.Skeleton {
+		if file.Entry {
+			solutionPath = file.Path
+			break
+		}
+	}
+	if solutionPath == "" && len(definition.Files.Skeleton) > 0 {
+		solutionPath = definition.Files.Skeleton[0].Path
+	}
+	if solutionPath == "" {
+		return submission.TestResult{}, fmt.Errorf("%w: problem has no solution entry file", ErrRejected)
+	}
 	files, err := submission.AssembleFiles(
-		[]execution.File{{Path: "solution.py", Content: definition.ReferenceSolution}},
+		[]execution.File{{Path: solutionPath, Content: definition.ReferenceSolution}},
 		definition.HiddenTestFiles,
 	)
 	if err != nil {
@@ -289,6 +302,7 @@ func adjudicate(
 	results []caseResult,
 ) (verificationResult, error) {
 	specPayload := map[string]any{
+		"language":          generated.Language,
 		"title":             generated.Title,
 		"description":       generated.Description,
 		"function_name":     generated.FunctionName,

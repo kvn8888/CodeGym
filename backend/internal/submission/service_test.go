@@ -50,3 +50,22 @@ func TestViewFromRunUsesStructuredCompletedVerdict(t *testing.T) {
 		t.Fatalf("view = %#v", view)
 	}
 }
+
+func TestViewFromRunSurfacesCompileError(t *testing.T) {
+	compileError := "solution.go:3: syntax error: unexpected }"
+	exitCode := 0
+	view := viewFromRun(execution.Run{
+		Status: execution.StatusFailed, DurationMs: 18,
+		JudgeResult: &execution.JudgeResult{
+			Schema: execution.JudgeSchema, Status: execution.JudgeStatusFailed,
+			ExitCode: &exitCode, DurationMs: 18, Cases: []execution.CaseResult{},
+			CompileError: &compileError,
+		},
+	})
+	if view.Status != StatusCompleted || view.Result == nil || view.Result.Status != "fail" {
+		t.Fatalf("view = %#v", view)
+	}
+	if view.Result.CompileError == nil || *view.Result.CompileError != compileError || view.Result.Total != 0 {
+		t.Fatalf("compile result = %#v", view.Result)
+	}
+}

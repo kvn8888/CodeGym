@@ -1051,6 +1051,13 @@ export interface components {
         ProblemTestConfig: {
             /** @example hidden */
             strategy: string;
+            comparator: components["schemas"]["AcceptanceComparator"];
+        };
+        AcceptanceComparator: {
+            /** @enum {string} */
+            kind: "exact" | "set" | "multiset" | "sorted" | "float" | "checker";
+            /** @description Numeric tolerance for the float comparator; defaults to 1e-6. */
+            epsilon?: number;
         };
         ProblemHint: {
             cost: number;
@@ -1388,6 +1395,8 @@ export interface components {
             prompt?: string;
             /** @enum {string} */
             difficulty?: "easy" | "medium" | "hard";
+            /** @default python */
+            language?: "python" | "go";
         };
         GenerateProblemResult: {
             /** @enum {string} */

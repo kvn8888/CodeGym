@@ -2034,11 +2034,25 @@ components:
 
     ProblemTestConfig:
       type: object
-      required: [strategy]
+      required: [strategy, comparator]
       properties:
         strategy:
           type: string
           example: hidden
+        comparator:
+          $ref: "#/components/schemas/AcceptanceComparator"
+
+    AcceptanceComparator:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [exact, set, multiset, sorted, float, checker]
+        epsilon:
+          type: number
+          exclusiveMinimum: 0
+          description: Numeric tolerance for the float comparator; defaults to 1e-6.
 
     ProblemHint:
       type: object
@@ -2740,6 +2754,10 @@ components:
         difficulty:
           type: string
           enum: [easy, medium, hard]
+        language:
+          type: string
+          enum: [python, go]
+          default: python
 
     GenerateProblemResult:
       type: object

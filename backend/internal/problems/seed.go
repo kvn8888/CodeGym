@@ -1,5 +1,7 @@
 package problems
 
+import "github.com/kvn8888/codegym/backend/internal/execution"
+
 const twoSumSkeleton = `def two_sum(nums: list[int], target: int) -> list[int]:
     """Return the indices of two values whose sum equals target."""
     # TODO: implement this function.
@@ -21,6 +23,8 @@ import json
 import pathlib
 import signal
 import time
+
+from codegym_comparator import compare_values
 
 PROTOCOL_DIR = pathlib.Path(".codegym")
 CASES_PATH = PROTOCOL_DIR / "cases.jsonl"
@@ -66,7 +70,7 @@ for name, nums, target, expected in cases:
     signal.setitimer(signal.ITIMER_REAL, CASE_TIMEOUT_SECONDS)
     try:
         actual = solution.two_sum(nums, target)
-        if not isinstance(actual, list) or sorted(actual) != sorted(expected):
+        if not compare_values("sorted", expected, actual):
             status = "fail"
             error = f"expected {expected}, got {actual}"
     except MemoryError:
@@ -127,7 +131,7 @@ Exactly one valid answer exists. You may not use the same array element twice, a
 			Files: FileManifest{Skeleton: []FileRef{
 				{Path: "solution.py", Entry: true},
 			}},
-			TestConfig: TestConfig{Strategy: "unit"},
+			TestConfig: TestConfig{Strategy: "unit", Comparator: Comparator{Kind: ComparatorSorted}},
 			Hints: []Hint{
 				{Cost: 0, Text: "As you scan the array, ask whether you have already seen the value needed to reach the target."},
 				{Cost: 1, Text: "Store each visited value and its index in a dictionary so complement lookup is constant time."},
@@ -138,6 +142,7 @@ Exactly one valid answer exists. You may not use the same array element twice, a
 		},
 		HiddenTestFiles: []File{
 			{Path: "test_solution.py", Content: twoSumHiddenTests},
+			{Path: "codegym_comparator.py", Content: execution.PythonComparatorSource},
 		},
 		ReferenceSolution: twoSumReferenceSolution,
 		Entrypoint:        "test_solution.py",

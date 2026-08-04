@@ -46,7 +46,8 @@ type FileRef struct {
 }
 
 type TestConfig struct {
-	Strategy string `json:"strategy"`
+	Strategy   string     `json:"strategy"`
+	Comparator Comparator `json:"comparator"`
 }
 
 type Hint struct {

@@ -25,7 +25,16 @@ func (s *Service) EnsureSeed(ctx context.Context) error {
 	if s == nil || s.store == nil {
 		return errors.New("problem store is not configured")
 	}
-	return s.store.Upsert(ctx, twoSumDefinition())
+	httpDefinition, err := goHTTPItemsDefinition()
+	if err != nil {
+		return err
+	}
+	for _, definition := range []Definition{twoSumDefinition(), httpDefinition} {
+		if err := s.store.Upsert(ctx, definition); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) List(ctx context.Context) ([]Summary, error) {

@@ -25,7 +25,7 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(summaries) != 1 || summaries[0].ID != "two-sum" {
+	if len(summaries) != 2 || !containsProblemID(summaries, "two-sum") || !containsProblemID(summaries, goHTTPItemsID) {
 		t.Fatalf("summaries = %#v", summaries)
 	}
 
@@ -72,6 +72,36 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 	if len(skeleton.Files) != 1 || skeleton.Files[0].Content != twoSumSkeleton {
 		t.Fatalf("skeleton = %#v", skeleton)
 	}
+	if definition.TestConfig.Strategy != TestStrategyUnit || definition.TestConfig.Comparator.Kind != ComparatorSorted || definition.Entrypoint != "test_solution.py" {
+		t.Fatalf("two-sum seed changed: %#v", definition)
+	}
+
+	httpProblem, err := service.Get(ctx, goHTTPItemsID)
+	if err != nil {
+		t.Fatalf("Get HTTP seed: %v", err)
+	}
+	httpSkeleton, err := service.GetSkeleton(ctx, goHTTPItemsID)
+	if err != nil {
+		t.Fatalf("GetSkeleton HTTP seed: %v", err)
+	}
+	httpDefinition, err := service.GetDefinition(ctx, goHTTPItemsID)
+	if err != nil {
+		t.Fatalf("GetDefinition HTTP seed: %v", err)
+	}
+	if httpDefinition.TestConfig.Strategy != TestStrategyHTTP || httpDefinition.Language != "go" ||
+		httpDefinition.Entrypoint != "codegym_http_compile.py" || len(httpDefinition.HiddenTestFiles) != 4 {
+		t.Fatalf("HTTP seed wiring = %#v", httpDefinition)
+	}
+	if len(httpSkeleton.Files) != 1 || httpSkeleton.Files[0].Path != "main.go" || !strings.Contains(httpSkeleton.Files[0].Content, `os.Getenv("PORT")`) {
+		t.Fatalf("HTTP seed skeleton = %#v", httpSkeleton)
+	}
+	httpPublicJSON, err := json.Marshal(httpProblem)
+	if err != nil {
+		t.Fatalf("marshal public HTTP seed: %v", err)
+	}
+	if strings.Contains(string(httpPublicJSON), "creates-an-item") || strings.Contains(string(httpPublicJSON), "codegym_http_cases") {
+		t.Fatalf("public HTTP seed leaked hidden cases: %s", httpPublicJSON)
+	}
 }
 
 func TestGeneratedProblemsAreVisibleOnlyToTheirOwnerScope(t *testing.T) {
@@ -102,9 +132,18 @@ func TestGeneratedProblemsAreVisibleOnlyToTheirOwnerScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(otherList) != 1 || otherList[0].ID != "two-sum" {
-		t.Fatalf("other scope should see only global seed: %#v", otherList)
+	if len(otherList) != 2 || !containsProblemID(otherList, "two-sum") || !containsProblemID(otherList, goHTTPItemsID) {
+		t.Fatalf("other scope should see both global seeds: %#v", otherList)
 	}
+}
+
+func containsProblemID(summaries []Summary, id string) bool {
+	for _, summary := range summaries {
+		if summary.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func problemTestContext(workspaceID, userID string) context.Context {

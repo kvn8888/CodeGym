@@ -34,6 +34,13 @@ type File struct {
 
 const NetworkModeBlockAll = "block-all"
 
+type TestStrategy string
+
+const (
+	TestStrategyUnit TestStrategy = "unit"
+	TestStrategyHTTP TestStrategy = "http"
+)
+
 // Limits are mandatory per-run capabilities supplied by the problem runtime.
 // They intentionally have no permissive defaults: zero values are rejected so
 // callers cannot silently drop a problem's execution policy.
@@ -77,6 +84,7 @@ type SubmitRunInput struct {
 	ProblemID  string `json:"problem_id"`
 	Language   string `json:"language"`
 	Entrypoint string `json:"entrypoint"`
+	Strategy   string `json:"strategy,omitempty"`
 	Files      []File `json:"files"`
 	Limits     Limits `json:"limits"`
 }

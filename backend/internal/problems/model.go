@@ -46,9 +46,17 @@ type FileRef struct {
 }
 
 type TestConfig struct {
-	Strategy   string     `json:"strategy"`
-	Comparator Comparator `json:"comparator"`
+	Strategy                TestStrategy `json:"strategy"`
+	Comparator              Comparator   `json:"comparator"`
+	ReadinessTimeoutSeconds int          `json:"readiness_timeout_seconds,omitempty"`
 }
+
+type TestStrategy string
+
+const (
+	TestStrategyUnit TestStrategy = "unit"
+	TestStrategyHTTP TestStrategy = "http"
+)
 
 type Hint struct {
 	Cost int    `json:"cost"`

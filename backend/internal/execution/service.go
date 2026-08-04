@@ -63,6 +63,10 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 	if err := validateFiles(input.Files, input.Entrypoint); err != nil {
 		return Run{}, err
 	}
+	strategy, err := normalizeTestStrategy(input.Strategy)
+	if err != nil {
+		return Run{}, err
+	}
 
 	run := Run{
 		ID:          newID("exec_run"),
@@ -91,6 +95,7 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		Language:   lang,
 		Files:      input.Files,
 		Entrypoint: input.Entrypoint,
+		Strategy:   strategy,
 		Limits:     input.Limits,
 	})
 
@@ -136,6 +141,19 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		return Run{}, err
 	}
 	return run, nil
+}
+
+func normalizeTestStrategy(value string) (TestStrategy, error) {
+	strategy := TestStrategy(strings.ToLower(strings.TrimSpace(value)))
+	if strategy == "" {
+		strategy = TestStrategyUnit
+	}
+	switch strategy {
+	case TestStrategyUnit, TestStrategyHTTP:
+		return strategy, nil
+	default:
+		return "", fmt.Errorf("test strategy must be unit or http, got %q", value)
+	}
 }
 
 func validateLimits(limits Limits) error {

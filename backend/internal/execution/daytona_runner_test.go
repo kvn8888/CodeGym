@@ -112,6 +112,16 @@ func TestBuildSupervisorCommandUsesRunLimits(t *testing.T) {
 	}
 }
 
+func TestUnitStrategyKeepsSupervisorCommandByteIdentical(t *testing.T) {
+	spec := pythonSpec(passingSolution, solutionTests)
+	spec.Strategy = TestStrategyUnit
+	got := buildSupervisorCommand(spec)
+	want := "cd ~/work && 'python3' '.codegym/supervisor.py' '--work-dir' '.codegym' '--timeout-seconds' '30' '--memory-mb' '256' '--output-cap-bytes' '65536' '--' 'python3' 'test_solution.py'"
+	if got != want {
+		t.Fatalf("unit supervisor command changed\ngot:  %s\nwant: %s", got, want)
+	}
+}
+
 func TestDaytonaRunnerPassingSubmission(t *testing.T) {
 	runner := daytonaRunner(t)
 

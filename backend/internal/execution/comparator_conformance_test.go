@@ -34,17 +34,43 @@ func TestComparatorConformance(t *testing.T) {
 		t.Fatalf("decode comparator table: %v", err)
 	}
 
+	resultsByLanguage := make(map[string][]comparatorConformanceResult)
 	t.Run("python", func(t *testing.T) {
 		outputPath := filepath.Join(t.TempDir(), "python-results.json")
 		command := exec.Command(python, filepath.Join("testdata", "run_python_comparators.py"), tablePath, outputPath)
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("run Python comparator conformance: %v\n%s", err, output)
 		}
-		assertComparatorResults(t, rows, outputPath)
+		resultsByLanguage["python"] = assertComparatorResults(t, rows, outputPath)
 	})
+
+	goBinary, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go is required for comparator conformance")
+	}
+	t.Run("go", func(t *testing.T) {
+		outputPath := filepath.Join(t.TempDir(), "go-results.json")
+		command := exec.Command(goBinary, "run",
+			filepath.Join("testdata", "comparator_go.go"),
+			filepath.Join("testdata", "run_go_comparators.go"),
+			tablePath, outputPath,
+		)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("run Go comparator conformance: %v\n%s", err, output)
+		}
+		resultsByLanguage["go"] = assertComparatorResults(t, rows, outputPath)
+	})
+
+	pythonResults := resultsByLanguage["python"]
+	goResults := resultsByLanguage["go"]
+	for index := range rows {
+		if pythonResults[index].Equal != goResults[index].Equal {
+			t.Errorf("row %d (%s): Python equal=%t, Go equal=%t", index, rows[index].Note, pythonResults[index].Equal, goResults[index].Equal)
+		}
+	}
 }
 
-func assertComparatorResults(t *testing.T, rows []comparatorConformanceRow, path string) {
+func assertComparatorResults(t *testing.T, rows []comparatorConformanceRow, path string) []comparatorConformanceResult {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -68,4 +94,5 @@ func assertComparatorResults(t *testing.T, rows []comparatorConformanceRow, path
 			t.Errorf("row %d (%s): equal = %t, want %t", index, rows[index].Note, result.Equal, rows[index].WantEqual)
 		}
 	}
+	return results
 }

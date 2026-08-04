@@ -102,7 +102,8 @@ func goHTTPItemsDefinition() (Definition, error) {
 		Comparator: Comparator{Kind: ComparatorExact},
 	}, []HTTPCase{
 		{
-			Name: "creates-an-item",
+			CaseMetadata: CaseMetadata{Kind: CaseKindExample, Rationale: "Creates the first item and shows the response shape."},
+			Name:         "creates-an-item",
 			Request: HTTPRequest{
 				Method: "POST", Path: "/items",
 				Headers: map[string]string{"Content-Type": "application/json"},
@@ -114,17 +115,20 @@ func goHTTPItemsDefinition() (Definition, error) {
 			},
 		},
 		{
-			Name:    "gets-the-created-item",
-			Request: HTTPRequest{Method: "GET", Path: "/items/1"},
-			Expect:  HTTPExpectation{Status: 200, JSON: json.RawMessage(`{"qty":2,"sku":"abc","id":"1"}`)},
+			CaseMetadata: CaseMetadata{Kind: CaseKindExample, Rationale: "Fetches the item created by the preceding example."},
+			Name:         "gets-the-created-item",
+			Request:      HTTPRequest{Method: "GET", Path: "/items/1"},
+			Expect:       HTTPExpectation{Status: 200, JSON: json.RawMessage(`{"qty":2,"sku":"abc","id":"1"}`)},
 		},
 		{
-			Name:    "returns-not-found-for-an-unknown-item",
-			Request: HTTPRequest{Method: "GET", Path: "/items/404"},
-			Expect:  HTTPExpectation{Status: 404, Body: stringPointer("404 page not found\n")},
+			CaseMetadata: CaseMetadata{Kind: CaseKindEdge, Hidden: true, Rationale: "Checks the unknown-resource response."},
+			Name:         "returns-not-found-for-an-unknown-item",
+			Request:      HTTPRequest{Method: "GET", Path: "/items/404"},
+			Expect:       HTTPExpectation{Status: 404, Body: stringPointer("404 page not found\n")},
 		},
 		{
-			Name: "increments-item-identifiers",
+			CaseMetadata: CaseMetadata{Kind: CaseKindHidden, Hidden: true, Rationale: "Checks stateful identifier allocation."},
+			Name:         "increments-item-identifiers",
 			Request: HTTPRequest{
 				Method: "POST", Path: "/items",
 				Headers: map[string]string{"Content-Type": "application/json"},
@@ -136,12 +140,16 @@ func goHTTPItemsDefinition() (Definition, error) {
 	if err != nil {
 		return Definition{}, fmt.Errorf("build Go HTTP seed cases: %w", err)
 	}
-	harnessConfig, err := json.Marshal(struct {
-		ReadinessTimeoutSeconds int        `json:"readiness_timeout_seconds"`
-		Cases                   []HTTPCase `json:"cases"`
-	}{ReadinessTimeoutSeconds: config.ReadinessTimeoutSeconds, Cases: cases})
+	if err := ValidateCaseVisibilityMix(CountHTTPCaseVisibility(cases), 2); err != nil {
+		return Definition{}, fmt.Errorf("build Go HTTP seed case mix: %w", err)
+	}
+	hiddenFiles, err := buildGoHTTPSeedTestFiles(config, cases)
 	if err != nil {
-		return Definition{}, fmt.Errorf("encode Go HTTP seed cases: %w", err)
+		return Definition{}, err
+	}
+	publicFiles, err := buildGoHTTPSeedTestFiles(config, SelectHTTPCases(cases, false))
+	if err != nil {
+		return Definition{}, err
 	}
 	return Definition{
 		Problem: Problem{
@@ -157,24 +165,37 @@ func goHTTPItemsDefinition() (Definition, error) {
 - GET /items/{id} returns a stored item with status 200 or a standard 404 response when it does not exist.
 
 Read the server port from the PORT environment variable. Use only the Go standard library. Keep state safe for concurrent requests.`,
-			Runtime:    Runtime{Image: "go1.25.4", TimeoutSeconds: 60, MemoryMB: 1024, NetworkMode: "block-all"},
-			Files:      FileManifest{Skeleton: []FileRef{{Path: "main.go", Entry: true}}},
-			TestConfig: config,
+			Runtime:     Runtime{Image: "go1.25.4", TimeoutSeconds: 60, MemoryMB: 1024, NetworkMode: "block-all"},
+			Files:       FileManifest{Skeleton: []FileRef{{Path: "main.go", Entry: true}}},
+			TestConfig:  config,
+			PublicCases: ProjectPublicHTTPCases(cases),
 			Hints: []Hint{
 				{Cost: 0, Text: "Use http.ServeMux method-and-path patterns and request.PathValue for the id."},
 				{Cost: 1, Text: "Guard the item map and next id with a mutex, then encode responses with json.NewEncoder."},
 			},
 		},
-		SkeletonFiles: []File{{Path: "main.go", Content: goHTTPItemsSkeleton}},
-		HiddenTestFiles: []File{
-			{Path: "codegym_http_harness.go", Content: execution.GoHTTPHarnessSource},
-			{Path: "codegym_http_comparator.go", Content: execution.GoComparatorSource},
-			{Path: "codegym_http_cases.json", Content: string(harnessConfig)},
-			{Path: "codegym_http_compile.py", Content: execution.GoHTTPCompileRunnerSource},
-		},
+		SkeletonFiles:     []File{{Path: "main.go", Content: goHTTPItemsSkeleton}},
+		PublicTestFiles:   publicFiles,
+		HiddenTestFiles:   hiddenFiles,
 		ReferenceSolution: goHTTPItemsReference,
 		Entrypoint:        "codegym_http_compile.py",
 		Visibility:        VisibilityGlobal,
+	}, nil
+}
+
+func buildGoHTTPSeedTestFiles(config TestConfig, cases []HTTPCase) ([]File, error) {
+	harnessConfig, err := json.Marshal(struct {
+		ReadinessTimeoutSeconds int        `json:"readiness_timeout_seconds"`
+		Cases                   []HTTPCase `json:"cases"`
+	}{ReadinessTimeoutSeconds: config.ReadinessTimeoutSeconds, Cases: cases})
+	if err != nil {
+		return nil, fmt.Errorf("encode Go HTTP seed cases: %w", err)
+	}
+	return []File{
+		{Path: "codegym_http_harness.go", Content: execution.GoHTTPHarnessSource},
+		{Path: "codegym_http_comparator.go", Content: execution.GoComparatorSource},
+		{Path: "codegym_http_cases.json", Content: string(harnessConfig)},
+		{Path: "codegym_http_compile.py", Content: execution.GoHTTPCompileRunnerSource},
 	}, nil
 }
 

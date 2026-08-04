@@ -1,6 +1,11 @@
 package problems
 
-import "github.com/kvn8888/codegym/backend/internal/execution"
+import (
+	"encoding/json"
+	"strings"
+
+	"github.com/kvn8888/codegym/backend/internal/execution"
+)
 
 const twoSumSkeleton = `def two_sum(nums: list[int], target: int) -> list[int]:
     """Return the indices of two values whose sum equals target."""
@@ -92,7 +97,43 @@ for name, nums, target, expected in cases:
 write_verdict("passed" if all(case["status"] == "pass" for case in results) else "failed", results)
 `
 
+const (
+	twoSumFullCasesSource = `cases = [
+    ("finds a pair in a sorted-looking list", [2, 7, 11, 15], 9, [0, 1]),
+    ("finds a pair without relying on order", [3, 2, 4], 6, [1, 2]),
+    ("handles duplicate values", [3, 3], 6, [0, 1]),
+    ("handles negative values", [-3, 4, 3, 90], 0, [0, 2]),
+]`
+	twoSumPublicCasesSource = `cases = [
+    ("finds a pair in a sorted-looking list", [2, 7, 11, 15], 9, [0, 1]),
+    ("finds a pair without relying on order", [3, 2, 4], 6, [1, 2]),
+]`
+)
+
+func twoSumCases() []UnitCase {
+	return []UnitCase{
+		{
+			CaseMetadata: CaseMetadata{Kind: CaseKindExample, Rationale: "Shows the worked example from the problem statement."},
+			Name:         "finds a pair in a sorted-looking list", Args: []json.RawMessage{json.RawMessage(`[2,7,11,15]`), json.RawMessage(`9`)}, Expected: json.RawMessage(`[0,1]`),
+		},
+		{
+			CaseMetadata: CaseMetadata{Kind: CaseKindFunctional, Rationale: "Shows that the input need not be sorted."},
+			Name:         "finds a pair without relying on order", Args: []json.RawMessage{json.RawMessage(`[3,2,4]`), json.RawMessage(`6`)}, Expected: json.RawMessage(`[1,2]`),
+		},
+		{
+			CaseMetadata: CaseMetadata{Kind: CaseKindEdge, Hidden: true, Rationale: "Checks two equal values at different indices."},
+			Name:         "handles duplicate values", Args: []json.RawMessage{json.RawMessage(`[3,3]`), json.RawMessage(`6`)}, Expected: json.RawMessage(`[0,1]`),
+		},
+		{
+			CaseMetadata: CaseMetadata{Kind: CaseKindHidden, Hidden: true, Rationale: "Checks complements across negative and positive values."},
+			Name:         "handles negative values", Args: []json.RawMessage{json.RawMessage(`[-3,4,3,90]`), json.RawMessage(`0`)}, Expected: json.RawMessage(`[0,2]`),
+		},
+	}
+}
+
 func twoSumDefinition() Definition {
+	cases := twoSumCases()
+	publicHarness := strings.Replace(twoSumHiddenTests, twoSumFullCasesSource, twoSumPublicCasesSource, 1)
 	return Definition{
 		Problem: Problem{
 			Summary: Summary{
@@ -131,7 +172,8 @@ Exactly one valid answer exists. You may not use the same array element twice, a
 			Files: FileManifest{Skeleton: []FileRef{
 				{Path: "solution.py", Entry: true},
 			}},
-			TestConfig: TestConfig{Strategy: "unit", Comparator: Comparator{Kind: ComparatorSorted}},
+			TestConfig:  TestConfig{Strategy: "unit", Comparator: Comparator{Kind: ComparatorSorted}},
+			PublicCases: ProjectPublicUnitCases(cases),
 			Hints: []Hint{
 				{Cost: 0, Text: "As you scan the array, ask whether you have already seen the value needed to reach the target."},
 				{Cost: 1, Text: "Store each visited value and its index in a dictionary so complement lookup is constant time."},
@@ -139,6 +181,10 @@ Exactly one valid answer exists. You may not use the same array element twice, a
 		},
 		SkeletonFiles: []File{
 			{Path: "solution.py", Content: twoSumSkeleton},
+		},
+		PublicTestFiles: []File{
+			{Path: "test_solution.py", Content: publicHarness},
+			{Path: "codegym_comparator.py", Content: execution.PythonComparatorSource},
 		},
 		HiddenTestFiles: []File{
 			{Path: "test_solution.py", Content: twoSumHiddenTests},

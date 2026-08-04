@@ -212,10 +212,10 @@ func goSumGenerated() generation.GeneratedProblem {
 		Hints: []string{"Accumulate each value."}, Comparator: problems.Comparator{Kind: problems.ComparatorExact},
 		ReferenceSolution: passingGoSumSolution,
 		TestCases: []generation.ProblemTestCase{
-			{Name: "positive values", Args: goRaws([]any{[]int{1, 2, 3}}), Expected: goRaw(6)},
-			{Name: "negative values", Args: goRaws([]any{[]int{-4, 1}}), Expected: goRaw(-3)},
-			{Name: "empty slice", Args: goRaws([]any{[]int{}}), Expected: goRaw(0)},
-			{Name: "mixed signs", Args: goRaws([]any{[]int{-2, 5, -1}}), Expected: goRaw(2)},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindExample}, Name: "positive values", Args: goRaws([]any{[]int{1, 2, 3}}), Expected: goRaw(6)},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindFunctional}, Name: "negative values", Args: goRaws([]any{[]int{-4, 1}}), Expected: goRaw(-3)},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindEdge, Hidden: true}, Name: "empty slice", Args: goRaws([]any{[]int{}}), Expected: goRaw(0)},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindHidden, Hidden: true}, Name: "mixed signs", Args: goRaws([]any{[]int{-2, 5, -1}}), Expected: goRaw(2)},
 		},
 	}
 }
@@ -255,10 +255,10 @@ func check(args []any, actual, expected any) (bool, string) {
 }
 `,
 		TestCases: []generation.ProblemTestCase{
-			{Name: "first", Args: goRaws([]any{[]int{1, 4, 2, 3}, 5}), Expected: goRaw([]int{0, 1})},
-			{Name: "second", Args: goRaws([]any{[]int{2, 6, 3, 5}, 8}), Expected: goRaw([]int{0, 1})},
-			{Name: "negative", Args: goRaws([]any{[]int{-1, 5, 1, 3}, 4}), Expected: goRaw([]int{0, 1})},
-			{Name: "zero", Args: goRaws([]any{[]int{0, 10, 4, 6}, 10}), Expected: goRaw([]int{0, 1})},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindExample}, Name: "first", Args: goRaws([]any{[]int{1, 4, 2, 3}, 5}), Expected: goRaw([]int{0, 1})},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindFunctional}, Name: "second", Args: goRaws([]any{[]int{2, 6, 3, 5}, 8}), Expected: goRaw([]int{0, 1})},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindEdge, Hidden: true}, Name: "negative", Args: goRaws([]any{[]int{-1, 5, 1, 3}, 4}), Expected: goRaw([]int{0, 1})},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindHidden, Hidden: true}, Name: "zero", Args: goRaws([]any{[]int{0, 10, 4, 6}, 10}), Expected: goRaw([]int{0, 1})},
 		},
 	}
 }

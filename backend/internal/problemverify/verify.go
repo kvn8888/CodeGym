@@ -386,6 +386,13 @@ func applyRepair(generated generation.GeneratedProblem, adjudication verificatio
 			continue
 		}
 		if replacement, ok := repairedByName[name]; ok {
+			// Visibility metadata is owned by the generated suite, not by the
+			// adjudicator's value-only repair payload. Preserve it so a corrected
+			// expected value cannot accidentally expose or hide a case.
+			replacement.CaseMetadata = test.CaseMetadata
+			if replacement.Comparator == nil {
+				replacement.Comparator = test.Comparator
+			}
 			kept = append(kept, replacement)
 			delete(repairedByName, name)
 			continue

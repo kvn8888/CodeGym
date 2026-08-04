@@ -27,6 +27,7 @@ For strategy "unit" (the default when omitted):
 - Allowed parameter and return types are int, float64, bool, string, slices of those, nested slices, and maps whose keys are string or int. Use Go syntax such as []int, [][]float64, map[string]int, or map[int][]string.
 - Linked lists, trees, graphs, pointers, interfaces, structs, functions, channels, and cyclic structures are unsupported.
 - Include 4..12 deterministic JSON test_cases. Each args array has exactly one value per parameter and expected matches return_type.
+- Every test case includes kind (example, functional, edge, stress, or hidden), hidden, and an optional short rationale. Hidden is authoritative for pre-submit exposure. Produce a roughly even split with at least 2 public and 2 hidden cases.
 - Use checker when several structurally different answers are valid. Then checker must contain a complete Go source file in package main defining func check(args []any, actual, expected any) (bool, string).
 - reference_solution is a complete package main source file defining function_name with the exact typed signature.
 - Never produce a test runner, hidden-test imports, shell commands, CODEGYM_RESULT, os/exec, net, filesystem access, unsafe, cgo, or network access.
@@ -35,7 +36,7 @@ For strategy "http":
 - Use only the Go standard library and net/http. checker is unsupported.
 - entrypoint is "main.go". starter_code and reference_solution are complete package main source files whose main reads PORT from the environment and starts an HTTP server.
 - starter_code must compile and expose the described routes, leaving the exercise behavior as clear TODOs without embedding hidden expectations.
-- Include 1..12 deterministic http_test_cases. Each case has name, request {method,path,headers?,body?}, expect {status,json?,headers?,body?}, and an optional comparator override.
+- Include 4..12 deterministic http_test_cases with a roughly even split of at least 2 public and 2 hidden cases. Each case has name, kind, hidden, an optional short rationale, request {method,path,headers?,body?}, expect {status,json?,headers?,body?}, and an optional comparator override.
 - request.body is JSON. expect.headers is a subset. expect.json and expect.body are mutually exclusive.
 - Never produce a test runner, hidden-test imports, fixed ports, shell commands, CODEGYM_RESULT, os/exec, unsafe, cgo, or external network access. CodeGym builds and owns the HTTP harness.`
 
@@ -59,10 +60,10 @@ var goProblemJSONSchema = json.RawMessage(`{
     "parameters":{"type":"array","minItems":1,"maxItems":5,"items":{"type":"object","required":["name","type"]}},
     "return_type":{"type":"string"},
     "checker":{"type":"string"},
-    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","args","expected"],"properties":{"name":{"type":"string"},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}},
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","args","expected"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}},
     "entrypoint":{"type":"string"},
     "starter_code":{"type":"string"},
-    "http_test_cases":{"type":"array","minItems":1,"maxItems":12,"items":{"type":"object","required":["name","request","expect"],"properties":{"name":{"type":"string"},"request":{"type":"object","required":["method","path"],"properties":{"method":{"type":"string"},"path":{"type":"string"},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{}}},"expect":{"type":"object","required":["status"],"properties":{"status":{"type":"integer","minimum":100,"maximum":599},"json":{},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"string"}}},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+    "http_test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","request","expect"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"request":{"type":"object","required":["method","path"],"properties":{"method":{"type":"string"},"path":{"type":"string"},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{}}},"expect":{"type":"object","required":["status"],"properties":{"status":{"type":"integer","minimum":100,"maximum":599},"json":{},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"string"}}},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
   },
   "oneOf":[
     {"required":["function_name","parameters","return_type","test_cases"]},

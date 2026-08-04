@@ -72,6 +72,7 @@ Rules:
 - Allowed parameter and return types: int, str, bool, list[int], list[str].
 - Include 1..3 progressive hints.
 - Include 4..12 deterministic test cases. Each args array has exactly one value per parameter and expected matches return_type.
+- Every test case includes kind (example, functional, edge, stress, or hidden), hidden, and an optional short rationale. Hidden is authoritative for pre-submit exposure. Produce a roughly even split with at least 2 public and 2 hidden cases.
 - comparator is part of the problem specification. Use exact (the default), set, multiset, sorted, float with an optional positive finite epsilon (default 1e-6), or checker. A test case may override the problem comparator.
 - Use checker when several structurally different answers are valid. Then checker must contain a Python function check(args, actual, expected) returning bool or (bool, reason). CodeGym places it only in the hidden test file.
 - reference_solution contains only the Python function definition and helpers it needs. It must define function_name.
@@ -95,7 +96,7 @@ var problemJSONSchema = json.RawMessage(`{
     "reference_solution":{"type":"string"},
     "comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}},
     "checker":{"type":"string"},
-    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","args","expected"],"properties":{"name":{"type":"string"},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","args","expected"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
   }
 }`)
 
@@ -203,6 +204,9 @@ func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (
 		if strategy.language != "go" {
 			return output, errors.New("http problem generation is currently supported only for Go")
 		}
+		if err := requireGeneratedCaseVisibilityFields(raw, "http_test_cases"); err != nil {
+			return output, err
+		}
 		return validateGeneratedHTTPProblem(output)
 	}
 	if output.Strategy != problems.TestStrategyUnit {
@@ -210,6 +214,9 @@ func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (
 	}
 	if output.Entrypoint != "" || output.StarterCode != "" || len(output.HTTPTestCases) > 0 {
 		return output, errors.New("unit problems must not include HTTP entrypoint, starter_code, or http_test_cases")
+	}
+	if err := requireGeneratedCaseVisibilityFields(raw, "test_cases"); err != nil {
+		return output, err
 	}
 	if !strategy.validIdentifier(output.FunctionName) {
 		return output, fmt.Errorf("function_name is not a valid %s identifier", strategy.language)
@@ -239,10 +246,21 @@ func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (
 	}
 	output.Comparator = comparator
 	usesChecker := comparator.Kind == problems.ComparatorChecker
+	seenCaseNames := make(map[string]struct{}, len(output.TestCases))
 	for index, test := range output.TestCases {
+		metadata, err := problems.NormalizeCaseMetadata(test.CaseMetadata)
+		if err != nil {
+			return output, fmt.Errorf("test case %d: %w", index+1, err)
+		}
+		output.TestCases[index].CaseMetadata = metadata
 		if strings.TrimSpace(test.Name) == "" || len(test.Name) > 80 || len(test.Args) != len(output.Parameters) || len(test.Expected) == 0 || !json.Valid(test.Expected) {
 			return output, fmt.Errorf("test case %d has invalid name, args, or expected value", index+1)
 		}
+		nameKey := strings.ToLower(strings.TrimSpace(test.Name))
+		if _, duplicate := seenCaseNames[nameKey]; duplicate {
+			return output, fmt.Errorf("test case %d has duplicate name %q", index+1, test.Name)
+		}
+		seenCaseNames[nameKey] = struct{}{}
 		for argumentIndex, arg := range test.Args {
 			if len(arg) == 0 || !json.Valid(arg) ||
 				!strategy.validJSONType(arg, output.Parameters[argumentIndex].Type) {
@@ -261,6 +279,9 @@ func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (
 			output.TestCases[index].Comparator = &normalized
 		}
 		usesChecker = usesChecker || resolved.Kind == problems.ComparatorChecker
+	}
+	if err := problems.ValidateCaseVisibilityMix(problems.CountUnitCaseVisibility(output.TestCases), 2); err != nil {
+		return output, err
 	}
 	lowerSolution := strings.ToLower(output.ReferenceSolution)
 	if !strategy.referenceDefines(output.ReferenceSolution, output.FunctionName) {
@@ -291,6 +312,26 @@ func ValidateGeneratedProblemForLanguage(raw json.RawMessage, language string) (
 		return output, errors.New("checker source is only allowed when a checker comparator is used")
 	}
 	return output, nil
+}
+
+func requireGeneratedCaseVisibilityFields(raw json.RawMessage, field string) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return err
+	}
+	var cases []map[string]json.RawMessage
+	if err := json.Unmarshal(object[field], &cases); err != nil {
+		return fmt.Errorf("%s must be an array", field)
+	}
+	for index, testCase := range cases {
+		if _, ok := testCase["kind"]; !ok {
+			return fmt.Errorf("%s case %d must include kind", field, index+1)
+		}
+		if _, ok := testCase["hidden"]; !ok {
+			return fmt.Errorf("%s case %d must include hidden", field, index+1)
+		}
+	}
+	return nil
 }
 
 func validPythonProblemJSONType(raw json.RawMessage, expected string) bool {
@@ -396,29 +437,14 @@ func buildPythonProblemDefinition(output GeneratedProblem) (problems.Definition,
 		return problems.Definition{}, err
 	}
 	output.Comparator = comparator
-	type runnerCase struct {
-		Name       string              `json:"name"`
-		Args       []json.RawMessage   `json:"args"`
-		Expected   json.RawMessage     `json:"expected"`
-		Comparator problems.Comparator `json:"comparator"`
-	}
-	runnerCases := make([]runnerCase, 0, len(output.TestCases))
-	for index, test := range output.TestCases {
-		name := strings.TrimSpace(test.Name)
-		if name == "" {
-			name = fmt.Sprintf("case-%d", index+1)
-		}
-		comparator, err := problems.ResolveComparator(output.Comparator, test.Comparator)
-		if err != nil {
-			return problems.Definition{}, fmt.Errorf("case %q comparator: %w", name, err)
-		}
-		runnerCases = append(runnerCases, runnerCase{Name: name, Args: test.Args, Expected: test.Expected, Comparator: comparator})
-	}
-	casesJSON, err := json.Marshal(runnerCases)
+	hiddenFiles, err := buildPythonUnitTestFiles(output, output.TestCases)
 	if err != nil {
 		return problems.Definition{}, err
 	}
-	encodedCases := base64.StdEncoding.EncodeToString(casesJSON)
+	publicFiles, err := buildPythonUnitTestFiles(output, problems.SelectUnitCases(output.TestCases, false))
+	if err != nil {
+		return problems.Definition{}, err
+	}
 	parameters := make([]string, 0, len(output.Parameters))
 	for _, parameter := range output.Parameters {
 		parameters = append(parameters, parameter.Name+": "+parameter.Type)
@@ -429,6 +455,52 @@ func buildPythonProblemDefinition(output GeneratedProblem) (problems.Definition,
 	}
 	skeleton := fmt.Sprintf("def %s(%s) -> %s:\n    \"\"\"Implement the solution described in the problem.\"\"\"\n    # TODO: implement this function.\n    raise NotImplementedError\n",
 		output.FunctionName, strings.Join(parameters, ", "), output.ReturnType)
+	return problems.Definition{
+		Problem: problems.Problem{
+			Summary: problems.Summary{
+				Title: output.Title, Category: output.Category, Language: "python",
+				Difficulty: output.Difficulty, Tags: output.Tags,
+				EstimatedMinutes: output.EstimatedMinutes, Type: "coding",
+			},
+			Version: "1.0.0", Description: output.Description, Subcategory: output.Subcategory,
+			Runtime:     problems.Runtime{Image: "python312", TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: "block-all"},
+			Files:       problems.FileManifest{Skeleton: []problems.FileRef{{Path: "solution.py", Entry: true}}},
+			TestConfig:  problems.TestConfig{Strategy: "unit", Comparator: output.Comparator},
+			PublicCases: problems.ProjectPublicUnitCases(output.TestCases),
+			Hints:       hints,
+		},
+		SkeletonFiles:     []problems.File{{Path: "solution.py", Content: skeleton}},
+		PublicTestFiles:   publicFiles,
+		HiddenTestFiles:   hiddenFiles,
+		ReferenceSolution: output.ReferenceSolution + "\n",
+		Entrypoint:        "test_solution.py",
+	}, nil
+}
+
+func buildPythonUnitTestFiles(output GeneratedProblem, cases []problems.UnitCase) ([]problems.File, error) {
+	type runnerCase struct {
+		Name       string              `json:"name"`
+		Args       []json.RawMessage   `json:"args"`
+		Expected   json.RawMessage     `json:"expected"`
+		Comparator problems.Comparator `json:"comparator"`
+	}
+	runnerCases := make([]runnerCase, 0, len(cases))
+	for index, test := range cases {
+		name := strings.TrimSpace(test.Name)
+		if name == "" {
+			name = fmt.Sprintf("case-%d", index+1)
+		}
+		comparator, err := problems.ResolveComparator(output.Comparator, test.Comparator)
+		if err != nil {
+			return nil, fmt.Errorf("case %q comparator: %w", name, err)
+		}
+		runnerCases = append(runnerCases, runnerCase{Name: name, Args: test.Args, Expected: test.Expected, Comparator: comparator})
+	}
+	casesJSON, err := json.Marshal(runnerCases)
+	if err != nil {
+		return nil, err
+	}
+	encodedCases := base64.StdEncoding.EncodeToString(casesJSON)
 	// Named, incrementally flushed cases let the out-of-process supervisor
 	// attribute timeout/OOM/crash deaths before the final verdict exists.
 	// Expected/got remains in failure text so verification can adjudicate.
@@ -509,24 +581,8 @@ for index, case in enumerate(CASES):
 
 write_verdict("passed" if all(case["status"] == "pass" for case in results) else "failed", results)
 `, output.Checker, encodedCases, output.FunctionName)
-	return problems.Definition{
-		Problem: problems.Problem{
-			Summary: problems.Summary{
-				Title: output.Title, Category: output.Category, Language: "python",
-				Difficulty: output.Difficulty, Tags: output.Tags,
-				EstimatedMinutes: output.EstimatedMinutes, Type: "coding",
-			},
-			Version: "1.0.0", Description: output.Description, Subcategory: output.Subcategory,
-			Runtime:    problems.Runtime{Image: "python312", TimeoutSeconds: 30, MemoryMB: 256, NetworkMode: "block-all"},
-			Files:      problems.FileManifest{Skeleton: []problems.FileRef{{Path: "solution.py", Entry: true}}},
-			TestConfig: problems.TestConfig{Strategy: "unit", Comparator: output.Comparator}, Hints: hints,
-		},
-		SkeletonFiles: []problems.File{{Path: "solution.py", Content: skeleton}},
-		HiddenTestFiles: []problems.File{
-			{Path: "test_solution.py", Content: runner},
-			{Path: "codegym_comparator.py", Content: execution.PythonComparatorSource},
-		},
-		ReferenceSolution: output.ReferenceSolution + "\n",
-		Entrypoint:        "test_solution.py",
+	return []problems.File{
+		{Path: "test_solution.py", Content: runner},
+		{Path: "codegym_comparator.py", Content: execution.PythonComparatorSource},
 	}, nil
 }

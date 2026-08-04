@@ -14,15 +14,17 @@ func TestNormalizeHTTPCasesResolvesComparatorsAndHeaders(t *testing.T) {
 		Comparator: Comparator{Kind: ComparatorSorted},
 	}, []HTTPCase{
 		{
-			Name:    " lists-items ",
-			Request: HTTPRequest{Method: "get", Path: "/items?limit=2", Headers: map[string]string{"content-type": "application/json"}},
-			Expect:  HTTPExpectation{Status: 200, JSON: json.RawMessage(`[{"id":2},{"id":1}]`), Headers: map[string]string{"x-request-id": "request-1"}},
+			CaseMetadata: CaseMetadata{Kind: CaseKindExample},
+			Name:         " lists-items ",
+			Request:      HTTPRequest{Method: "get", Path: "/items?limit=2", Headers: map[string]string{"content-type": "application/json"}},
+			Expect:       HTTPExpectation{Status: 200, JSON: json.RawMessage(`[{"id":2},{"id":1}]`), Headers: map[string]string{"x-request-id": "request-1"}},
 		},
 		{
-			Name:       "creates-item",
-			Request:    HTTPRequest{Method: "post", Path: "/items", Body: json.RawMessage(`{"name":"book"}`)},
-			Expect:     HTTPExpectation{Status: 201, Body: &body},
-			Comparator: &Comparator{Kind: ComparatorFloat, Epsilon: &epsilon},
+			CaseMetadata: CaseMetadata{Kind: CaseKindFunctional},
+			Name:         "creates-item",
+			Request:      HTTPRequest{Method: "post", Path: "/items", Body: json.RawMessage(`{"name":"book"}`)},
+			Expect:       HTTPExpectation{Status: 201, Body: &body},
+			Comparator:   &Comparator{Kind: ComparatorFloat, Epsilon: &epsilon},
 		},
 	})
 	if err != nil {
@@ -47,9 +49,10 @@ func TestNormalizeHTTPCasesResolvesComparatorsAndHeaders(t *testing.T) {
 
 func TestNormalizeHTTPCasesRejectsInvalidCases(t *testing.T) {
 	valid := HTTPCase{
-		Name:    "valid",
-		Request: HTTPRequest{Method: "GET", Path: "/items"},
-		Expect:  HTTPExpectation{Status: 200, JSON: json.RawMessage(`[]`)},
+		CaseMetadata: CaseMetadata{Kind: CaseKindFunctional},
+		Name:         "valid",
+		Request:      HTTPRequest{Method: "GET", Path: "/items"},
+		Expect:       HTTPExpectation{Status: 200, JSON: json.RawMessage(`[]`)},
 	}
 	tests := []struct {
 		name   string

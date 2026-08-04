@@ -103,6 +103,11 @@ func NormalizeHTTPCases(config TestConfig, cases []HTTPCase) (TestConfig, []HTTP
 }
 
 func normalizeHTTPCase(problemComparator Comparator, input HTTPCase) (HTTPCase, error) {
+	metadata, err := NormalizeCaseMetadata(input.CaseMetadata)
+	if err != nil {
+		return HTTPCase{}, err
+	}
+	input.CaseMetadata = metadata
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" || len(input.Name) > 80 {
 		return HTTPCase{}, errors.New("name must be non-empty and at most 80 characters")

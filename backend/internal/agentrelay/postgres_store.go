@@ -161,6 +161,40 @@ func (s *PostgresStore) Revoke(ctx context.Context, workspaceID, userID, operati
 	return nil
 }
 
+func (s *PostgresStore) AddUsage(
+	ctx context.Context,
+	workspaceID, userID, operationID string,
+	delta UsageDelta,
+	at time.Time,
+) (OperationBudget, error) {
+	budget, err := scanBudget(s.pool.QueryRow(ctx, `
+		UPDATE agent_relay_operation_budgets
+		SET used_total_tokens = used_total_tokens + $4,
+			input_tokens = input_tokens + $5,
+			output_tokens = output_tokens + $6,
+			reasoning_tokens = reasoning_tokens + $7,
+			cache_read_tokens = cache_read_tokens + $8,
+			cache_write_tokens = cache_write_tokens + $9,
+			used_cost_usd_micros = used_cost_usd_micros + $10,
+			updated_at = $11
+		WHERE operation_id = $1 AND workspace_id = $2 AND user_id = $3
+		RETURNING id, operation_id, workspace_id, user_id,
+			max_total_tokens, max_cost_usd_micros, deadline,
+			used_total_tokens, input_tokens, output_tokens, reasoning_tokens,
+			cache_read_tokens, cache_write_tokens, used_cost_usd_micros,
+			revoked_at, created_at, updated_at`,
+		operationID, workspaceID, userID, delta.TotalTokens, delta.InputTokens,
+		delta.OutputTokens, delta.ReasoningTokens, delta.CacheReadTokens,
+		delta.CacheWriteTokens, delta.CostUSDMicros, at.UTC()))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return OperationBudget{}, ErrNotFound
+	}
+	if err != nil {
+		return OperationBudget{}, fmt.Errorf("add agent relay usage: %w", err)
+	}
+	return budget, nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }

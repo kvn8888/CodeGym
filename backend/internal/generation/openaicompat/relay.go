@@ -43,6 +43,13 @@ func (a *Adapter) RelayChatCompletion(ctx context.Context, payload []byte, strea
 		return nil, fmt.Errorf("openaicompat: encode relay stream flag: %w", err)
 	}
 	body["stream"] = streamValue
+	if stream {
+		streamOptions, marshalErr := json.Marshal(map[string]any{"include_usage": true})
+		if marshalErr != nil {
+			return nil, fmt.Errorf("openaicompat: encode relay stream options: %w", marshalErr)
+		}
+		body["stream_options"] = streamOptions
+	}
 	if a.authStyle == AuthAzureAPIKey {
 		if maxTokens, ok := body["max_tokens"]; ok {
 			if _, explicit := body["max_completion_tokens"]; !explicit {

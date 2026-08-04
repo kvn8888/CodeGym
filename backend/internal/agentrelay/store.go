@@ -14,6 +14,9 @@ var (
 	ErrRevokedToken      = errors.New("relay token revoked")
 	ErrOperationMismatch = errors.New("relay token is scoped to another operation")
 	ErrOperationTerminal = errors.New("workflow operation is terminal")
+	ErrTokenBudget       = errors.New("relay token budget is exhausted")
+	ErrCostBudget        = errors.New("relay cost budget is exhausted")
+	ErrDeadline          = errors.New("relay operation deadline has passed")
 )
 
 // Store persists relay authorization and budget state. Every read and update
@@ -23,4 +26,10 @@ type Store interface {
 	Create(ctx context.Context, budget OperationBudget) (OperationBudget, error)
 	Get(ctx context.Context, workspaceID, userID, operationID string) (OperationBudget, error)
 	Revoke(ctx context.Context, workspaceID, userID, operationID string, at time.Time) error
+	AddUsage(
+		ctx context.Context,
+		workspaceID, userID, operationID string,
+		delta UsageDelta,
+		at time.Time,
+	) (OperationBudget, error)
 }

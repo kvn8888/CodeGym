@@ -139,9 +139,15 @@ func LookupRate(provider, model string) Rate {
 // EstimateCostMicros returns cost in micro-USD for the given token counts.
 func EstimateCostMicros(provider, model string, tokensIn, tokensOut int) int64 {
 	rate := LookupRate(provider, model)
-	in := float64(maxInt(0, tokensIn)) * rate.InputPerMTok / float64(TokensPerMillion)
-	out := float64(maxInt(0, tokensOut)) * rate.OutputPerMTok / float64(TokensPerMillion)
-	return int64((in+out)*float64(MicrosPerUSD) + 0.5)
+	normalizedIn := maxInt(0, tokensIn)
+	normalizedOut := maxInt(0, tokensOut)
+	in := float64(normalizedIn) * rate.InputPerMTok / float64(TokensPerMillion)
+	out := float64(normalizedOut) * rate.OutputPerMTok / float64(TokensPerMillion)
+	cost := int64((in+out)*float64(MicrosPerUSD) + 0.5)
+	if cost == 0 && normalizedIn+normalizedOut > 0 {
+		return 1
+	}
+	return cost
 }
 
 // MicrosToUSD converts micro-USD to a float dollars value for API responses.

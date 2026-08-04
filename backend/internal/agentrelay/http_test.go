@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
+	"github.com/kvn8888/codegym/backend/internal/usage"
 )
 
 func TestChatCompletionsPreservesToolRoundTripAndMapsModel(t *testing.T) {
@@ -219,7 +220,7 @@ func newTestHTTPHandler(t *testing.T, upstreamURL, providerSecret string) (*HTTP
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewHTTPHandler(tokens, adapter, "codegym-agent")
+	handler, err := NewHTTPHandler(tokens, adapter, usage.NewService(usage.NewInMemoryStore(), func() time.Time { return now }), "codegym-agent")
 	if err != nil {
 		t.Fatal(err)
 	}

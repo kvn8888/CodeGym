@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/agentrelay"
+	"github.com/kvn8888/codegym/backend/internal/usage"
 )
 
 type relayOperationChecker struct{}
@@ -41,7 +42,7 @@ func TestAgentRelayRouteUsesOperationAuthOutsideProtectedChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relayHandler, err := agentrelay.NewHTTPHandler(tokens, relayRouterTransport{}, "codegym-agent")
+	relayHandler, err := agentrelay.NewHTTPHandler(tokens, relayRouterTransport{}, usage.NewService(usage.NewInMemoryStore(), nil), "codegym-agent")
 	if err != nil {
 		t.Fatal(err)
 	}

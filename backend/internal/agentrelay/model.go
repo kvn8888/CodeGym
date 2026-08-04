@@ -59,3 +59,16 @@ type IssueResult struct {
 	ExpiresAt time.Time
 	Budget    OperationBudget
 }
+
+// UsageDelta is one provider call's raw token categories plus CodeGym's own
+// calculated price. TotalTokens is provider total when present, otherwise
+// input plus output; detail categories are retained without double-counting.
+type UsageDelta struct {
+	TotalTokens      int64
+	InputTokens      int64
+	OutputTokens     int64
+	ReasoningTokens  int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	CostUSDMicros    int64
+}

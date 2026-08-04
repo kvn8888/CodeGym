@@ -154,6 +154,16 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Authorization
 	if budget.RevokedAt != nil {
 		return Authorization{}, ErrRevokedToken
 	}
+	now := s.now().UTC()
+	if !now.Before(budget.Deadline) {
+		return Authorization{}, ErrDeadline
+	}
+	if budget.UsedTotalTokens >= budget.MaxTotalTokens {
+		return Authorization{}, ErrTokenBudget
+	}
+	if budget.UsedCostUSDMicros >= budget.MaxCostUSDMicros {
+		return Authorization{}, ErrCostBudget
+	}
 	active, err := s.operations.OperationActive(ctx, claims.WorkspaceID, claims.UserID, claims.OperationID)
 	if err != nil {
 		return Authorization{}, fmt.Errorf("agentrelay: check operation: %w", err)
@@ -162,6 +172,29 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Authorization
 		return Authorization{}, ErrOperationTerminal
 	}
 	return Authorization{Claims: claims.toClaims(), Budget: budget}, nil
+}
+
+// AddUsage atomically accumulates usage against the authenticated operation.
+// The operation id is taken only from validated claims, never from the caller.
+func (s *Service) AddUsage(ctx context.Context, authorization Authorization, delta UsageDelta) (OperationBudget, error) {
+	delta.TotalTokens = max64(0, delta.TotalTokens)
+	delta.InputTokens = max64(0, delta.InputTokens)
+	delta.OutputTokens = max64(0, delta.OutputTokens)
+	delta.ReasoningTokens = max64(0, delta.ReasoningTokens)
+	delta.CacheReadTokens = max64(0, delta.CacheReadTokens)
+	delta.CacheWriteTokens = max64(0, delta.CacheWriteTokens)
+	delta.CostUSDMicros = max64(0, delta.CostUSDMicros)
+	budget, err := s.store.AddUsage(
+		ctx, authorization.Claims.WorkspaceID, authorization.Claims.UserID,
+		authorization.Claims.OperationID, delta, s.now().UTC(),
+	)
+	if err != nil {
+		return OperationBudget{}, err
+	}
+	if budget.ID != authorization.Claims.BudgetID {
+		return OperationBudget{}, ErrInvalidToken
+	}
+	return budget, nil
 }
 
 // ValidateForOperation adds an explicit operation match for internal callers
@@ -275,4 +308,11 @@ func newID(prefix string) string {
 		return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 	}
 	return prefix + "_" + hex.EncodeToString(bytes[:])
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }

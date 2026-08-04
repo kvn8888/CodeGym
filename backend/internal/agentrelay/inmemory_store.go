@@ -52,6 +52,30 @@ func (s *InMemoryStore) Revoke(_ context.Context, workspaceID, userID, operation
 	return nil
 }
 
+func (s *InMemoryStore) AddUsage(
+	_ context.Context,
+	workspaceID, userID, operationID string,
+	delta UsageDelta,
+	at time.Time,
+) (OperationBudget, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	budget, ok := s.budgets[operationID]
+	if !ok || budget.WorkspaceID != workspaceID || budget.UserID != userID {
+		return OperationBudget{}, ErrNotFound
+	}
+	budget.UsedTotalTokens += delta.TotalTokens
+	budget.InputTokens += delta.InputTokens
+	budget.OutputTokens += delta.OutputTokens
+	budget.ReasoningTokens += delta.ReasoningTokens
+	budget.CacheReadTokens += delta.CacheReadTokens
+	budget.CacheWriteTokens += delta.CacheWriteTokens
+	budget.UsedCostUSDMicros += delta.CostUSDMicros
+	budget.UpdatedAt = at.UTC()
+	s.budgets[operationID] = copyBudget(budget)
+	return copyBudget(budget), nil
+}
+
 func copyBudget(budget OperationBudget) OperationBudget {
 	if budget.RevokedAt != nil {
 		revokedAt := *budget.RevokedAt

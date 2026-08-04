@@ -27,6 +27,12 @@ func TestEstimateCostMicros(t *testing.T) {
 	}
 }
 
+func TestEstimateCostMicrosIsNonzeroForNonzeroUsage(t *testing.T) {
+	if cost := EstimateCostMicros("gemini", "gemini-flash-latest", 1, 0); cost != 1 {
+		t.Fatalf("minimum nonzero cost = %d, want 1 micro-USD", cost)
+	}
+}
+
 func TestServiceAggregate(t *testing.T) {
 	svc := NewService(NewInMemoryStore(), nil)
 	ctx := testUsageContext(t)

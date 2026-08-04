@@ -63,7 +63,7 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 		END $$`,
 		`DO $$
 		BEGIN
-			IF NOT EXISTS (
+			IF to_regclass('public.workflow_operations') IS NOT NULL AND NOT EXISTS (
 				SELECT 1 FROM pg_constraint
 				WHERE conname = 'fk_agent_relay_budget_operation'
 					AND conrelid = 'agent_relay_operation_budgets'::regclass

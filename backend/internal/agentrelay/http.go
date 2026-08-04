@@ -214,7 +214,7 @@ func (h *HTTPHandler) streamChatCompletions(w http.ResponseWriter, r *http.Reque
 		if _, err := w.Write(append(append([]byte(nil), line...), '\n')); err != nil {
 			return
 		}
-		if len(line) == 0 {
+		if strings.TrimSpace(string(line)) == "" {
 			flusher.Flush()
 		}
 	}
@@ -286,18 +286,21 @@ type CompletionUsage struct {
 
 type completionUsageEnvelope struct {
 	Usage struct {
-		PromptTokens     int64 `json:"prompt_tokens"`
-		CompletionTokens int64 `json:"completion_tokens"`
-		TotalTokens      int64 `json:"total_tokens"`
-		InputTokens      int64 `json:"input_tokens"`
-		OutputTokens     int64 `json:"output_tokens"`
-		ReasoningTokens  int64 `json:"reasoning_tokens"`
-		CacheReadTokens  int64 `json:"cache_read_tokens"`
-		CacheWriteTokens int64 `json:"cache_write_tokens"`
-		PromptDetails    struct {
-			CachedTokens     int64 `json:"cached_tokens"`
-			CacheReadTokens  int64 `json:"cache_read_tokens"`
-			CacheWriteTokens int64 `json:"cache_write_tokens"`
+		PromptTokens             int64 `json:"prompt_tokens"`
+		CompletionTokens         int64 `json:"completion_tokens"`
+		TotalTokens              int64 `json:"total_tokens"`
+		InputTokens              int64 `json:"input_tokens"`
+		OutputTokens             int64 `json:"output_tokens"`
+		ReasoningTokens          int64 `json:"reasoning_tokens"`
+		CacheReadTokens          int64 `json:"cache_read_tokens"`
+		CacheWriteTokens         int64 `json:"cache_write_tokens"`
+		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		PromptDetails            struct {
+			CachedTokens        int64 `json:"cached_tokens"`
+			CacheReadTokens     int64 `json:"cache_read_tokens"`
+			CacheWriteTokens    int64 `json:"cache_write_tokens"`
+			CacheCreationTokens int64 `json:"cache_creation_tokens"`
 		} `json:"prompt_tokens_details"`
 		CompletionDetails struct {
 			ReasoningTokens int64 `json:"reasoning_tokens"`
@@ -327,6 +330,9 @@ func parseCompletionUsage(payload []byte) (CompletionUsage, bool) {
 	cacheRead := max64(envelope.Usage.CacheReadTokens, envelope.Usage.PromptDetails.CachedTokens)
 	cacheRead = max64(cacheRead, envelope.Usage.PromptDetails.CacheReadTokens)
 	cacheWrite := max64(envelope.Usage.CacheWriteTokens, envelope.Usage.PromptDetails.CacheWriteTokens)
+	cacheRead = max64(cacheRead, envelope.Usage.CacheReadInputTokens)
+	cacheWrite = max64(cacheWrite, envelope.Usage.CacheCreationInputTokens)
+	cacheWrite = max64(cacheWrite, envelope.Usage.PromptDetails.CacheCreationTokens)
 	parsed := CompletionUsage{
 		TotalTokens: max64(0, total), InputTokens: max64(0, input),
 		OutputTokens: max64(0, output), ReasoningTokens: max64(0, reasoning),

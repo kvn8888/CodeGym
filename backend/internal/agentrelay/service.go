@@ -155,6 +155,14 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Authorization
 		return Authorization{}, ErrRevokedToken
 	}
 	now := s.now().UTC()
+	active, err := s.operations.OperationActive(ctx, claims.WorkspaceID, claims.UserID, claims.OperationID)
+	if err != nil {
+		return Authorization{}, fmt.Errorf("agentrelay: check operation: %w", err)
+	}
+	if !active {
+		_ = s.store.Revoke(ctx, claims.WorkspaceID, claims.UserID, claims.OperationID, now)
+		return Authorization{}, ErrOperationTerminal
+	}
 	if !now.Before(budget.Deadline) {
 		return Authorization{}, ErrDeadline
 	}
@@ -163,13 +171,6 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Authorization
 	}
 	if budget.UsedCostUSDMicros >= budget.MaxCostUSDMicros {
 		return Authorization{}, ErrCostBudget
-	}
-	active, err := s.operations.OperationActive(ctx, claims.WorkspaceID, claims.UserID, claims.OperationID)
-	if err != nil {
-		return Authorization{}, fmt.Errorf("agentrelay: check operation: %w", err)
-	}
-	if !active {
-		return Authorization{}, ErrOperationTerminal
 	}
 	return Authorization{Claims: claims.toClaims(), Budget: budget}, nil
 }

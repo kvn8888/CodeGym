@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/kvn8888/codegym/backend/internal/agentrelay"
 	"github.com/kvn8888/codegym/backend/internal/api"
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/chat"
@@ -49,6 +50,7 @@ func main() {
 	var intakeStore intake.Store = intake.NewInMemoryStore()
 	var chatStore chat.Store = chat.NewInMemoryStore()
 	var workflowStore workflow.Store = workflow.NewInMemoryStore()
+	var relayStore agentrelay.Store = agentrelay.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -70,6 +72,7 @@ func main() {
 		postgresIntakeStore := intake.NewPostgresStore(pool)
 		postgresChatStore := chat.NewPostgresStore(pool)
 		postgresWorkflowStore := workflow.NewPostgresStore(pool)
+		postgresRelayStore := agentrelay.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -97,6 +100,9 @@ func main() {
 		if err := postgresWorkflowStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap workflow progress schema: %v", err)
 		}
+		if err := postgresRelayStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap agent relay schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
@@ -107,9 +113,10 @@ func main() {
 		intakeStore = postgresIntakeStore
 		chatStore = postgresChatStore
 		workflowStore = postgresWorkflowStore
-		log.Print("CodeGym API using Postgres identity, memory, session, chat, genai usage, execution, and problem stores")
+		relayStore = postgresRelayStore
+		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, genai usage, execution, and problem stores")
 	} else {
-		log.Print("CodeGym API using in-memory identity, memory, session, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
+		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
 
 	var executionRunner execution.Runner
@@ -138,6 +145,7 @@ func main() {
 	}
 	var generationOrchestrator *generation.Orchestrator
 	var generationStreamer generation.Streamer
+	var relayUpstream *openaicompat.Adapter
 	if cfg.AnyGenAIEnabled() {
 		named := make([]generation.NamedGenerator, 0, len(cfg.GenAIProviders))
 		names := make([]string, 0, len(cfg.GenAIProviders))
@@ -158,6 +166,9 @@ func main() {
 			if err != nil {
 				log.Fatalf("could not configure GenAI provider %s: %v", provider.Name, err)
 			}
+			if relayUpstream == nil {
+				relayUpstream = adapter
+			}
 			named = append(named, generation.NamedGenerator{Name: provider.Name, Generator: adapter})
 			names = append(names, provider.Name)
 			log.Printf("CodeGym GenAI provider registered name=%s base_url=%s model=%s",
@@ -175,6 +186,36 @@ func main() {
 	}
 	profileSynthesizer := generation.NewProfileSynthesizer(generationOrchestrator, memoryService)
 	workflowService := workflow.NewService(workflowStore, nil)
+	var relayHTTPHandler *agentrelay.HTTPHandler
+	if cfg.Relay.Enabled() {
+		if relayUpstream == nil {
+			log.Print("CodeGym agent relay disabled: token secret is set but no GenAI provider is configured")
+		} else {
+			relayService, err := agentrelay.NewService(relayStore, agentrelay.ServiceConfig{
+				TokenSecret: cfg.Relay.TokenSecret, TokenTTL: cfg.Relay.TokenTTL,
+				DefaultMaxTotalTokens:   cfg.Relay.MaxTotalTokens,
+				DefaultMaxCostUSDMicros: cfg.Relay.MaxCostUSDMicros,
+				DefaultMaxWallClock:     cfg.Relay.MaxWallClock,
+				OperationChecker:        workflowService,
+			})
+			if err != nil {
+				log.Fatalf("could not configure agent relay tokens: %v", err)
+			}
+			workflowService.WithOperationTokens(relayService)
+			relayHTTPHandler, err = agentrelay.NewHTTPHandler(
+				relayService, relayUpstream, usageService, cfg.Relay.PublicModel,
+			)
+			if err != nil {
+				log.Fatalf("could not configure agent relay HTTP handler: %v", err)
+			}
+			log.Printf("CodeGym agent relay enabled provider=%s public_model=%s token_ttl=%s max_tokens=%d max_cost_usd=%.6f max_wall_clock=%s",
+				relayUpstream.RelayProvider(), cfg.Relay.PublicModel, cfg.Relay.TokenTTL,
+				cfg.Relay.MaxTotalTokens, usage.MicrosToUSD(cfg.Relay.MaxCostUSDMicros),
+				cfg.Relay.MaxWallClock)
+		}
+	} else {
+		log.Print("CodeGym agent relay disabled; set CODEGYM_RELAY_TOKEN_SECRET to enable")
+	}
 	intakeService := intake.NewService(intakeStore, memoryService, generationOrchestrator, nil)
 	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, profileSynthesizer)
 	chatService := chat.NewService(
@@ -214,6 +255,7 @@ func main() {
 		Usage:                usageService,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		DatabaseURL:          cfg.DatabaseURL,
+		AgentRelay:           relayHTTPHandler,
 	})
 
 	log.Printf("CodeGym API listening on %s", cfg.Addr())

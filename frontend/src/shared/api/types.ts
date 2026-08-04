@@ -163,6 +163,7 @@ export interface PracticeSession extends PracticeSessionSummary {
 
 /** Practice format chosen on New practice. */
 export type PracticeFormat = 'mcq' | 'coding' | 'interview';
+export type ProblemLanguage = 'python' | 'go';
 export type InterviewMode = 'coding' | 'system_design' | 'behavioral' | 'open_coaching';
 export type MCQQuestionType = 'single_select' | 'multi_select' | 'free_response';
 
@@ -173,6 +174,7 @@ export interface NewPracticeConfig {
   prompt: string;
   difficulty: 'easy' | 'medium' | 'hard';
   count: number;
+  language?: ProblemLanguage;
   intakeId?: string;
 }
 

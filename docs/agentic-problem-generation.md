@@ -232,6 +232,43 @@ test passed under network-blocked boot.
 `EnvironmentBuilder` (`Build`/`Promote`/`Destroy`) is the interface for this and
 is currently a skeleton with no implementation.
 
+### Registered Go practice snapshot
+
+The first concrete language registry entry is `go`:
+
+- snapshot: `codegym-go-1-25-4-v1`
+- base: Daytona's default snapshot, promoted from a network-enabled sandbox
+- toolchain: the official `go1.25.4.linux-{amd64|arm64}.tar.gz`, installed at
+  `/usr/local/go` with `/usr/local/bin/go`
+- build gate: `go version`, compile a trivial program, and execute it before
+  promotion
+- practice gate: boot the promoted snapshot with `NetworkBlockAll`, upload a
+  fresh trivial program, then compile and execute it with no egress
+
+Built and promoted on 2026-08-03 from the Daytona default Linux/amd64 image.
+The pre-build probe confirmed that default image had no usable `go`; the final
+network-blocked gate reported `go version go1.25.4 linux/amd64` and successfully
+compiled and ran the fresh smoke program.
+
+The builder is deliberately opt-in and re-runnable:
+
+```bash
+cd backend
+CODEGYM_BUILD_GO_SNAPSHOT=1 doppler run -p codegym -c dev -- \
+  go test ./internal/execution -run TestBuildGoSnapshot -count=1 -v
+```
+
+If the named snapshot already exists, that command validates it without
+mutation. An intentional rebuild of the same version additionally requires
+`CODEGYM_REPLACE_GO_SNAPSHOT=1`; the test deletes only that exact snapshot name
+before rebuilding. The ordinary non-mutating acceptance gate is:
+
+```bash
+cd backend
+doppler run -p codegym -c dev -- \
+  go test ./internal/execution -run TestGoSnapshot -count=1 -v
+```
+
 ## 8. opencode as the agent runtime
 
 The agent runs **inside** the Daytona sandbox, not on the backend — it needs a

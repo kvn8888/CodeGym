@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+const (
+	GoToolchainVersion = "1.25.4"
+	GoSnapshotName     = "codegym-go-1-25-4-v1"
+)
+
 // Language describes how to execute a submission for one runtime.
 type Language struct {
 	Name string
@@ -32,6 +37,19 @@ var languages = map[string]Language{
 		RunCommand: func(entrypoint string) string {
 			return fmt.Sprintf("cd ~/work && python3 %s", entrypoint)
 		},
+		ExecTimeout: 30 * time.Second,
+	},
+	"go": {
+		Name: "go",
+		// The Go hidden entrypoint is a Python compile-and-run wrapper. Python
+		// is part of the Daytona base image and remains outside user control.
+		ChildCommand: func(entrypoint string) []string {
+			return []string{"python3", entrypoint}
+		},
+		RunCommand: func(entrypoint string) string {
+			return fmt.Sprintf("cd ~/work && python3 %s", entrypoint)
+		},
+		Snapshot:    GoSnapshotName,
 		ExecTimeout: 30 * time.Second,
 	},
 }

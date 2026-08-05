@@ -1,6 +1,6 @@
 # Agentic Problem & Runtime Generation
 
-**Status:** design, not yet implemented
+**Status:** independent structured-call generation loop implemented; agent runtime and environment work remain design
 **Supersedes:** the fixed-harness portions of [`ai-prompts/02-problem-generation.md`](ai-prompts/02-problem-generation.md),
 [`ai-prompts/03-test-generation.md`](ai-prompts/03-test-generation.md), and
 [`ai-prompts/04-problem-verification.md`](ai-prompts/04-problem-verification.md)
@@ -84,9 +84,9 @@ same model adjudicates disagreements and may rewrite a *correct* test to match a
 Instead, three isolated agent calls sharing exactly one artifact — the spec:
 
 ```
-                 ┌─► tests agent      (never sees the reference solution)
-spec agent ──────┤
-                 └─► reference agent  (never sees the tests)
+                 ┌─► tests call      (never sees the reference solution)
+spec call ───────┤
+                 └─► reference call  (never sees the tests)
                             │
                             ▼
                     execute reference against tests
@@ -94,8 +94,9 @@ spec agent ──────┤
               ┌─────────────┴─────────────┐
          agree │                          │ disagree
                ▼                          ▼
-            publish              spec was ambiguous → repair the SPEC,
-                                 regenerate both (bounded, max 2 rounds)
+            publish              spec ambiguity → give the reference call
+                                 test context and reconcile either artifact
+                                 (bounded, max 2 rounds)
 ```
 
 The spec is the alignment contract, so it must be precise enough that two agents
@@ -109,16 +110,30 @@ that never communicate produce compatible artifacts. It carries:
   "float results compared to 1e-6"
 - the acceptance predicate (below)
 
-**Disagreement is diagnostic, not noise.** When the reference fails the tests,
-the default response is to fix the *spec clause* that was ambiguous, not to
-patch either artifact. This is the key behavioural change from today's repair
-loop.
+**Disagreement is diagnostic, not noise.** The first attempt is always blind and
+parallel. When the reference fails the tests, the system treats that as evidence
+that the contract exposed an ambiguity or one artifact did not implement an
+explicit clause. Only then does the reference call receive both artifacts and
+the execution result. It may correct the reference, the tests, or both, but must
+name the controlling spec clause and truthfully attribute the changed artifact.
+The server validates that attribution against the structured diff, logs it, and
+allows at most two reconcile rounds. Non-convergence rejects the generation;
+an unverified problem is never persisted.
 
 Optional strengthening, cheap: generate 2–3 references independently. If they
 agree with each other and disagree with the tests, the tests are wrong — no
 adjudicating model needed.
 
-### Isolation is an OS boundary, not a config
+### Isolation for structured calls; OS boundaries for future tool-using agents
+
+The implementation in `internal/generation/problem_independent.go` uses plain
+structured LLM calls through `Generator`, with no tools or shared agent runtime.
+Isolation is structural at this layer: both parallel `GenerateRequest` values
+are constructed from the validated spec alone, and their role-specific schemas
+cannot carry the other artifact. A concurrency/isolation regression test uses
+artifact canaries to prove neither request prompt contains the other result.
+
+The stronger rule below still applies when these calls become tool-using agents:
 
 Independence is only real if it is enforced. Measured 2026-08-03 (§11.6): agent
 contexts do not bleed between fresh runs, but a **shared `HOME` leaks anyway** —
@@ -559,27 +574,30 @@ Supersedes the strict three-agent scheme in §4:
    tests**. Test context is injected into the coding agent so the iteration
    loop benefits from prompt-cache reuse.
 
-**Recorded caveat.** Once the coding agent can see and edit the tests,
-agreement between them stops being evidence of correctness — it only shows one
-conformed to the other, and editing an assertion is cheaper for a model than
-rethinking an algorithm. Two mitigations, *proposed and not yet accepted*:
+**Decision accepted and implemented 2026-08-05: blind first, reconcile only on
+disagreement.** Once the coding agent can see and edit the tests, agreement
+between them stops being independent evidence — it only shows one conformed to
+the other, and editing an assertion is cheaper for a model than rethinking an
+algorithm. Therefore:
 
-- **Blind first, reconcile on disagreement.** Generate both isolated; if they
+- **Blind first.** Generate both isolated and in parallel; if they
   agree on the first run, the oracle is intact and the problem ships. Only on
   disagreement is test context injected for reconciliation. Costs nothing in the
   agreeing case and puts caching exactly where the iteration loop is.
-- **Log which side was edited and why.** "How often did it change the tests
+- **Attribute every edit.** Log which side was edited and why. "How often did it change the tests
   rather than the code" becomes a metric; a high rate indicts the spec
   generator.
+- **Bound and fail closed.** Allow at most two reconcile rounds. If execution
+  still disagrees, fail generation with a clear rejection and persist nothing.
+
+The shipped implementation is deliberately the plain `Generator` seam, not the
+future agent runtime: spec generation, isolated parallel artifacts, reference
+execution through `problemverify`, and bounded reconciliation. The external
+`kind: "problem"` API response is unchanged.
 
 ## 13. Open questions
 
-- **Blind-first reconciliation** (§12) — accept the mitigation or run the
-  coding agent with test context from the start?
 - **What the user sees when `environment` exhausts its budget.** The 5-iteration
   / 10-minute ceiling is decided; the failure UX is not.
-- **Verification failure policy.** If code and tests never converge, fail the
-  operation outright with a retry (recommended — never surface an unverified
-  problem), or offer the partial problem?
 - **Cost ceiling per generation.** The relay enforces token/dollar caps; the
   actual number is unset.

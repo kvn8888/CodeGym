@@ -103,8 +103,8 @@ Language and strategy rules:
   Allowed unit types are int, float64, bool, string, slices and nested slices of
   those, and maps keyed by string or int.
 - Go http uses entrypoint "main.go" and signature "func main()". Its I/O contract
-  must name every method, path, status, request-body shape, response-body shape,
-  and the JSON type of every field, plus at least one worked request/response.
+  must name every request method, path, request-body shape, response status,
+  response-body shape, and the JSON type of every response field. Include at least one worked request/response example.
   checker is unsupported for http.`
 
 var problemSpecJSONSchema = json.RawMessage(`{

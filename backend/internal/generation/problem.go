@@ -16,8 +16,7 @@ import (
 )
 
 const (
-	problemMaxAttempts      = 2
-	problemDefaultMaxTokens = 6144
+	problemMaxAttempts = 2
 )
 
 var pythonIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -382,46 +381,8 @@ func validPythonProblemJSONType(raw json.RawMessage, expected string) bool {
 }
 
 func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec ProblemSpec) (problems.Definition, GeneratedProblem, GenerateResult, error) {
-	spec, err := NormalizeProblemSpec(spec)
-	if err != nil {
-		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, err
-	}
-	specJSON, err := json.Marshal(spec)
-	if err != nil {
-		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, fmt.Errorf("encode problem spec: %w", err)
-	}
-	strategy, err := problemStrategyFor(spec.Language)
-	if err != nil {
-		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, err
-	}
-	instructions := strategy.systemPrompt
-	var lastErr error
-	var lastRaw string
-	for attempt := 1; attempt <= problemMaxAttempts; attempt++ {
-		result, generateErr := orchestrator.Generate(ctx, GenerateInput{
-			Kind:          KindProblem,
-			Spec:          specJSON,
-			Schema:        Schema{Name: "generated_problem", Version: "1", JSONSchema: strategy.jsonSchema},
-			ModelPolicy:   ModelPolicy{MaxTokens: problemDefaultMaxTokens},
-			Instructions:  instructions,
-			IntakeContext: spec.IntakeContext,
-		})
-		if generateErr != nil {
-			return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, generateErr
-		}
-		output, validateErr := ValidateGeneratedProblemForLanguage(result.Object, spec.Language)
-		if validateErr == nil {
-			definition, buildErr := BuildProblemDefinition(output)
-			return definition, output, result, buildErr
-		}
-		lastErr, lastRaw = validateErr, string(result.Object)
-		instructions = strategy.systemPrompt + "\n\nYour previous output was rejected: " + validateErr.Error() + ". Return a complete corrected object."
-	}
-	return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, &InvalidOutputError{
-		Reason:    "problem generation produced invalid output after 2 attempts",
-		RawOutput: lastRaw,
-		Err:       lastErr,
-	}
+	definition, _, generated, result, err := GenerateIndependentProblem(ctx, orchestrator, spec)
+	return definition, generated, result, err
 }
 
 // BuildProblemDefinition turns a validated model payload into the catalog

@@ -136,6 +136,29 @@ func sampleGenerated() generation.GeneratedProblem {
 	}
 }
 
+func reconciliationPayload(
+	t *testing.T,
+	generated generation.GeneratedProblem,
+	editedArtifact, reason, reference string,
+	testCases []generation.ProblemTestCase,
+) string {
+	t.Helper()
+	payload := map[string]any{
+		"edited_artifact":    editedArtifact,
+		"reason":             reason,
+		"reference_solution": reference,
+		"test_cases":         testCases,
+	}
+	if generated.Checker != "" {
+		payload["checker"] = generated.Checker
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal reconciliation payload: %v", err)
+	}
+	return string(raw)
+}
+
 func raw(value any) json.RawMessage {
 	out, _ := json.Marshal(value)
 	return out
@@ -185,7 +208,7 @@ func TestVerifyAllPass(t *testing.T) {
 	}
 }
 
-func TestVerifyRepairsThenPasses(t *testing.T) {
+func TestVerifyReconcilesTestsOnRoundOneAndRecordsAttribution(t *testing.T) {
 	generated := sampleGenerated()
 	definition, err := generation.BuildProblemDefinition(generated)
 	if err != nil {
@@ -195,12 +218,10 @@ func TestVerifyRepairsThenPasses(t *testing.T) {
 		{ExitCode: 1, Output: failOneOutput(), Duration: time.Millisecond},
 		{ExitCode: 0, Output: passOutput(), Duration: time.Millisecond},
 	}}
-	repairPayload := `{
-  "verdict":"repaired",
-  "reason":"missing expected was wrong",
-  "repaired_cases":[{"name":"missing","args":[[1,2,3],8],"expected":false}]
-}`
-	generator := &sequenceGenerator{payloads: []string{repairPayload}}
+	reconciledCases := append([]generation.ProblemTestCase(nil), generated.TestCases...)
+	reconciledCases[1].Expected = raw(true)
+	payload := reconciliationPayload(t, generated, "tests", "The explicit contract says this input has a qualifying pair.", generated.ReferenceSolution, reconciledCases)
+	generator := &sequenceGenerator{payloads: []string{payload}}
 	orchestrator := generation.NewOrchestrator(memory.NewService(memory.NewInMemoryStore(), nil), generator)
 
 	got, repaired, err := Verify(testContext(), orchestrator, runner, definition, generated)
@@ -210,15 +231,17 @@ func TestVerifyRepairsThenPasses(t *testing.T) {
 	if runner.calls != 2 {
 		t.Fatalf("runner calls = %d, want 2", runner.calls)
 	}
-	if len(generator.requests) != 1 || generator.requests[0].Kind != generation.KindProblemVerification {
+	if len(generator.requests) != 1 || generator.requests[0].Kind != generation.KindProblemReference ||
+		!strings.Contains(string(generator.requests[0].Spec), "current_tests") {
 		t.Fatalf("requests = %#v", generator.requests)
 	}
-	if got.Entrypoint != "test_solution.py" || len(repaired.TestCases) != 4 {
+	if got.Entrypoint != "test_solution.py" || len(repaired.TestCases) != 4 || len(repaired.Reconciliations) != 1 ||
+		repaired.Reconciliations[0].EditedArtifact != "tests" || repaired.Reconciliations[0].Round != 1 {
 		t.Fatalf("unexpected repair result: %#v %#v", got, repaired)
 	}
 }
 
-func TestVerifyRejectsRegenerate(t *testing.T) {
+func TestVerifyConvergesOnRoundTwo(t *testing.T) {
 	generated := sampleGenerated()
 	definition, err := generation.BuildProblemDefinition(generated)
 	if err != nil {
@@ -226,13 +249,51 @@ func TestVerifyRejectsRegenerate(t *testing.T) {
 	}
 	runner := &fakeRunner{outcomes: []execution.RunOutcome{
 		{ExitCode: 1, Output: failOneOutput(), Duration: time.Millisecond},
+		{ExitCode: 1, Output: failOneOutput(), Duration: time.Millisecond},
+		{ExitCode: 0, Output: passOutput(), Duration: time.Millisecond},
 	}}
-	generator := &sequenceGenerator{payloads: []string{`{"verdict":"regenerate","reason":"reference is wrong","regenerate_reason":"reference returns wrong answers"}`}}
+	roundOneReference := generated.ReferenceSolution + "\n# reconcile-round-one"
+	roundTwoReference := roundOneReference + "\n# reconcile-round-two"
+	generator := &sequenceGenerator{payloads: []string{
+		reconciliationPayload(t, generated, "reference", "The reference missed the stated edge behavior.", roundOneReference, generated.TestCases),
+		reconciliationPayload(t, generated, "reference", "The reference still missed the stated duplicate behavior.", roundTwoReference, generated.TestCases),
+	}}
+	orchestrator := generation.NewOrchestrator(memory.NewService(memory.NewInMemoryStore(), nil), generator)
+
+	_, reconciled, err := Verify(testContext(), orchestrator, runner, definition, generated)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if runner.calls != 3 || len(reconciled.Reconciliations) != 2 || reconciled.Reconciliations[1].Round != 2 {
+		t.Fatalf("runner calls=%d reconciliations=%#v", runner.calls, reconciled.Reconciliations)
+	}
+}
+
+func TestVerifyNeverConvergesFailsAfterTwoRounds(t *testing.T) {
+	generated := sampleGenerated()
+	definition, err := generation.BuildProblemDefinition(generated)
+	if err != nil {
+		t.Fatalf("BuildProblemDefinition: %v", err)
+	}
+	runner := &fakeRunner{outcomes: []execution.RunOutcome{
+		{ExitCode: 1, Output: failOneOutput(), Duration: time.Millisecond},
+		{ExitCode: 1, Output: failOneOutput(), Duration: time.Millisecond},
+		{ExitCode: 1, Output: failOneOutput(), Duration: time.Millisecond},
+	}}
+	roundOneReference := generated.ReferenceSolution + "\n# never-round-one"
+	roundTwoReference := roundOneReference + "\n# never-round-two"
+	generator := &sequenceGenerator{payloads: []string{
+		reconciliationPayload(t, generated, "reference", "First correction follows the contract.", roundOneReference, generated.TestCases),
+		reconciliationPayload(t, generated, "reference", "Second correction follows the contract.", roundTwoReference, generated.TestCases),
+	}}
 	orchestrator := generation.NewOrchestrator(memory.NewService(memory.NewInMemoryStore(), nil), generator)
 
 	_, _, err = Verify(testContext(), orchestrator, runner, definition, generated)
-	if !errors.Is(err, ErrRejected) {
-		t.Fatalf("err = %v, want ErrRejected", err)
+	if !errors.Is(err, ErrRejected) || !strings.Contains(err.Error(), "did not converge after 2 reconcile rounds") {
+		t.Fatalf("err = %v, want clean non-convergence rejection", err)
+	}
+	if runner.calls != 3 || len(generator.requests) != 2 {
+		t.Fatalf("runner calls=%d generator calls=%d", runner.calls, len(generator.requests))
 	}
 }
 

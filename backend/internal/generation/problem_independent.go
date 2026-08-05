@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -55,6 +56,24 @@ type GeneratedProblemTests struct {
 type GeneratedProblemReference struct {
 	ReferenceSolution string `json:"reference_solution"`
 	StarterCode       string `json:"starter_code,omitempty"`
+}
+
+// ReconciliationRecord is the auditable attribution emitted for every
+// post-disagreement correction.
+type ReconciliationRecord struct {
+	Round          int    `json:"round"`
+	EditedArtifact string `json:"edited_artifact"`
+	Reason         string `json:"reason"`
+}
+
+type reconciledProblemArtifacts struct {
+	EditedArtifact    string              `json:"edited_artifact"`
+	Reason            string              `json:"reason"`
+	ReferenceSolution string              `json:"reference_solution"`
+	StarterCode       string              `json:"starter_code,omitempty"`
+	Checker           string              `json:"checker,omitempty"`
+	TestCases         []ProblemTestCase   `json:"test_cases,omitempty"`
+	HTTPTestCases     []problems.HTTPCase `json:"http_test_cases,omitempty"`
 }
 
 const problemSpecSystemPrompt = `You are the specification agent for CodeGym.
@@ -187,6 +206,57 @@ var httpReferenceJSONSchema = json.RawMessage(`{
   "type":"object",
   "required":["reference_solution","starter_code"],
   "properties":{"reference_solution":{"type":"string"},"starter_code":{"type":"string"}}
+}`)
+
+const problemReconcileSystemPrompt = problemReferenceSystemPrompt + `
+
+The blind reference and tests artifacts disagreed when executed. Treat that as
+evidence that the shared spec exposed an ambiguity or that one artifact did not
+faithfully implement an explicit clause. You now receive the current tests,
+current reference artifact, and execution result only for bounded reconciliation.
+
+Return the complete corrected reference and tests artifacts. You may correct
+your reference, the tests, or both, but the shared spec remains authoritative:
+- edited_artifact must be exactly "reference", "tests", or "both" and must
+  truthfully match the fields you changed.
+- reason must name the controlling spec clause and explain why the edit is correct.
+- Do not weaken an assertion merely to obtain agreement. Do not invent a new
+  requirement absent from the spec. Preserve unchanged artifact fields exactly.`
+
+var unitReconcileJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["edited_artifact","reason","reference_solution","test_cases"],
+  "properties":{
+    "edited_artifact":{"type":"string","enum":["reference","tests","both"]},
+    "reason":{"type":"string"},
+    "reference_solution":{"type":"string"},
+    "checker":{"type":"string"},
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","args","expected"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+  }
+}`)
+
+var checkerUnitReconcileJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["edited_artifact","reason","reference_solution","checker","test_cases"],
+  "properties":{
+    "edited_artifact":{"type":"string","enum":["reference","tests","both"]},
+    "reason":{"type":"string"},
+    "reference_solution":{"type":"string"},
+    "checker":{"type":"string"},
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","args","expected"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+  }
+}`)
+
+var httpReconcileJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["edited_artifact","reason","reference_solution","starter_code","http_test_cases"],
+  "properties":{
+    "edited_artifact":{"type":"string","enum":["reference","tests","both"]},
+    "reason":{"type":"string"},
+    "reference_solution":{"type":"string"},
+    "starter_code":{"type":"string"},
+    "http_test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","request","expect"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"request":{"type":"object","required":["method","path"],"properties":{"method":{"type":"string"},"path":{"type":"string"},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{}}},"expect":{"type":"object","required":["status"],"properties":{"status":{"type":"integer","minimum":100,"maximum":599},"json":{},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"string"}}},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+  }
 }`)
 
 // GenerateProblemSpec makes the first, spec-only call in the independent
@@ -390,7 +460,107 @@ func AssembleIndependentProblem(contract GeneratedProblemSpec, testsRaw, referen
 	if err != nil {
 		return GeneratedProblem{}, &InvalidOutputError{Reason: "independent artifacts do not satisfy the problem spec", RawOutput: string(combinedRaw), Err: err}
 	}
+	validated.Specification = &contract
 	return validated, nil
+}
+
+// ReconcileProblemArtifacts gives the reference role the test context only
+// after a blind execution disagreement. It verifies the claimed edit
+// attribution against the actual structured diff before returning.
+func ReconcileProblemArtifacts(
+	ctx context.Context,
+	orchestrator *Orchestrator,
+	contract GeneratedProblemSpec,
+	current GeneratedProblem,
+	executionResult any,
+	round int,
+) (GeneratedProblem, ReconciliationRecord, error) {
+	tests := GeneratedProblemTests{
+		Checker:       current.Checker,
+		TestCases:     current.TestCases,
+		HTTPTestCases: current.HTTPTestCases,
+	}
+	reference := GeneratedProblemReference{
+		ReferenceSolution: current.ReferenceSolution,
+		StarterCode:       current.StarterCode,
+	}
+	payload, err := json.Marshal(map[string]any{
+		"round":             round,
+		"spec":              contract,
+		"current_tests":     tests,
+		"current_reference": reference,
+		"execution_result":  executionResult,
+	})
+	if err != nil {
+		return GeneratedProblem{}, ReconciliationRecord{}, fmt.Errorf("encode reconciliation context: %w", err)
+	}
+	schema := unitReconcileJSONSchema
+	if contract.Comparator.Kind == problems.ComparatorChecker {
+		schema = checkerUnitReconcileJSONSchema
+	}
+	if contract.Strategy == problems.TestStrategyHTTP {
+		schema = httpReconcileJSONSchema
+	}
+	result, err := orchestrator.Generate(ctx, GenerateInput{
+		Kind:         KindProblemReference,
+		Spec:         payload,
+		Schema:       Schema{Name: "problem_reconciliation", Version: "1", JSONSchema: schema},
+		ModelPolicy:  ModelPolicy{MaxTokens: problemArtifactMaxTokens},
+		Instructions: problemReconcileSystemPrompt,
+	})
+	if err != nil {
+		return GeneratedProblem{}, ReconciliationRecord{}, err
+	}
+	var reconciled reconciledProblemArtifacts
+	if err := strictProblemArtifactDecode(result.Object, &reconciled); err != nil {
+		return GeneratedProblem{}, ReconciliationRecord{}, &InvalidOutputError{
+			Reason: "reconciliation returned an invalid artifact", RawOutput: string(result.Object), Err: err,
+		}
+	}
+	reconciled.EditedArtifact = strings.ToLower(strings.TrimSpace(reconciled.EditedArtifact))
+	reconciled.Reason = strings.TrimSpace(reconciled.Reason)
+	if reconciled.Reason == "" {
+		return GeneratedProblem{}, ReconciliationRecord{}, errors.New("reconciliation reason must not be empty")
+	}
+
+	testsRaw, err := json.Marshal(GeneratedProblemTests{
+		Checker:       reconciled.Checker,
+		TestCases:     reconciled.TestCases,
+		HTTPTestCases: reconciled.HTTPTestCases,
+	})
+	if err != nil {
+		return GeneratedProblem{}, ReconciliationRecord{}, err
+	}
+	referenceRaw, err := json.Marshal(GeneratedProblemReference{
+		ReferenceSolution: reconciled.ReferenceSolution,
+		StarterCode:       reconciled.StarterCode,
+	})
+	if err != nil {
+		return GeneratedProblem{}, ReconciliationRecord{}, err
+	}
+	next, err := AssembleIndependentProblem(contract, testsRaw, referenceRaw)
+	if err != nil {
+		return GeneratedProblem{}, ReconciliationRecord{}, err
+	}
+	referenceChanged := current.ReferenceSolution != next.ReferenceSolution || current.StarterCode != next.StarterCode
+	testsChanged := current.Checker != next.Checker || !reflect.DeepEqual(current.TestCases, next.TestCases) || !reflect.DeepEqual(current.HTTPTestCases, next.HTTPTestCases)
+	actual := ""
+	switch {
+	case referenceChanged && testsChanged:
+		actual = "both"
+	case referenceChanged:
+		actual = "reference"
+	case testsChanged:
+		actual = "tests"
+	default:
+		return GeneratedProblem{}, ReconciliationRecord{}, errors.New("reconciliation did not change either artifact")
+	}
+	if reconciled.EditedArtifact != actual {
+		return GeneratedProblem{}, ReconciliationRecord{}, fmt.Errorf("reconciliation claimed edited_artifact %q but changed %q", reconciled.EditedArtifact, actual)
+	}
+	record := ReconciliationRecord{Round: round, EditedArtifact: actual, Reason: reconciled.Reason}
+	next.Reconciliations = append(append([]ReconciliationRecord(nil), current.Reconciliations...), record)
+	return next, record, nil
 }
 
 func strictProblemArtifactDecode(raw json.RawMessage, output any) error {
@@ -565,4 +735,40 @@ func canonicalProblemSignature(spec GeneratedProblemSpec) string {
 		return fmt.Sprintf("def %s(%s) -> %s", spec.FunctionName, strings.Join(parameters, ", "), spec.ReturnType)
 	}
 	return fmt.Sprintf("func %s(%s) %s", spec.FunctionName, strings.Join(parameters, ", "), spec.ReturnType)
+}
+
+// ProblemSpecFromGenerated supplies a compatibility contract for server-side
+// packages assembled before independent generation existed. New generation
+// always carries Specification and does not use this fallback.
+func ProblemSpecFromGenerated(generated GeneratedProblem) GeneratedProblemSpec {
+	strategy := generated.Strategy
+	if strategy == "" {
+		strategy = problems.TestStrategyUnit
+	}
+	contract := GeneratedProblemSpec{
+		Language:             generated.Language,
+		Strategy:             strategy,
+		Title:                generated.Title,
+		Description:          generated.Description,
+		Category:             generated.Category,
+		Subcategory:          generated.Subcategory,
+		Tags:                 append([]string(nil), generated.Tags...),
+		Difficulty:           generated.Difficulty,
+		EstimatedMinutes:     generated.EstimatedMinutes,
+		Hints:                append([]string(nil), generated.Hints...),
+		IOContract:           generated.Description,
+		Comparator:           generated.Comparator,
+		AmbiguityResolutions: []string{"Follow the explicit behavior in the problem description."},
+		FunctionName:         generated.FunctionName,
+		Parameters:           append([]ProblemParameter(nil), generated.Parameters...),
+		ReturnType:           generated.ReturnType,
+	}
+	if strategy == problems.TestStrategyHTTP {
+		contract.Entrypoint = generated.Entrypoint
+		contract.Signature = "func main()"
+	} else {
+		contract.Entrypoint = generated.FunctionName
+		contract.Signature = canonicalProblemSignature(contract)
+	}
+	return contract
 }

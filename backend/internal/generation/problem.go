@@ -53,6 +53,10 @@ type GeneratedProblem struct {
 	Entrypoint        string                `json:"entrypoint,omitempty"`
 	StarterCode       string                `json:"starter_code,omitempty"`
 	HTTPTestCases     []problems.HTTPCase   `json:"http_test_cases,omitempty"`
+	// Specification and Reconciliations are server-owned generation evidence.
+	// They never enter model artifact JSON or the public problem response.
+	Specification   *GeneratedProblemSpec  `json:"-"`
+	Reconciliations []ReconciliationRecord `json:"-"`
 }
 
 type ProblemParameter struct {

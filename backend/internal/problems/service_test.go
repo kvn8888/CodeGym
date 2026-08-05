@@ -105,6 +105,20 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 	if len(httpSkeleton.Files) != 1 || httpSkeleton.Files[0].Path != "main.go" || !strings.Contains(httpSkeleton.Files[0].Content, `os.Getenv("PORT")`) {
 		t.Fatalf("HTTP seed skeleton = %#v", httpSkeleton)
 	}
+	for _, contract := range []string{
+		"id is a string",
+		"sku is a string",
+		"qty is an integer",
+		"### Example request and response",
+		"POST /items",
+		`{"sku":"abc","qty":2}`,
+		"Response: HTTP 201",
+		`{"id":"1","sku":"abc","qty":2}`,
+	} {
+		if !strings.Contains(httpProblem.Description, contract) {
+			t.Fatalf("HTTP seed description is missing explicit contract %q:\n%s", contract, httpProblem.Description)
+		}
+	}
 	httpPublicJSON, err := json.Marshal(httpProblem)
 	if err != nil {
 		t.Fatalf("marshal public HTTP seed: %v", err)

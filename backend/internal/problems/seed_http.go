@@ -164,6 +164,22 @@ func goHTTPItemsDefinition() (Definition, error) {
 - POST /items accepts {"sku":"...","qty":N}, stores a new item, and returns it with status 201.
 - GET /items/{id} returns a stored item with status 200 or a standard 404 response when it does not exist.
 
+The successful response schema is a JSON object with exactly these fields: id is a string containing the decimal identifier, sku is a string, and qty is an integer.
+
+### Example request and response
+
+Request:
+
+POST /items
+Content-Type: application/json
+
+{"sku":"abc","qty":2}
+
+Response: HTTP 201
+Content-Type: application/json
+
+{"id":"1","sku":"abc","qty":2}
+
 Read the server port from the PORT environment variable. Use only the Go standard library. Keep state safe for concurrent requests.`,
 			Runtime:     Runtime{Image: "go1.25.4", TimeoutSeconds: 120, MemoryMB: 1024, NetworkMode: "block-all"},
 			Files:       FileManifest{Skeleton: []FileRef{{Path: "main.go", Entry: true}}},

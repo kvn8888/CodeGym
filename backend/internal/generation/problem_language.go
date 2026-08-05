@@ -36,6 +36,8 @@ For strategy "http":
 - Use only the Go standard library and net/http. checker is unsupported.
 - entrypoint is "main.go". starter_code and reference_solution are complete package main source files whose main reads PORT from the environment and starts an HTTP server.
 - starter_code must compile and expose the described routes, leaving the exercise behavior as clear TODOs without embedding hidden expectations.
+- The description must state the response schema concretely for every route, including the JSON type of every response field. Do not leave identifier, number, boolean, array, object, or null types implicit.
+- The description must include at least one worked request/response example showing the request method, path, body when applicable, response status, and response body.
 - Include 4..12 deterministic http_test_cases with a roughly even split of at least 2 public and 2 hidden cases. Each case has name, kind, hidden, an optional short rationale, request {method,path,headers?,body?}, expect {status,json?,headers?,body?}, and an optional comparator override.
 - request.body is JSON. expect.headers is a subset. expect.json and expect.body are mutually exclusive.
 - Never produce a test runner, hidden-test imports, fixed ports, shell commands, CODEGYM_RESULT, os/exec, unsafe, cgo, or external network access. CodeGym builds and owns the HTTP harness.`

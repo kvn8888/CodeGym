@@ -35,7 +35,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("could not load config: %v", err)
+	}
+	log.Printf("CodeGym environment resolved environment=%s", cfg.Environment)
 
 	authenticator, err := buildAuthenticator(cfg)
 	if err != nil {
@@ -277,6 +281,7 @@ func main() {
 		Settings:             settingsService,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		DatabaseURL:          cfg.DatabaseURL,
+		Environment:          cfg.Environment,
 		AgentRelay:           relayHTTPHandler,
 	})
 

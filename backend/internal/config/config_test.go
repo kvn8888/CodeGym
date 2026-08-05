@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 func TestLoadAuth0Config(t *testing.T) {
@@ -16,7 +18,7 @@ func TestLoadAuth0Config(t *testing.T) {
 	t.Setenv("CODEGYM_AUTH0_ISSUER_URL", "https://login.codegym.test/")
 	t.Setenv("CODEGYM_AUTH0_CLOCK_SKEW", "30s")
 
-	cfg := Load()
+	cfg := mustLoad(t)
 
 	if cfg.Auth0Domain != "codegym.us.auth0.com" {
 		t.Fatalf("Auth0Domain = %q", cfg.Auth0Domain)
@@ -39,7 +41,7 @@ func TestLoadFallsBackToPlainAuth0Names(t *testing.T) {
 	t.Setenv("AUTH0_AUDIENCE", "https://api.plain.test")
 	t.Setenv("AUTH0_ISSUER_URL", "https://issuer.plain.test/")
 
-	cfg := Load()
+	cfg := mustLoad(t)
 
 	if cfg.Auth0Domain != "plain.us.auth0.com" {
 		t.Fatalf("Auth0Domain = %q", cfg.Auth0Domain)
@@ -97,7 +99,7 @@ func TestUseAuth0(t *testing.T) {
 func TestLoadMemoryWorkerConfig(t *testing.T) {
 	clearConfigEnv(t)
 
-	cfg := Load()
+	cfg := mustLoad(t)
 	if cfg.MemoryWorker.Disabled {
 		t.Fatal("MemoryWorker.Disabled default = true, want false")
 	}
@@ -115,7 +117,7 @@ func TestLoadMemoryWorkerConfig(t *testing.T) {
 	t.Setenv("CODEGYM_MEMORY_WORKER_INTERVAL", "15m")
 	t.Setenv("CODEGYM_MEMORY_REFRESH_TRIGGER", "set-completion")
 
-	cfg = Load()
+	cfg = mustLoad(t)
 	if !cfg.MemoryWorker.Disabled {
 		t.Fatal("MemoryWorker.Disabled = false, want true")
 	}
@@ -131,7 +133,7 @@ func TestLoadMemoryWorkerConfig(t *testing.T) {
 
 	t.Setenv("CODEGYM_MEMORY_WORKER_DISABLED", "false")
 	t.Setenv("CODEGYM_MEMORY_REFRESH_TRIGGER", "invalid")
-	if got := Load().MemoryWorker.Trigger; got != MemoryRefreshBoth {
+	if got := mustLoad(t).MemoryWorker.Trigger; got != MemoryRefreshBoth {
 		t.Fatalf("invalid MemoryWorker.Trigger = %q, want both fallback", got)
 	}
 }
@@ -139,14 +141,14 @@ func TestLoadMemoryWorkerConfig(t *testing.T) {
 func TestLoadExecutionAndDemoConfig(t *testing.T) {
 	clearConfigEnv(t)
 
-	if cfg := Load(); cfg.SeedDemo || cfg.DaytonaAPIKey != "" || cfg.DaytonaAPIURL != "" {
+	if cfg := mustLoad(t); cfg.SeedDemo || cfg.DaytonaAPIKey != "" || cfg.DaytonaAPIURL != "" {
 		t.Fatalf("default execution/demo config = %#v", cfg)
 	}
 
 	t.Setenv("CODEGYM_SEED_DEMO", "true")
 	t.Setenv("DAYTONA_API_KEY", "test-key")
 	t.Setenv("DAYTONA_API_URL", "https://example.test")
-	cfg := Load()
+	cfg := mustLoad(t)
 	if !cfg.SeedDemo || cfg.DaytonaAPIKey != "test-key" ||
 		cfg.DaytonaAPIURL != "https://example.test" {
 		t.Fatalf("execution/demo config = %#v", cfg)
@@ -156,7 +158,7 @@ func TestLoadExecutionAndDemoConfig(t *testing.T) {
 func TestLoadSandboxSweeperConfig(t *testing.T) {
 	clearConfigEnv(t)
 
-	cfg := Load()
+	cfg := mustLoad(t)
 	if cfg.SandboxSweeper.Disabled || cfg.SandboxSweeper.Interval != 5*time.Minute ||
 		cfg.SandboxSweeper.MaxAge != 15*time.Minute {
 		t.Fatalf("default sandbox sweeper config = %#v", cfg.SandboxSweeper)
@@ -165,7 +167,7 @@ func TestLoadSandboxSweeperConfig(t *testing.T) {
 	t.Setenv("CODEGYM_SANDBOX_SWEEPER_DISABLED", "true")
 	t.Setenv("CODEGYM_SANDBOX_SWEEPER_INTERVAL", "2m")
 	t.Setenv("CODEGYM_SANDBOX_SWEEPER_MAX_AGE", "30m")
-	cfg = Load()
+	cfg = mustLoad(t)
 	if !cfg.SandboxSweeper.Disabled || cfg.SandboxSweeper.Interval != 2*time.Minute ||
 		cfg.SandboxSweeper.MaxAge != 30*time.Minute {
 		t.Fatalf("configured sandbox sweeper = %#v", cfg.SandboxSweeper)
@@ -175,7 +177,7 @@ func TestLoadSandboxSweeperConfig(t *testing.T) {
 func TestLoadRelayConfig(t *testing.T) {
 	clearConfigEnv(t)
 
-	cfg := Load()
+	cfg := mustLoad(t)
 	if cfg.Relay.Enabled() {
 		t.Fatal("relay should be disabled without a token secret")
 	}
@@ -191,7 +193,7 @@ func TestLoadRelayConfig(t *testing.T) {
 	t.Setenv("CODEGYM_RELAY_MAX_COST_USD", "1.25")
 	t.Setenv("CODEGYM_RELAY_MAX_WALL_CLOCK", "6m")
 	t.Setenv("CODEGYM_RELAY_MODEL", "sandbox-model")
-	cfg = Load()
+	cfg = mustLoad(t)
 	if !cfg.Relay.Enabled() || cfg.Relay.TokenSecret != "test-secret" ||
 		cfg.Relay.TokenTTL != 7*time.Minute || cfg.Relay.MaxTotalTokens != 12_345 ||
 		cfg.Relay.MaxCostUSDMicros != 1_250_000 || cfg.Relay.MaxWallClock != 6*time.Minute ||
@@ -224,6 +226,9 @@ func clearConfigEnv(t *testing.T) {
 	t.Helper()
 
 	for _, key := range []string{
+		"CODEGYM_ENVIRONMENT",
+		"DOPPLER_CONFIG",
+		"DOPPLER_ENVIRONMENT",
 		"NEON_CONNECTION_STRING",
 		"DATABASE_URL",
 		"CODEGYM_AUTH_MODE",
@@ -281,16 +286,68 @@ func clearConfigEnv(t *testing.T) {
 	}
 }
 
+func mustLoad(t *testing.T) Config {
+	t.Helper()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	return cfg
+}
+
+func TestLoadEnvironment(t *testing.T) {
+	t.Run("explicit value wins", func(t *testing.T) {
+		clearConfigEnv(t)
+		t.Setenv("CODEGYM_ENVIRONMENT", "prd")
+		t.Setenv("DOPPLER_CONFIG", "stg")
+		t.Setenv("DOPPLER_ENVIRONMENT", "dev")
+		if got := mustLoad(t).Environment; got != environment.Prd {
+			t.Fatalf("Environment = %q, want prd", got)
+		}
+	})
+
+	t.Run("Doppler config fallback", func(t *testing.T) {
+		clearConfigEnv(t)
+		t.Setenv("DOPPLER_CONFIG", "stg")
+		if got := mustLoad(t).Environment; got != environment.Stg {
+			t.Fatalf("Environment = %q, want stg", got)
+		}
+	})
+
+	t.Run("Doppler environment fallback", func(t *testing.T) {
+		clearConfigEnv(t)
+		t.Setenv("DOPPLER_ENVIRONMENT", "prd")
+		if got := mustLoad(t).Environment; got != environment.Prd {
+			t.Fatalf("Environment = %q, want prd", got)
+		}
+	})
+
+	t.Run("invalid value rejected", func(t *testing.T) {
+		clearConfigEnv(t)
+		t.Setenv("CODEGYM_ENVIRONMENT", "production")
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "CODEGYM_ENVIRONMENT") {
+			t.Fatalf("Load error = %v, want invalid CODEGYM_ENVIRONMENT", err)
+		}
+	})
+
+	t.Run("default", func(t *testing.T) {
+		clearConfigEnv(t)
+		if got := mustLoad(t).Environment; got != environment.Dev {
+			t.Fatalf("Environment = %q, want dev", got)
+		}
+	})
+}
+
 func TestLoadPortFallsBackToPlatformPort(t *testing.T) {
 	clearConfigEnv(t)
 
 	t.Setenv("PORT", "10000")
-	if got := Load().Port; got != "10000" {
+	if got := mustLoad(t).Port; got != "10000" {
 		t.Fatalf("Port = %q, want platform PORT 10000", got)
 	}
 
 	t.Setenv("CODEGYM_PORT", "9999")
-	if got := Load().Port; got != "9999" {
+	if got := mustLoad(t).Port; got != "9999" {
 		t.Fatalf("Port = %q, want CODEGYM_PORT to win", got)
 	}
 }
@@ -298,7 +355,7 @@ func TestLoadPortFallsBackToPlatformPort(t *testing.T) {
 func TestLoadPortDefault(t *testing.T) {
 	clearConfigEnv(t)
 
-	if got := Load().Port; got != "8080" {
+	if got := mustLoad(t).Port; got != "8080" {
 		t.Fatalf("Port = %q, want default 8080", got)
 	}
 }
@@ -306,7 +363,7 @@ func TestLoadPortDefault(t *testing.T) {
 func TestLoadGenAIConfig(t *testing.T) {
 	clearConfigEnv(t)
 
-	cfg := Load()
+	cfg := mustLoad(t)
 	if cfg.GenAI.Enabled() {
 		t.Fatal("GenAI should be disabled without an API key")
 	}
@@ -321,7 +378,7 @@ func TestLoadGenAIConfig(t *testing.T) {
 	}
 
 	t.Setenv("AI_GATEWAY_API_KEY", "vercel-key")
-	cfg = Load()
+	cfg = mustLoad(t)
 	if !cfg.GenAI.Enabled() || cfg.GenAI.APIKey != "vercel-key" {
 		t.Fatalf("GenAI = %#v, want AI_GATEWAY_API_KEY alias honored", cfg.GenAI)
 	}
@@ -332,7 +389,7 @@ func TestLoadGenAIConfig(t *testing.T) {
 	t.Setenv("CODEGYM_GEMINI_API_KEY", "gemini-key")
 	t.Setenv("CODEGYM_GEMINI_BASE_URL", "https://example.test/v1")
 	t.Setenv("CODEGYM_GEMINI_MODEL", "custom-model")
-	cfg = Load()
+	cfg = mustLoad(t)
 	if cfg.GenAI.APIKey != "gemini-key" {
 		t.Fatalf("APIKey = %q, want CODEGYM_GEMINI_API_KEY to win", cfg.GenAI.APIKey)
 	}
@@ -351,7 +408,7 @@ func TestLoadMultiProviderOrderAndAliases(t *testing.T) {
 	t.Setenv("CODEGYM_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
 	t.Setenv("CODEGYM_GEMINI_MODEL", "gemini-flash-latest")
 
-	cfg := Load()
+	cfg := mustLoad(t)
 	if !cfg.AnyGenAIEnabled() {
 		t.Fatal("expected providers")
 	}
@@ -378,7 +435,7 @@ func TestLoadMultiProviderOrderAndAliases(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("META_MUSE_SPARK_API", "meta-key")
 	t.Setenv("CODEGYM_GEMINI_API_KEY", "gemini-key")
-	cfg = Load()
+	cfg = mustLoad(t)
 	if len(cfg.GenAIProviders) != 2 || cfg.GenAIProviders[0].Name != "meta" || cfg.GenAIProviders[1].Name != "gemini" {
 		t.Fatalf("providers = %#v", cfg.GenAIProviders)
 	}

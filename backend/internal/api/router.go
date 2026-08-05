@@ -7,6 +7,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/chat"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
@@ -43,6 +44,7 @@ type Dependencies struct {
 	Settings             *settings.Service
 	CORSAllowedOrigins   []string
 	DatabaseURL          string
+	Environment          environment.Name
 	AgentRelay           *agentrelay.HTTPHandler
 }
 
@@ -59,7 +61,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", handlers.Health)
-	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.DatabaseURL))
+	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.DatabaseURL, deps.Environment))
 	// The sandbox-facing relay is deliberately outside the Auth0/identity/
 	// workspace chain. It authenticates short-lived operation tokens itself.
 	mux.HandleFunc("GET /api/v1/agent-relay/v1/models", func(w http.ResponseWriter, r *http.Request) {

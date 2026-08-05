@@ -27,6 +27,21 @@ type RunOutcome struct {
 	Output string
 	// Duration is the child-process wall time reported by the supervisor.
 	Duration time.Duration
+	// StageDurations captures provider-facing runner latency separately from
+	// the child-process duration. The execution service persists this telemetry
+	// even when Run returns an infrastructure error.
+	StageDurations StageDurations
+}
+
+// StageDurations is the structured timing observation produced by a runner.
+// TotalMs intentionally stops before asynchronous sandbox cleanup, matching
+// the existing daytona run log line and the user-visible critical path.
+type StageDurations struct {
+	CreateMs      int64
+	UploadMs      int64
+	ExecMs        int64
+	TotalMs       int64
+	CreateRetried bool
 }
 
 // Runner executes one submission in an isolated sandbox.

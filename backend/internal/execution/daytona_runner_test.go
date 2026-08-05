@@ -253,6 +253,9 @@ func TestDaytonaRunnerRetriesCreateOnceWithoutReexecutingSubmission(t *testing.T
 	if sandbox.executeCalls != 1 {
 		t.Fatalf("execute calls = %d, want exactly 1", sandbox.executeCalls)
 	}
+	if !outcome.StageDurations.CreateRetried {
+		t.Fatal("create retry was not reflected in structured stage durations")
+	}
 }
 
 func TestDaytonaRunnerCreateFailureReturnsInfrastructureBusy(t *testing.T) {
@@ -275,6 +278,9 @@ func TestDaytonaRunnerCreateFailureReturnsInfrastructureBusy(t *testing.T) {
 	}
 	if sandbox.executeCalls != 0 {
 		t.Fatalf("execute calls = %d, want 0", sandbox.executeCalls)
+	}
+	if !outcome.StageDurations.CreateRetried {
+		t.Fatal("exhausted create retry was not reflected in structured stage durations")
 	}
 }
 

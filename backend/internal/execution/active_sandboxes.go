@@ -39,6 +39,12 @@ func (r *activeRunRegistry) contains(runID string) bool {
 	return ok
 }
 
+func (r *activeRunRegistry) count() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.runIDs)
+}
+
 type activeTrackingSandbox struct {
 	daytonaRunnerSandbox
 	runID    string

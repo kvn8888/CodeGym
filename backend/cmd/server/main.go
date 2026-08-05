@@ -23,6 +23,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/settings"
 	"github.com/kvn8888/codegym/backend/internal/submission"
 	"github.com/kvn8888/codegym/backend/internal/usage"
 	"github.com/kvn8888/codegym/backend/internal/workflow"
@@ -51,6 +52,7 @@ func main() {
 	var chatStore chat.Store = chat.NewInMemoryStore()
 	var workflowStore workflow.Store = workflow.NewInMemoryStore()
 	var relayStore agentrelay.Store = agentrelay.NewInMemoryStore()
+	var settingsStore settings.Store = settings.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -73,6 +75,7 @@ func main() {
 		postgresChatStore := chat.NewPostgresStore(pool)
 		postgresWorkflowStore := workflow.NewPostgresStore(pool)
 		postgresRelayStore := agentrelay.NewPostgresStore(pool)
+		postgresSettingsStore := settings.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -103,6 +106,9 @@ func main() {
 		if err := postgresRelayStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap agent relay schema: %v", err)
 		}
+		if err := postgresSettingsStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap runtime settings schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
@@ -114,7 +120,8 @@ func main() {
 		chatStore = postgresChatStore
 		workflowStore = postgresWorkflowStore
 		relayStore = postgresRelayStore
-		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, genai usage, execution, and problem stores")
+		settingsStore = postgresSettingsStore
+		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, runtime settings, genai usage, execution, and problem stores")
 	} else {
 		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
@@ -135,6 +142,7 @@ func main() {
 	memoryService := memory.NewService(memoryStore, nil)
 	sessionService := session.NewService(sessionStore, nil)
 	usageService := usage.NewService(usageStore, nil)
+	settingsService := settings.NewService(settingsStore, nil)
 	executionService := execution.NewService(executionStore, executionRunner, nil)
 	problemService := problems.NewService(problemStore)
 	if cfg.SeedDemo {
@@ -253,6 +261,7 @@ func main() {
 		MemoryProfiles:       profileSynthesizer,
 		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,
 		Usage:                usageService,
+		Settings:             settingsService,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		DatabaseURL:          cfg.DatabaseURL,
 		AgentRelay:           relayHTTPHandler,

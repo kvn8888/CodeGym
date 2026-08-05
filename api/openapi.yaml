@@ -112,6 +112,62 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/settings/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: Registered namespaced runtime setting key.
+        schema:
+          type: string
+          example: execution.hedge_count
+      - $ref: "#/components/parameters/WorkspaceHeader"
+    get:
+      operationId: getRuntimeSetting
+      summary: Resolve one workspace-scoped runtime operator setting.
+      description: >
+        Operator control for the caller's own personal workspace. CodeGym has
+        no administrator role, so this is not a platform-wide settings API.
+        Missing or malformed stored values resolve to their compiled default.
+      responses:
+        "200":
+          description: Typed runtime setting resolved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSettingEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateRuntimeSetting
+      summary: Set one workspace-scoped runtime operator setting.
+      description: >
+        Operator control for the caller's own personal workspace. Integer
+        settings with safety bounds are clamped before persistence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRuntimeSettingInput"
+      responses:
+        "200":
+          description: Typed runtime setting updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSettingEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/v1/memory/profile:
     get:
       operationId: getMemoryProfile
@@ -1433,6 +1489,50 @@ components:
           $ref: "#/components/schemas/CostAggregate"
         error:
           type: "null"
+
+    RuntimeSettingEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/RuntimeSetting"
+        error:
+          type: "null"
+
+    RuntimeSetting:
+      type: object
+      required: [key, type, value, default, source]
+      properties:
+        key:
+          type: string
+          example: execution.hedge_count
+        type:
+          type: string
+          enum: [int, bool]
+        value:
+          oneOf:
+            - type: integer
+            - type: boolean
+        default:
+          oneOf:
+            - type: integer
+            - type: boolean
+        source:
+          type: string
+          enum: [default, stored]
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateRuntimeSettingInput:
+      type: object
+      required: [value]
+      additionalProperties: false
+      properties:
+        value:
+          oneOf:
+            - type: integer
+            - type: boolean
 
     CostAggregate:
       type: object

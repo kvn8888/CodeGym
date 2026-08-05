@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/kvn8888/codegym/backend/internal/problems"
 )
 
 const problemSpecMaxTokens = 4096
+
+const problemArtifactMaxTokens = 6144
 
 // GeneratedProblemSpec is the alignment contract shared with the otherwise
 // isolated tests and reference calls. It deliberately contains no executable
@@ -36,6 +39,22 @@ type GeneratedProblemSpec struct {
 	FunctionName         string                `json:"function_name,omitempty"`
 	Parameters           []ProblemParameter    `json:"parameters,omitempty"`
 	ReturnType           string                `json:"return_type,omitempty"`
+}
+
+// GeneratedProblemTests is produced by the tests role. It has no field in
+// which a reference implementation could be supplied or returned.
+type GeneratedProblemTests struct {
+	Checker       string              `json:"checker,omitempty"`
+	TestCases     []ProblemTestCase   `json:"test_cases,omitempty"`
+	HTTPTestCases []problems.HTTPCase `json:"http_test_cases,omitempty"`
+}
+
+// GeneratedProblemReference is produced by the reference role. It has no
+// field in which generated cases or checker source could be supplied or
+// returned.
+type GeneratedProblemReference struct {
+	ReferenceSolution string `json:"reference_solution"`
+	StarterCode       string `json:"starter_code,omitempty"`
 }
 
 const problemSpecSystemPrompt = `You are the specification agent for CodeGym.
@@ -98,6 +117,78 @@ var problemSpecJSONSchema = json.RawMessage(`{
   ]
 }`)
 
+const problemTestsSystemPrompt = `You are the tests agent for CodeGym.
+Return only the tests artifact requested by the supplied schema. The supplied
+problem spec is authoritative and is your entire problem context.
+
+For unit strategy:
+- Produce 4..12 deterministic typed cases with a roughly even split and at least
+  two public and two hidden cases. Every case includes name, kind, hidden, args,
+  expected, and an optional short rationale or comparator override.
+- The top-level comparator is fixed by the spec. When it is checker, include a
+  safe checker implementation matching the selected language contract.
+For http strategy:
+- Produce 4..12 deterministic request/expect cases with at least two public and
+  two hidden. Each case includes name, kind, hidden, request, expect, and an
+  optional rationale or comparator override.
+- request.body is JSON; expect.headers is a subset; expect.json and expect.body
+  are mutually exclusive. Do not use checker.
+
+Never write an implementation, starter code, runner, shell command,
+CODEGYM_RESULT, filesystem access, subprocess, socket, or external network call.`
+
+const problemReferenceSystemPrompt = `You are the reference implementation agent for CodeGym.
+Return only the reference artifact requested by the supplied schema. The supplied
+problem spec is authoritative and is your entire problem context.
+
+For Python unit, reference_solution contains only the target function and safe
+helpers. For Go unit, it is a complete package main source file defining the
+exact specified function. For Go http, reference_solution and starter_code are
+complete package main files; both read PORT and start a net/http server, while
+starter_code leaves the exercise behavior as clear TODOs without embedding
+expected answers.
+
+Never write a runner, shell command, CODEGYM_RESULT, hidden-test import,
+filesystem access, os/exec, unsafe, cgo, or external network call.`
+
+var unitTestsJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["test_cases"],
+  "properties":{
+    "checker":{"type":"string"},
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","args","expected"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+  }
+}`)
+
+var checkerUnitTestsJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["checker","test_cases"],
+  "properties":{
+    "checker":{"type":"string"},
+    "test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","args","expected"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"args":{"type":"array"},"expected":{},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float","checker"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+  }
+}`)
+
+var httpTestsJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["http_test_cases"],
+  "properties":{
+    "http_test_cases":{"type":"array","minItems":4,"maxItems":12,"items":{"type":"object","required":["name","kind","hidden","request","expect"],"properties":{"name":{"type":"string"},"kind":{"type":"string","enum":["example","functional","edge","stress","hidden"]},"hidden":{"type":"boolean"},"rationale":{"type":"string","maxLength":300},"request":{"type":"object","required":["method","path"],"properties":{"method":{"type":"string"},"path":{"type":"string"},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{}}},"expect":{"type":"object","required":["status"],"properties":{"status":{"type":"integer","minimum":100,"maximum":599},"json":{},"headers":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"string"}}},"comparator":{"type":"object","required":["kind"],"properties":{"kind":{"type":"string","enum":["exact","set","multiset","sorted","float"]},"epsilon":{"type":"number","exclusiveMinimum":0}}}}}}
+  }
+}`)
+
+var unitReferenceJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["reference_solution"],
+  "properties":{"reference_solution":{"type":"string"}}
+}`)
+
+var httpReferenceJSONSchema = json.RawMessage(`{
+  "type":"object",
+  "required":["reference_solution","starter_code"],
+  "properties":{"reference_solution":{"type":"string"},"starter_code":{"type":"string"}}
+}`)
+
 // GenerateProblemSpec makes the first, spec-only call in the independent
 // generation pipeline. Invalid structured output gets one bounded correction,
 // matching the other structured generation surfaces.
@@ -137,6 +228,200 @@ func GenerateProblemSpec(ctx context.Context, orchestrator *Orchestrator, reques
 		Reason:    "problem spec generation produced invalid output after 2 attempts",
 		RawOutput: lastRaw,
 		Err:       lastErr,
+	}
+}
+
+// GenerateIndependentProblem creates the contract first, then starts the tests
+// and reference calls concurrently. Each parallel request is constructed only
+// from the validated contract, so neither artifact can enter the other role's
+// model context.
+func GenerateIndependentProblem(ctx context.Context, orchestrator *Orchestrator, request ProblemSpec) (problems.Definition, GeneratedProblemSpec, GeneratedProblem, GenerateResult, error) {
+	contract, specResult, err := GenerateProblemSpec(ctx, orchestrator, request)
+	if err != nil {
+		return problems.Definition{}, GeneratedProblemSpec{}, GeneratedProblem{}, GenerateResult{}, err
+	}
+	contractJSON, err := json.Marshal(contract)
+	if err != nil {
+		return problems.Definition{}, GeneratedProblemSpec{}, GeneratedProblem{}, GenerateResult{}, fmt.Errorf("encode generated problem spec: %w", err)
+	}
+
+	testsSchema := unitTestsJSONSchema
+	if contract.Comparator.Kind == problems.ComparatorChecker {
+		testsSchema = checkerUnitTestsJSONSchema
+	}
+	if contract.Strategy == problems.TestStrategyHTTP {
+		testsSchema = httpTestsJSONSchema
+	}
+	referenceSchema := unitReferenceJSONSchema
+	if contract.Strategy == problems.TestStrategyHTTP {
+		referenceSchema = httpReferenceJSONSchema
+	}
+
+	type artifactCall struct {
+		role   string
+		result GenerateResult
+		err    error
+	}
+	results := make(chan artifactCall, 2)
+	var group sync.WaitGroup
+	group.Add(2)
+	go func() {
+		defer group.Done()
+		result, callErr := orchestrator.Generate(ctx, GenerateInput{
+			Kind:         KindProblemTests,
+			Spec:         contractJSON,
+			Schema:       Schema{Name: "problem_tests", Version: "1", JSONSchema: testsSchema},
+			ModelPolicy:  ModelPolicy{MaxTokens: problemArtifactMaxTokens},
+			Instructions: problemTestsSystemPrompt,
+		})
+		results <- artifactCall{role: "tests", result: result, err: callErr}
+	}()
+	go func() {
+		defer group.Done()
+		result, callErr := orchestrator.Generate(ctx, GenerateInput{
+			Kind:         KindProblemReference,
+			Spec:         contractJSON,
+			Schema:       Schema{Name: "problem_reference", Version: "1", JSONSchema: referenceSchema},
+			ModelPolicy:  ModelPolicy{MaxTokens: problemArtifactMaxTokens},
+			Instructions: problemReferenceSystemPrompt,
+		})
+		results <- artifactCall{role: "reference", result: result, err: callErr}
+	}()
+	group.Wait()
+	close(results)
+
+	var testsResult, referenceResult GenerateResult
+	for result := range results {
+		if result.err != nil {
+			return problems.Definition{}, GeneratedProblemSpec{}, GeneratedProblem{}, GenerateResult{}, fmt.Errorf("generate %s artifact: %w", result.role, result.err)
+		}
+		switch result.role {
+		case "tests":
+			testsResult = result.result
+		case "reference":
+			referenceResult = result.result
+		}
+	}
+
+	generated, err := AssembleIndependentProblem(contract, testsResult.Object, referenceResult.Object)
+	if err != nil {
+		return problems.Definition{}, GeneratedProblemSpec{}, GeneratedProblem{}, GenerateResult{}, err
+	}
+	definition, err := BuildProblemDefinition(generated)
+	if err != nil {
+		return problems.Definition{}, GeneratedProblemSpec{}, GeneratedProblem{}, GenerateResult{}, err
+	}
+	return definition, contract, generated, aggregateProblemResults(specResult, testsResult, referenceResult, generated), nil
+}
+
+// AssembleIndependentProblem is the single join point for the isolated
+// artifacts. Strict decoders reject attempts by either role to smuggle fields
+// owned by the other role into its output.
+func AssembleIndependentProblem(contract GeneratedProblemSpec, testsRaw, referenceRaw json.RawMessage) (GeneratedProblem, error) {
+	var tests GeneratedProblemTests
+	if err := strictProblemArtifactDecode(testsRaw, &tests); err != nil {
+		return GeneratedProblem{}, &InvalidOutputError{Reason: "tests agent returned an invalid artifact", RawOutput: string(testsRaw), Err: err}
+	}
+	var reference GeneratedProblemReference
+	if err := strictProblemArtifactDecode(referenceRaw, &reference); err != nil {
+		return GeneratedProblem{}, &InvalidOutputError{Reason: "reference agent returned an invalid artifact", RawOutput: string(referenceRaw), Err: err}
+	}
+	var testFields, referenceFields map[string]json.RawMessage
+	if err := json.Unmarshal(testsRaw, &testFields); err != nil {
+		return GeneratedProblem{}, err
+	}
+	if err := json.Unmarshal(referenceRaw, &referenceFields); err != nil {
+		return GeneratedProblem{}, err
+	}
+	if _, ok := referenceFields["reference_solution"]; !ok {
+		return GeneratedProblem{}, errors.New("reference artifact must include reference_solution")
+	}
+	if contract.Strategy == problems.TestStrategyHTTP {
+		if _, ok := testFields["http_test_cases"]; !ok {
+			return GeneratedProblem{}, errors.New("http tests artifact must include http_test_cases")
+		}
+		if _, ok := referenceFields["starter_code"]; !ok {
+			return GeneratedProblem{}, errors.New("http reference artifact must include starter_code")
+		}
+		if len(tests.TestCases) > 0 || tests.Checker != "" {
+			return GeneratedProblem{}, errors.New("http tests artifact must not include unit cases or checker")
+		}
+	} else {
+		if _, ok := testFields["test_cases"]; !ok {
+			return GeneratedProblem{}, errors.New("unit tests artifact must include test_cases")
+		}
+		if len(tests.HTTPTestCases) > 0 {
+			return GeneratedProblem{}, errors.New("unit tests artifact must not include http_test_cases")
+		}
+		if reference.StarterCode != "" {
+			return GeneratedProblem{}, errors.New("unit reference artifact must not include starter_code")
+		}
+	}
+
+	combined := GeneratedProblem{
+		Language:          contract.Language,
+		Strategy:          contract.Strategy,
+		Title:             contract.Title,
+		Description:       contract.Description,
+		Category:          contract.Category,
+		Subcategory:       contract.Subcategory,
+		Tags:              append([]string(nil), contract.Tags...),
+		Difficulty:        contract.Difficulty,
+		EstimatedMinutes:  contract.EstimatedMinutes,
+		FunctionName:      contract.FunctionName,
+		Parameters:        append([]ProblemParameter(nil), contract.Parameters...),
+		ReturnType:        contract.ReturnType,
+		Hints:             append([]string(nil), contract.Hints...),
+		ReferenceSolution: reference.ReferenceSolution,
+		Comparator:        contract.Comparator,
+		Checker:           tests.Checker,
+		TestCases:         tests.TestCases,
+		StarterCode:       reference.StarterCode,
+		HTTPTestCases:     tests.HTTPTestCases,
+	}
+	if contract.Strategy == problems.TestStrategyHTTP {
+		combined.Entrypoint = contract.Entrypoint
+	}
+	combinedRaw, err := json.Marshal(combined)
+	if err != nil {
+		return GeneratedProblem{}, err
+	}
+	validated, err := ValidateGeneratedProblemForLanguage(combinedRaw, contract.Language)
+	if err != nil {
+		return GeneratedProblem{}, &InvalidOutputError{Reason: "independent artifacts do not satisfy the problem spec", RawOutput: string(combinedRaw), Err: err}
+	}
+	return validated, nil
+}
+
+func strictProblemArtifactDecode(raw json.RawMessage, output any) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(output); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("artifact must contain exactly one JSON object")
+	}
+	return nil
+}
+
+func aggregateProblemResults(spec, tests, reference GenerateResult, generated GeneratedProblem) GenerateResult {
+	provider := spec.Provider
+	model := spec.Model
+	if tests.Provider != provider || reference.Provider != provider {
+		provider = "mixed"
+	}
+	if tests.Model != model || reference.Model != model {
+		model = "mixed"
+	}
+	object, _ := json.Marshal(generated)
+	return GenerateResult{
+		Object:    object,
+		Provider:  provider,
+		Model:     model,
+		TokensIn:  spec.TokensIn + tests.TokensIn + reference.TokensIn,
+		TokensOut: spec.TokensOut + tests.TokensOut + reference.TokensOut,
+		CostUnits: spec.CostUnits + tests.CostUnits + reference.CostUnits,
 	}
 }
 

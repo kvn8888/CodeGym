@@ -30,14 +30,6 @@ const twoSum: Problem = {
 
 You may assume that each input would have **exactly one solution**, and you may not use the same element twice.
 
-## Example
-
-\`\`\`
-Input: nums = [2,7,11,15], target = 9
-Output: [0,1]
-Explanation: Because nums[0] + nums[1] == 9, we return [0, 1].
-\`\`\`
-
 ## Constraints
 
 - \`2 <= nums.length <= 10^4\`
@@ -55,6 +47,23 @@ Explanation: Because nums[0] + nums[1] == 9, we return [0, 1].
   },
   files: { skeleton: [{ path: 'solution.go', entry: true }] },
   test_config: { strategy: 'unit' },
+  public_cases: [
+    {
+      strategy: 'unit',
+      name: 'pair at the start',
+      kind: 'example',
+      args: [[2, 7, 11, 15], 9],
+      expected: [0, 1],
+      explanation: 'The values at indices 0 and 1 add up to the target, 9.',
+    },
+    {
+      strategy: 'unit',
+      name: 'pair in the middle',
+      kind: 'example',
+      args: [[3, 2, 4], 6],
+      expected: [1, 2],
+    },
+  ],
 };
 
 const expressePagination: Problem = {
@@ -76,16 +85,7 @@ const expressePagination: Problem = {
 - Return \`{ items, nextCursor, hasMore }\`
 - Encode the cursor as a base64 string of the last item's ID
 - Default limit is 20, max is 100
-
-## Example
-
-\`\`\`
-GET /api/items?limit=2
-{ "items": [...], "nextCursor": "MTI=", "hasMore": true }
-
-GET /api/items?cursor=MTI=&limit=2
-{ "items": [...], "nextCursor": "MjQ=", "hasMore": false }
-\`\`\``,
+`,
   hints: [{ cost: 0, text: "Encode the last item's ID using Buffer.from(id).toString('base64')" }],
   runtime: {
     image: 'codegym/node20-express',
@@ -95,6 +95,26 @@ GET /api/items?cursor=MTI=&limit=2
   },
   files: { skeleton: [{ path: 'index.js', entry: true }, { path: 'package.json', readonly: true }] },
   test_config: { strategy: 'http' },
+  public_cases: [
+    {
+      strategy: 'http',
+      name: 'first page',
+      kind: 'example',
+      request: {
+        method: 'GET',
+        path: '/api/items?limit=2',
+      },
+      expected: {
+        status: 200,
+        json: {
+          items: [{ id: 6 }, { id: 12 }],
+          nextCursor: 'MTI=',
+          hasMore: true,
+        },
+      },
+      explanation: 'The response returns two items and a cursor for the next page.',
+    },
+  ],
 };
 
 const goSkeleton: { files: SubmissionFile[] } = {

@@ -3,6 +3,7 @@ import {
   useState,
   useCallback,
   useRef,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -16,10 +17,13 @@ import type {
   PracticeSession,
   PracticeSessionSummary,
   Problem,
+  PublicProblemCase,
   Submission,
   SubmissionFile,
+  SubmissionMode,
   SubmissionStatus,
   TestCaseResult,
+  TestResult,
 } from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 
@@ -103,6 +107,126 @@ function isTerminalFailureSubmission(
   return submission.status in terminalFailurePresentation;
 }
 
+function submissionModeLabel(mode: SubmissionMode | undefined) {
+  return mode === 'run' ? 'SAMPLE RUN' : 'GRADED SUBMIT';
+}
+
+function submissionResultSummary(submission: Submission, result?: TestResult) {
+  const executedCount = submission.executed_count ?? result?.total ?? 0;
+  const caseLabel = executedCount === 1 ? 'case' : 'cases';
+
+  if (!result) {
+    return submission.mode === 'run'
+      ? `${executedCount} sample ${caseLabel} executed`
+      : `${executedCount} ${caseLabel} executed`;
+  }
+
+  if (submission.mode === 'run') {
+    return result.status === 'pass'
+      ? `${executedCount} sample ${caseLabel} passed`
+      : `${result.passed} of ${executedCount} sample ${caseLabel} passed`;
+  }
+
+  return `${result.passed} of ${executedCount} passed`;
+}
+
+function formatExampleValue(value: unknown) {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value, null, 2) ?? String(value);
+}
+
+function ExampleValue({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-gray-700">{label}</dt>
+      <dd className="mt-1">
+        <pre className="overflow-x-auto rounded-md border border-gray-alpha-200 bg-gray-100 px-3 py-2 font-mono text-xs leading-5 text-gray-900">
+          {formatExampleValue(value)}
+        </pre>
+      </dd>
+    </div>
+  );
+}
+
+export function WorkedExamples({ cases }: { cases: PublicProblemCase[] }) {
+  if (cases.length === 0) return null;
+
+  return (
+    <section className="mt-6 border-t border-gray-alpha-200 pt-4" aria-labelledby="worked-examples-heading">
+      <h2 id="worked-examples-heading" className="text-sm font-semibold text-gray-1000">
+        Worked examples
+      </h2>
+      <div className="mt-3 border-y border-gray-alpha-200">
+        {cases.map((problemCase, index) => (
+          <article
+            key={`${problemCase.strategy}-${problemCase.name}-${index}`}
+            className="border-b border-gray-alpha-200 py-4 last:border-b-0"
+          >
+            <h3 className="font-mono text-xs font-semibold text-gray-900">
+              Example {index + 1} · {problemCase.name}
+            </h3>
+
+            {problemCase.strategy === 'unit' ? (
+              <dl className="mt-3 flex flex-col gap-3">
+                <ExampleValue label="Arguments" value={problemCase.args} />
+                <ExampleValue label="Expected output" value={problemCase.expected} />
+              </dl>
+            ) : (
+              <div className="mt-3 flex flex-col gap-3">
+                <div>
+                  <p className="text-xs font-medium text-gray-700">Request</p>
+                  <div className="mt-1 overflow-x-auto rounded-md border border-gray-alpha-200 bg-gray-100 px-3 py-2 font-mono text-xs leading-5 text-gray-900">
+                    <span className="font-semibold">{problemCase.request.method.toUpperCase()}</span>{' '}
+                    {problemCase.request.path}
+                  </div>
+                </div>
+                {(problemCase.request.headers || problemCase.request.body !== undefined) && (
+                  <dl className="flex flex-col gap-3">
+                    {problemCase.request.headers && (
+                      <ExampleValue label="Request headers" value={problemCase.request.headers} />
+                    )}
+                    {problemCase.request.body !== undefined && (
+                      <ExampleValue label="Request body" value={problemCase.request.body} />
+                    )}
+                  </dl>
+                )}
+                <div>
+                  <p className="text-xs font-medium text-gray-700">Expected response</p>
+                  <div className="mt-1 rounded-md border border-gray-alpha-200 bg-gray-100 px-3 py-2 font-mono text-xs leading-5 text-gray-900">
+                    HTTP {problemCase.expected.status}
+                  </div>
+                </div>
+                {(problemCase.expected.headers ||
+                  problemCase.expected.json !== undefined ||
+                  problemCase.expected.body !== undefined) && (
+                  <dl className="flex flex-col gap-3">
+                    {problemCase.expected.headers && (
+                      <ExampleValue label="Response headers" value={problemCase.expected.headers} />
+                    )}
+                    {problemCase.expected.json !== undefined && (
+                      <ExampleValue label="Response body" value={problemCase.expected.json} />
+                    )}
+                    {problemCase.expected.body !== undefined && (
+                      <ExampleValue label="Response body" value={problemCase.expected.body} />
+                    )}
+                  </dl>
+                )}
+              </div>
+            )}
+
+            {problemCase.explanation && (
+              <p className="mt-3 text-sm leading-5 text-gray-700">
+                <span className="font-semibold text-gray-900">Explanation:</span>{' '}
+                {problemCase.explanation}
+              </p>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CapturedStdout({ submission }: { submission: Submission }) {
   if (!submission.stdout && !submission.output_truncated) return null;
   return (
@@ -135,7 +259,9 @@ export function ProblemDetailPage({
   const hintsRef = useRef(0);
   const sessionStateRef = useRef<Record<string, unknown>>({ schema_version: 1 });
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runRequestRef = useRef(0);
+  const submissionInFlightRef = useRef(false);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [files, setFiles] = useState<SubmissionFile[]>([]);
   const [activeFile, setActiveFile] = useState(0);
@@ -143,6 +269,8 @@ export function ProblemDetailPage({
   const [resumedDraft, setResumedDraft] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [submitting, setSubmitting] = useState(false);
+  const [activeSubmissionMode, setActiveSubmissionMode] = useState<SubmissionMode | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [submission, setSubmission] = useState<Submission | null>(initialSubmission);
   const [hintsRevealed, setHintsRevealed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -161,12 +289,20 @@ export function ProblemDetailPage({
     }
     let cancelled = false;
     runRequestRef.current += 1;
+    submissionInFlightRef.current = false;
+    if (elapsedTimerRef.current) {
+      clearInterval(elapsedTimerRef.current);
+      elapsedTimerRef.current = null;
+    }
     setProblem(null);
     setFiles([]);
     filesRef.current = [];
     setSessionId(null);
     setResumedDraft(false);
     setSaveStatus('idle');
+    setSubmitting(false);
+    setActiveSubmissionMode(null);
+    setElapsedSeconds(0);
     setSubmission(initialSubmission);
     setError(null);
     setActiveFile(0);
@@ -355,6 +491,13 @@ export function ProblemDetailPage({
     };
   }, [files, hintsRevealed, persistDraft, sessionId]);
 
+  useEffect(
+    () => () => {
+      if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    },
+    [],
+  );
+
   const handleCodeChange = useCallback(
     (value: string | undefined) => {
       if (value === undefined) return;
@@ -504,18 +647,28 @@ export function ProblemDetailPage({
     }
   }, []);
 
-  const handleSubmit = async () => {
-    if (!problem || !sessionId) return;
+  const handleSubmit = async (mode: SubmissionMode) => {
+    if (!problem || !sessionId || submissionInFlightRef.current) return;
+    submissionInFlightRef.current = true;
     const requestID = runRequestRef.current + 1;
     runRequestRef.current = requestID;
     const submittedFiles = filesRef.current;
     setSubmitting(true);
+    setActiveSubmissionMode(mode);
+    setElapsedSeconds(0);
+    const startedAt = Date.now();
+    if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    elapsedTimerRef.current = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
     setSubmission(null);
     setError(null);
     try {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       await persistDraft(submittedFiles, hintsRef.current);
-      setMemoryUpdateStatus('pending');
+      if (mode === 'submit') {
+        setMemoryUpdateStatus('pending');
+      }
       const res = await api.post<{
         submission_id: string;
         memory_update_status?: 'synced' | 'failed';
@@ -523,6 +676,7 @@ export function ProblemDetailPage({
         problem_id: problem.id,
         session_id: sessionId,
         files: submittedFiles,
+        mode,
       });
       sessionStateRef.current = {
         ...sessionStateRef.current,
@@ -531,7 +685,7 @@ export function ProblemDetailPage({
           ? { memory_update_status: res.memory_update_status }
           : {}),
       };
-      if (res.memory_update_status) {
+      if (mode === 'submit' && res.memory_update_status) {
         setMemoryUpdateStatus(res.memory_update_status);
       }
 
@@ -552,10 +706,24 @@ export function ProblemDetailPage({
       }
     } catch (err) {
       if (runRequestRef.current === requestID) {
-        setError(err instanceof Error ? err.message : 'Submission failed.');
+        setError(
+          err instanceof Error
+            ? err.message
+            : mode === 'run'
+              ? 'Run failed.'
+              : 'Submission failed.',
+        );
       }
     } finally {
-      if (runRequestRef.current === requestID) setSubmitting(false);
+      if (runRequestRef.current === requestID) {
+        if (elapsedTimerRef.current) {
+          clearInterval(elapsedTimerRef.current);
+          elapsedTimerRef.current = null;
+        }
+        submissionInFlightRef.current = false;
+        setSubmitting(false);
+        setActiveSubmissionMode(null);
+      }
     }
   };
 
@@ -605,14 +773,17 @@ export function ProblemDetailPage({
   const hasTestPanel = submitting || Boolean(error) || Boolean(submission);
 
   return (
-    <div ref={pageRef} className="h-screen flex">
+    <div
+      ref={pageRef}
+      className="flex min-h-[calc(100vh-3.5rem)] min-w-0 max-w-full flex-col md:min-h-screen lg:h-screen lg:min-h-0 lg:flex-row"
+    >
       {/* Left: Problem Description */}
       <div
-        className="shrink-0 min-w-0 overflow-y-auto bg-background-100 p-6"
-        style={{ width: `${descriptionWidth}%` }}
+        className="w-full min-w-0 bg-background-100 p-4 sm:p-6 lg:shrink-0 lg:overflow-y-auto lg:w-[var(--description-width)]"
+        style={{ '--description-width': `${descriptionWidth}%` } as CSSProperties}
       >
         <h1 className="mb-3 text-2xl leading-8 font-semibold text-gray-1000">{problem.title}</h1>
-        <div className="mb-5 flex gap-2 font-mono text-xs">
+        <div className="mb-5 flex flex-wrap gap-2 font-mono text-xs">
           <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.language.toUpperCase()}</span>
           {problem.framework && (
             <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.framework.toUpperCase()}</span>
@@ -646,6 +817,8 @@ export function ProblemDetailPage({
           {problem.description}
         </MarkdownContent>
 
+        <WorkedExamples cases={problem.public_cases ?? []} />
+
         {/* Hints */}
         {problem.hints && problem.hints.length > 0 && (
           <div className="mt-6 border-t border-gray-alpha-200 pt-4">
@@ -677,7 +850,7 @@ export function ProblemDetailPage({
 
       <button
         type="button"
-        className="group relative z-10 w-2 shrink-0 cursor-col-resize border-x border-gray-alpha-200 bg-gray-100/80 hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-700"
+        className="group relative z-10 hidden w-2 shrink-0 cursor-col-resize border-x border-gray-alpha-200 bg-gray-100/80 hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-700 lg:block"
         aria-label="Resize editor pane"
         aria-orientation="vertical"
         aria-valuemin={100 - MAX_DESCRIPTION_WIDTH}
@@ -695,31 +868,49 @@ export function ProblemDetailPage({
       </button>
 
       {/* Right: Editor + Results */}
-      <div ref={rightPaneRef} className="min-w-0 flex-1 flex flex-col bg-[#1e1e1e]">
+      <div
+        ref={rightPaneRef}
+        className="flex h-[70vh] min-h-[32rem] w-full min-w-0 flex-col bg-[#1e1e1e] lg:h-auto lg:min-h-0 lg:flex-1"
+      >
         {/* File tabs */}
-        <div className="flex items-center border-b border-[#333] bg-[#252526]">
-          {files.map((file, i) => (
+        <div className="border-b border-[#333] bg-[#252526]">
+          <div className="flex max-w-full items-center overflow-x-auto border-b border-[#333]">
+            {files.map((file, i) => (
+              <button
+                key={file.path}
+                onClick={() => setActiveFile(i)}
+                className={`shrink-0 px-4 py-2 text-xs border-r border-[#333] transition-colors ${
+                  i === activeFile
+                    ? 'bg-[#1e1e1e] text-[#ccc]'
+                    : 'text-[#666] hover:text-[#ccc]'
+                }`}
+              >
+                {file.path}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 py-2 pl-3 pr-24 lg:pr-3">
+            <p className="w-full text-[10px] leading-4 text-[#858585] sm:w-auto sm:flex-1">
+              Run checks sample cases. Submit grades the full hidden suite.
+            </p>
             <button
-              key={file.path}
-              onClick={() => setActiveFile(i)}
-              className={`px-4 py-2 text-xs border-r border-[#333] transition-colors ${
-                i === activeFile
-                  ? 'bg-[#1e1e1e] text-[#ccc]'
-                  : 'text-[#666] hover:text-[#ccc]'
-              }`}
+              type="button"
+              onClick={() => void handleSubmit('run')}
+              disabled={submitting || !sessionId}
+              className="min-w-24 flex-1 rounded-md border border-[#555] bg-[#2d2d2d] px-4 py-1.5 text-sm font-medium text-[#ccc] transition-colors hover:bg-[#333] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40 sm:min-w-0 sm:flex-none"
             >
-              {file.path}
+              {submitting && activeSubmissionMode === 'run' ? 'RUNNING' : 'RUN'}
             </button>
-          ))}
-          <div className="flex-1" />
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !sessionId}
-            className="m-1.5 rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
-            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
-          >
-            {submitting ? 'RUNNING' : 'RUN'}
-          </button>
+            <button
+              type="button"
+              onClick={() => void handleSubmit('submit')}
+              disabled={submitting || !sessionId}
+              className="min-w-24 flex-1 rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40 sm:min-w-0 sm:flex-none"
+              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+            >
+              {submitting && activeSubmissionMode === 'submit' ? 'SUBMITTING' : 'SUBMIT'}
+            </button>
+          </div>
         </div>
 
         {/* Editor */}
@@ -773,7 +964,17 @@ export function ProblemDetailPage({
             >
               {submitting && (
                 <div className="flex h-full items-center justify-center bg-[#252526] p-6">
-                  <GridSpinner size="sm" />
+                  <div className="flex items-center gap-3">
+                    <GridSpinner size="sm" />
+                    <span
+                      role="timer"
+                      className="font-mono text-xs text-[#858585]"
+                      aria-label={`${activeSubmissionMode === 'submit' ? 'Submitting' : 'Running'} for ${elapsedSeconds} seconds`}
+                    >
+                      {activeSubmissionMode === 'submit' ? 'Submitting' : 'Running'} ·{' '}
+                      {elapsedSeconds}s
+                    </span>
+                  </div>
                 </div>
               )}
 
@@ -794,19 +995,21 @@ export function ProblemDetailPage({
                       {result.status === 'pass' ? 'PASS' : 'FAIL'}
                     </span>
                     <span className="text-[10px] text-[#666]">
-                      {result.passed}/{result.total} {'\u2014'} {result.duration_ms}ms
+                      {submissionModeLabel(submission.mode)} {'\u00b7'}{' '}
+                      {submissionResultSummary(submission, result)} {'\u00b7'}{' '}
+                      {result.duration_ms}ms
                     </span>
-                    {memoryUpdateStatus === 'pending' && (
+                    {submission.mode !== 'run' && memoryUpdateStatus === 'pending' && (
                       <span className="ml-auto text-[10px] text-[#dcdcaa]">
                         UPDATING MEMORY
                       </span>
                     )}
-                    {memoryUpdateStatus === 'synced' && (
+                    {submission.mode !== 'run' && memoryUpdateStatus === 'synced' && (
                       <span className="ml-auto text-[10px] text-[#4ec9b0]">
                         MEMORY UPDATED
                       </span>
                     )}
-                    {memoryUpdateStatus === 'failed' && (
+                    {submission.mode !== 'run' && memoryUpdateStatus === 'failed' && (
                       <button
                         type="button"
                         onClick={() => void retryMemoryUpdate()}
@@ -855,6 +1058,10 @@ export function ProblemDetailPage({
                       className={`text-xs font-bold ${terminalFailurePresentation[terminalFailure.status].tone}`}
                     >
                       {terminalFailurePresentation[terminalFailure.status].label}
+                    </span>
+                    <span className="text-[10px] text-[#666]">
+                      {submissionModeLabel(terminalFailure.mode)} {'\u00b7'}{' '}
+                      {submissionResultSummary(terminalFailure)}
                     </span>
                   </div>
                   <p className="px-4 py-3 font-mono text-[11px] leading-5 text-[#b8b8b8]">

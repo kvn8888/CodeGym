@@ -152,6 +152,18 @@ func TestHTTPDaytonaEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("unmodified skeleton fails cleanly", func(t *testing.T) {
+		if len(definition.SkeletonFiles) != 1 {
+			t.Fatalf("skeleton files = %#v", definition.SkeletonFiles)
+		}
+		outcome := runGoDefinition(t, runner, definition, definition.SkeletonFiles[0].Content, 0)
+		result := namedHTTPCase(t, outcome, "creates-an-item")
+		if outcome.Result.Status != execution.JudgeStatusFailed || result.Error == nil ||
+			!strings.Contains(*result.Error, "status expected 201, received 501") {
+			t.Fatalf("unmodified skeleton returned something other than a clean failed verdict: %#v", outcome.Result)
+		}
+	})
+
 	t.Run("wrong status names case and values", func(t *testing.T) {
 		outcome := runGoDefinition(t, runner, definition, wrongStatusHTTPServer, 0)
 		result := namedHTTPCase(t, outcome, "creates-an-item")

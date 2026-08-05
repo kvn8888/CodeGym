@@ -84,6 +84,7 @@ archive=$(mktemp)
 curl -fsSL "https://go.dev/dl/go%s.linux-${go_arch}.tar.gz" -o "$archive"
 $privilege rm -rf /usr/local/go
 $privilege tar -C /usr/local -xzf "$archive"
+rm -f "$archive"
 $privilege ln -sf /usr/local/go/bin/go /usr/local/bin/go
 go version
 cache=$(go env GOCACHE)
@@ -134,7 +135,17 @@ $privilege install -d -m 0755 %q
 $privilege install -m 0755 "$harness_binary" %q/"http-harness-$expected_harness_hash"
 printf '%%s\n' "$expected_harness_hash" | $privilege tee %q/source.sha256 >/dev/null
 test -x %q/"http-harness-$expected_harness_hash"
-rm -rf "$HOME/work/.codegym-snapshot" "$workdir"
+rm -f "$harness_source" "$comparator_source"
+rmdir "$HOME/work/.codegym-snapshot"
+$privilege rm -rf /usr/local/go/api
+$privilege rm -rf /usr/local/go/doc
+$privilege rm -rf /usr/local/go/misc
+$privilege rm -rf /usr/local/go/test
+for removed_tree in /usr/local/go/api /usr/local/go/doc /usr/local/go/misc /usr/local/go/test; do test ! -e "$removed_tree"; done
+case "$workdir" in
+  /tmp/tmp.*) rm -rf -- "$workdir" ;;
+  *) echo "refusing to remove unexpected workdir: $workdir" >&2; exit 2 ;;
+esac
 printf 'gocache=%%s warm_compile_ms=%%d output=%%s harness_hash=%%s\n' "$cache" "$(((finished_ns-started_ns)/1000000))" "$output" "$expected_harness_hash"`,
 		GoToolchainVersion,
 		GoHTTPHarnessSourceHash,

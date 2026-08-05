@@ -236,29 +236,42 @@ is currently a skeleton with no implementation.
 
 The first concrete language registry entry is `go`:
 
-- snapshot: `codegym-go-1-25-4-v2`
+- snapshot: `codegym-go-1-25-4-v3`
 - base: Daytona's default snapshot, promoted from a network-enabled sandbox
 - toolchain: the official `go1.25.4.linux-{amd64|arm64}.tar.gz`, installed at
   `/usr/local/go` with `/usr/local/bin/go`
 - build gate: `go version`, resolve the run user's persistent `GOCACHE`, verify
-  it is readable/writable, and compile and execute a representative program
-  importing `net/http`, `net/http/httptest`, `encoding/json`, `sync`, and `os`
-  before promotion
+  it is readable/writable, compile and execute a representative program
+  importing `net/http`, `net/http/httptest`, `encoding/json`, `sync`, and `os`,
+  and install the server-owned HTTP harness at a path versioned by the SHA-256
+  of its harness and comparator sources before promotion
 - practice gate: boot the promoted snapshot with `NetworkBlockAll`, upload a
   fresh copy of that Go HTTP program, then compile and execute it with no egress
 
-The v2 snapshot was built and promoted on 2026-08-04 from the Daytona default
+The v3 snapshot was built and promoted on 2026-08-04 from the Daytona default
 Linux/amd64 image. The builder installed the pinned toolchain, resolved
 `GOCACHE=/home/daytona/.cache/go-build`, compiled the representative program as
-the normal `daytona` run user to populate that cache, and promoted the sandbox
-without changing its ownership. The final network-blocked gate confirmed the
-cache remained readable/writable and reported `go version go1.25.4 linux/amd64`.
+the normal `daytona` run user to populate that cache, precompiled the HTTP
+harness, then removed the downloaded Go archive, temporary build directory, and
+the Go distribution's build-unused `api/`, `doc/`, `misc/`, and `test/` trees.
+It deliberately retained Go's complete `src/` tree plus `pkg/`, `bin/`, and
+`lib/`. The final network-blocked gate confirmed the cache and hash-versioned
+harness remained usable and reported `go version go1.25.4 linux/amd64`.
 
 Measured with the same fresh representative HTTP source in a new
 network-blocked sandbox, the v1 snapshot's cold compile took **27,058 ms** and
 the warmed v2 snapshot took **823 ms**. The one-time network-enabled v2 warm-up
-compile took 31,952 ms. The prior `codegym-go-1-25-4-v1` snapshot is deliberately
-retained; rollback requires only changing `GoSnapshotName` back to v1.
+compile took 31,952 ms. V3's fresh network-blocked compile took **1,073 ms**, so
+the warm-cache win survived slimming.
+
+The v2/v3 promotion decision used 15 creates per snapshot, alternating v2 then
+v3 on every sample pair. V2 reported size `15.597251` and create latency
+**1,302 ms median / 1,456 ms p90 / 1,474 ms max**. V3 reported size `15.529599`
+and create latency **941 ms median / 976 ms p90 / 991 ms max**. V3 is registered
+because it improved the entire measured create distribution while preserving
+the warm cache and adding the precompiled HTTP harness. V2 is deliberately
+retained; rollback requires only changing `GoSnapshotName` back to
+`GoSnapshotV2Name`.
 
 Go problem runs use a 1,024 MB supervised address-space ceiling. The 2026-08-03
 acceptance run proved that 256 MB caused `go build` to fail before the harness

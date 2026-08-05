@@ -9,7 +9,7 @@ const (
 	GoToolchainVersion      = "1.25.4"
 	GoSnapshotV2Name        = "codegym-go-1-25-4-v2"
 	GoSnapshotCandidateName = "codegym-go-1-25-4-v3"
-	GoSnapshotName          = GoSnapshotV2Name
+	GoSnapshotName          = GoSnapshotCandidateName
 )
 
 // Language describes how to execute a submission for one runtime.

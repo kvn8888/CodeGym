@@ -3,6 +3,7 @@ import {
   useState,
   useCallback,
   useRef,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -745,14 +746,17 @@ export function ProblemDetailPage({
   const hasTestPanel = submitting || Boolean(error) || Boolean(submission);
 
   return (
-    <div ref={pageRef} className="h-screen flex">
+    <div
+      ref={pageRef}
+      className="flex min-h-[calc(100vh-3.5rem)] min-w-0 max-w-full flex-col md:min-h-screen lg:h-screen lg:min-h-0 lg:flex-row"
+    >
       {/* Left: Problem Description */}
       <div
-        className="shrink-0 min-w-0 overflow-y-auto bg-background-100 p-6"
-        style={{ width: `${descriptionWidth}%` }}
+        className="w-full min-w-0 bg-background-100 p-4 sm:p-6 lg:shrink-0 lg:overflow-y-auto lg:w-[var(--description-width)]"
+        style={{ '--description-width': `${descriptionWidth}%` } as CSSProperties}
       >
         <h1 className="mb-3 text-2xl leading-8 font-semibold text-gray-1000">{problem.title}</h1>
-        <div className="mb-5 flex gap-2 font-mono text-xs">
+        <div className="mb-5 flex flex-wrap gap-2 font-mono text-xs">
           <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.language.toUpperCase()}</span>
           {problem.framework && (
             <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-900">{problem.framework.toUpperCase()}</span>
@@ -819,7 +823,7 @@ export function ProblemDetailPage({
 
       <button
         type="button"
-        className="group relative z-10 w-2 shrink-0 cursor-col-resize border-x border-gray-alpha-200 bg-gray-100/80 hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-700"
+        className="group relative z-10 hidden w-2 shrink-0 cursor-col-resize border-x border-gray-alpha-200 bg-gray-100/80 hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-700 lg:block"
         aria-label="Resize editor pane"
         aria-orientation="vertical"
         aria-valuemin={100 - MAX_DESCRIPTION_WIDTH}
@@ -837,15 +841,18 @@ export function ProblemDetailPage({
       </button>
 
       {/* Right: Editor + Results */}
-      <div ref={rightPaneRef} className="min-w-0 flex-1 flex flex-col bg-[#1e1e1e]">
+      <div
+        ref={rightPaneRef}
+        className="flex h-[70vh] min-h-[32rem] w-full min-w-0 flex-col bg-[#1e1e1e] lg:h-auto lg:min-h-0 lg:flex-1"
+      >
         {/* File tabs */}
         <div className="border-b border-[#333] bg-[#252526]">
-          <div className="flex items-center border-b border-[#333]">
+          <div className="flex max-w-full items-center overflow-x-auto border-b border-[#333]">
             {files.map((file, i) => (
               <button
                 key={file.path}
                 onClick={() => setActiveFile(i)}
-                className={`px-4 py-2 text-xs border-r border-[#333] transition-colors ${
+                className={`shrink-0 px-4 py-2 text-xs border-r border-[#333] transition-colors ${
                   i === activeFile
                     ? 'bg-[#1e1e1e] text-[#ccc]'
                     : 'text-[#666] hover:text-[#ccc]'
@@ -855,15 +862,15 @@ export function ProblemDetailPage({
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 px-3 py-2">
-            <p className="flex-1 text-[10px] leading-4 text-[#858585]">
+          <div className="flex flex-wrap items-center gap-2 py-2 pl-3 pr-24 lg:pr-3">
+            <p className="w-full text-[10px] leading-4 text-[#858585] sm:w-auto sm:flex-1">
               Run checks sample cases. Submit grades the full hidden suite.
             </p>
             <button
               type="button"
               onClick={() => void handleSubmit('run')}
               disabled={submitting || !sessionId}
-              className="rounded-md border border-[#555] bg-[#2d2d2d] px-4 py-1.5 text-sm font-medium text-[#ccc] transition-colors hover:bg-[#333] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
+              className="min-w-24 flex-1 rounded-md border border-[#555] bg-[#2d2d2d] px-4 py-1.5 text-sm font-medium text-[#ccc] transition-colors hover:bg-[#333] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40 sm:min-w-0 sm:flex-none"
             >
               {submitting && activeSubmissionMode === 'run' ? 'RUNNING' : 'RUN'}
             </button>
@@ -871,7 +878,7 @@ export function ProblemDetailPage({
               type="button"
               onClick={() => void handleSubmit('submit')}
               disabled={submitting || !sessionId}
-              className="rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
+              className="min-w-24 flex-1 rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40 sm:min-w-0 sm:flex-none"
               style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
             >
               {submitting && activeSubmissionMode === 'submit' ? 'SUBMITTING' : 'SUBMIT'}

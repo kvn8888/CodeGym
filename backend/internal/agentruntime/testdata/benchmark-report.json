@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "started_at": "2026-08-05T05:31:59.003631Z",
+  "finished_at": "2026-08-05T05:38:08.464266Z",
+  "status": "complete",
+  "decision_rule": "Any policy violation disqualifies that runtime. Completion rate is primary. On equal completion, opencode wins only if it improves mean repair iterations or median wall time by at least 20 percent while using no more total tokens or cost; otherwise purpose-built wins. Inconclusive selects purpose-built.",
+  "model_deployment": "azure/gpt-5.6-terra",
+  "execution_environment": "host-temporary-workspace",
+  "limitations": [
+    "No Daytona sandboxes were created; filesystem-escape policy was observed through confined tools and output scanning, not an OS sandbox boundary.",
+    "All candidates failed the result-manifest contract before black-box build and HTTP verification could award a pass.",
+    "The offline Express verifier uses a controlled local Express API contract module plus proxy and source-level egress controls; a real npm dependency and OS network boundary require a pre-baked Daytona snapshot."
+  ],
+  "relay_max_tokens": 300000,
+  "relay_max_cost_usd_micros": 2000000,
+  "relay_wall_clock_ms": 1200000,
+  "turn_ceiling": 8,
+  "run_deadline_ms": 60000,
+  "output_cap_bytes": 262144,
+  "retry_policy": "zero retries; every failure counts",
+  "fixture_fingerprints": {
+    "express": "802a3f8019560fb6e07a4abafdcb769c8e0fc83aa2c059ebc588f7759326083a",
+    "go-net-http": "48a27c99582490e0247ab1d14dfecfdb5f24ec051e42925257152f39a4dd79a6"
+  },
+  "runs": [
+    {
+      "order": 1,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 1,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "turn_ceiling_exhausted",
+      "manifest_status": "absent",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 9158,
+        "input": 7486,
+        "output": 1672,
+        "reasoning": 149,
+        "cache_read": 2304,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 43796,
+      "wall_time_ms": 23008,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 2,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 1,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "completed",
+      "manifest_status": "malformed",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 32019,
+        "input": 30463,
+        "output": 1556,
+        "reasoning": 331,
+        "cache_read": 14336,
+        "cache_write": 4934
+      },
+      "cost_usd_micros": 99499,
+      "wall_time_ms": 22312,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 3,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 1,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "completed",
+      "manifest_status": "malformed",
+      "repair_iterations": 2,
+      "tokens": {
+        "total": 36878,
+        "input": 34898,
+        "output": 1980,
+        "reasoning": 430,
+        "cache_read": 23296,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 116947,
+      "wall_time_ms": 32694,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 4,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 1,
+      "passed": false,
+      "detail": "context deadline exceeded",
+      "termination": "deadline_exhausted",
+      "manifest_status": "absent",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 4842,
+        "input": 4030,
+        "output": 812,
+        "reasoning": 231,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 22256,
+      "wall_time_ms": 60003,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 5,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 2,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "turn_ceiling_exhausted",
+      "manifest_status": "absent",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 11750,
+        "input": 9703,
+        "output": 2047,
+        "reasoning": 302,
+        "cache_read": 3968,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 54965,
+      "wall_time_ms": 23890,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 6,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 2,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "completed",
+      "manifest_status": "malformed",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 26551,
+        "input": 25219,
+        "output": 1332,
+        "reasoning": 141,
+        "cache_read": 18560,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 83029,
+      "wall_time_ms": 19212,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 7,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 2,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "completed",
+      "manifest_status": "malformed",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 22407,
+        "input": 21043,
+        "output": 1364,
+        "reasoning": 331,
+        "cache_read": 14848,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 73068,
+      "wall_time_ms": 19765,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 8,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 2,
+      "passed": false,
+      "detail": "context deadline exceeded",
+      "termination": "deadline_exhausted",
+      "manifest_status": "absent",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 2554,
+        "input": 2143,
+        "output": 411,
+        "reasoning": 107,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 11523,
+      "wall_time_ms": 60003,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 9,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 3,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "turn_ceiling_exhausted",
+      "manifest_status": "absent",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 8754,
+        "input": 7339,
+        "output": 1415,
+        "reasoning": 216,
+        "cache_read": 2304,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 39573,
+      "wall_time_ms": 21626,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 10,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 3,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "completed",
+      "manifest_status": "malformed",
+      "repair_iterations": 4,
+      "tokens": {
+        "total": 50671,
+        "input": 46850,
+        "output": 3821,
+        "reasoning": 439,
+        "cache_read": 32512,
+        "cache_write": 3850
+      },
+      "cost_usd_micros": 174441,
+      "wall_time_ms": 46525,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 11,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 3,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "completed",
+      "manifest_status": "malformed",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 33865,
+        "input": 32256,
+        "output": 1609,
+        "reasoning": 360,
+        "cache_read": 20608,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 104776,
+      "wall_time_ms": 24178,
+      "sandbox_seconds": 0
+    },
+    {
+      "order": 12,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 3,
+      "passed": false,
+      "detail": "agent result manifest is not present and valid",
+      "termination": "turn_ceiling_exhausted",
+      "manifest_status": "absent",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 7504,
+        "input": 6622,
+        "output": 882,
+        "reasoning": 235,
+        "cache_read": 1152,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 29787,
+      "wall_time_ms": 16114,
+      "sandbox_seconds": 0
+    }
+  ],
+  "summaries": [
+    {
+      "runtime": "purpose-built",
+      "runs": 6,
+      "passes": 0,
+      "completion_rate": 0,
+      "mean_repair_iterations": 0.3333333333333333,
+      "median_wall_time_ms": 23890,
+      "tokens": {
+        "total": 44562,
+        "input": 37323,
+        "output": 7239,
+        "reasoning": 1240,
+        "cache_read": 9728,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 201900,
+      "policy_violation_count": 0,
+      "disqualified": false
+    },
+    {
+      "runtime": "opencode",
+      "runs": 6,
+      "passes": 0,
+      "completion_rate": 0,
+      "mean_repair_iterations": 1.1666666666666667,
+      "median_wall_time_ms": 24178,
+      "tokens": {
+        "total": 202391,
+        "input": 190729,
+        "output": 11662,
+        "reasoning": 2032,
+        "cache_read": 124160,
+        "cache_write": 8784
+      },
+      "cost_usd_micros": 651760,
+      "policy_violation_count": 0,
+      "disqualified": false
+    }
+  ],
+  "decision": {
+    "selected": "purpose-built",
+    "outcome": "effective-tie-or-inconclusive",
+    "reason": "the predeclared default selects purpose-built"
+  },
+  "sandboxes_created": 0,
+  "sandboxes_deleted": 0,
+  "workspaces_created": 12,
+  "workspaces_deleted": 12
+}

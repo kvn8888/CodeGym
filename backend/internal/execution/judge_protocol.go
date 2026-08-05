@@ -145,9 +145,9 @@ func ReconstructJudgeResult(input ReconstructionInput) JudgeResult {
 	detail := strings.TrimSpace(input.FailureDetail)
 	if detail == "" {
 		detail = defaultFailureDetail(result.Status, result.DurationMs, input.Signal)
-		if inFlight != "" {
-			detail += fmt.Sprintf(" during case '%s'", inFlight)
-		}
+	}
+	if inFlight != "" {
+		detail += fmt.Sprintf(" during case '%s'", inFlight)
 	}
 	if len(protocolErrors) > 0 {
 		detail += "; " + strings.Join(protocolErrors, "; ")

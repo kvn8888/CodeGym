@@ -293,7 +293,7 @@ func TestGoHTTPStrategyBuildsAndRunsServerDefinition(t *testing.T) {
 		t.Fatalf("Go HTTP definition = %#v", definition)
 	}
 	if definition.Entrypoint != goHTTPLauncherPath || definition.Files.Skeleton[0].Path != "main.go" ||
-		definition.TestConfig.ReadinessTimeoutSeconds != 10 || definition.Runtime.TimeoutSeconds != 60 {
+		definition.TestConfig.ReadinessTimeoutSeconds != 10 || definition.Runtime.TimeoutSeconds != 120 {
 		t.Fatalf("Go HTTP wiring = %#v", definition)
 	}
 	if len(definition.HiddenTestFiles) != 4 || len(definition.PublicTestFiles) != 4 ||
@@ -383,6 +383,16 @@ func TestGenerateProblemSelectsGoStrategy(t *testing.T) {
 	}
 	if definition.Language != "go" || generated.Language != "go" || len(generator.requests) != 1 || !strings.Contains(generator.requests[0].Instructions, "safe Go coding problem") {
 		t.Fatalf("Go strategy result = %#v %#v requests=%#v", definition, generated, generator.requests)
+	}
+	for _, guidance := range []string{
+		"JSON type of every response field",
+		"at least one worked request/response example",
+		"request method, path",
+		"response status",
+	} {
+		if !strings.Contains(generator.requests[0].Instructions, guidance) {
+			t.Fatalf("Go generation instructions are missing %q: %s", guidance, generator.requests[0].Instructions)
+		}
 	}
 }
 

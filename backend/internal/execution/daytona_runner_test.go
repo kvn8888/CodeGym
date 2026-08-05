@@ -9,10 +9,14 @@ package execution
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/daytona/clients/sdk-go/pkg/types"
 )
 
 const passingSolution = `def two_sum(nums, target):
@@ -119,6 +123,158 @@ func TestUnitStrategyKeepsSupervisorCommandByteIdentical(t *testing.T) {
 	want := "cd ~/work && 'python3' '.codegym/supervisor.py' '--work-dir' '.codegym' '--timeout-seconds' '30' '--memory-mb' '256' '--output-cap-bytes' '65536' '--' 'python3' 'test_solution.py'"
 	if got != want {
 		t.Fatalf("unit supervisor command changed\ngot:  %s\nwant: %s", got, want)
+	}
+}
+
+type fakeDaytonaClient struct {
+	sandbox     daytonaRunnerSandbox
+	createErr   error
+	createErrs  []error
+	createCalls int
+}
+
+func (f *fakeDaytonaClient) Create(_ context.Context, _ types.SnapshotParams) (daytonaRunnerSandbox, error) {
+	f.createCalls++
+	if f.createCalls <= len(f.createErrs) && f.createErrs[f.createCalls-1] != nil {
+		return nil, f.createErrs[f.createCalls-1]
+	}
+	return f.sandbox, f.createErr
+}
+
+type fakeDaytonaSandbox struct {
+	executeResult *types.ExecuteResponse
+	executeErr    error
+	downloads     map[string][]byte
+	downloadErrs  map[string]error
+	executeCalls  int
+	deleteCalls   int
+}
+
+func (f *fakeDaytonaSandbox) CreateFolder(context.Context, string) error { return nil }
+func (f *fakeDaytonaSandbox) UploadFile(context.Context, []byte, string) error {
+	return nil
+}
+func (f *fakeDaytonaSandbox) DownloadFile(_ context.Context, path string) ([]byte, error) {
+	if err := f.downloadErrs[path]; err != nil {
+		return nil, err
+	}
+	data, ok := f.downloads[path]
+	if !ok {
+		return nil, errors.New("file not found")
+	}
+	return data, nil
+}
+func (f *fakeDaytonaSandbox) ExecuteCommand(context.Context, string, time.Duration) (*types.ExecuteResponse, error) {
+	f.executeCalls++
+	return f.executeResult, f.executeErr
+}
+func (f *fakeDaytonaSandbox) Delete(context.Context) error {
+	f.deleteCalls++
+	return nil
+}
+
+func TestDaytonaRunnerDeadlineReturnsTimeoutWithProgress(t *testing.T) {
+	sandbox := &fakeDaytonaSandbox{
+		executeErr: fmt.Errorf("toolbox execute: %w", context.DeadlineExceeded),
+		downloads: map[string][]byte{
+			casesRemotePath: []byte("{\"event\":\"case_result\",\"name\":\"first\",\"status\":\"pass\",\"duration_ms\":3}\n{\"event\":\"case_start\",\"name\":\"slow-case\"}\n"),
+		},
+	}
+	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}}
+
+	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
+	if err != nil {
+		t.Fatalf("Run returned platform error for deadline: %v", err)
+	}
+	if outcome.Result.Status != JudgeStatusTimeout || len(outcome.Result.Cases) != 1 {
+		t.Fatalf("timeout result = %#v", outcome.Result)
+	}
+	if outcome.Result.FailureDetail == nil ||
+		!strings.Contains(*outcome.Result.FailureDetail, "overall execution budget") ||
+		!strings.Contains(*outcome.Result.FailureDetail, "slow-case") {
+		t.Fatalf("failure_detail = %v", outcome.Result.FailureDetail)
+	}
+}
+
+func TestDaytonaRunnerDeadlineReturnsTimeoutWithoutProgress(t *testing.T) {
+	sandbox := &fakeDaytonaSandbox{
+		executeErr:   errors.New("Daytona error: context deadline exceeded"),
+		downloadErrs: map[string]error{casesRemotePath: errors.New("unavailable after deadline")},
+	}
+	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}}
+
+	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
+	if err != nil {
+		t.Fatalf("Run returned platform error for deadline: %v", err)
+	}
+	if outcome.Result.Status != JudgeStatusTimeout || len(outcome.Result.Cases) != 0 {
+		t.Fatalf("timeout result = %#v", outcome.Result)
+	}
+	if outcome.Result.FailureDetail == nil || strings.Contains(*outcome.Result.FailureDetail, "during case") {
+		t.Fatalf("failure_detail = %v", outcome.Result.FailureDetail)
+	}
+}
+
+func TestDaytonaRunnerExecuteAPIFailureRemainsPlatformError(t *testing.T) {
+	sandbox := &fakeDaytonaSandbox{executeErr: errors.New("Daytona API unavailable")}
+	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}}
+
+	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
+	if err == nil || !strings.Contains(err.Error(), "execute submission") {
+		t.Fatalf("Run error = %v, outcome = %#v", err, outcome)
+	}
+	if outcome.Result.Schema != 0 {
+		t.Fatalf("API failure unexpectedly synthesized a judge result: %#v", outcome.Result)
+	}
+}
+
+func TestDaytonaRunnerRetriesCreateOnceWithoutReexecutingSubmission(t *testing.T) {
+	resultJSON := []byte(`{"schema":1,"status":"passed","cases":[{"name":"case-1","status":"pass","duration_ms":1,"error":null}],"compile_error":null,"failure_detail":null,"exit_code":0,"signal":null,"duration_ms":4,"stdout":"ok","stderr":"","output_truncated":false}`)
+	sandbox := &fakeDaytonaSandbox{
+		executeResult: &types.ExecuteResponse{ExitCode: 0},
+		downloads:     map[string][]byte{resultRemotePath: resultJSON},
+	}
+	client := &fakeDaytonaClient{
+		sandbox:    sandbox,
+		createErrs: []error{errors.New("temporary create failure")},
+	}
+	runner := &DaytonaRunner{client: client}
+
+	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
+	if err != nil {
+		t.Fatalf("Run after create retry: %v", err)
+	}
+	if outcome.Result.Status != JudgeStatusPassed {
+		t.Fatalf("result = %#v", outcome.Result)
+	}
+	if client.createCalls != 2 {
+		t.Fatalf("create calls = %d, want 2", client.createCalls)
+	}
+	if sandbox.executeCalls != 1 {
+		t.Fatalf("execute calls = %d, want exactly 1", sandbox.executeCalls)
+	}
+}
+
+func TestDaytonaRunnerCreateFailureReturnsInfrastructureBusy(t *testing.T) {
+	sandbox := &fakeDaytonaSandbox{}
+	client := &fakeDaytonaClient{
+		sandbox: sandbox,
+		createErrs: []error{
+			errors.New("create failed once"),
+			errors.New("create failed twice"),
+		},
+	}
+	runner := &DaytonaRunner{client: client}
+
+	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
+	if !errors.Is(err, ErrInfrastructureBusy) || !strings.Contains(err.Error(), "infrastructure is busy; please retry") {
+		t.Fatalf("Run error = %v, outcome = %#v", err, outcome)
+	}
+	if client.createCalls != 2 {
+		t.Fatalf("create calls = %d, want 2", client.createCalls)
+	}
+	if sandbox.executeCalls != 0 {
+		t.Fatalf("execute calls = %d, want 0", sandbox.executeCalls)
 	}
 }
 

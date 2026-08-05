@@ -236,19 +236,29 @@ is currently a skeleton with no implementation.
 
 The first concrete language registry entry is `go`:
 
-- snapshot: `codegym-go-1-25-4-v1`
+- snapshot: `codegym-go-1-25-4-v2`
 - base: Daytona's default snapshot, promoted from a network-enabled sandbox
 - toolchain: the official `go1.25.4.linux-{amd64|arm64}.tar.gz`, installed at
   `/usr/local/go` with `/usr/local/bin/go`
-- build gate: `go version`, compile a trivial program, and execute it before
-  promotion
+- build gate: `go version`, resolve the run user's persistent `GOCACHE`, verify
+  it is readable/writable, and compile and execute a representative program
+  importing `net/http`, `net/http/httptest`, `encoding/json`, `sync`, and `os`
+  before promotion
 - practice gate: boot the promoted snapshot with `NetworkBlockAll`, upload a
-  fresh trivial program, then compile and execute it with no egress
+  fresh copy of that Go HTTP program, then compile and execute it with no egress
 
-Built and promoted on 2026-08-03 from the Daytona default Linux/amd64 image.
-The pre-build probe confirmed that default image had no usable `go`; the final
-network-blocked gate reported `go version go1.25.4 linux/amd64` and successfully
-compiled and ran the fresh smoke program.
+The v2 snapshot was built and promoted on 2026-08-04 from the Daytona default
+Linux/amd64 image. The builder installed the pinned toolchain, resolved
+`GOCACHE=/home/daytona/.cache/go-build`, compiled the representative program as
+the normal `daytona` run user to populate that cache, and promoted the sandbox
+without changing its ownership. The final network-blocked gate confirmed the
+cache remained readable/writable and reported `go version go1.25.4 linux/amd64`.
+
+Measured with the same fresh representative HTTP source in a new
+network-blocked sandbox, the v1 snapshot's cold compile took **27,058 ms** and
+the warmed v2 snapshot took **823 ms**. The one-time network-enabled v2 warm-up
+compile took 31,952 ms. The prior `codegym-go-1-25-4-v1` snapshot is deliberately
+retained; rollback requires only changing `GoSnapshotName` back to v1.
 
 Go problem runs use a 1,024 MB supervised address-space ceiling. The 2026-08-03
 acceptance run proved that 256 MB caused `go build` to fail before the harness

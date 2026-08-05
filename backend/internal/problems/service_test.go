@@ -98,12 +98,26 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 		t.Fatalf("GetDefinition HTTP seed: %v", err)
 	}
 	if httpDefinition.TestConfig.Strategy != TestStrategyHTTP || httpDefinition.Language != "go" ||
-		httpDefinition.Entrypoint != "codegym_http_compile.py" || httpDefinition.Runtime.TimeoutSeconds != 60 ||
+		httpDefinition.Entrypoint != "codegym_http_compile.py" || httpDefinition.Runtime.TimeoutSeconds != 120 ||
 		len(httpDefinition.HiddenTestFiles) != 4 || len(httpDefinition.PublicTestFiles) != 4 || len(httpDefinition.PublicCases) != 2 {
 		t.Fatalf("HTTP seed wiring = %#v", httpDefinition)
 	}
 	if len(httpSkeleton.Files) != 1 || httpSkeleton.Files[0].Path != "main.go" || !strings.Contains(httpSkeleton.Files[0].Content, `os.Getenv("PORT")`) {
 		t.Fatalf("HTTP seed skeleton = %#v", httpSkeleton)
+	}
+	for _, contract := range []string{
+		"id is a string",
+		"sku is a string",
+		"qty is an integer",
+		"### Example request and response",
+		"POST /items",
+		`{"sku":"abc","qty":2}`,
+		"Response: HTTP 201",
+		`{"id":"1","sku":"abc","qty":2}`,
+	} {
+		if !strings.Contains(httpProblem.Description, contract) {
+			t.Fatalf("HTTP seed description is missing explicit contract %q:\n%s", contract, httpProblem.Description)
+		}
 	}
 	httpPublicJSON, err := json.Marshal(httpProblem)
 	if err != nil {

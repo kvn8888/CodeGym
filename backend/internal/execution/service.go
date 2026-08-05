@@ -108,7 +108,11 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 	run.CompletedAt = &completed
 	if runErr != nil {
 		run.Status = StatusError
-		run.Error = runErr.Error()
+		if errors.Is(runErr, ErrInfrastructureBusy) {
+			run.Error = ErrInfrastructureBusy.Error()
+		} else {
+			run.Error = runErr.Error()
+		}
 	} else {
 		run.Output = outcome.Output
 		run.DurationMs = outcome.Duration.Milliseconds()

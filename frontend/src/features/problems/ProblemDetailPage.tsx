@@ -259,6 +259,7 @@ export function ProblemDetailPage({
   const hintsRef = useRef(0);
   const sessionStateRef = useRef<Record<string, unknown>>({ schema_version: 1 });
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runRequestRef = useRef(0);
   const submissionInFlightRef = useRef(false);
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -269,6 +270,7 @@ export function ProblemDetailPage({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [submitting, setSubmitting] = useState(false);
   const [activeSubmissionMode, setActiveSubmissionMode] = useState<SubmissionMode | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [submission, setSubmission] = useState<Submission | null>(initialSubmission);
   const [hintsRevealed, setHintsRevealed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -287,12 +289,20 @@ export function ProblemDetailPage({
     }
     let cancelled = false;
     runRequestRef.current += 1;
+    submissionInFlightRef.current = false;
+    if (elapsedTimerRef.current) {
+      clearInterval(elapsedTimerRef.current);
+      elapsedTimerRef.current = null;
+    }
     setProblem(null);
     setFiles([]);
     filesRef.current = [];
     setSessionId(null);
     setResumedDraft(false);
     setSaveStatus('idle');
+    setSubmitting(false);
+    setActiveSubmissionMode(null);
+    setElapsedSeconds(0);
     setSubmission(initialSubmission);
     setError(null);
     setActiveFile(0);
@@ -481,6 +491,13 @@ export function ProblemDetailPage({
     };
   }, [files, hintsRevealed, persistDraft, sessionId]);
 
+  useEffect(
+    () => () => {
+      if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    },
+    [],
+  );
+
   const handleCodeChange = useCallback(
     (value: string | undefined) => {
       if (value === undefined) return;
@@ -638,6 +655,12 @@ export function ProblemDetailPage({
     const submittedFiles = filesRef.current;
     setSubmitting(true);
     setActiveSubmissionMode(mode);
+    setElapsedSeconds(0);
+    const startedAt = Date.now();
+    if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    elapsedTimerRef.current = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
     setSubmission(null);
     setError(null);
     try {
@@ -693,6 +716,10 @@ export function ProblemDetailPage({
       }
     } finally {
       if (runRequestRef.current === requestID) {
+        if (elapsedTimerRef.current) {
+          clearInterval(elapsedTimerRef.current);
+          elapsedTimerRef.current = null;
+        }
         submissionInFlightRef.current = false;
         setSubmitting(false);
         setActiveSubmissionMode(null);
@@ -937,7 +964,17 @@ export function ProblemDetailPage({
             >
               {submitting && (
                 <div className="flex h-full items-center justify-center bg-[#252526] p-6">
-                  <GridSpinner size="sm" />
+                  <div className="flex items-center gap-3">
+                    <GridSpinner size="sm" />
+                    <span
+                      role="timer"
+                      className="font-mono text-xs text-[#858585]"
+                      aria-label={`${activeSubmissionMode === 'submit' ? 'Submitting' : 'Running'} for ${elapsedSeconds} seconds`}
+                    >
+                      {activeSubmissionMode === 'submit' ? 'Submitting' : 'Running'} ·{' '}
+                      {elapsedSeconds}s
+                    </span>
+                  </div>
                 </div>
               )}
 

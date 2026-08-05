@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { afterEach, vi } from 'vitest';
@@ -59,9 +59,18 @@ function apiResponse(data: unknown, status = 200) {
   });
 }
 
-function setupProblemApi(problemFixture: Problem = problem) {
+function setupProblemApi(
+  problemFixture: Problem = problem,
+  { deferSubmission = false }: { deferSubmission?: boolean } = {},
+) {
   const submissionBodies: Array<{ mode?: SubmissionMode }> = [];
   let submittedMode: SubmissionMode = 'submit';
+  let releaseSubmission: (() => void) | undefined;
+  const submissionGate = deferSubmission
+    ? new Promise<void>((resolve) => {
+        releaseSubmission = resolve;
+      })
+    : Promise.resolve();
 
   vi.stubGlobal(
     'fetch',
@@ -92,6 +101,7 @@ function setupProblemApi(problemFixture: Problem = problem) {
         const body = JSON.parse(String(init?.body)) as { mode?: SubmissionMode };
         submissionBodies.push(body);
         submittedMode = body.mode ?? 'submit';
+        await submissionGate;
         return apiResponse({ submission_id: 'submission-1' }, 202);
       }
       if (method === 'GET' && path === '/submissions/submission-1') {
@@ -118,7 +128,10 @@ function setupProblemApi(problemFixture: Problem = problem) {
     }),
   );
 
-  return submissionBodies;
+  return {
+    submissionBodies,
+    releaseSubmission: () => releaseSubmission?.(),
+  };
 }
 
 function renderProblemPage() {
@@ -136,7 +149,7 @@ afterEach(() => {
 
 describe('ProblemDetailPage submissions', () => {
   it('sends run mode and labels a passing result as a sample run', async () => {
-    const submissionBodies = setupProblemApi();
+    const { submissionBodies } = setupProblemApi();
     const user = userEvent.setup();
     renderProblemPage();
 
@@ -148,7 +161,7 @@ describe('ProblemDetailPage submissions', () => {
   });
 
   it('sends submit mode and labels a passing result as graded', async () => {
-    const submissionBodies = setupProblemApi();
+    const { submissionBodies } = setupProblemApi();
     const user = userEvent.setup();
     renderProblemPage();
 
@@ -159,6 +172,22 @@ describe('ProblemDetailPage submissions', () => {
     );
     expect(await screen.findByText(/graded submit · 12 of 12 passed/i)).toBeInTheDocument();
     expect(screen.queryByText(/sample run/i)).not.toBeInTheDocument();
+  });
+
+  it('shows elapsed seconds while a run remains in flight', async () => {
+    const { releaseSubmission } = setupProblemApi(problem, { deferSubmission: true });
+    const user = userEvent.setup();
+    renderProblemPage();
+
+    await user.click(await screen.findByRole('button', { name: /^run$/i }));
+
+    expect(await screen.findByRole('timer')).toHaveTextContent('Running · 0s');
+    await waitFor(() => expect(screen.getByRole('timer')).toHaveTextContent('Running · 1s'), {
+      timeout: 2000,
+    });
+
+    act(() => releaseSubmission());
+    await waitFor(() => expect(screen.queryByRole('timer')).not.toBeInTheDocument());
   });
 });
 

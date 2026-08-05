@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { afterEach, vi } from 'vitest';
@@ -59,7 +59,7 @@ function apiResponse(data: unknown, status = 200) {
   });
 }
 
-function setupProblemApi() {
+function setupProblemApi(problemFixture: Problem = problem) {
   const submissionBodies: Array<{ mode?: SubmissionMode }> = [];
   let submittedMode: SubmissionMode = 'submit';
 
@@ -71,7 +71,7 @@ function setupProblemApi() {
       const method = init?.method ?? 'GET';
 
       if (method === 'GET' && path === `/problems/${problem.id}`) {
-        return apiResponse(problem);
+        return apiResponse(problemFixture);
       }
       if (method === 'GET' && path === `/problems/${problem.id}/skeleton`) {
         return apiResponse({ files: [{ path: 'solution.py', content: 'def solve():\n    pass\n' }] });
@@ -159,5 +159,74 @@ describe('ProblemDetailPage submissions', () => {
     );
     expect(await screen.findByText(/graded submit · 12 of 12 passed/i)).toBeInTheDocument();
     expect(screen.queryByText(/sample run/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('ProblemDetailPage worked examples', () => {
+  it('renders unit arguments, expected output, and explanation', async () => {
+    setupProblemApi({
+      ...problem,
+      public_cases: [
+        {
+          strategy: 'unit',
+          name: 'finds a pair near the start',
+          kind: 'example',
+          args: [[2, 7, 11, 15], 9],
+          expected: [0, 1],
+          explanation: 'The values at indices 0 and 1 add up to 9.',
+        },
+      ],
+    });
+    renderProblemPage();
+
+    const examples = await screen.findByRole('region', { name: 'Worked examples' });
+    expect(within(examples).getByText('Arguments')).toBeInTheDocument();
+    expect(within(examples).getByText('Expected output')).toBeInTheDocument();
+    expect(within(examples).getByText(/2,\s+7,\s+11,\s+15/)).toBeInTheDocument();
+    expect(within(examples).getByText(/values at indices 0 and 1 add up to 9/i)).toBeInTheDocument();
+  });
+
+  it('renders an HTTP request and expected response in their native shape', async () => {
+    setupProblemApi({
+      ...problem,
+      test_config: { strategy: 'http' },
+      public_cases: [
+        {
+          strategy: 'http',
+          name: 'creates a user',
+          kind: 'example',
+          request: {
+            method: 'post',
+            path: '/users',
+            headers: { 'Content-Type': 'application/json' },
+            body: { name: 'Ada' },
+          },
+          expected: {
+            status: 201,
+            json: { created: true },
+          },
+          explanation: 'A valid payload creates the user.',
+        },
+      ],
+    });
+    renderProblemPage();
+
+    const examples = await screen.findByRole('region', { name: 'Worked examples' });
+    expect(within(examples).getByText('Request')).toBeInTheDocument();
+    expect(within(examples).getByText('POST')).toBeInTheDocument();
+    expect(within(examples).getByText(/\/users/)).toBeInTheDocument();
+    expect(within(examples).getByText('Request body')).toBeInTheDocument();
+    expect(within(examples).getByText(/"name": "Ada"/)).toBeInTheDocument();
+    expect(within(examples).getByText('Expected response')).toBeInTheDocument();
+    expect(within(examples).getByText('HTTP 201')).toBeInTheDocument();
+    expect(within(examples).getByText(/"created": true/)).toBeInTheDocument();
+  });
+
+  it('renders no examples section when public cases are absent', async () => {
+    setupProblemApi();
+    renderProblemPage();
+
+    expect(await screen.findByRole('heading', { name: problem.title })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Worked examples' })).not.toBeInTheDocument();
   });
 });

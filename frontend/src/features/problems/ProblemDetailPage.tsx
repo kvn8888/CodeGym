@@ -16,6 +16,7 @@ import type {
   PracticeSession,
   PracticeSessionSummary,
   Problem,
+  PublicProblemCase,
   Submission,
   SubmissionFile,
   SubmissionMode,
@@ -126,6 +127,103 @@ function submissionResultSummary(submission: Submission, result?: TestResult) {
   }
 
   return `${result.passed} of ${executedCount} passed`;
+}
+
+function formatExampleValue(value: unknown) {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value, null, 2) ?? String(value);
+}
+
+function ExampleValue({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-gray-700">{label}</dt>
+      <dd className="mt-1">
+        <pre className="overflow-x-auto rounded-md border border-gray-alpha-200 bg-gray-100 px-3 py-2 font-mono text-xs leading-5 text-gray-900">
+          {formatExampleValue(value)}
+        </pre>
+      </dd>
+    </div>
+  );
+}
+
+export function WorkedExamples({ cases }: { cases: PublicProblemCase[] }) {
+  if (cases.length === 0) return null;
+
+  return (
+    <section className="mt-6 border-t border-gray-alpha-200 pt-4" aria-labelledby="worked-examples-heading">
+      <h2 id="worked-examples-heading" className="text-sm font-semibold text-gray-1000">
+        Worked examples
+      </h2>
+      <div className="mt-3 border-y border-gray-alpha-200">
+        {cases.map((problemCase, index) => (
+          <article
+            key={`${problemCase.strategy}-${problemCase.name}-${index}`}
+            className="border-b border-gray-alpha-200 py-4 last:border-b-0"
+          >
+            <h3 className="font-mono text-xs font-semibold text-gray-900">
+              Example {index + 1} · {problemCase.name}
+            </h3>
+
+            {problemCase.strategy === 'unit' ? (
+              <dl className="mt-3 flex flex-col gap-3">
+                <ExampleValue label="Arguments" value={problemCase.args} />
+                <ExampleValue label="Expected output" value={problemCase.expected} />
+              </dl>
+            ) : (
+              <div className="mt-3 flex flex-col gap-3">
+                <div>
+                  <p className="text-xs font-medium text-gray-700">Request</p>
+                  <div className="mt-1 overflow-x-auto rounded-md border border-gray-alpha-200 bg-gray-100 px-3 py-2 font-mono text-xs leading-5 text-gray-900">
+                    <span className="font-semibold">{problemCase.request.method.toUpperCase()}</span>{' '}
+                    {problemCase.request.path}
+                  </div>
+                </div>
+                {(problemCase.request.headers || problemCase.request.body !== undefined) && (
+                  <dl className="flex flex-col gap-3">
+                    {problemCase.request.headers && (
+                      <ExampleValue label="Request headers" value={problemCase.request.headers} />
+                    )}
+                    {problemCase.request.body !== undefined && (
+                      <ExampleValue label="Request body" value={problemCase.request.body} />
+                    )}
+                  </dl>
+                )}
+                <div>
+                  <p className="text-xs font-medium text-gray-700">Expected response</p>
+                  <div className="mt-1 rounded-md border border-gray-alpha-200 bg-gray-100 px-3 py-2 font-mono text-xs leading-5 text-gray-900">
+                    HTTP {problemCase.expected.status}
+                  </div>
+                </div>
+                {(problemCase.expected.headers ||
+                  problemCase.expected.json !== undefined ||
+                  problemCase.expected.body !== undefined) && (
+                  <dl className="flex flex-col gap-3">
+                    {problemCase.expected.headers && (
+                      <ExampleValue label="Response headers" value={problemCase.expected.headers} />
+                    )}
+                    {problemCase.expected.json !== undefined && (
+                      <ExampleValue label="Response body" value={problemCase.expected.json} />
+                    )}
+                    {problemCase.expected.body !== undefined && (
+                      <ExampleValue label="Response body" value={problemCase.expected.body} />
+                    )}
+                  </dl>
+                )}
+              </div>
+            )}
+
+            {problemCase.explanation && (
+              <p className="mt-3 text-sm leading-5 text-gray-700">
+                <span className="font-semibold text-gray-900">Explanation:</span>{' '}
+                {problemCase.explanation}
+              </p>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function CapturedStdout({ submission }: { submission: Submission }) {
@@ -687,6 +785,8 @@ export function ProblemDetailPage({
         <MarkdownContent className="text-sm text-gray-900">
           {problem.description}
         </MarkdownContent>
+
+        <WorkedExamples cases={problem.public_cases ?? []} />
 
         {/* Hints */}
         {problem.hints && problem.hints.length > 0 && (

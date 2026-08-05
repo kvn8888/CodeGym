@@ -153,6 +153,25 @@ func TestLoadExecutionAndDemoConfig(t *testing.T) {
 	}
 }
 
+func TestLoadSandboxSweeperConfig(t *testing.T) {
+	clearConfigEnv(t)
+
+	cfg := Load()
+	if cfg.SandboxSweeper.Disabled || cfg.SandboxSweeper.Interval != 5*time.Minute ||
+		cfg.SandboxSweeper.MaxAge != 15*time.Minute {
+		t.Fatalf("default sandbox sweeper config = %#v", cfg.SandboxSweeper)
+	}
+
+	t.Setenv("CODEGYM_SANDBOX_SWEEPER_DISABLED", "true")
+	t.Setenv("CODEGYM_SANDBOX_SWEEPER_INTERVAL", "2m")
+	t.Setenv("CODEGYM_SANDBOX_SWEEPER_MAX_AGE", "30m")
+	cfg = Load()
+	if !cfg.SandboxSweeper.Disabled || cfg.SandboxSweeper.Interval != 2*time.Minute ||
+		cfg.SandboxSweeper.MaxAge != 30*time.Minute {
+		t.Fatalf("configured sandbox sweeper = %#v", cfg.SandboxSweeper)
+	}
+}
+
 func TestLoadRelayConfig(t *testing.T) {
 	clearConfigEnv(t)
 
@@ -228,6 +247,9 @@ func clearConfigEnv(t *testing.T) {
 		"CODEGYM_SEED_DEMO",
 		"DAYTONA_API_KEY",
 		"DAYTONA_API_URL",
+		"CODEGYM_SANDBOX_SWEEPER_DISABLED",
+		"CODEGYM_SANDBOX_SWEEPER_INTERVAL",
+		"CODEGYM_SANDBOX_SWEEPER_MAX_AGE",
 		"CODEGYM_GENAI_BASE_URL",
 		"CODEGYM_GENAI_API_KEY",
 		"AI_GATEWAY_API_KEY",

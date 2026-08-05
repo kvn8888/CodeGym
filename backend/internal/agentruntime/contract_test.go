@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -65,6 +66,40 @@ func TestRuntimeContract(t *testing.T) {
 		}
 		if claim := LoadManifest(workingDirectory); claim.Status != ManifestMalformed {
 			t.Fatalf("malformed manifest status = %q", claim.Status)
+		}
+	})
+
+	t.Run("minimal manifest and optional variation", func(t *testing.T) {
+		workingDirectory := t.TempDir()
+		manifestPath := filepath.Join(workingDirectory, ManifestRelativePath)
+		if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		payload := `{"version":1,"completed":true,"extra_agent_field":"ignored","summary":{"unexpected":"shape"},"artifacts":["main.go","../ignored"],"checks":"also ignored"}`
+		if err := os.WriteFile(manifestPath, []byte(payload), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		claim := LoadManifest(workingDirectory)
+		if claim.Status != ManifestPresent || claim.Manifest == nil || !claim.Manifest.Completed {
+			t.Fatalf("claim = %#v", claim)
+		}
+		if len(claim.Manifest.Artifacts) != 1 || claim.Manifest.Artifacts[0] != "main.go" {
+			t.Fatalf("best-effort artifacts = %#v", claim.Manifest.Artifacts)
+		}
+	})
+
+	t.Run("required manifest fields have actionable errors", func(t *testing.T) {
+		workingDirectory := t.TempDir()
+		manifestPath := filepath.Join(workingDirectory, ManifestRelativePath)
+		if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manifestPath, []byte(`{"version":1}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		claim := LoadManifest(workingDirectory)
+		if claim.Status != ManifestMalformed || !strings.Contains(claim.Error, "field completed is required") {
+			t.Fatalf("claim = %#v", claim)
 		}
 	})
 

@@ -23,7 +23,11 @@ type FixtureVerifier struct {
 
 func (v FixtureVerifier) Verify(ctx context.Context, task TaskSpec, result RunResult) (Verification, error) {
 	if result.Manifest.Status != ManifestPresent {
-		return Verification{Passed: false, Detail: "agent result manifest is not present and valid"}, nil
+		detail := strings.TrimSpace(result.Manifest.Error)
+		if detail == "" {
+			detail = "no manifest diagnostic was returned"
+		}
+		return Verification{Passed: false, Detail: fmt.Sprintf("agent result manifest is %s: %s", result.Manifest.Status, detail)}, nil
 	}
 	return v.VerifyWorkspace(ctx, task.WorkingDirectory)
 }

@@ -36,7 +36,7 @@ func TestInterleavedRuntimeBenchmark(t *testing.T) {
 	maxTokens := benchmarkInt64Env("CODEGYM_AGENT_BENCHMARK_MAX_TOKENS", 300_000)
 	maxCostMicros := benchmarkInt64Env("CODEGYM_AGENT_BENCHMARK_MAX_COST_USD_MICROS", 2_000_000)
 	relayWallClock := benchmarkDurationEnv("CODEGYM_AGENT_BENCHMARK_RELAY_WALL_CLOCK", 20*time.Minute)
-	runDeadline := benchmarkDurationEnv("CODEGYM_AGENT_BENCHMARK_RUN_DEADLINE", 90*time.Second)
+	runDeadline := benchmarkDurationEnv("CODEGYM_AGENT_BENCHMARK_RUN_DEADLINE", DefaultBenchmarkRunDeadline)
 
 	checker := benchmarkOperationChecker{}
 	relayStore := agentrelay.NewInMemoryStore()
@@ -86,7 +86,7 @@ func TestInterleavedRuntimeBenchmark(t *testing.T) {
 	}
 	report, err := RunBenchmark(t.Context(), BenchmarkConfig{
 		PurposeBuilt: &PurposeBuiltRuntime{Client: client}, OpenCode: openCode,
-		Fixtures: BenchmarkFixtures(), Repetitions: 3, TurnCeiling: 8, RunDeadline: runDeadline,
+		Fixtures: BenchmarkFixtures(), Repetitions: 3, TurnCeiling: DefaultBenchmarkTurnCeiling, RunDeadline: runDeadline,
 		OutputCapBytes: 256 * 1024, WorkingRoot: "/private/tmp", ReportPath: reportPath,
 		ModelDeployment:      provider.Name + "/" + provider.Model,
 		ExecutionEnvironment: "host-temporary-workspace",
@@ -96,7 +96,7 @@ func TestInterleavedRuntimeBenchmark(t *testing.T) {
 			"The offline Express verifier uses a controlled local Express API contract module plus proxy and source-level egress controls; a real npm dependency and OS network boundary require a pre-baked Daytona snapshot.",
 		},
 		RelayMaxTokens: maxTokens, RelayMaxCostUSDMicros: maxCostMicros, RelayWallClock: relayWallClock,
-		RetryPolicy: "zero retries; every failure counts", MaxSandboxes: 40,
+		RetryPolicy: "zero retries; every failure counts", MaxSandboxes: DefaultBenchmarkMaxSandboxes,
 		UsageMeter: func(ctx context.Context) (UsageSnapshot, error) {
 			budget, err := relayStore.Get(ctx, "benchmark-workspace", "benchmark-user", "agent-runtime-benchmark")
 			if err != nil {

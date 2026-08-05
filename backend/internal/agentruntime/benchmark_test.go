@@ -80,6 +80,12 @@ func TestBenchmarkInterleavesAndWritesReport(t *testing.T) {
 	if _, err := os.Stat(reportPath); err != nil {
 		t.Fatal(err)
 	}
+	if report.Runs[0].Turns != 2 || report.Runs[0].ManifestRaw != `{"version":1,"completed":true}` || report.Runs[0].Prose != "scripted completion" {
+		t.Fatalf("preserved run evidence = %#v", report.Runs[0])
+	}
+	if len(report.Runs[0].ToolInvocations) != 1 || report.Runs[0].ToolInvocations[0].Tool != ToolWriteFile {
+		t.Fatalf("preserved tool trace = %#v", report.Runs[0].ToolInvocations)
+	}
 }
 
 type scriptedBenchmarkRuntime struct {
@@ -104,8 +110,12 @@ func (r *scriptedBenchmarkRuntime) Run(_ context.Context, task TaskSpec) (RunRes
 		return RunResult{}, err
 	}
 	return RunResult{
-		Telemetry: Telemetry{Runtime: r.name, Termination: TerminationCompleted, WallTime: time.Millisecond},
-		Manifest:  LoadManifest(task.WorkingDirectory),
+		Telemetry: Telemetry{
+			Runtime: r.name, Turns: 2, Termination: TerminationCompleted, WallTime: time.Millisecond,
+			ToolInvocations: []ToolInvocation{{Tool: ToolWriteFile}},
+		},
+		Manifest: LoadManifest(task.WorkingDirectory),
+		Prose:    "scripted completion",
 	}, nil
 }
 

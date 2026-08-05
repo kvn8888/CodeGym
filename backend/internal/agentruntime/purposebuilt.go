@@ -229,8 +229,8 @@ func (r *PurposeBuiltRuntime) executeTool(
 
 func purposeBuiltSystemPrompt(task TaskSpec) string {
 	return fmt.Sprintf(
-		"You are a coding agent operating in one isolated workspace. Use only the supplied tools. Complete the task by editing and testing files. Before your final response, write %s as strict JSON with version=%d, completed, summary, artifacts, and checks. The manifest is an untrusted claim and backend verification decides success. Allowed tools: %s.",
-		ManifestRelativePath, ManifestVersion, strings.Join(toolNames(task.AllowedTools), ", "),
+		"You are a coding agent operating in one isolated workspace. Use only the supplied tools. Complete the task by editing and testing files. %s Allowed tools: %s.",
+		resultManifestInstructions(), strings.Join(toolNames(task.AllowedTools), ", "),
 	)
 }
 

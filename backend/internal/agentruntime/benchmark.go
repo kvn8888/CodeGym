@@ -7,13 +7,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"time"
 )
 
-const BenchmarkReportVersion = 1
+const (
+	BenchmarkReportVersion       = 1
+	DefaultBenchmarkTurnCeiling  = 16
+	DefaultBenchmarkRunDeadline  = 2 * time.Minute
+	DefaultBenchmarkMaxSandboxes = 30
+)
 
 const PredeclaredDecisionRule = "Any policy violation disqualifies that runtime. Completion rate is primary. On equal completion, opencode wins only if it improves mean repair iterations or median wall time by at least 20 percent while using no more total tokens or cost; otherwise purpose-built wins. Inconclusive selects purpose-built."
 
@@ -56,12 +62,18 @@ type BenchmarkRun struct {
 	Passed           bool              `json:"passed"`
 	Detail           string            `json:"detail,omitempty"`
 	Termination      TerminationReason `json:"termination"`
+	Turns            int               `json:"turns"`
 	ManifestStatus   ManifestStatus    `json:"manifest_status"`
+	ManifestError    string            `json:"manifest_error,omitempty"`
+	ManifestRaw      string            `json:"manifest_raw,omitempty"`
+	Prose            string            `json:"prose,omitempty"`
 	RepairIterations int               `json:"repair_iterations"`
 	Tokens           TokenUsage        `json:"tokens"`
 	CostUSDMicros    int64             `json:"cost_usd_micros"`
 	WallTimeMS       int64             `json:"wall_time_ms"`
 	SandboxSeconds   float64           `json:"sandbox_seconds"`
+	ToolInvocations  []ToolInvocation  `json:"tool_invocations,omitempty"`
+	Progress         []ProgressEvent   `json:"progress,omitempty"`
 	PolicyViolations []string          `json:"policy_violations,omitempty"`
 }
 
@@ -131,7 +143,7 @@ func RunBenchmark(ctx context.Context, config BenchmarkConfig) (BenchmarkReport,
 		config.WorkingRoot = "/private/tmp"
 	}
 	if config.MaxSandboxes <= 0 {
-		config.MaxSandboxes = 40
+		config.MaxSandboxes = DefaultBenchmarkMaxSandboxes
 	}
 	if config.RetryPolicy == "" {
 		config.RetryPolicy = "zero retries; every failure counts"
@@ -203,10 +215,14 @@ func RunBenchmark(ctx context.Context, config BenchmarkConfig) (BenchmarkReport,
 				}
 				benchmarkRun := BenchmarkRun{
 					Order: order, Runtime: runtimeName, Fixture: fixture.ID, Repetition: repetition,
-					Termination: runResult.Telemetry.Termination, ManifestStatus: runResult.Manifest.Status,
+					Termination: runResult.Telemetry.Termination, Turns: runResult.Telemetry.Turns,
+					ManifestStatus: runResult.Manifest.Status, ManifestError: runResult.Manifest.Error,
+					ManifestRaw: readBenchmarkManifestRaw(workingDirectory), Prose: runResult.Prose,
 					RepairIterations: runResult.Telemetry.RepairIterations, Tokens: runResult.Telemetry.Tokens,
 					CostUSDMicros: runResult.Telemetry.CostUSDMicros,
 					WallTimeMS:    runResult.Telemetry.WallTime.Milliseconds(), SandboxSeconds: runResult.Telemetry.SandboxSeconds,
+					ToolInvocations:  append([]ToolInvocation(nil), runResult.Telemetry.ToolInvocations...),
+					Progress:         append([]ProgressEvent(nil), runResult.Telemetry.Progress...),
 					PolicyViolations: append([]string(nil), runResult.Telemetry.PolicyViolations...),
 				}
 				if runErr != nil {
@@ -410,4 +426,21 @@ func writeBenchmarkReport(path string, report BenchmarkReport) error {
 		return fmt.Errorf("agentruntime: publish benchmark report: %w", err)
 	}
 	return nil
+}
+
+func readBenchmarkManifestRaw(workingDirectory string) string {
+	path := filepath.Join(workingDirectory, filepath.FromSlash(ManifestRelativePath))
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+	payload, err := io.ReadAll(io.LimitReader(file, maxManifestBytes+1))
+	if err != nil {
+		return ""
+	}
+	if len(payload) > maxManifestBytes {
+		return string(payload[:maxManifestBytes]) + "\n<manifest truncated at 64 KiB>"
+	}
+	return string(payload)
 }

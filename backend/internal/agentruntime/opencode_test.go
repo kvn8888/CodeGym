@@ -71,6 +71,86 @@ func TestOpenCodeRuntimeFakeRelay(t *testing.T) {
 	}
 }
 
+func TestOpenCodeRuntimeManifestDiagnostic(t *testing.T) {
+	binary, template := pinnedOpenCodePaths(t)
+	fake := newOpenCodeRuntimeRelay(t, func(string) string {
+		return `mkdir -p .codegym && printf '%s' '{"version":1,"completed":' > .codegym/agent-result.json`
+	})
+	defer fake.Close()
+	runtimeAdapter, err := NewOpenCodeRuntime(OpenCodeConfig{
+		BinaryPath: binary, RuntimeTemplate: template, RelayBaseURL: fake.URL + "/v1",
+		RelayToken: "fake-operation-token", Model: "codegym-agent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := runtimeAdapter.Run(t.Context(), TaskSpec{
+		Goal: "write a completion claim", WorkingDirectory: t.TempDir(),
+		AllowedTools: []Tool{ToolShell, ToolReportProgress}, TurnCeiling: 5,
+		Deadline: time.Now().Add(30 * time.Second), OutputCapBytes: 256 * 1024,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Manifest.Status != ManifestMalformed || !strings.Contains(result.Manifest.Error, "decode result manifest") {
+		t.Fatalf("manifest diagnostic = %#v; telemetry=%#v; prose=%q", result.Manifest, result.Telemetry, result.Prose)
+	}
+	verification, err := (FixtureVerifier{}).Verify(t.Context(), TaskSpec{}, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification.Passed || !strings.Contains(verification.Detail, result.Manifest.Error) {
+		t.Fatalf("verification = %#v", verification)
+	}
+}
+
+func TestOpenCodeRuntimeClassifiesStepExhaustionWithProse(t *testing.T) {
+	binary, template := pinnedOpenCodePaths(t)
+	fake := newOpenCodeRuntimeRelay(t, func(string) string { return `true` })
+	defer fake.Close()
+	runtimeAdapter, err := NewOpenCodeRuntime(OpenCodeConfig{
+		BinaryPath: binary, RuntimeTemplate: template, RelayBaseURL: fake.URL + "/v1",
+		RelayToken: "fake-operation-token", Model: "codegym-agent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := runtimeAdapter.Run(t.Context(), TaskSpec{
+		Goal: "use every step without writing a manifest", WorkingDirectory: t.TempDir(),
+		AllowedTools: []Tool{ToolShell, ToolReportProgress}, TurnCeiling: 3,
+		Deadline: time.Now().Add(30 * time.Second), OutputCapBytes: 256 * 1024,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Telemetry.Turns != 3 || result.Telemetry.Termination != TerminationTurnCeiling || strings.TrimSpace(result.Prose) == "" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestOpenCodeConfigAllowsOnlyIsolatedToolOutputExternally(t *testing.T) {
+	runtimeAdapter := &OpenCodeRuntime{config: OpenCodeConfig{Model: "codegym-agent"}}
+	payload, err := runtimeAdapter.buildConfig(TaskSpec{AllowedTools: []Tool{ToolReadFile, ToolWriteFile, ToolShell}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Permission map[string]any `json:"permission"`
+		Agent      map[string]struct {
+			Permission map[string]any `json:"permission"`
+		} `json:"agent"`
+	}
+	if err := json.Unmarshal(payload, &config); err != nil {
+		t.Fatal(err)
+	}
+	for name, permissions := range map[string]map[string]any{"top-level": config.Permission, "agent": config.Agent["codegym"].Permission} {
+		external, ok := permissions["external_directory"].(map[string]any)
+		if !ok || external["*"] != "deny" || external["~/.local/share/opencode/tool-output/*"] != "allow" {
+			t.Fatalf("%s permissions = %#v", name, permissions)
+		}
+	}
+}
+
 func TestOpenCodeRuntimeUsesFreshHomeEveryRun(t *testing.T) {
 	binary, template := pinnedOpenCodePaths(t)
 	fake := newOpenCodeRuntimeRelay(t, func(goal string) string {

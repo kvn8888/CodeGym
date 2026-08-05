@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -103,6 +104,7 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		Strategy:   strategy,
 		Limits:     input.Limits,
 	})
+	s.recordRunTimingBestEffort(ctx, run, lang, strategy, outcome.StageDurations)
 
 	completed := s.now().UTC()
 	run.CompletedAt = &completed
@@ -203,6 +205,45 @@ func (s *Service) ListRuns(ctx context.Context) ([]Run, error) {
 		return nil, err
 	}
 	return s.store.ListRuns(ctx, identity.workspaceID, identity.userID)
+}
+
+// ListRunTimings returns the caller's structured execution-stage observations.
+func (s *Service) ListRunTimings(ctx context.Context) ([]RunTiming, error) {
+	identity, err := identityFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListRunTimings(ctx, identity.workspaceID, identity.userID)
+}
+
+func (s *Service) recordRunTimingBestEffort(
+	ctx context.Context,
+	run Run,
+	language Language,
+	strategy TestStrategy,
+	stages StageDurations,
+) {
+	timing := RunTiming{
+		ID:            newID("exec_timing"),
+		RunID:         run.ID,
+		WorkspaceID:   run.WorkspaceID,
+		UserID:        run.UserID,
+		Snapshot:      language.Snapshot,
+		Language:      language.Name,
+		Strategy:      strategy,
+		CreateRetried: stages.CreateRetried,
+		CreateMs:      stages.CreateMs,
+		UploadMs:      stages.UploadMs,
+		ExecMs:        stages.ExecMs,
+		TotalMs:       stages.TotalMs,
+		CreatedAt:     s.now().UTC(),
+	}
+	if err := s.store.AppendRunTiming(ctx, timing); err != nil {
+		// Observability must never replace a valid learner verdict with a
+		// platform error. Keep the failure loud and let the run finish.
+		log.Printf("execution timing record failed run_id=%s workspace_id=%s language=%s err=%v",
+			run.ID, run.WorkspaceID, language.Name, err)
+	}
 }
 
 // validateFiles enforces that paths are safe to become home-relative sandbox

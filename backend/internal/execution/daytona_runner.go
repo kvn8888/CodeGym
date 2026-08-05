@@ -123,13 +123,14 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	spec.Strategy = strategy
 
 	startedAt := time.Now()
+	stages := StageDurations{}
 	lang := spec.Language.Name
 	timeout := time.Duration(spec.Limits.TimeoutSeconds) * time.Second
 	log.Printf("daytona run start language=%s entrypoint=%s files=%d timeout=%s memory_mb=%d network_mode=%s",
 		lang, spec.Entrypoint, len(spec.Files), timeout, spec.Limits.MemoryMB, spec.Limits.NetworkMode)
 
 	createStarted := time.Now()
-	sb, err := r.createSandbox(ctx, types.SnapshotParams{
+	sb, createAttempts, err := r.createSandbox(ctx, types.SnapshotParams{
 		Snapshot: spec.Language.Snapshot,
 		SandboxBaseParams: types.SandboxBaseParams{
 			Labels:          map[string]string{"codegym": "submission"},
@@ -137,12 +138,15 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 			Ephemeral:       true,
 		},
 	})
+	stages.CreateMs = time.Since(createStarted).Milliseconds()
+	stages.CreateRetried = createAttempts > 1
 	if err != nil {
 		log.Printf("daytona run failed stage=create language=%s elapsed_ms=%d err=%v",
 			lang, time.Since(startedAt).Milliseconds(), err)
-		return RunOutcome{}, err
+		stages.TotalMs = time.Since(startedAt).Milliseconds()
+		return RunOutcome{StageDurations: stages}, err
 	}
-	createMS := time.Since(createStarted).Milliseconds()
+	createMS := stages.CreateMs
 	defer func() {
 		// Execution timeouts cancel ctx. Cleanup still needs a short,
 		// independent window so a timed-out run cannot strand a billable
@@ -159,8 +163,18 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 		log.Printf("daytona cleanup ok language=%s elapsed_ms=%d",
 			lang, time.Since(cleanupStarted).Milliseconds())
 	}()
+	defer func() {
+		stages.TotalMs = time.Since(startedAt).Milliseconds()
+		outcome.StageDurations = stages
+	}()
 
 	uploadStarted := time.Now()
+	uploadActive := true
+	defer func() {
+		if uploadActive {
+			stages.UploadMs = time.Since(uploadStarted).Milliseconds()
+		}
+	}()
 	if err := sb.CreateFolder(ctx, "work"); err != nil {
 		log.Printf("daytona run failed stage=mkdir language=%s create_ms=%d elapsed_ms=%d err=%v",
 			lang, createMS, time.Since(startedAt).Milliseconds(), err)
@@ -183,11 +197,14 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 			lang, createMS, time.Since(startedAt).Milliseconds(), err)
 		return RunOutcome{}, fmt.Errorf("upload judge supervisor to Daytona sandbox: %w", err)
 	}
-	uploadMS := time.Since(uploadStarted).Milliseconds()
+	stages.UploadMs = time.Since(uploadStarted).Milliseconds()
+	uploadActive = false
+	uploadMS := stages.UploadMs
 
 	execStarted := time.Now()
 	execResult, err := sb.ExecuteCommand(ctx, buildSupervisorCommand(spec), timeout+supervisorExecOverhead)
-	execMS := time.Since(execStarted).Milliseconds()
+	stages.ExecMs = time.Since(execStarted).Milliseconds()
+	execMS := stages.ExecMs
 	if err != nil {
 		if executionDeadlineExceeded(ctx, err) {
 			return timeoutRunOutcome(ctx, sb, spec, execMS, lang, createMS, uploadMS, startedAt), nil
@@ -226,12 +243,14 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	}, nil
 }
 
-func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.SnapshotParams) (daytonaRunnerSandbox, error) {
+func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.SnapshotParams) (daytonaRunnerSandbox, int, error) {
 	var lastErr error
+	attempts := 0
 	for attempt := 1; attempt <= sandboxCreateAttempts; attempt++ {
+		attempts = attempt
 		sandbox, err := r.client.Create(ctx, params)
 		if err == nil {
-			return sandbox, nil
+			return sandbox, attempts, nil
 		}
 		lastErr = err
 		log.Printf("daytona sandbox create attempt failed attempt=%d/%d err=%v", attempt, sandboxCreateAttempts, err)
@@ -251,12 +270,13 @@ func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.Snapshot
 				}
 			}
 			lastErr = ctx.Err()
-			attempt = sandboxCreateAttempts
+			return nil, attempts, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
+				ErrInfrastructureBusy, attempts, lastErr)
 		case <-timer.C:
 		}
 	}
-	return nil, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
-		ErrInfrastructureBusy, sandboxCreateAttempts, lastErr)
+	return nil, attempts, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
+		ErrInfrastructureBusy, attempts, lastErr)
 }
 
 func executionDeadlineExceeded(ctx context.Context, err error) bool {

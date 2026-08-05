@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -197,7 +198,84 @@ func TestHTTPHarnessCompileErrorRunsNoCases(t *testing.T) {
 	}
 }
 
+func TestHTTPHarnessPrecompiledMatchAndMismatchHaveIdenticalVerdicts(t *testing.T) {
+	goBinary, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go is required for the precompiled HTTP harness test")
+	}
+	snapshotDir := t.TempDir()
+	harnessPath := filepath.Join(snapshotDir, "http_harness.go")
+	comparatorPath := filepath.Join(snapshotDir, "http_comparator.go")
+	for path, content := range map[string]string{
+		harnessPath: GoHTTPHarnessSource, comparatorPath: GoComparatorSource,
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write precompiled harness source: %v", err)
+		}
+	}
+	binaryPath := filepath.Join(snapshotDir, "http-harness-"+GoHTTPHarnessSourceHash)
+	command := exec.Command(goBinary, "build", "-o", binaryPath, harnessPath, comparatorPath)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("precompile HTTP harness: %v\n%s", err, output)
+	}
+	manifestPath := filepath.Join(snapshotDir, "source.sha256")
+	if err := os.WriteFile(manifestPath, []byte(GoHTTPHarnessSourceHash+"\n"), 0o600); err != nil {
+		t.Fatalf("write matching harness manifest: %v", err)
+	}
+
+	readyBody := "ready"
+	config := localHTTPHarnessConfig{
+		ReadinessTimeoutSeconds: 2,
+		Cases: []localHTTPCase{{
+			Name: "precompiled-verdict", Request: localHTTPRequest{Method: "GET", Path: "/raw"},
+			Expect:     localHTTPExpectation{Status: 200, Body: &readyBody},
+			Comparator: localComparator{Kind: "exact"},
+		}},
+	}
+	matched, _, matchedRoot, matchedOutput := runLocalHTTPHarnessWithEnvironment(
+		t, startingHTTPServer, config, "CODEGYM_HTTP_HARNESS_DIR="+snapshotDir,
+	)
+	assertRecordedProcessesStopped(t, filepath.Join(matchedRoot, ".codegym", "server.pids"))
+	if !strings.Contains(matchedOutput, "using precompiled snapshot binary hash="+GoHTTPHarnessSourceHash) {
+		t.Fatalf("matching run did not prove precompiled use: %s", matchedOutput)
+	}
+
+	if err := os.WriteFile(manifestPath, []byte(strings.Repeat("0", 64)+"\n"), 0o600); err != nil {
+		t.Fatalf("write mismatched harness manifest: %v", err)
+	}
+	fallback, _, fallbackRoot, fallbackOutput := runLocalHTTPHarnessWithEnvironment(
+		t, startingHTTPServer, config, "CODEGYM_HTTP_HARNESS_DIR="+snapshotDir,
+	)
+	assertRecordedProcessesStopped(t, filepath.Join(fallbackRoot, ".codegym", "server.pids"))
+	if !strings.Contains(fallbackOutput, "snapshot hash mismatch") ||
+		!strings.Contains(fallbackOutput, "compiling server-owned harness at run time") {
+		t.Fatalf("mismatched run did not prove safe fallback: %s", fallbackOutput)
+	}
+
+	zeroCaseDurations(&matched)
+	zeroCaseDurations(&fallback)
+	if !reflect.DeepEqual(matched, fallback) {
+		t.Fatalf("precompiled verdict differs from fallback\nmatched:  %#v\nfallback: %#v", matched, fallback)
+	}
+}
+
+func zeroCaseDurations(verdict *HarnessVerdict) {
+	for index := range verdict.Cases {
+		verdict.Cases[index].DurationMs = 0
+	}
+}
+
 func runLocalHTTPHarness(t *testing.T, serverSource string, config localHTTPHarnessConfig) (HarnessVerdict, string, string) {
+	verdict, progress, root, _ := runLocalHTTPHarnessWithEnvironment(t, serverSource, config)
+	return verdict, progress, root
+}
+
+func runLocalHTTPHarnessWithEnvironment(
+	t *testing.T,
+	serverSource string,
+	config localHTTPHarnessConfig,
+	environment ...string,
+) (HarnessVerdict, string, string, string) {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 is required for the local HTTP harness test")
@@ -230,6 +308,7 @@ func runLocalHTTPHarness(t *testing.T, serverSource string, config localHTTPHarn
 	defer cancel()
 	command := exec.CommandContext(ctx, "python3", "codegym_http_compile.py")
 	command.Dir = root
+	command.Env = append(os.Environ(), environment...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("run HTTP harness: %v\n%s", err, output)
@@ -246,7 +325,7 @@ func runLocalHTTPHarness(t *testing.T, serverSource string, config localHTTPHarn
 		t.Fatalf("invalid verdict: %v\n%s", err, output)
 	}
 	progressData, _ := os.ReadFile(filepath.Join(protocolDir, "cases.jsonl"))
-	return verdict, string(progressData), root
+	return verdict, string(progressData), root, string(output)
 }
 
 func assertRecordedProcessesStopped(t *testing.T, path string) {

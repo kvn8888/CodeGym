@@ -144,11 +144,47 @@ func TestHTTPDaytonaEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDefinition: %v", err)
 	}
+	var matchedHarnessResult execution.JudgeResult
 
 	t.Run("correct server passes", func(t *testing.T) {
 		outcome := runGoDefinition(t, runner, definition, definition.ReferenceSolution, 0)
 		if outcome.Result.Status != execution.JudgeStatusPassed || len(outcome.Result.Cases) != 4 {
 			t.Fatalf("result = %#v", outcome.Result)
+		}
+		if strings.HasSuffix(execution.GoSnapshotName, "-v3") &&
+			!strings.Contains(outcome.Stderr, "using precompiled snapshot binary hash="+execution.GoHTTPHarnessSourceHash) {
+			t.Fatalf("registered v3 did not use its precompiled HTTP harness: %s", outcome.Stderr)
+		}
+		matchedHarnessResult = outcome.Result
+	})
+
+	t.Run("mismatched harness hash falls back with identical verdict", func(t *testing.T) {
+		mismatched := definition
+		mismatched.HiddenTestFiles = append([]problems.File(nil), definition.HiddenTestFiles...)
+		launcherFound := false
+		for index := range mismatched.HiddenTestFiles {
+			if mismatched.HiddenTestFiles[index].Path != "codegym_http_compile.py" {
+				continue
+			}
+			launcherFound = true
+			mismatched.HiddenTestFiles[index].Content = strings.Replace(
+				mismatched.HiddenTestFiles[index].Content,
+				execution.GoHTTPHarnessSourceHash,
+				strings.Repeat("0", 64),
+				1,
+			)
+		}
+		if !launcherFound {
+			t.Fatal("HTTP launcher was not present in hidden test files")
+		}
+		outcome := runGoDefinition(t, runner, mismatched, mismatched.ReferenceSolution, 0)
+		if !strings.Contains(outcome.Stderr, "snapshot hash mismatch") ||
+			!strings.Contains(outcome.Stderr, "compiling server-owned harness at run time") {
+			t.Fatalf("mismatched snapshot hash did not log safe fallback: %s", outcome.Stderr)
+		}
+		if !sameHTTPVerdict(matchedHarnessResult, outcome.Result) {
+			t.Fatalf("fallback verdict differs from matching snapshot verdict\nmatched:  %#v\nfallback: %#v",
+				matchedHarnessResult, outcome.Result)
 		}
 	})
 
@@ -235,4 +271,19 @@ func httpCasesContainError(cases []execution.CaseResult, fragment string) bool {
 		}
 	}
 	return false
+}
+
+func sameHTTPVerdict(left, right execution.JudgeResult) bool {
+	if left.Status != right.Status || len(left.Cases) != len(right.Cases) ||
+		stringPointerValue(left.CompileError) != stringPointerValue(right.CompileError) {
+		return false
+	}
+	for index := range left.Cases {
+		if left.Cases[index].Name != right.Cases[index].Name ||
+			left.Cases[index].Status != right.Cases[index].Status ||
+			stringPointerValue(left.Cases[index].Error) != stringPointerValue(right.Cases[index].Error) {
+			return false
+		}
+	}
+	return true
 }

@@ -175,6 +175,44 @@ func TestSubmitRunRunnerErrorYieldsErrorStatus(t *testing.T) {
 	}
 }
 
+func TestSubmitRunRecordsRetriedCreateTiming(t *testing.T) {
+	runner := &fakeRunner{outcome: RunOutcome{
+		ExitCode: 0,
+		StageDurations: StageDurations{
+			CreateMs: 1487, UploadMs: 421, ExecMs: 912, TotalMs: 2820,
+			CreateRetried: true,
+		},
+	}}
+	store := NewInMemoryStore()
+	service := NewService(store, runner, fixedClock())
+
+	run, err := service.SubmitRun(scopedContext(), pythonInput())
+	if err != nil {
+		t.Fatalf("SubmitRun returned error: %v", err)
+	}
+	timings, err := service.ListRunTimings(scopedContext())
+	if err != nil {
+		t.Fatalf("ListRunTimings returned error: %v", err)
+	}
+	if len(timings) != 1 {
+		t.Fatalf("timing count = %d, want 1", len(timings))
+	}
+	timing := timings[0]
+	if timing.RunID != run.ID || !timing.CreateRetried {
+		t.Fatalf("timing = %#v", timing)
+	}
+	if timing.Language != "python" || timing.Strategy != TestStrategyUnit || timing.Snapshot != "" {
+		t.Fatalf("timing dimensions = %#v", timing)
+	}
+	if timing.CreateMs != 1487 || timing.UploadMs != 421 || timing.ExecMs != 912 || timing.TotalMs != 2820 {
+		t.Fatalf("timing stages = %#v", timing)
+	}
+	wantCreated := fixedClock()()
+	if !timing.CreatedAt.Equal(wantCreated) {
+		t.Fatalf("created_at = %s, want %s", timing.CreatedAt, wantCreated)
+	}
+}
+
 func TestSubmitRunSanitizesInfrastructureBusyError(t *testing.T) {
 	runner := &fakeRunner{err: fmt.Errorf("%w: provider detail", ErrInfrastructureBusy)}
 	service := NewService(NewInMemoryStore(), runner, fixedClock())

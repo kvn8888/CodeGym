@@ -59,6 +59,23 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 		`ALTER TABLE execution_runs ADD COLUMN IF NOT EXISTS judge_result jsonb`,
 		`ALTER TABLE execution_runs ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'submit'`,
 		`CREATE INDEX IF NOT EXISTS idx_execution_runs_scope_created_at ON execution_runs (workspace_id, user_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS execution_run_timings (
+			id text PRIMARY KEY,
+			run_id text NOT NULL,
+			workspace_id text NOT NULL,
+			user_id text NOT NULL,
+			snapshot text NOT NULL DEFAULT '',
+			language text NOT NULL,
+			strategy text NOT NULL,
+			create_retried boolean NOT NULL DEFAULT false,
+			create_ms bigint NOT NULL DEFAULT 0,
+			upload_ms bigint NOT NULL DEFAULT 0,
+			exec_ms bigint NOT NULL DEFAULT 0,
+			total_ms bigint NOT NULL DEFAULT 0,
+			created_at timestamptz NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_execution_run_timings_scope_created_at
+			ON execution_run_timings (workspace_id, user_id, created_at DESC)`,
 		`DO $$
 		BEGIN
 			IF NOT EXISTS (
@@ -73,6 +90,38 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 				REFERENCES workspace_memberships (workspace_id, user_id)
 				ON DELETE CASCADE
 				NOT VALID;
+			END IF;
+		END $$`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1
+				FROM pg_constraint
+				WHERE conname = 'fk_execution_run_timings_membership'
+					AND conrelid = 'execution_run_timings'::regclass
+			) THEN
+				ALTER TABLE execution_run_timings
+					ADD CONSTRAINT fk_execution_run_timings_membership
+					FOREIGN KEY (workspace_id, user_id)
+					REFERENCES workspace_memberships (workspace_id, user_id)
+					ON DELETE CASCADE
+					NOT VALID;
+			END IF;
+		END $$`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1
+				FROM pg_constraint
+				WHERE conname = 'fk_execution_run_timings_run'
+					AND conrelid = 'execution_run_timings'::regclass
+			) THEN
+				ALTER TABLE execution_run_timings
+					ADD CONSTRAINT fk_execution_run_timings_run
+					FOREIGN KEY (run_id)
+					REFERENCES execution_runs (id)
+					ON DELETE CASCADE
+					NOT VALID;
 			END IF;
 		END $$`,
 		`DO $$
@@ -200,6 +249,75 @@ func (s *PostgresStore) ListRuns(ctx context.Context, workspaceID, userID string
 		return nil, err
 	}
 	return runs, nil
+}
+
+func (s *PostgresStore) AppendRunTiming(ctx context.Context, timing RunTiming) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO execution_run_timings (
+			id, run_id, workspace_id, user_id, snapshot, language, strategy,
+			create_retried, create_ms, upload_ms, exec_ms, total_ms, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		timing.ID,
+		timing.RunID,
+		timing.WorkspaceID,
+		timing.UserID,
+		timing.Snapshot,
+		timing.Language,
+		string(timing.Strategy),
+		timing.CreateRetried,
+		timing.CreateMs,
+		timing.UploadMs,
+		timing.ExecMs,
+		timing.TotalMs,
+		timing.CreatedAt.UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("insert execution_run_timings: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) ListRunTimings(ctx context.Context, workspaceID, userID string) ([]RunTiming, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, run_id, workspace_id, user_id, snapshot, language, strategy,
+		       create_retried, create_ms, upload_ms, exec_ms, total_ms, created_at
+		FROM execution_run_timings
+		WHERE workspace_id = $1 AND user_id = $2
+		ORDER BY created_at ASC`, workspaceID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list execution_run_timings: %w", err)
+	}
+	defer rows.Close()
+
+	timings := make([]RunTiming, 0)
+	for rows.Next() {
+		var timing RunTiming
+		var strategy string
+		if err := rows.Scan(
+			&timing.ID,
+			&timing.RunID,
+			&timing.WorkspaceID,
+			&timing.UserID,
+			&timing.Snapshot,
+			&timing.Language,
+			&strategy,
+			&timing.CreateRetried,
+			&timing.CreateMs,
+			&timing.UploadMs,
+			&timing.ExecMs,
+			&timing.TotalMs,
+			&timing.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan execution_run_timings: %w", err)
+		}
+		timing.Strategy = TestStrategy(strategy)
+		timing.CreatedAt = timing.CreatedAt.UTC()
+		timings = append(timings, timing)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate execution_run_timings: %w", err)
+	}
+	return timings, nil
 }
 
 const selectRunColumns = `

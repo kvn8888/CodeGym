@@ -82,6 +82,25 @@ type Run struct {
 	CompletedAt *time.Time   `json:"completed_at,omitempty"`
 }
 
+// RunTiming is one persisted runner-stage latency observation. It is kept
+// separate from Run so telemetry can be retained and queried without exposing
+// hidden execution details through the run API.
+type RunTiming struct {
+	ID            string       `json:"id"`
+	RunID         string       `json:"run_id"`
+	WorkspaceID   string       `json:"workspace_id"`
+	UserID        string       `json:"user_id"`
+	Snapshot      string       `json:"snapshot"`
+	Language      string       `json:"language"`
+	Strategy      TestStrategy `json:"strategy"`
+	CreateRetried bool         `json:"create_retried"`
+	CreateMs      int64        `json:"create_ms"`
+	UploadMs      int64        `json:"upload_ms"`
+	ExecMs        int64        `json:"exec_ms"`
+	TotalMs       int64        `json:"total_ms"`
+	CreatedAt     time.Time    `json:"created_at"`
+}
+
 // SubmitRunInput is the request payload for running a submission.
 type SubmitRunInput struct {
 	ProblemID  string `json:"problem_id"`

@@ -46,19 +46,31 @@ func TestBuildGoSnapshot(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	if existing, err := client.Snapshot.Get(ctx, GoSnapshotName); err == nil {
+	if existing, err := client.Snapshot.Get(ctx, GoSnapshotCandidateName); err == nil {
 		if os.Getenv("CODEGYM_REPLACE_GO_SNAPSHOT") != "1" {
-			t.Logf("snapshot %s already exists; validating it (set CODEGYM_REPLACE_GO_SNAPSHOT=1 to rebuild)", GoSnapshotName)
-			validateGoSnapshot(t, ctx, client)
+			t.Logf("snapshot %s already exists; validating it (set CODEGYM_REPLACE_GO_SNAPSHOT=1 to rebuild)", GoSnapshotCandidateName)
+			validateGoSnapshot(t, ctx, client, GoSnapshotCandidateName, true)
 			return
 		}
 		if err := client.Snapshot.Delete(ctx, existing); err != nil {
-			t.Fatalf("delete existing snapshot %s: %v", GoSnapshotName, err)
+			t.Fatalf("delete existing snapshot %s: %v", GoSnapshotCandidateName, err)
 		}
 	}
 
 	builder := createSnapshotSandbox(t, ctx, client, "", false, false, "go-snapshot-build")
 	defer deleteSnapshotSandbox(t, builder)
+	if err := builder.FileSystem.CreateFolder(ctx, "work"); err != nil {
+		t.Fatalf("create snapshot build work directory: %v", err)
+	}
+	if err := builder.FileSystem.CreateFolder(ctx, "work/.codegym-snapshot"); err != nil {
+		t.Fatalf("create snapshot harness source directory: %v", err)
+	}
+	if err := builder.FileSystem.UploadFile(ctx, []byte(GoHTTPHarnessSource), "work/.codegym-snapshot/http_harness.go"); err != nil {
+		t.Fatalf("upload snapshot HTTP harness source: %v", err)
+	}
+	if err := builder.FileSystem.UploadFile(ctx, []byte(GoComparatorSource), "work/.codegym-snapshot/http_comparator.go"); err != nil {
+		t.Fatalf("upload snapshot HTTP comparator source: %v", err)
+	}
 
 	installCommand := fmt.Sprintf(`set -eu
 architecture=$(uname -m)
@@ -111,7 +123,26 @@ go build -o "$workdir/smoke" "$workdir/main.go"
 finished_ns=$(date +%%s%%N)
 output=$("$workdir/smoke")
 test "$output" = '{"healthy":true}'
-printf 'gocache=%%s warm_compile_ms=%%d output=%%s\n' "$cache" "$(((finished_ns-started_ns)/1000000))" "$output"`, GoToolchainVersion)
+harness_source="$HOME/work/.codegym-snapshot/http_harness.go"
+comparator_source="$HOME/work/.codegym-snapshot/http_comparator.go"
+expected_harness_hash=%q
+actual_harness_hash=$({ cat "$harness_source"; printf '\0'; cat "$comparator_source"; } | sha256sum | awk '{print $1}')
+test "$actual_harness_hash" = "$expected_harness_hash"
+harness_binary="$workdir/http-harness-$expected_harness_hash"
+go build -o "$harness_binary" "$harness_source" "$comparator_source"
+$privilege install -d -m 0755 %q
+$privilege install -m 0755 "$harness_binary" %q/"http-harness-$expected_harness_hash"
+printf '%%s\n' "$expected_harness_hash" | $privilege tee %q/source.sha256 >/dev/null
+test -x %q/"http-harness-$expected_harness_hash"
+rm -rf "$HOME/work/.codegym-snapshot" "$workdir"
+printf 'gocache=%%s warm_compile_ms=%%d output=%%s harness_hash=%%s\n' "$cache" "$(((finished_ns-started_ns)/1000000))" "$output" "$expected_harness_hash"`,
+		GoToolchainVersion,
+		GoHTTPHarnessSourceHash,
+		GoHTTPHarnessSnapshotDir,
+		GoHTTPHarnessSnapshotDir,
+		GoHTTPHarnessSnapshotDir,
+		GoHTTPHarnessSnapshotDir,
+	)
 	result, err := builder.Process.ExecuteCommand(ctx, installCommand, options.WithExecuteTimeout(6*time.Minute))
 	if err != nil {
 		t.Fatalf("install Go toolchain: %v", err)
@@ -121,11 +152,11 @@ printf 'gocache=%%s warm_compile_ms=%%d output=%%s\n' "$cache" "$(((finished_ns-
 	}
 	t.Logf("builder verification: %s", strings.TrimSpace(result.Result))
 
-	if err := builder.ExperimentalCreateSnapshotWithTimeout(ctx, GoSnapshotName, 10*time.Minute); err != nil {
-		t.Fatalf("promote snapshot %s: %v", GoSnapshotName, err)
+	if err := builder.ExperimentalCreateSnapshotWithTimeout(ctx, GoSnapshotCandidateName, 10*time.Minute); err != nil {
+		t.Fatalf("promote snapshot %s: %v", GoSnapshotCandidateName, err)
 	}
-	t.Logf("promoted Daytona snapshot %s", GoSnapshotName)
-	validateGoSnapshot(t, ctx, client)
+	t.Logf("promoted Daytona snapshot %s", GoSnapshotCandidateName)
+	validateGoSnapshot(t, ctx, client, GoSnapshotCandidateName, true)
 }
 
 // TestGoSnapshot is the mandatory practice-runtime gate: the registered
@@ -134,12 +165,12 @@ func TestGoSnapshot(t *testing.T) {
 	client := daytonaTestClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	validateGoSnapshot(t, ctx, client)
+	validateGoSnapshot(t, ctx, client, GoSnapshotName, GoSnapshotName == GoSnapshotCandidateName)
 }
 
-func validateGoSnapshot(t *testing.T, ctx context.Context, client *daytona.Client) {
+func validateGoSnapshot(t *testing.T, ctx context.Context, client *daytona.Client, snapshotName string, requirePrecompiledHarness bool) {
 	t.Helper()
-	sandbox := createSnapshotSandbox(t, ctx, client, GoSnapshotName, true, true, "go-snapshot-validate")
+	sandbox := createSnapshotSandbox(t, ctx, client, snapshotName, true, true, "go-snapshot-validate")
 	defer deleteSnapshotSandbox(t, sandbox)
 	if err := sandbox.FileSystem.CreateFolder(ctx, "work"); err != nil {
 		t.Fatalf("create smoke work directory: %v", err)
@@ -174,11 +205,18 @@ func main() {
 	if err := sandbox.FileSystem.UploadFile(ctx, program, "work/main.go"); err != nil {
 		t.Fatalf("upload smoke program: %v", err)
 	}
+	harnessGate := ""
+	if requirePrecompiledHarness {
+		harnessGate = `
+expected_harness_hash='` + GoHTTPHarnessSourceHash + `'
+test "$(cat ` + GoHTTPHarnessSnapshotDir + `/source.sha256)" = "$expected_harness_hash"
+test -x ` + GoHTTPHarnessSnapshotDir + `/"http-harness-$expected_harness_hash"`
+	}
 	result, err := sandbox.Process.ExecuteCommand(ctx,
 		`cd ~/work && set -eu
 go version
 cache=$(go env GOCACHE)
-test -r "$cache" && test -w "$cache"
+test -r "$cache" && test -w "$cache"`+harnessGate+`
 started_ns=$(date +%s%N)
 go build -o smoke main.go
 finished_ns=$(date +%s%N)
@@ -193,7 +231,7 @@ printf 'gocache=%s compile_ms=%d output=%s\n' "$cache" "$(((finished_ns-started_
 	if result.ExitCode != 0 {
 		t.Fatalf("Go snapshot validation exited %d: %s", result.ExitCode, result.Result)
 	}
-	t.Logf("network-blocked snapshot %s compiled and ran a Go HTTP program: %s", GoSnapshotName, strings.TrimSpace(result.Result))
+	t.Logf("network-blocked snapshot %s compiled and ran a Go HTTP program: %s", snapshotName, strings.TrimSpace(result.Result))
 }
 
 func daytonaTestClient(t *testing.T) *daytona.Client {

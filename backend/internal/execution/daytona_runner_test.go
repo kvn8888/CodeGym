@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/daytona/clients/sdk-go/pkg/types"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 const passingSolution = `def two_sum(nums, target):
@@ -73,7 +74,7 @@ func daytonaRunner(t *testing.T) *DaytonaRunner {
 	if apiKey == "" {
 		t.Skip("set DAYTONA_API_KEY (via doppler run -p codegym -c dev) to run Daytona integration tests")
 	}
-	runner, err := NewDaytonaRunner(apiKey, os.Getenv("DAYTONA_API_URL"))
+	runner, err := NewDaytonaRunner(apiKey, os.Getenv("DAYTONA_API_URL"), environment.Dev)
 	if err != nil {
 		t.Fatalf("NewDaytonaRunner returned error: %v", err)
 	}
@@ -85,6 +86,12 @@ func runnerContext(t *testing.T) context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
 	return ctx
+}
+
+func TestNewDaytonaRunnerRejectsUnknownEnvironment(t *testing.T) {
+	if _, err := NewDaytonaRunner("unused-key", "", ""); err == nil || !strings.Contains(err.Error(), "environment") {
+		t.Fatalf("NewDaytonaRunner error = %v, want environment validation error", err)
+	}
 }
 
 func pythonSpec(solution, tests string) RunSpec {
@@ -180,7 +187,7 @@ func TestDaytonaRunnerDeadlineReturnsTimeoutWithProgress(t *testing.T) {
 			casesRemotePath: []byte("{\"event\":\"case_result\",\"name\":\"first\",\"status\":\"pass\",\"duration_ms\":3}\n{\"event\":\"case_start\",\"name\":\"slow-case\"}\n"),
 		},
 	}
-	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}}
+	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}, environment: environment.Dev}
 
 	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
 	if err != nil {
@@ -201,7 +208,7 @@ func TestDaytonaRunnerDeadlineReturnsTimeoutWithoutProgress(t *testing.T) {
 		executeErr:   errors.New("Daytona error: context deadline exceeded"),
 		downloadErrs: map[string]error{casesRemotePath: errors.New("unavailable after deadline")},
 	}
-	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}}
+	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}, environment: environment.Dev}
 
 	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
 	if err != nil {
@@ -217,7 +224,7 @@ func TestDaytonaRunnerDeadlineReturnsTimeoutWithoutProgress(t *testing.T) {
 
 func TestDaytonaRunnerExecuteAPIFailureRemainsPlatformError(t *testing.T) {
 	sandbox := &fakeDaytonaSandbox{executeErr: errors.New("Daytona API unavailable")}
-	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}}
+	runner := &DaytonaRunner{client: &fakeDaytonaClient{sandbox: sandbox}, environment: environment.Dev}
 
 	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
 	if err == nil || !strings.Contains(err.Error(), "execute submission") {
@@ -238,7 +245,7 @@ func TestDaytonaRunnerRetriesCreateOnceWithoutReexecutingSubmission(t *testing.T
 		sandbox:    sandbox,
 		createErrs: []error{errors.New("temporary create failure")},
 	}
-	runner := &DaytonaRunner{client: client}
+	runner := &DaytonaRunner{client: client, environment: environment.Dev}
 
 	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
 	if err != nil {
@@ -267,7 +274,7 @@ func TestDaytonaRunnerCreateFailureReturnsInfrastructureBusy(t *testing.T) {
 			errors.New("create failed twice"),
 		},
 	}
-	runner := &DaytonaRunner{client: client}
+	runner := &DaytonaRunner{client: client, environment: environment.Dev}
 
 	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
 	if !errors.Is(err, ErrInfrastructureBusy) || !strings.Contains(err.Error(), "infrastructure is busy; please retry") {

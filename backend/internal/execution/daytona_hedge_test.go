@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/daytona/clients/sdk-go/pkg/types"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 type fixedHedgeCount int
@@ -108,7 +109,7 @@ func TestCreateSandboxHedgeOneUsesLegacyPath(t *testing.T) {
 		return nil, errors.New("create unavailable")
 	}}
 	runner := &DaytonaRunner{
-		client: client, createBackoff: time.Second,
+		client: client, environment: environment.Dev, createBackoff: time.Second,
 		hedgeCountProvider: fixedHedgeCount(1),
 	}
 
@@ -149,7 +150,7 @@ func TestCreateSandboxHedgeTwoReturnsFirstWinnerAndDeletesLateLoser(t *testing.T
 		<-slowStarted
 		return fast, nil
 	}}
-	runner := &DaytonaRunner{client: client, hedgeCountProvider: fixedHedgeCount(2)}
+	runner := &DaytonaRunner{client: client, environment: environment.Dev, hedgeCountProvider: fixedHedgeCount(2)}
 	params := types.SnapshotParams{SandboxBaseParams: types.SandboxBaseParams{
 		Labels: map[string]string{"existing": "preserved"},
 	}}
@@ -197,6 +198,7 @@ func TestCreateSandboxHedgeTwoReturnsFirstWinnerAndDeletesLateLoser(t *testing.T
 	for _, createParams := range captured {
 		labels := createParams.SandboxBaseParams.Labels
 		if labels["codegym"] != "submission" || labels["existing"] != "preserved" ||
+			labels[codegymEnvironmentLabel] != "dev" ||
 			labels[codegymRunIDLabel] != runID || labels[codegymCreatedAtLabel] != createdAt {
 			t.Fatalf("candidate labels = %#v", labels)
 		}
@@ -211,7 +213,7 @@ func TestCreateSandboxHedgeAllFailReturnsInfrastructureBusy(t *testing.T) {
 		return nil, errors.New("placement failed")
 	}}
 	runner := &DaytonaRunner{
-		client: client, createBackoff: 0,
+		client: client, environment: environment.Dev, createBackoff: 0,
 		hedgeCountProvider: fixedHedgeCount(2),
 	}
 	_, attempts, err := runner.createSandbox(context.Background(), types.SnapshotParams{})
@@ -243,7 +245,7 @@ func TestDaytonaRunnerHedgeExecutesUserCodeExactlyOnce(t *testing.T) {
 		<-slowStarted
 		return fast, nil
 	}}
-	runner := &DaytonaRunner{client: client, hedgeCountProvider: fixedHedgeCount(2)}
+	runner := &DaytonaRunner{client: client, environment: environment.Dev, hedgeCountProvider: fixedHedgeCount(2)}
 
 	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
 	if err != nil || outcome.Result.Status != JudgeStatusPassed {
@@ -276,7 +278,7 @@ func TestDaytonaRunnerHedgeDeletesLoserWhenWinnerRunFails(t *testing.T) {
 		<-slowStarted
 		return fast, nil
 	}}
-	runner := &DaytonaRunner{client: client, hedgeCountProvider: fixedHedgeCount(2)}
+	runner := &DaytonaRunner{client: client, environment: environment.Dev, hedgeCountProvider: fixedHedgeCount(2)}
 
 	_, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
 	if err == nil || !strings.Contains(err.Error(), "create Daytona work directory") {
@@ -306,7 +308,7 @@ func TestCreateSandboxHedgeDeletesLoserAfterRequestCancellation(t *testing.T) {
 		<-slowStarted
 		return fast, nil
 	}}
-	runner := &DaytonaRunner{client: client, hedgeCountProvider: fixedHedgeCount(2)}
+	runner := &DaytonaRunner{client: client, environment: environment.Dev, hedgeCountProvider: fixedHedgeCount(2)}
 	ctx, cancel := context.WithCancel(context.Background())
 	winner, _, err := runner.createSandbox(ctx, types.SnapshotParams{})
 	if err != nil {
@@ -325,7 +327,7 @@ func TestCreateSandboxClampsHedgeCountToThree(t *testing.T) {
 		return nil, errors.New("placement failed")
 	}}
 	runner := &DaytonaRunner{
-		client: client, createBackoff: 0,
+		client: client, environment: environment.Dev, createBackoff: 0,
 		hedgeCountProvider: fixedHedgeCount(99),
 	}
 	_, _, err := runner.createSandbox(context.Background(), types.SnapshotParams{})

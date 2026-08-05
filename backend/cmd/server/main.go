@@ -133,7 +133,7 @@ func main() {
 	settingsService := settings.NewService(settingsStore, nil)
 	var executionRunner execution.Runner
 	if cfg.DaytonaAPIKey != "" {
-		daytonaRunner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL)
+		daytonaRunner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL, cfg.Environment)
 		if err != nil {
 			log.Fatalf("could not configure Daytona runner: %v", err)
 		}
@@ -147,8 +147,8 @@ func main() {
 				nil,
 			)
 			go sweeper.Run(ctx)
-			log.Printf("CodeGym Daytona orphan sweeper scheduled every %s max_age=%s",
-				cfg.SandboxSweeper.Interval, cfg.SandboxSweeper.MaxAge)
+			log.Printf("CodeGym Daytona orphan sweeper scheduled every %s max_age=%s environment=%s",
+				cfg.SandboxSweeper.Interval, cfg.SandboxSweeper.MaxAge, cfg.Environment)
 		} else {
 			log.Print("CodeGym Daytona orphan sweeper disabled")
 		}

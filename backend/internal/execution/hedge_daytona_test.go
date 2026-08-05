@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/daytona/clients/sdk-go/pkg/types"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 const hedgeCreateSamples = 15
@@ -25,7 +26,7 @@ func TestHedgeDaytonaEndToEndAndInterleavedLatency(t *testing.T) {
 
 	runners := make(map[int]*DaytonaRunner, 2)
 	for _, hedgeCount := range []int{1, 2} {
-		runner, err := NewDaytonaRunner(apiKey, os.Getenv("DAYTONA_API_URL"))
+		runner, err := NewDaytonaRunner(apiKey, os.Getenv("DAYTONA_API_URL"), environment.Dev)
 		if err != nil {
 			t.Fatalf("NewDaytonaRunner hedge_count=%d: %v", hedgeCount, err)
 		}

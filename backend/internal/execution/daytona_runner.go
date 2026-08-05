@@ -26,12 +26,62 @@ import (
 const (
 	supervisorRemotePath   = "work/.codegym/supervisor.py"
 	resultRemotePath       = "work/.codegym/result.json"
+	casesRemotePath        = "work/.codegym/cases.jsonl"
 	defaultOutputCapBytes  = 64 * 1024
 	supervisorExecOverhead = 15 * time.Second
+	timeoutReadbackBudget  = 5 * time.Second
 )
 
 type DaytonaRunner struct {
+	client daytonaSandboxClient
+}
+
+type daytonaSandboxClient interface {
+	Create(context.Context, types.SnapshotParams) (daytonaRunnerSandbox, error)
+}
+
+type daytonaRunnerSandbox interface {
+	CreateFolder(context.Context, string) error
+	UploadFile(context.Context, []byte, string) error
+	DownloadFile(context.Context, string) ([]byte, error)
+	ExecuteCommand(context.Context, string, time.Duration) (*types.ExecuteResponse, error)
+	Delete(context.Context) error
+}
+
+type daytonaClientAdapter struct {
 	client *daytona.Client
+}
+
+func (a daytonaClientAdapter) Create(ctx context.Context, params types.SnapshotParams) (daytonaRunnerSandbox, error) {
+	sandbox, err := a.client.Create(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return daytonaSandboxAdapter{sandbox: sandbox}, nil
+}
+
+type daytonaSandboxAdapter struct {
+	sandbox *daytona.Sandbox
+}
+
+func (a daytonaSandboxAdapter) CreateFolder(ctx context.Context, path string) error {
+	return a.sandbox.FileSystem.CreateFolder(ctx, path)
+}
+
+func (a daytonaSandboxAdapter) UploadFile(ctx context.Context, content []byte, path string) error {
+	return a.sandbox.FileSystem.UploadFile(ctx, content, path)
+}
+
+func (a daytonaSandboxAdapter) DownloadFile(ctx context.Context, path string) ([]byte, error) {
+	return a.sandbox.FileSystem.DownloadFile(ctx, path, nil)
+}
+
+func (a daytonaSandboxAdapter) ExecuteCommand(ctx context.Context, command string, timeout time.Duration) (*types.ExecuteResponse, error) {
+	return a.sandbox.Process.ExecuteCommand(ctx, command, options.WithExecuteTimeout(timeout))
+}
+
+func (a daytonaSandboxAdapter) Delete(ctx context.Context) error {
+	return a.sandbox.Delete(ctx)
 }
 
 // NewDaytonaRunner builds a runner from explicit credentials (loaded from
@@ -44,7 +94,7 @@ func NewDaytonaRunner(apiKey, apiURL string) (*DaytonaRunner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create Daytona client: %w", err)
 	}
-	return &DaytonaRunner{client: client}, nil
+	return &DaytonaRunner{client: daytonaClientAdapter{client: client}}, nil
 }
 
 // Run executes one submission in an ephemeral, fully network-blocked sandbox
@@ -103,24 +153,24 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	}()
 
 	uploadStarted := time.Now()
-	if err := sb.FileSystem.CreateFolder(ctx, "work"); err != nil {
+	if err := sb.CreateFolder(ctx, "work"); err != nil {
 		log.Printf("daytona run failed stage=mkdir language=%s create_ms=%d elapsed_ms=%d err=%v",
 			lang, createMS, time.Since(startedAt).Milliseconds(), err)
 		return RunOutcome{}, fmt.Errorf("create Daytona work directory: %w", err)
 	}
-	if err := sb.FileSystem.CreateFolder(ctx, "work/.codegym"); err != nil {
+	if err := sb.CreateFolder(ctx, "work/.codegym"); err != nil {
 		log.Printf("daytona run failed stage=mkdir-protocol language=%s create_ms=%d elapsed_ms=%d err=%v",
 			lang, createMS, time.Since(startedAt).Milliseconds(), err)
 		return RunOutcome{}, fmt.Errorf("create Daytona judge protocol directory: %w", err)
 	}
 	for _, file := range spec.Files {
-		if err := sb.FileSystem.UploadFile(ctx, []byte(file.Content), "work/"+file.Path); err != nil {
+		if err := sb.UploadFile(ctx, []byte(file.Content), "work/"+file.Path); err != nil {
 			log.Printf("daytona run failed stage=upload language=%s create_ms=%d elapsed_ms=%d file=%q err=%v",
 				lang, createMS, time.Since(startedAt).Milliseconds(), file.Path, err)
 			return RunOutcome{}, fmt.Errorf("upload %q to Daytona sandbox: %w", file.Path, err)
 		}
 	}
-	if err := sb.FileSystem.UploadFile(ctx, SupervisorScript, supervisorRemotePath); err != nil {
+	if err := sb.UploadFile(ctx, SupervisorScript, supervisorRemotePath); err != nil {
 		log.Printf("daytona run failed stage=upload-supervisor language=%s create_ms=%d elapsed_ms=%d err=%v",
 			lang, createMS, time.Since(startedAt).Milliseconds(), err)
 		return RunOutcome{}, fmt.Errorf("upload judge supervisor to Daytona sandbox: %w", err)
@@ -128,19 +178,18 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	uploadMS := time.Since(uploadStarted).Milliseconds()
 
 	execStarted := time.Now()
-	execResult, err := sb.Process.ExecuteCommand(
-		ctx,
-		buildSupervisorCommand(spec),
-		options.WithExecuteTimeout(timeout+supervisorExecOverhead),
-	)
+	execResult, err := sb.ExecuteCommand(ctx, buildSupervisorCommand(spec), timeout+supervisorExecOverhead)
 	execMS := time.Since(execStarted).Milliseconds()
 	if err != nil {
+		if executionDeadlineExceeded(ctx, err) {
+			return timeoutRunOutcome(ctx, sb, spec, execMS, lang, createMS, uploadMS, startedAt), nil
+		}
 		log.Printf("daytona run failed stage=exec language=%s create_ms=%d upload_ms=%d exec_ms=%d elapsed_ms=%d err=%v",
 			lang, createMS, uploadMS, execMS, time.Since(startedAt).Milliseconds(), err)
 		return RunOutcome{}, fmt.Errorf("execute submission in Daytona sandbox: %w", err)
 	}
 
-	resultData, err := sb.FileSystem.DownloadFile(ctx, resultRemotePath, nil)
+	resultData, err := sb.DownloadFile(ctx, resultRemotePath)
 	if err != nil {
 		log.Printf("daytona run failed stage=download-result language=%s supervisor_exit_code=%d elapsed_ms=%d err=%v",
 			lang, execResult.ExitCode, time.Since(startedAt).Milliseconds(), err)
@@ -167,6 +216,66 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 		Output:   judgeResult.Stdout + judgeResult.Stderr,
 		Duration: time.Duration(judgeResult.DurationMs) * time.Millisecond,
 	}, nil
+}
+
+func executionDeadlineExceeded(ctx context.Context, err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return true
+	}
+	// The Daytona SDK converts toolbox transport errors into its own error type
+	// without preserving the wrapped context error. Keep this check scoped to
+	// the execute stage so create/upload/API failures still remain platform
+	// errors.
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "deadline exceeded") ||
+		strings.Contains(message, "timed out") ||
+		strings.Contains(message, "timeout")
+}
+
+func timeoutRunOutcome(
+	ctx context.Context,
+	sandbox daytonaRunnerSandbox,
+	spec RunSpec,
+	execMS int64,
+	language string,
+	createMS int64,
+	uploadMS int64,
+	startedAt time.Time,
+) RunOutcome {
+	readbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeoutReadbackBudget)
+	defer cancel()
+	casesJSONL, downloadErr := sandbox.DownloadFile(readbackCtx, casesRemotePath)
+	if downloadErr != nil {
+		casesJSONL = nil
+		log.Printf("daytona timeout progress unavailable language=%s elapsed_ms=%d err=%v",
+			language, time.Since(startedAt).Milliseconds(), downloadErr)
+	}
+	detail := "run exceeded its overall execution budget before a final judge result was written"
+	judgeResult := ReconstructJudgeResult(ReconstructionInput{
+		CasesJSONL:    casesJSONL,
+		DeathStatus:   JudgeStatusTimeout,
+		FailureDetail: detail,
+		DurationMs:    execMS,
+	})
+	log.Printf("daytona run timeout language=%s entrypoint=%s status=%s create_ms=%d upload_ms=%d exec_ms=%d total_ms=%d progress_recovered=%t",
+		language, spec.Entrypoint, judgeResult.Status, createMS, uploadMS, execMS,
+		time.Since(startedAt).Milliseconds(), downloadErr == nil)
+	return outcomeFromJudgeResult(judgeResult)
+}
+
+func outcomeFromJudgeResult(judgeResult JudgeResult) RunOutcome {
+	exitCode := -1
+	if judgeResult.ExitCode != nil {
+		exitCode = *judgeResult.ExitCode
+	}
+	return RunOutcome{
+		ExitCode: exitCode,
+		Result:   judgeResult,
+		Stdout:   judgeResult.Stdout,
+		Stderr:   judgeResult.Stderr,
+		Output:   judgeResult.Stdout + judgeResult.Stderr,
+		Duration: time.Duration(judgeResult.DurationMs) * time.Millisecond,
+	}
 }
 
 func buildSupervisorCommand(spec RunSpec) string {

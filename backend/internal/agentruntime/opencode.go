@@ -64,7 +64,6 @@ func (r *OpenCodeRuntime) Run(ctx context.Context, task TaskSpec) (result RunRes
 	result.Telemetry.Termination = TerminationRuntimeFailure
 	defer func() {
 		result.Telemetry.WallTime = r.config.Now().Sub(startedAt)
-		result.Telemetry.SandboxSeconds = result.Telemetry.WallTime.Seconds()
 		result.Manifest = LoadManifest(task.WorkingDirectory)
 	}()
 	if err := task.Validate(startedAt); err != nil {
@@ -122,14 +121,13 @@ func (r *OpenCodeRuntime) Run(ctx context.Context, task TaskSpec) (result RunRes
 		"--agent", "codegym", "--model", "codegym-relay/"+r.config.Model, "--title", "CodeGym agent task", prompt,
 	)
 	command.Dir = task.WorkingDirectory
-	command.Env = []string{
-		"HOME=" + home, "PATH=" + os.Getenv("PATH"), "TMPDIR=" + r.config.TempRoot,
-		"OPENCODE_CONFIG=" + configPath, "OPENCODE_DISABLE_AUTOUPDATE=1",
+	command.Env = append(safeRuntimeEnvironment(home, r.config.TempRoot),
+		"OPENCODE_CONFIG="+configPath, "OPENCODE_DISABLE_AUTOUPDATE=1",
 		"OPENCODE_DISABLE_MODELS_FETCH=1", "OPENCODE_DISABLE_DEFAULT_PLUGINS=1",
 		"OPENCODE_DISABLE_LSP_DOWNLOAD=1", "OPENCODE_DISABLE_CLAUDE_CODE=1",
 		"OPENCODE_ENABLE_EXA=0", "OPENCODE_AUTO_SHARE=0",
-		"CODEGYM_PROGRESS_LOG=" + progressLog,
-	}
+		"CODEGYM_PROGRESS_LOG="+progressLog,
+	)
 	output, exitCode, truncated, commandErr := runBoundedProcess(runContext, command, task.EffectiveOutputCap())
 	result.Telemetry.ExitCode = &exitCode
 	result.Telemetry.OutputTruncated = truncated

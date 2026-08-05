@@ -57,7 +57,7 @@ func confinedPath(path string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-func runShell(ctx context.Context, workingDirectory, command string, capBytes int) (string, int, bool, error) {
+func runShell(ctx context.Context, workingDirectory, command string, environment []string, capBytes int) (string, int, bool, error) {
 	if strings.TrimSpace(command) == "" {
 		return "", -1, false, errors.New("shell command is required")
 	}
@@ -66,6 +66,7 @@ func runShell(ctx context.Context, workingDirectory, command string, capBytes in
 	buffer := newCappedBuffer(capBytes, cancel)
 	cmd := exec.CommandContext(commandContext, "sh", "-c", command)
 	cmd.Dir = workingDirectory
+	cmd.Env = append([]string(nil), environment...)
 	cmd.Stdout = buffer
 	cmd.Stderr = buffer
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -99,6 +100,21 @@ func runShell(ctx context.Context, workingDirectory, command string, capBytes in
 		return buffer.String(), exitCode, false, ctx.Err()
 	}
 	return buffer.String(), exitCode, false, err
+}
+
+func safeRuntimeEnvironment(home, tempRoot string) []string {
+	environment := []string{
+		"HOME=" + home,
+		"PATH=" + os.Getenv("PATH"),
+		"TMPDIR=" + tempRoot,
+		"CI=true",
+	}
+	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH", "JAVA_HOME"} {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			environment = append(environment, name+"="+value)
+		}
+	}
+	return environment
 }
 
 type cappedBuffer struct {

@@ -30,7 +30,6 @@ func (r *PurposeBuiltRuntime) Run(ctx context.Context, task TaskSpec) (result Ru
 	result.Telemetry.Termination = TerminationRuntimeFailure
 	defer func() {
 		result.Telemetry.WallTime = now().Sub(startedAt)
-		result.Telemetry.SandboxSeconds = result.Telemetry.WallTime.Seconds()
 		result.Manifest = LoadManifest(task.WorkingDirectory)
 	}()
 	if r == nil || r.Client == nil {
@@ -42,6 +41,20 @@ func (r *PurposeBuiltRuntime) Run(ctx context.Context, task TaskSpec) (result Ru
 	if _, err := os.Stat(task.WorkingDirectory); err != nil {
 		return result, fmt.Errorf("agentruntime: inspect working directory: %w", err)
 	}
+	runtimeRoot, err := os.MkdirTemp("/tmp", "codegym-purpose-runtime-")
+	if err != nil {
+		return result, fmt.Errorf("agentruntime: create isolated purpose-built home: %w", err)
+	}
+	defer func() {
+		if cleanupErr := os.RemoveAll(runtimeRoot); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("agentruntime: remove isolated purpose-built home: %w", cleanupErr))
+		}
+	}()
+	home := runtimeRoot + string(os.PathSeparator) + "home"
+	if err := os.Mkdir(home, 0o700); err != nil {
+		return result, fmt.Errorf("agentruntime: create purpose-built home: %w", err)
+	}
+	shellEnvironment := safeRuntimeEnvironment(home, "/tmp")
 
 	runContext, cancel := context.WithDeadline(ctx, task.Deadline)
 	defer cancel()
@@ -102,7 +115,7 @@ func (r *PurposeBuiltRuntime) Run(ctx context.Context, task TaskSpec) (result Ru
 				result.Telemetry.Termination = reason
 				return result, contextErr
 			}
-			toolResult, invocation, progress, stopReason := r.executeTool(runContext, root, task, call, now)
+			toolResult, invocation, progress, stopReason := r.executeTool(runContext, root, task, call, shellEnvironment, now)
 			result.Telemetry.ToolInvocations = append(result.Telemetry.ToolInvocations, invocation)
 			if stopReason == TerminationRuntimeFailure && strings.HasPrefix(invocation.Error, "attempted disallowed tool") {
 				result.Telemetry.PolicyViolations = append(result.Telemetry.PolicyViolations, invocation.Error)
@@ -130,6 +143,7 @@ func (r *PurposeBuiltRuntime) executeTool(
 	root *os.Root,
 	task TaskSpec,
 	call ToolCall,
+	shellEnvironment []string,
 	now func() time.Time,
 ) (string, ToolInvocation, *ProgressEvent, TerminationReason) {
 	tool := Tool(call.Function.Name)
@@ -184,7 +198,7 @@ func (r *PurposeBuiltRuntime) executeTool(
 		if err := decodeToolArguments(call.Function.Arguments, &input); err != nil {
 			return finish("", err, false)
 		}
-		output, exitCode, truncated, err := runShell(ctx, task.WorkingDirectory, input.Command, task.EffectiveOutputCap())
+		output, exitCode, truncated, err := runShell(ctx, task.WorkingDirectory, input.Command, shellEnvironment, task.EffectiveOutputCap())
 		invocation.ExitCode = &exitCode
 		return finish(output, err, truncated)
 	case ToolReportProgress:

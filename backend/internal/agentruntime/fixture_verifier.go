@@ -68,12 +68,17 @@ type fixtureLaunch struct {
 }
 
 func (v FixtureVerifier) build(ctx context.Context, workingDirectory, verificationRoot string) (fixtureLaunch, error) {
+	verificationHome := filepath.Join(verificationRoot, "home")
+	if err := os.MkdirAll(verificationHome, 0o700); err != nil {
+		return fixtureLaunch{}, err
+	}
+	safeEnvironment := safeRuntimeEnvironment(verificationHome, "/tmp")
 	switch v.Fixture.ID {
 	case "go-net-http":
 		binaryPath := filepath.Join(verificationRoot, "fixture-server")
 		command := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, ".")
 		command.Dir = workingDirectory
-		command.Env = append(os.Environ(), "GOCACHE="+filepath.Join(verificationRoot, "go-cache"), "GOPROXY=off", "GOSUMDB=off")
+		command.Env = append(safeEnvironment, "GOCACHE="+filepath.Join(verificationRoot, "go-cache"), "GOPROXY=off", "GOSUMDB=off")
 		output, exitCode, truncated, err := runBoundedProcess(ctx, command, DefaultOutputCap)
 		if err != nil {
 			return fixtureLaunch{}, fmt.Errorf("Go build infrastructure failure: %w", err)
@@ -85,6 +90,7 @@ func (v FixtureVerifier) build(ctx context.Context, workingDirectory, verificati
 	case "express":
 		command := exec.CommandContext(ctx, "node", "--check", "server.js")
 		command.Dir = workingDirectory
+		command.Env = safeEnvironment
 		output, exitCode, truncated, err := runBoundedProcess(ctx, command, DefaultOutputCap)
 		if err != nil {
 			return fixtureLaunch{}, fmt.Errorf("Express syntax check infrastructure failure: %w", err)
@@ -101,9 +107,13 @@ func (v FixtureVerifier) build(ctx context.Context, workingDirectory, verificati
 		}
 		return fixtureLaunch{command: "node", args: []string{"server.js"}, env: []string{"NODE_PATH=" + filepath.Join(verificationRoot, "node_modules")}}, nil
 	case "spring-boot":
-		command := exec.CommandContext(ctx, "mvn", "--offline", "--quiet", "-DskipTests", "package")
+		command := exec.CommandContext(
+			ctx, "mvn", "--offline", "--quiet",
+			"-Dmaven.repo.local="+filepath.Join(verificationRoot, "m2-repository"),
+			"-DskipTests", "package",
+		)
 		command.Dir = workingDirectory
-		command.Env = append(os.Environ(), "MAVEN_OPTS=-Dmaven.repo.local="+filepath.Join(os.Getenv("HOME"), ".m2", "repository"))
+		command.Env = safeEnvironment
 		output, exitCode, truncated, err := runBoundedProcess(ctx, command, DefaultOutputCap)
 		if err != nil {
 			return fixtureLaunch{}, fmt.Errorf("Spring Boot offline build infrastructure failure: %w", err)
@@ -135,7 +145,7 @@ func (v FixtureVerifier) bootAndProbe(
 	defer cancel()
 	command := exec.CommandContext(bootContext, launch.command, launch.args...)
 	command.Dir = workingDirectory
-	command.Env = append(os.Environ(), launch.env...)
+	command.Env = append(safeRuntimeEnvironment(filepath.Join(verificationRoot, "home"), "/tmp"), launch.env...)
 	command.Env = append(command.Env, "PORT="+strconv.Itoa(port), "CODEGYM_SYNTHETIC_SECRET="+BenchmarkCanary)
 	if networkBlocked {
 		command.Env = append(command.Env,

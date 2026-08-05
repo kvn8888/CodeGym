@@ -268,7 +268,7 @@ func TestVerifyAcceptsDifferentValidAnswerWithChecker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildProblemDefinition: %v", err)
 	}
-	if _, _, err := Verify(testContext(), nil, localPythonRunner{t: t}, definition, generated); err != nil {
+	if err := VerifyAgreement(testContext(), localPythonRunner{t: t}, definition); err != nil {
 		t.Fatalf("checker verification rejected a different valid pair: %v", err)
 	}
 
@@ -278,7 +278,7 @@ func TestVerifyAcceptsDifferentValidAnswerWithChecker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildProblemDefinition exact: %v", err)
 	}
-	if _, _, err := Verify(testContext(), nil, localPythonRunner{t: t}, exactDefinition, exact); !errors.Is(err, ErrRejected) {
+	if err := VerifyAgreement(testContext(), localPythonRunner{t: t}, exactDefinition); !errors.Is(err, ErrRejected) {
 		t.Fatalf("exact verification err = %v, want ErrRejected", err)
 	}
 }

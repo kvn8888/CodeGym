@@ -122,19 +122,13 @@ func Verify(
 	definition problems.Definition,
 	generated generation.GeneratedProblem,
 ) (problems.Definition, generation.GeneratedProblem, error) {
-	if runner == nil {
-		return problems.Definition{}, generation.GeneratedProblem{}, ErrUnavailable
-	}
 	currentDef := definition
 	currentGen := generated
 
 	for pass := 1; pass <= maxPasses; pass++ {
-		result, runErr := runReference(ctx, runner, currentDef)
+		result, runErr := executeAgreementCheck(ctx, runner, currentDef)
 		if runErr != nil {
 			return problems.Definition{}, generation.GeneratedProblem{}, runErr
-		}
-		if result.CompileError != nil && strings.TrimSpace(*result.CompileError) != "" {
-			return problems.Definition{}, generation.GeneratedProblem{}, fmt.Errorf("%w: reference failed to load: %s", ErrRejected, strings.TrimSpace(*result.CompileError))
 		}
 		if result.Failed == 0 && result.Total > 0 {
 			return currentDef, currentGen, nil
@@ -190,6 +184,37 @@ func Verify(
 	}
 
 	return problems.Definition{}, generation.GeneratedProblem{}, fmt.Errorf("%w: did not converge after %d verification passes", ErrRejected, maxPasses)
+}
+
+// VerifyAgreement executes one blind reference artifact against one independently
+// generated test artifact. Success is publishable evidence; disagreement is a
+// rejection for callers that do not opt into the bounded reconcile path.
+func VerifyAgreement(ctx context.Context, runner execution.Runner, definition problems.Definition) error {
+	result, err := executeAgreementCheck(ctx, runner, definition)
+	if err != nil {
+		return err
+	}
+	if result.Total == 0 {
+		return fmt.Errorf("%w: verification produced no test results", ErrRejected)
+	}
+	if result.Failed > 0 {
+		return fmt.Errorf("%w: independent reference disagreed with %d of %d cases", ErrRejected, result.Failed, result.Total)
+	}
+	return nil
+}
+
+func executeAgreementCheck(ctx context.Context, runner execution.Runner, definition problems.Definition) (submission.TestResult, error) {
+	if runner == nil {
+		return submission.TestResult{}, ErrUnavailable
+	}
+	result, err := runReference(ctx, runner, definition)
+	if err != nil {
+		return submission.TestResult{}, err
+	}
+	if result.CompileError != nil && strings.TrimSpace(*result.CompileError) != "" {
+		return submission.TestResult{}, fmt.Errorf("%w: reference failed to load: %s", ErrRejected, strings.TrimSpace(*result.CompileError))
+	}
+	return result, nil
 }
 
 func runReference(ctx context.Context, runner execution.Runner, definition problems.Definition) (submission.TestResult, error) {

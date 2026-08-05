@@ -129,11 +129,15 @@ func TestUnitStrategyKeepsSupervisorCommandByteIdentical(t *testing.T) {
 type fakeDaytonaClient struct {
 	sandbox     daytonaRunnerSandbox
 	createErr   error
+	createErrs  []error
 	createCalls int
 }
 
 func (f *fakeDaytonaClient) Create(_ context.Context, _ types.SnapshotParams) (daytonaRunnerSandbox, error) {
 	f.createCalls++
+	if f.createCalls <= len(f.createErrs) && f.createErrs[f.createCalls-1] != nil {
+		return nil, f.createErrs[f.createCalls-1]
+	}
 	return f.sandbox, f.createErr
 }
 
@@ -221,6 +225,56 @@ func TestDaytonaRunnerExecuteAPIFailureRemainsPlatformError(t *testing.T) {
 	}
 	if outcome.Result.Schema != 0 {
 		t.Fatalf("API failure unexpectedly synthesized a judge result: %#v", outcome.Result)
+	}
+}
+
+func TestDaytonaRunnerRetriesCreateOnceWithoutReexecutingSubmission(t *testing.T) {
+	resultJSON := []byte(`{"schema":1,"status":"passed","cases":[{"name":"case-1","status":"pass","duration_ms":1,"error":null}],"compile_error":null,"failure_detail":null,"exit_code":0,"signal":null,"duration_ms":4,"stdout":"ok","stderr":"","output_truncated":false}`)
+	sandbox := &fakeDaytonaSandbox{
+		executeResult: &types.ExecuteResponse{ExitCode: 0},
+		downloads:     map[string][]byte{resultRemotePath: resultJSON},
+	}
+	client := &fakeDaytonaClient{
+		sandbox:    sandbox,
+		createErrs: []error{errors.New("temporary create failure")},
+	}
+	runner := &DaytonaRunner{client: client}
+
+	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
+	if err != nil {
+		t.Fatalf("Run after create retry: %v", err)
+	}
+	if outcome.Result.Status != JudgeStatusPassed {
+		t.Fatalf("result = %#v", outcome.Result)
+	}
+	if client.createCalls != 2 {
+		t.Fatalf("create calls = %d, want 2", client.createCalls)
+	}
+	if sandbox.executeCalls != 1 {
+		t.Fatalf("execute calls = %d, want exactly 1", sandbox.executeCalls)
+	}
+}
+
+func TestDaytonaRunnerCreateFailureReturnsInfrastructureBusy(t *testing.T) {
+	sandbox := &fakeDaytonaSandbox{}
+	client := &fakeDaytonaClient{
+		sandbox: sandbox,
+		createErrs: []error{
+			errors.New("create failed once"),
+			errors.New("create failed twice"),
+		},
+	}
+	runner := &DaytonaRunner{client: client}
+
+	outcome, err := runner.Run(context.Background(), pythonSpec(passingSolution, solutionTests))
+	if !errors.Is(err, ErrInfrastructureBusy) || !strings.Contains(err.Error(), "infrastructure is busy; please retry") {
+		t.Fatalf("Run error = %v, outcome = %#v", err, outcome)
+	}
+	if client.createCalls != 2 {
+		t.Fatalf("create calls = %d, want 2", client.createCalls)
+	}
+	if sandbox.executeCalls != 0 {
+		t.Fatalf("execute calls = %d, want 0", sandbox.executeCalls)
 	}
 }
 

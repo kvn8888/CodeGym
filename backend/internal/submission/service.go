@@ -312,6 +312,10 @@ func viewFromRun(run execution.Run) View {
 		return view
 	case execution.StatusError:
 		view.Status = StatusError
+		if run.Error == execution.ErrInfrastructureBusy.Error() {
+			detail := run.Error
+			view.FailureDetail = &detail
+		}
 		return view
 	case execution.StatusTimeout:
 		view.Status = StatusTimeout

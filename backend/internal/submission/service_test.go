@@ -89,3 +89,16 @@ func TestViewFromRunSurfacesCompileError(t *testing.T) {
 		t.Fatalf("compile result = %#v", view.Result)
 	}
 }
+
+func TestViewFromRunSurfacesInfrastructureBusyMessage(t *testing.T) {
+	run := execution.Run{
+		Status: execution.StatusError,
+		Error:  execution.ErrInfrastructureBusy.Error(),
+	}
+
+	view := viewFromRun(run)
+	if view.Status != StatusError || view.FailureDetail == nil ||
+		*view.FailureDetail != execution.ErrInfrastructureBusy.Error() {
+		t.Fatalf("view = %#v", view)
+	}
+}

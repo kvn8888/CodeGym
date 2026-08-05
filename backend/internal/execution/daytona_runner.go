@@ -30,10 +30,15 @@ const (
 	defaultOutputCapBytes  = 64 * 1024
 	supervisorExecOverhead = 15 * time.Second
 	timeoutReadbackBudget  = 5 * time.Second
+	defaultCreateBackoff   = 250 * time.Millisecond
+	sandboxCreateAttempts  = 2
 )
 
+var ErrInfrastructureBusy = errors.New("execution infrastructure is busy; please retry")
+
 type DaytonaRunner struct {
-	client daytonaSandboxClient
+	client        daytonaSandboxClient
+	createBackoff time.Duration
 }
 
 type daytonaSandboxClient interface {
@@ -94,7 +99,10 @@ func NewDaytonaRunner(apiKey, apiURL string) (*DaytonaRunner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create Daytona client: %w", err)
 	}
-	return &DaytonaRunner{client: daytonaClientAdapter{client: client}}, nil
+	return &DaytonaRunner{
+		client:        daytonaClientAdapter{client: client},
+		createBackoff: defaultCreateBackoff,
+	}, nil
 }
 
 // Run executes one submission in an ephemeral, fully network-blocked sandbox
@@ -121,7 +129,7 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 		lang, spec.Entrypoint, len(spec.Files), timeout, spec.Limits.MemoryMB, spec.Limits.NetworkMode)
 
 	createStarted := time.Now()
-	sb, err := r.client.Create(ctx, types.SnapshotParams{
+	sb, err := r.createSandbox(ctx, types.SnapshotParams{
 		Snapshot: spec.Language.Snapshot,
 		SandboxBaseParams: types.SandboxBaseParams{
 			Labels:          map[string]string{"codegym": "submission"},
@@ -132,7 +140,7 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 	if err != nil {
 		log.Printf("daytona run failed stage=create language=%s elapsed_ms=%d err=%v",
 			lang, time.Since(startedAt).Milliseconds(), err)
-		return RunOutcome{}, fmt.Errorf("create Daytona sandbox: %w", err)
+		return RunOutcome{}, err
 	}
 	createMS := time.Since(createStarted).Milliseconds()
 	defer func() {
@@ -216,6 +224,39 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 		Output:   judgeResult.Stdout + judgeResult.Stderr,
 		Duration: time.Duration(judgeResult.DurationMs) * time.Millisecond,
 	}, nil
+}
+
+func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.SnapshotParams) (daytonaRunnerSandbox, error) {
+	var lastErr error
+	for attempt := 1; attempt <= sandboxCreateAttempts; attempt++ {
+		sandbox, err := r.client.Create(ctx, params)
+		if err == nil {
+			return sandbox, nil
+		}
+		lastErr = err
+		log.Printf("daytona sandbox create attempt failed attempt=%d/%d err=%v", attempt, sandboxCreateAttempts, err)
+		if attempt == sandboxCreateAttempts {
+			break
+		}
+		if r.createBackoff <= 0 {
+			continue
+		}
+		timer := time.NewTimer(r.createBackoff)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			lastErr = ctx.Err()
+			attempt = sandboxCreateAttempts
+		case <-timer.C:
+		}
+	}
+	return nil, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
+		ErrInfrastructureBusy, sandboxCreateAttempts, lastErr)
 }
 
 func executionDeadlineExceeded(ctx context.Context, err error) bool {

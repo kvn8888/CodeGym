@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -171,6 +172,19 @@ func TestSubmitRunRunnerErrorYieldsErrorStatus(t *testing.T) {
 	}
 	if persisted.Status != StatusError {
 		t.Fatalf("expected persisted status %s, got %s", StatusError, persisted.Status)
+	}
+}
+
+func TestSubmitRunSanitizesInfrastructureBusyError(t *testing.T) {
+	runner := &fakeRunner{err: fmt.Errorf("%w: provider detail", ErrInfrastructureBusy)}
+	service := NewService(NewInMemoryStore(), runner, fixedClock())
+
+	run, err := service.SubmitRun(scopedContext(), pythonInput())
+	if err != nil {
+		t.Fatalf("SubmitRun returned error: %v", err)
+	}
+	if run.Status != StatusError || run.Error != ErrInfrastructureBusy.Error() {
+		t.Fatalf("run = %#v", run)
 	}
 }
 

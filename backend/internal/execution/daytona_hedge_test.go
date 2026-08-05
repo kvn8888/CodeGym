@@ -176,25 +176,28 @@ func TestCreateSandboxHedgeTwoReturnsFirstWinnerAndDeletesLateLoser(t *testing.T
 	if _, deleted := slow.counts(); deleted != 0 {
 		t.Fatal("slow loser was deleted before its create completed")
 	}
-	close(releaseSlow)
-	assertDeletedWithLiveContext(t, slow)
-
-	if err := winner.Delete(context.Background()); err != nil {
-		t.Fatalf("delete winner: %v", err)
-	}
 	_, _, captured := client.stats()
 	if len(captured) != 2 {
 		t.Fatalf("captured params = %d, want 2", len(captured))
 	}
-	runID := captured[0].SandboxBaseParams.Labels["codegym-run-id"]
-	createdAt := captured[0].SandboxBaseParams.Labels["codegym-created-at"]
+	runID := captured[0].SandboxBaseParams.Labels[codegymRunIDLabel]
+	createdAt := captured[0].SandboxBaseParams.Labels[codegymCreatedAtLabel]
 	if runID == "" || createdAt == "" {
 		t.Fatalf("missing safety labels: %#v", captured[0].SandboxBaseParams.Labels)
 	}
+	if err := winner.Delete(context.Background()); err != nil {
+		t.Fatalf("delete winner: %v", err)
+	}
+	if !runner.activeRuns.contains(runID) {
+		t.Fatal("run became sweepable while a losing create was still in flight")
+	}
+	close(releaseSlow)
+	assertDeletedWithLiveContext(t, slow)
+	assertEventuallyInactive(t, &runner.activeRuns, runID)
 	for _, createParams := range captured {
 		labels := createParams.SandboxBaseParams.Labels
 		if labels["codegym"] != "submission" || labels["existing"] != "preserved" ||
-			labels["codegym-run-id"] != runID || labels["codegym-created-at"] != createdAt {
+			labels[codegymRunIDLabel] != runID || labels[codegymCreatedAtLabel] != createdAt {
 			t.Fatalf("candidate labels = %#v", labels)
 		}
 	}
@@ -343,5 +346,16 @@ func assertDeletedWithLiveContext(t *testing.T, sandbox *hedgeTestSandbox) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("sandbox was not deleted")
+	}
+}
+
+func assertEventuallyInactive(t *testing.T, registry *activeRunRegistry, runID string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for registry.contains(runID) {
+		if time.Now().After(deadline) {
+			t.Fatal("run remained active after winner and loser cleanup completed")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

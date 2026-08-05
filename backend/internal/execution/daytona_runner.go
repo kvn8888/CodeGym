@@ -73,6 +73,32 @@ func (a daytonaClientAdapter) Create(ctx context.Context, params types.SnapshotP
 	return daytonaSandboxAdapter{sandbox: sandbox}, nil
 }
 
+func (a daytonaClientAdapter) ListSubmissionSandboxes(ctx context.Context) ([]sweepSandbox, error) {
+	iterator := a.client.List(ctx, &daytona.ListSandboxesQuery{
+		Labels: map[string]string{codegymSandboxLabel: codegymSandboxLabelValue},
+	})
+	sandboxes := make([]sweepSandbox, 0)
+	for iterator.Next() {
+		sandbox := iterator.Value()
+		createdAt := ""
+		if sandbox.CreatedAt != nil {
+			createdAt = *sandbox.CreatedAt
+		}
+		labels := make(map[string]string, len(sandbox.Labels))
+		for key, value := range sandbox.Labels {
+			labels[key] = value
+		}
+		sandboxes = append(sandboxes, sweepSandbox{
+			id: sandbox.ID, labels: labels, providerCreatedAt: createdAt,
+			delete: sandbox.Delete,
+		})
+	}
+	if err := iterator.Err(); err != nil {
+		return nil, err
+	}
+	return sandboxes, nil
+}
+
 type daytonaSandboxAdapter struct {
 	sandbox *daytona.Sandbox
 }
@@ -278,9 +304,9 @@ func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.Snapshot
 		labels[key] = value
 	}
 	runID := newID("sandbox_run")
-	labels["codegym"] = "submission"
-	labels["codegym-run-id"] = runID
-	labels["codegym-created-at"] = strconv.FormatInt(time.Now().UTC().Unix(), 10)
+	labels[codegymSandboxLabel] = codegymSandboxLabelValue
+	labels[codegymRunIDLabel] = runID
+	labels[codegymCreatedAtLabel] = strconv.FormatInt(time.Now().UTC().Unix(), 10)
 	params.SandboxBaseParams.Labels = labels
 
 	r.activeRuns.add(runID)
@@ -381,7 +407,11 @@ func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.Snapshot
 
 		remaining := hedgeCount - received
 		if remaining > 0 {
+			// Hold a second active reference until every loser finishes creating
+			// and is reaped. The winner may finish before a slow create returns.
+			r.activeRuns.add(runID)
 			go func() {
+				defer r.activeRuns.remove(runID)
 				for range remaining {
 					loser := <-results
 					if loser.err != nil || loser.sandbox == nil {

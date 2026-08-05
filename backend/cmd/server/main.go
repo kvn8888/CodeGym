@@ -123,7 +123,7 @@ func main() {
 		settingsStore = postgresSettingsStore
 		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, runtime settings, genai usage, execution, and problem stores")
 	} else {
-		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
+		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, runtime settings, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
 
 	settingsService := settings.NewService(settingsStore, nil)
@@ -135,6 +135,19 @@ func main() {
 		}
 		executionRunner = daytonaRunner.WithHedgeCountProvider(settingsService)
 		log.Print("CodeGym API execution runner: Daytona")
+		if !cfg.SandboxSweeper.Disabled {
+			sweeper := execution.NewSweeper(
+				daytonaRunner,
+				cfg.SandboxSweeper.MaxAge,
+				cfg.SandboxSweeper.Interval,
+				nil,
+			)
+			go sweeper.Run(ctx)
+			log.Printf("CodeGym Daytona orphan sweeper scheduled every %s max_age=%s",
+				cfg.SandboxSweeper.Interval, cfg.SandboxSweeper.MaxAge)
+		} else {
+			log.Print("CodeGym Daytona orphan sweeper disabled")
+		}
 	} else {
 		log.Print("CodeGym API execution runner disabled; set DAYTONA_API_KEY to enable")
 	}

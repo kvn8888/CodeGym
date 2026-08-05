@@ -10,22 +10,26 @@ import (
 // sandbox's normal cleanup finishes, regardless of request cancellation.
 type activeRunRegistry struct {
 	mu     sync.RWMutex
-	runIDs map[string]struct{}
+	runIDs map[string]int
 }
 
 func (r *activeRunRegistry) add(runID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.runIDs == nil {
-		r.runIDs = make(map[string]struct{})
+		r.runIDs = make(map[string]int)
 	}
-	r.runIDs[runID] = struct{}{}
+	r.runIDs[runID]++
 }
 
 func (r *activeRunRegistry) remove(runID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.runIDs, runID)
+	if r.runIDs[runID] <= 1 {
+		delete(r.runIDs, runID)
+		return
+	}
+	r.runIDs[runID]--
 }
 
 func (r *activeRunRegistry) contains(runID string) bool {

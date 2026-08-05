@@ -24,3 +24,17 @@ Content-Type: application/json
 
 {"value": 2}
 ```
+
+## Daytona orphan sweeper
+
+When Daytona is configured, the API also runs a conservative background
+sweeper every five minutes. It lists only sandboxes labelled
+`codegym=submission` and deletes one only when it is older than the safety
+margin and its per-run ID is not tracked as active. The default margin is 15
+minutes. A run remains active until both the winner has finished and every
+hedged loser has completed creation and cleanup.
+
+The controls are `CODEGYM_SANDBOX_SWEEPER_DISABLED`,
+`CODEGYM_SANDBOX_SWEEPER_INTERVAL`, and
+`CODEGYM_SANDBOX_SWEEPER_MAX_AGE`. Unknown or malformed creation timestamps are
+left alone.

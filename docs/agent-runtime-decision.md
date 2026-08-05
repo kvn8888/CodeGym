@@ -48,6 +48,89 @@ runs, but all six manifests were malformed under the shared strict schema.
 Neither runtime recorded a policy violation. Aggregate usage was 246,953 tokens
 and $0.853660, below the 300,000-token and $2.00 hard ceilings.
 
+## Milestone 1 diagnosis
+
+The original report does not contain the evidence needed to attribute these as
+two proven root causes. `BenchmarkRun` retained termination, repair count,
+usage, wall time, and only the manifest status. It discarded the turn count,
+tool trace, final prose, `ManifestClaim.Error`, and malformed manifest bytes,
+then deleted all 12 workspaces. Therefore the six historical `malformed`
+statuses are real, but their bytes are irrecoverable and it is not possible to
+quote a historical malformed manifest honestly. That is a harness
+observability defect, and the earlier claim that opencode had a distinct
+manifest-contract bug was stronger than its retained evidence.
+
+To avoid inferring from aggregates, one diagnostic Go fixture was reproduced
+per runtime against the unchanged adapters, prompts, eight-turn ceiling, and
+60-second deadline. A temporary test captured the already-returned values and
+was removed immediately afterward.
+
+### Purpose-built
+
+The loop made concrete progress on every turn. Its actual trace was:
+
+```text
+1 report_progress {"step_id":"inspect","label":"Inspecting workspace"}
+2 shell "pwd && find ..."
+3 read_file {"path":"go.mod"}
+4 write_file {"path":"main.go", ...}
+5 write_file {"path":"main_test.go", ...}
+6 report_progress {"step_id":"implement", ...}
+7 shell "gofmt ... && go test ./... && go build ... && PORT=18080 ..."
+8 shell "set -eu; gofmt ...; go test ./...; go build ...; PORT=18080 ..."
+```
+
+Turn 7 exited 0. Turn 8 repeated the smoke check with safer shell structure,
+but the hard-ceiling rule intentionally refused to dispatch a tool call on the
+last permitted model turn. The workspace already contained `main.go` and
+`main_test.go`; no manifest had been written. Telemetry was exactly eight turns,
+seven executed tools, zero repairs, `turn_ceiling_exhausted`, and 8,559 tokens.
+
+This is not a loop stuck re-reading the same files. Two progress-only turns and
+the repeated smoke command are avoidable overhead, but a normal inspect,
+implement, unit-test, build, boot, probe, manifest, and final-response sequence
+cannot reliably fit in eight model turns when the eighth turn cannot execute a
+tool. The ceiling was simply too low. The two historical Express deadlines also
+show that 60 seconds was not a reliable per-run allowance for its dependency
+and validation path.
+
+### opencode
+
+The unchanged reproduction contradicted the assumption that opencode currently
+finishes and emits malformed JSON. It exited 0 after exactly eight steps with
+no manifest at all. Its real final prose was:
+
+```text
+Maximum steps reached.
+
+Implemented `main.go` and `main_test.go`; `go test ./...` and `go build ./...`
+passed. Remaining: endpoint smoke verification and required
+`.codegym/agent-result.json` manifest were not completed.
+```
+
+The adapter nevertheless labelled the run `completed` because its ceiling
+check only recognizes exhaustion when final prose is empty. The trace contained
+seven tool events and one denied read of opencode's own externalized
+`~/.local/share/opencode/tool-output` file. That denial consumed useful budget
+and was surfaced as a policy violation even though the denied target was
+runtime-owned transient tool output, not another workspace.
+
+The manifest instructions are independently under-specified and stricter than
+their role warrants. Both prompts only say to write strict JSON with
+`version`, `completed`, `summary`, `artifacts`, and `checks`; they give no types
+or worked example. The loader rejects every unknown field and validates
+artifact paths even though the verifier ignores the manifest contents and owns
+the verdict. This contract should be reduced to an unambiguous completion claim
+and should return its exact parse/validation error. That is a supported harness
+fix, but it is not a proven explanation for the six historical malformed files
+because the harness destroyed those bytes.
+
+The evidence therefore supports three harness fixes before another comparison:
+a shared realistic budget for both adapters, truthful opencode ceiling
+classification plus permission handling for its own tool-output files, and a
+minimal explicit manifest claim with preserved diagnostics. It does not support
+tuning only purpose-built or declaring the historical default a runtime win.
+
 ## Qualification
 
 The comparison used 12 isolated temporary host workspaces and deleted all 12.

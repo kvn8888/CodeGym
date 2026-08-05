@@ -21,6 +21,7 @@ import (
 	"github.com/daytona/clients/sdk-go/pkg/daytona"
 	"github.com/daytona/clients/sdk-go/pkg/options"
 	"github.com/daytona/clients/sdk-go/pkg/types"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 const (
@@ -38,6 +39,7 @@ var ErrInfrastructureBusy = errors.New("execution infrastructure is busy; please
 
 type DaytonaRunner struct {
 	client             daytonaSandboxClient
+	environment        environment.Name
 	createBackoff      time.Duration
 	hedgeCountProvider HedgeCountProvider
 	activeRuns         activeRunRegistry
@@ -125,7 +127,10 @@ func (a daytonaSandboxAdapter) Delete(ctx context.Context) error {
 
 // NewDaytonaRunner builds a runner from explicit credentials (loaded from
 // config, not raw env, so tests and main stay explicit).
-func NewDaytonaRunner(apiKey, apiURL string) (*DaytonaRunner, error) {
+func NewDaytonaRunner(apiKey, apiURL string, codegymEnvironment environment.Name) (*DaytonaRunner, error) {
+	if !codegymEnvironment.Valid() {
+		return nil, errors.New("create Daytona runner: CodeGym environment must be dev, stg, or prd")
+	}
 	client, err := daytona.NewClientWithConfig(&types.DaytonaConfig{
 		APIKey: apiKey,
 		APIUrl: apiURL,
@@ -135,6 +140,7 @@ func NewDaytonaRunner(apiKey, apiURL string) (*DaytonaRunner, error) {
 	}
 	return &DaytonaRunner{
 		client:        daytonaClientAdapter{client: client},
+		environment:   codegymEnvironment,
 		createBackoff: defaultCreateBackoff,
 	}, nil
 }
@@ -285,6 +291,9 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 }
 
 func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.SnapshotParams) (daytonaRunnerSandbox, int, error) {
+	if !r.environment.Valid() {
+		return nil, 0, errors.New("create Daytona sandbox: CodeGym environment is not configured")
+	}
 	hedgeCount := 1
 	if r.hedgeCountProvider != nil {
 		hedgeCount = r.hedgeCountProvider.HedgeCount(ctx)
@@ -299,12 +308,13 @@ func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.Snapshot
 	// Clone labels before enriching them so a caller cannot observe mutation of
 	// its map. Every candidate for this run shares one unique run id, making
 	// provisioned orphans discoverable without confusing independent runs.
-	labels := make(map[string]string, len(params.SandboxBaseParams.Labels)+3)
+	labels := make(map[string]string, len(params.SandboxBaseParams.Labels)+4)
 	for key, value := range params.SandboxBaseParams.Labels {
 		labels[key] = value
 	}
 	runID := newID("sandbox_run")
 	labels[codegymSandboxLabel] = codegymSandboxLabelValue
+	labels[codegymEnvironmentLabel] = string(r.environment)
 	labels[codegymRunIDLabel] = runID
 	labels[codegymCreatedAtLabel] = strconv.FormatInt(time.Now().UTC().Unix(), 10)
 	params.SandboxBaseParams.Labels = labels

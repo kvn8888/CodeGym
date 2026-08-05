@@ -1,6 +1,10 @@
 package agentrelay
 
-import "time"
+import (
+	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/environment"
+)
 
 // OperationBudget is the durable authorization and budget state for one
 // workflow operation. The bearer token is stateless; this row is the
@@ -32,6 +36,7 @@ type Claims struct {
 	OperationID string
 	WorkspaceID string
 	UserID      string
+	Environment environment.Name
 	IssuedAt    time.Time
 	ExpiresAt   time.Time
 }

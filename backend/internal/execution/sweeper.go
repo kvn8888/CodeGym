@@ -7,11 +7,14 @@ import (
 	"log"
 	"strconv"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 const (
 	codegymSandboxLabel         = "codegym"
 	codegymSandboxLabelValue    = "submission"
+	codegymEnvironmentLabel     = "codegym-environment"
 	codegymRunIDLabel           = "codegym-run-id"
 	codegymCreatedAtLabel       = "codegym-created-at"
 	defaultSandboxSweepAge      = 15 * time.Minute
@@ -34,11 +37,12 @@ type daytonaSweepClient interface {
 // tracked as active by this runner. The age margin is a second safety boundary
 // around the exact active-run check.
 type Sweeper struct {
-	client   daytonaSweepClient
-	active   *activeRunRegistry
-	maxAge   time.Duration
-	interval time.Duration
-	now      Clock
+	client      daytonaSweepClient
+	active      *activeRunRegistry
+	environment environment.Name
+	maxAge      time.Duration
+	interval    time.Duration
+	now         Clock
 }
 
 // NewSweeper follows the background-worker construction used by memory.Worker.
@@ -55,11 +59,16 @@ func NewSweeper(runner *DaytonaRunner, maxAge, interval time.Duration, clock Clo
 	}
 	var client daytonaSweepClient
 	var active *activeRunRegistry
+	var codegymEnvironment environment.Name
 	if runner != nil {
 		client, _ = runner.client.(daytonaSweepClient)
 		active = &runner.activeRuns
+		codegymEnvironment = runner.environment
 	}
-	return &Sweeper{client: client, active: active, maxAge: maxAge, interval: interval, now: clock}
+	return &Sweeper{
+		client: client, active: active, environment: codegymEnvironment,
+		maxAge: maxAge, interval: interval, now: clock,
+	}
 }
 
 // Run blocks until ctx is canceled and sweeps on each tick.
@@ -87,6 +96,9 @@ func (s *Sweeper) RunOnce(ctx context.Context) (int, error) {
 	if s == nil || s.client == nil || s.active == nil {
 		return 0, errors.New("Daytona orphan sweeper is not configured")
 	}
+	if !s.environment.Valid() {
+		return 0, errors.New("Daytona orphan sweeper environment is not configured")
+	}
 	sandboxes, err := s.client.ListSubmissionSandboxes(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("list CodeGym sandboxes: %w", err)
@@ -97,6 +109,16 @@ func (s *Sweeper) RunOnce(ctx context.Context) (int, error) {
 	var cleanupErrors error
 	for _, sandbox := range sandboxes {
 		if sandbox.labels[codegymSandboxLabel] != codegymSandboxLabelValue {
+			continue
+		}
+		sandboxEnvironment, environmentErr := environment.Parse(sandbox.labels[codegymEnvironmentLabel])
+		if environmentErr != nil {
+			log.Printf("daytona orphan sweeper skipped sandbox_id=%s reason=missing_or_invalid_environment", sandbox.id)
+			continue
+		}
+		if sandboxEnvironment != s.environment {
+			log.Printf("daytona orphan sweeper skipped sandbox_id=%s reason=environment_mismatch sandbox_environment=%s sweeper_environment=%s",
+				sandbox.id, sandboxEnvironment, s.environment)
 			continue
 		}
 		createdAt, ok := conservativeCreatedAt(sandbox)

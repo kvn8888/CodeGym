@@ -1,15 +1,19 @@
 package config
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 // Config contains process configuration loaded from environment variables.
 type Config struct {
+	Environment    environment.Name
 	Host           string
 	Port           string
 	DatabaseURL    string
@@ -141,7 +145,12 @@ var DefaultGenAIProviderOrder = []string{"meta", "azure", "gemini"}
 
 // Load reads environment variables and returns the effective runtime config.
 // If both NEON_CONNECTION_STRING and DATABASE_URL are set, Neon is preferred.
-func Load() Config {
+func Load() (Config, error) {
+	codegymEnvironment, err := environmentEnv()
+	if err != nil {
+		return Config{}, err
+	}
+
 	databaseURL := os.Getenv("NEON_CONNECTION_STRING")
 	if databaseURL == "" {
 		databaseURL = os.Getenv("DATABASE_URL")
@@ -177,6 +186,7 @@ func Load() Config {
 	providers := loadGenAIProviders(order, legacyGenAI)
 
 	return Config{
+		Environment:    codegymEnvironment,
 		Host:           env("CODEGYM_HOST", "127.0.0.1"),
 		Port:           port,
 		DatabaseURL:    databaseURL,
@@ -228,7 +238,22 @@ func Load() Config {
 			MaxWallClock:     positiveDurationEnv("CODEGYM_RELAY_MAX_WALL_CLOCK", 10*time.Minute),
 			PublicModel:      env("CODEGYM_RELAY_MODEL", "codegym-agent"),
 		},
+	}, nil
+}
+
+func environmentEnv() (environment.Name, error) {
+	for _, key := range []string{"CODEGYM_ENVIRONMENT", "DOPPLER_CONFIG", "DOPPLER_ENVIRONMENT"} {
+		value := strings.TrimSpace(os.Getenv(key))
+		if value == "" {
+			continue
+		}
+		resolved, err := environment.Parse(value)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", key, err)
+		}
+		return resolved, nil
 	}
+	return environment.Dev, nil
 }
 
 func memoryRefreshTriggerEnv() string {

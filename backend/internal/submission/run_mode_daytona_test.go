@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/problems"
@@ -23,7 +24,7 @@ func TestRunModeDaytonaPublicCases(t *testing.T) {
 	if apiKey == "" {
 		t.Skip("set DAYTONA_API_KEY via doppler run -p codegym -c dev")
 	}
-	runner, err := execution.NewDaytonaRunner(apiKey, os.Getenv("DAYTONA_API_URL"))
+	runner, err := execution.NewDaytonaRunner(apiKey, os.Getenv("DAYTONA_API_URL"), environment.Dev)
 	if err != nil {
 		t.Fatalf("NewDaytonaRunner: %v", err)
 	}

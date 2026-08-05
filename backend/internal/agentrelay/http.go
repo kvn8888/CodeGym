@@ -254,6 +254,8 @@ func (h *HTTPHandler) authenticate(w http.ResponseWriter, r *http.Request) (Auth
 		message := "Invalid relay bearer token."
 		if errors.Is(err, ErrExpiredToken) {
 			code, message = "token_expired", "Relay bearer token has expired."
+		} else if errors.Is(err, ErrEnvironmentMismatch) {
+			code, message = "token_environment_mismatch", "Relay bearer token belongs to another CodeGym environment."
 		} else if errors.Is(err, ErrRevokedToken) || errors.Is(err, ErrOperationTerminal) {
 			code, message = "token_revoked", "Relay bearer token is no longer active."
 		} else if errors.Is(err, ErrTokenBudget) {

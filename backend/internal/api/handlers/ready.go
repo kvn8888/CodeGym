@@ -13,6 +13,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/kvn8888/codegym/backend/internal/api/response"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 type readinessPinger func(context.Context, string) error
@@ -35,12 +36,12 @@ var pingPostgres readinessPinger = func(ctx context.Context, dsn string) error {
 }
 
 // NewReadyHandler returns an HTTP readiness handler that uses Postgres ping when a DB DSN is configured.
-func NewReadyHandler(databaseDSN string) http.HandlerFunc {
-	return NewReadyHandlerWithPinger(databaseDSN, pingPostgres)
+func NewReadyHandler(databaseDSN string, codegymEnvironment environment.Name) http.HandlerFunc {
+	return NewReadyHandlerWithPinger(databaseDSN, codegymEnvironment, pingPostgres)
 }
 
 // NewReadyHandlerWithPinger builds the readiness handler with an injectable pinger for testability.
-func NewReadyHandlerWithPinger(databaseDSN string, pinger readinessPinger) http.HandlerFunc {
+func NewReadyHandlerWithPinger(databaseDSN string, codegymEnvironment environment.Name, pinger readinessPinger) http.HandlerFunc {
 	if pinger == nil {
 		pinger = pingPostgres
 	}
@@ -50,8 +51,9 @@ func NewReadyHandlerWithPinger(databaseDSN string, pinger readinessPinger) http.
 		if dsn == "" {
 			// In-memory mode has no external dependency to verify.
 			response.JSON(w, http.StatusOK, map[string]string{
-				"status": "ok",
-				"mode":   "memory",
+				"status":      "ok",
+				"mode":        "memory",
+				"environment": string(codegymEnvironment),
 			})
 			return
 		}
@@ -64,8 +66,9 @@ func NewReadyHandlerWithPinger(databaseDSN string, pinger readinessPinger) http.
 
 		// Postgres is configured and reachable.
 		response.JSON(w, http.StatusOK, map[string]string{
-			"status": "ok",
-			"mode":   "postgres",
+			"status":      "ok",
+			"mode":        "postgres",
+			"environment": string(codegymEnvironment),
 		})
 	}
 }

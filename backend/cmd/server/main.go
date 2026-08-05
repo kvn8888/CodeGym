@@ -35,7 +35,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("could not load config: %v", err)
+	}
+	log.Printf("CodeGym environment resolved environment=%s", cfg.Environment)
 
 	authenticator, err := buildAuthenticator(cfg)
 	if err != nil {
@@ -129,7 +133,7 @@ func main() {
 	settingsService := settings.NewService(settingsStore, nil)
 	var executionRunner execution.Runner
 	if cfg.DaytonaAPIKey != "" {
-		daytonaRunner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL)
+		daytonaRunner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL, cfg.Environment)
 		if err != nil {
 			log.Fatalf("could not configure Daytona runner: %v", err)
 		}
@@ -143,8 +147,8 @@ func main() {
 				nil,
 			)
 			go sweeper.Run(ctx)
-			log.Printf("CodeGym Daytona orphan sweeper scheduled every %s max_age=%s",
-				cfg.SandboxSweeper.Interval, cfg.SandboxSweeper.MaxAge)
+			log.Printf("CodeGym Daytona orphan sweeper scheduled every %s max_age=%s environment=%s",
+				cfg.SandboxSweeper.Interval, cfg.SandboxSweeper.MaxAge, cfg.Environment)
 		} else {
 			log.Print("CodeGym Daytona orphan sweeper disabled")
 		}
@@ -213,6 +217,7 @@ func main() {
 			log.Print("CodeGym agent relay disabled: token secret is set but no GenAI provider is configured")
 		} else {
 			relayService, err := agentrelay.NewService(relayStore, agentrelay.ServiceConfig{
+				Environment: cfg.Environment,
 				TokenSecret: cfg.Relay.TokenSecret, TokenTTL: cfg.Relay.TokenTTL,
 				DefaultMaxTotalTokens:   cfg.Relay.MaxTotalTokens,
 				DefaultMaxCostUSDMicros: cfg.Relay.MaxCostUSDMicros,
@@ -277,6 +282,7 @@ func main() {
 		Settings:             settingsService,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		DatabaseURL:          cfg.DatabaseURL,
+		Environment:          cfg.Environment,
 		AgentRelay:           relayHTTPHandler,
 	})
 

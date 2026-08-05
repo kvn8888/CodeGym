@@ -27,6 +27,89 @@ config. That file is machine-specific and should not be committed.
 Never sync or inject `prd` into Vercel — that would expose Neon and GenAI
 credentials to the browser build.
 
+## Environment identity and isolation matrix
+
+Every backend resolves one canonical environment: `dev`, `stg`, or `prd`.
+Set `CODEGYM_ENVIRONMENT` explicitly on deployed services. When it is absent,
+the backend uses `DOPPLER_CONFIG`, then `DOPPLER_ENVIRONMENT`; when none are
+present it defaults to `dev`. Any non-empty value outside the three canonical
+names prevents startup. The explicit CodeGym value always wins. Startup logs
+the resolved name and `GET /ready` returns it as `data.environment`.
+
+The following resources must be distinct in every environment:
+
+| Resource or setting | Required separation | Why |
+| --- | --- | --- |
+| `CODEGYM_ENVIRONMENT` | `dev`, `stg`, and `prd` identify their matching service only. | It is the signed and labelled isolation identity. A wrong value deliberately identifies the service as another environment. |
+| Neon database and `NEON_CONNECTION_STRING` | A separate Neon branch/database credential for each environment. | Database writes have no environment claim beyond the selected database. A shared connection string lets one environment read and write another environment's data. |
+| Daytona account and `DAYTONA_API_KEY` | A separate Daytona credential/account for each environment. | Environment labels prevent cross-environment sweeping, but a shared account still shares quota, billing, provider visibility, and other account-level failure modes. |
+| `CODEGYM_RELAY_TOKEN_SECRET` | A separate signing secret for each environment. | Signed environment claims now reject cross-environment tokens, but separate keys retain cryptographic separation and independent rotation/revocation boundaries. |
+| Doppler service token | A config-scoped token for exactly one backend config. | A broadly scoped or reused token can inject the wrong database, provider, or signing credentials before the service starts. |
+| Render service and frontend deployment/Auth0 application | Separate deployed service URLs, frontend origins, Auth0 clients, callbacks, and matching API audiences. | Authentication redirects, CORS, and access-token audiences must not route a preproduction browser or token into production. |
+
+GenAI provider accounts may be intentionally shared when their data policy
+allows it, but separate keys are preferred for quota, cost attribution, and
+independent rotation. They are not currently an authorization boundary.
+
+### Structural protections and their limits
+
+- Every Daytona sandbox created by the runner has both `codegym=submission` and
+  `codegym-environment=<dev|stg|prd>` labels. The orphan sweeper deletes only
+  old sandboxes with its exact environment label. It logs and skips another
+  environment, a missing label, or an unrecognised label.
+- Every operation-scoped relay token carries its environment inside the signed
+  payload. A validating service returns a distinct environment-mismatch error
+  before accepting a token minted for another environment, even if both
+  services share the same HMAC secret.
+- Config parsing, startup logs, and the readiness payload make the resolved
+  environment observable and reject unrecognised names.
+
+These protections limit damage from credential reuse; they do not make shared
+configuration correct. In particular, no application-level label can stop a
+`dev` process from writing through a production Neon connection string. Keep
+all resources above distinct and run the check below after configuration work.
+
+## Repeatable isolation check
+
+Authenticate the Doppler CLI with read access, then run from the repository:
+
+```bash
+cd backend
+GOCACHE=/private/tmp/cg-env go run ./cmd/environment-isolation-check
+```
+
+The command reads `codegym/dev`, `codegym/stg`, and `codegym/prd` using
+`doppler secrets download` with the encrypted fallback file
+`/private/tmp/codegym-doppler-fallback`. It checks at least
+`NEON_CONNECTION_STRING`, `DAYTONA_API_KEY`, and
+`CODEGYM_RELAY_TOKEN_SECRET`. The table contains eight hexadecimal characters
+from each SHA-256 fingerprint and overlap groups such as `dev=prd`; it never
+prints a secret value or raw Doppler subprocess output.
+
+Exit status `0` means all checked values are present and distinct. Status `1`
+means an overlap or missing required value was found. Status `2` means the
+check could not read or decode a Doppler config. This command is intentionally
+not a CI gate yet because configuration remediation is handled separately.
+
+## Motivating incident: 2026-08-05
+
+A manual SHA-256 comparison on August 5, 2026 found all three isolation
+failures below. The eight-character strings are historical fingerprints, not
+secret values:
+
+| Secret | `dev` | `stg` | `prd` | Historical overlap |
+| --- | --- | --- | --- | --- |
+| `NEON_CONNECTION_STRING` | `99fbce0f` | `c207f786` | `99fbce0f` | `dev=prd` |
+| `DAYTONA_API_KEY` | `b8a8e818` | `c4c5ab35` | `c4c5ab35` | `stg=prd` |
+| `CODEGYM_RELAY_TOKEN_SECRET` | `f9ea6c31` | `f9ea6c31` | `f9ea6c31` | `dev=stg=prd` |
+
+The concrete consequences were local development writing to the production
+database, the staging sweeper being able to delete production sandboxes in the
+shared Daytona account, and relay tokens minted in development or staging
+validating in production. The sandbox-label and signed-token protections above
+now block the latter two cross-environment paths. Correct Neon separation and
+all other resource separation remain mandatory.
+
 ## Local development
 
 ### Backend
@@ -83,7 +166,8 @@ Vite proxies `/api` to `http://localhost:8080`.
 
 | Name | Required | Purpose |
 | --- | --- | --- |
-| `NEON_CONNECTION_STRING` | Yes for durable memory | Neon/Postgres connection string. |
+| `CODEGYM_ENVIRONMENT` | Yes | Runtime isolation identity: exactly `dev`, `stg`, or `prd`. Explicit value wins over Doppler metadata; default is `dev`. |
+| `NEON_CONNECTION_STRING` | Yes for durable memory | Neon/Postgres connection string. Each Doppler config must use its own Neon branch: `dev` → branch `dev`, `stg` → `staging`, `prd` → `production`. Never point `codegym/dev` at production. |
 | `CODEGYM_AUTH_MODE` | Production | Auth mode (`auth0` or dev). |
 | `CODEGYM_AUTH0_DOMAIN` | When Auth0 | Auth0 tenant domain (e.g. `dev-….us.auth0.com`). |
 | `CODEGYM_AUTH0_AUDIENCE` | When Auth0 | **Auth0 API Identifier** for the CodeGym API (e.g. `https://api.codegym.app`). Must match `VITE_AUTH0_AUDIENCE`. **Not** `https://…auth0.com/api/v2/` (Management API). |
@@ -92,6 +176,7 @@ Vite proxies `/api` to `http://localhost:8080`.
 | `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for protected routes. |
 | `CODEGYM_DEV_TENANT_ID` | Optional | Default personal tenant for static-token auth. |
 | `DAYTONA_API_KEY` / `DAYTONA_API_URL` | Coding demo | Daytona sandbox access for real hidden-test execution. |
+| `CODEGYM_RELAY_TOKEN_SECRET` | Agent relay | HMAC signing secret, at least 32 bytes and distinct per environment. Tokens also carry the signed environment claim. |
 | `VERCEL_API_GATEWAY` | Optional | Vercel AI Gateway key (not used by the multi-provider router today). |
 
 ### GenAI multi-provider registry

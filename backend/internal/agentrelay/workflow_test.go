@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/auth"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 	"github.com/kvn8888/codegym/backend/internal/workflow"
 	"github.com/kvn8888/codegym/backend/internal/workspace"
 )
@@ -15,6 +16,7 @@ func TestWorkflowIssuesAndRevokesRelayToken(t *testing.T) {
 	workflowService := workflow.NewService(workflow.NewInMemoryStore(), func() time.Time { return now })
 	relayStore := NewInMemoryStore()
 	relayService, err := NewService(relayStore, ServiceConfig{
+		Environment: environment.Dev,
 		TokenSecret: testSecret, TokenTTL: 15 * time.Minute,
 		DefaultMaxTotalTokens: 100_000, DefaultMaxCostUSDMicros: 5_000_000,
 		DefaultMaxWallClock: 10 * time.Minute,

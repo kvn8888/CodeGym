@@ -11,6 +11,11 @@ const (
 	KindProblem   Kind = "problem"
 	KindMCQ       Kind = "mcq"
 	KindInterview Kind = "interview"
+	// The problem pipeline uses distinct internal kinds so usage and diagnostics
+	// preserve which isolated role made each structured model call.
+	KindProblemSpec      Kind = "problem_spec"
+	KindProblemTests     Kind = "problem_tests"
+	KindProblemReference Kind = "problem_reference"
 	// KindPracticeIntake is the internal typed baseline-question generation pass.
 	// It is exposed through /practice-intakes rather than /generate.
 	KindPracticeIntake Kind = "practice_intake"

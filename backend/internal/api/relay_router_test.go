@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/agentrelay"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 	"github.com/kvn8888/codegym/backend/internal/usage"
 )
 
@@ -28,6 +29,7 @@ func (relayRouterTransport) RedactProviderSecrets(payload []byte) []byte { retur
 
 func TestAgentRelayRouteUsesOperationAuthOutsideProtectedChain(t *testing.T) {
 	tokens, err := agentrelay.NewService(agentrelay.NewInMemoryStore(), agentrelay.ServiceConfig{
+		Environment: environment.Dev,
 		TokenSecret: "router-test-secret-at-least-thirty-two-bytes",
 		TokenTTL:    5 * time.Minute, DefaultMaxTotalTokens: 10_000,
 		DefaultMaxCostUSDMicros: 1_000_000, DefaultMaxWallClock: 10 * time.Minute,

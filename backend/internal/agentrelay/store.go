@@ -7,16 +7,17 @@ import (
 )
 
 var (
-	ErrNotFound          = errors.New("relay operation budget not found")
-	ErrConflict          = errors.New("relay operation budget already exists")
-	ErrInvalidToken      = errors.New("invalid relay token")
-	ErrExpiredToken      = errors.New("relay token expired")
-	ErrRevokedToken      = errors.New("relay token revoked")
-	ErrOperationMismatch = errors.New("relay token is scoped to another operation")
-	ErrOperationTerminal = errors.New("workflow operation is terminal")
-	ErrTokenBudget       = errors.New("relay token budget is exhausted")
-	ErrCostBudget        = errors.New("relay cost budget is exhausted")
-	ErrDeadline          = errors.New("relay operation deadline has passed")
+	ErrNotFound            = errors.New("relay operation budget not found")
+	ErrConflict            = errors.New("relay operation budget already exists")
+	ErrInvalidToken        = errors.New("invalid relay token")
+	ErrEnvironmentMismatch = errors.New("relay token is scoped to another environment")
+	ErrExpiredToken        = errors.New("relay token expired")
+	ErrRevokedToken        = errors.New("relay token revoked")
+	ErrOperationMismatch   = errors.New("relay token is scoped to another operation")
+	ErrOperationTerminal   = errors.New("workflow operation is terminal")
+	ErrTokenBudget         = errors.New("relay token budget is exhausted")
+	ErrCostBudget          = errors.New("relay cost budget is exhausted")
+	ErrDeadline            = errors.New("relay operation deadline has passed")
 )
 
 // Store persists relay authorization and budget state. Every read and update

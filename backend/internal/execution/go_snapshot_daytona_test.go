@@ -35,9 +35,9 @@ func TestDaytonaDefaultSnapshotGoProbe(t *testing.T) {
 }
 
 // TestBuildGoSnapshot is the documented, opt-in snapshot builder. It creates a
-// network-enabled sandbox, installs the pinned official Go toolchain, builds a
-// smoke program, promotes the sandbox, then validates the promoted snapshot
-// with all network access blocked.
+// network-enabled sandbox, installs the pinned official Go toolchain, warms the
+// persistent run-user GOCACHE with representative HTTP imports, promotes the
+// sandbox, then validates the promoted snapshot with all network access blocked.
 func TestBuildGoSnapshot(t *testing.T) {
 	if os.Getenv("CODEGYM_BUILD_GO_SNAPSHOT") != "1" {
 		t.Skip("set CODEGYM_BUILD_GO_SNAPSHOT=1 to build the registered Go snapshot")
@@ -74,10 +74,44 @@ $privilege rm -rf /usr/local/go
 $privilege tar -C /usr/local -xzf "$archive"
 $privilege ln -sf /usr/local/go/bin/go /usr/local/bin/go
 go version
+cache=$(go env GOCACHE)
+mkdir -p "$cache"
+test -r "$cache" && test -w "$cache"
 workdir=$(mktemp -d)
-printf 'package main\nimport "fmt"\nfunc main(){fmt.Println("snapshot-ok")}\n' > "$workdir/main.go"
+cat > "$workdir/main.go" <<'EOF'
+package main
+
+import (
+  "encoding/json"
+  "net/http"
+  "net/http/httptest"
+  "os"
+  "sync"
+)
+
+func main() {
+  var mu sync.Mutex
+  mux := http.NewServeMux()
+  mux.HandleFunc("GET /health", func(response http.ResponseWriter, _ *http.Request) {
+    mu.Lock()
+    defer mu.Unlock()
+    response.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(response).Encode(map[string]bool{"healthy": true})
+  })
+  response := httptest.NewRecorder()
+  mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
+  if response.Code != http.StatusOK {
+    os.Exit(1)
+  }
+  _, _ = os.Stdout.Write(response.Body.Bytes())
+}
+EOF
+started_ns=$(date +%%s%%N)
 go build -o "$workdir/smoke" "$workdir/main.go"
-test "$("$workdir/smoke")" = snapshot-ok`, GoToolchainVersion)
+finished_ns=$(date +%%s%%N)
+output=$("$workdir/smoke")
+test "$output" = '{"healthy":true}'
+printf 'gocache=%%s warm_compile_ms=%%d output=%%s\n' "$cache" "$(((finished_ns-started_ns)/1000000))" "$output"`, GoToolchainVersion)
 	result, err := builder.Process.ExecuteCommand(ctx, installCommand, options.WithExecuteTimeout(6*time.Minute))
 	if err != nil {
 		t.Fatalf("install Go toolchain: %v", err)
@@ -110,12 +144,47 @@ func validateGoSnapshot(t *testing.T, ctx context.Context, client *daytona.Clien
 	if err := sandbox.FileSystem.CreateFolder(ctx, "work"); err != nil {
 		t.Fatalf("create smoke work directory: %v", err)
 	}
-	program := []byte("package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"snapshot-ok\") }\n")
+	program := []byte(`package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"sync"
+)
+
+func main() {
+	var mu sync.Mutex
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(response http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]bool{"healthy": true})
+	})
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if response.Code != http.StatusOK {
+		os.Exit(1)
+	}
+	_, _ = os.Stdout.Write(response.Body.Bytes())
+}
+`)
 	if err := sandbox.FileSystem.UploadFile(ctx, program, "work/main.go"); err != nil {
 		t.Fatalf("upload smoke program: %v", err)
 	}
 	result, err := sandbox.Process.ExecuteCommand(ctx,
-		"cd ~/work && go version && go build -o smoke main.go && test \"$(./smoke)\" = snapshot-ok",
+		`cd ~/work && set -eu
+go version
+cache=$(go env GOCACHE)
+test -r "$cache" && test -w "$cache"
+started_ns=$(date +%s%N)
+go build -o smoke main.go
+finished_ns=$(date +%s%N)
+output=$(./smoke)
+test "$output" = '{"healthy":true}'
+printf 'gocache=%s compile_ms=%d output=%s\n' "$cache" "$(((finished_ns-started_ns)/1000000))" "$output"`,
 		options.WithExecuteTimeout(45*time.Second),
 	)
 	if err != nil {
@@ -124,7 +193,7 @@ func validateGoSnapshot(t *testing.T, ctx context.Context, client *daytona.Clien
 	if result.ExitCode != 0 {
 		t.Fatalf("Go snapshot validation exited %d: %s", result.ExitCode, result.Result)
 	}
-	t.Logf("network-blocked snapshot %s compiled and ran Go: %s", GoSnapshotName, strings.TrimSpace(result.Result))
+	t.Logf("network-blocked snapshot %s compiled and ran a Go HTTP program: %s", GoSnapshotName, strings.TrimSpace(result.Result))
 }
 
 func daytonaTestClient(t *testing.T) *daytona.Client {

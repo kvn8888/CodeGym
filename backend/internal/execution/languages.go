@@ -7,7 +7,7 @@ import (
 
 const (
 	GoToolchainVersion = "1.25.4"
-	GoSnapshotName     = "codegym-go-1-25-4-v1"
+	GoSnapshotName     = "codegym-go-1-25-4-v2"
 )
 
 // Language describes how to execute a submission for one runtime.

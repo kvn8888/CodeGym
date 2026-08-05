@@ -273,6 +273,29 @@ the warm cache and adding the precompiled HTTP harness. V2 is deliberately
 retained; rollback requires only changing `GoSnapshotName` back to
 `GoSnapshotV2Name`.
 
+The complete Go/HTTP Daytona gate was rerun on v3 on 2026-08-04:
+
+```bash
+doppler run -p codegym -c dev -- \
+  go test ./internal/execution -run 'TestHTTP|TestGo' -count=1 -v
+```
+
+All tests passed. Structured runner timings were:
+
+| matrix | n | create median | upload median | exec median | total median |
+|---|---:|---:|---:|---:|---:|
+| Go unit | 6 | 935.5 ms | 398.5 ms | 631 ms | 2,049 ms |
+| Go HTTP | 9 | 903 ms | 452 ms | 1,287 ms | 2,772 ms |
+| combined | 15 | 906 ms | 444 ms | 1,281 ms | 2,623 ms |
+
+The #163 acceptance baseline spanned roughly 1.2–3.7 s create, 2.0 s upload,
+0.6–5.3 s exec, and 3.9–9.1 s total. That earlier batch was not interleaved with
+this one, so only the dedicated 15+15 v2/v3 create experiment above supports a
+causal snapshot-promotion decision. The HTTP matrix also proved the matching
+snapshot harness is selected and a deliberately mismatched hash falls back to
+runtime compilation with an identical verdict; its two individual timings are
+functional evidence, not a latency estimate.
+
 Go problem runs use a 1,024 MB supervised address-space ceiling. The 2026-08-03
 acceptance run proved that 256 MB caused `go build` to fail before the harness
 started; at 1,024 MB the same network-blocked snapshot passed solution, failure,

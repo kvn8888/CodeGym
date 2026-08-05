@@ -115,7 +115,7 @@ func runLocalGoHarness(t *testing.T, solution string) (JudgeResult, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, "python3", ".codegym/supervisor.py",
-		"--work-dir", ".codegym", "--timeout-seconds", "20", "--memory-mb", "256", "--output-cap-bytes", "65536",
+		"--work-dir", ".codegym", "--timeout-seconds", "20", "--memory-mb", "1024", "--output-cap-bytes", "65536",
 		"--", "python3", ".codegym/compile_and_run.py",
 	)
 	command.Dir = root

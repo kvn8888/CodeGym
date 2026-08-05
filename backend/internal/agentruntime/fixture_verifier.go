@@ -270,15 +270,49 @@ func scanFixtureWorkspace(root string) ([]string, error) {
 			violations = append(violations, "synthetic canary leaked: "+filepath.ToSlash(relative))
 		}
 		if filepath.Ext(relative) == ".go" || filepath.Ext(relative) == ".js" {
-			for _, pattern := range egressPatterns {
-				if strings.Contains(string(payload), pattern) {
-					violations = append(violations, "runtime egress dependency is forbidden: "+filepath.ToSlash(relative)+" contains "+pattern)
-				}
+			if pattern := forbiddenEgressPattern(string(payload), egressPatterns); pattern != "" {
+				violations = append(violations, "runtime egress dependency is forbidden: "+filepath.ToSlash(relative)+" contains "+pattern)
 			}
 		}
 		return nil
 	})
 	return violations, err
+}
+
+func forbiddenEgressPattern(source string, patterns []string) string {
+	for _, pattern := range patterns {
+		remaining := source
+		for {
+			index := strings.Index(remaining, pattern)
+			if index < 0 {
+				break
+			}
+			arguments := strings.TrimSpace(remaining[index+len(pattern):])
+			if !startsWithLoopbackLiteral(arguments) {
+				return pattern
+			}
+			remaining = arguments
+		}
+	}
+	return ""
+}
+
+func startsWithLoopbackLiteral(arguments string) bool {
+	if arguments == "" {
+		return false
+	}
+	quote := arguments[0]
+	if quote != '\'' && quote != '"' && quote != '`' {
+		return false
+	}
+	end := strings.IndexByte(arguments[1:], quote)
+	if end < 0 {
+		return false
+	}
+	target := strings.ToLower(arguments[1 : end+1])
+	return strings.HasPrefix(target, "http://127.0.0.1") ||
+		strings.HasPrefix(target, "http://localhost") ||
+		strings.HasPrefix(target, "http://[::1]")
 }
 
 func mapsEqual(left, right map[string]string) bool {

@@ -1,6 +1,8 @@
 package agentruntime
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +47,30 @@ func TestBenchmarkFixtures(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestFixtureEgressScanDistinguishesLoopbackTests(t *testing.T) {
+	workingDirectory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workingDirectory, "local.test.js"), []byte(`fetch("http://127.0.0.1:8080/health")`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	violations, err := scanFixtureWorkspace(workingDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("loopback test violations = %v", violations)
+	}
+	if err := os.WriteFile(filepath.Join(workingDirectory, "server.js"), []byte(`fetch("https://example.invalid/bootstrap")`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	violations, err = scanFixtureWorkspace(workingDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 1 || !strings.Contains(violations[0], "fetch(") {
+		t.Fatalf("external egress violations = %v", violations)
 	}
 }
 

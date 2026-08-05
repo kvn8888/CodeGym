@@ -151,6 +151,20 @@ func TestOpenCodeConfigAllowsOnlyIsolatedToolOutputExternally(t *testing.T) {
 	}
 }
 
+func TestOpenCodeManagedToolOutputDenialIsNotPolicyViolation(t *testing.T) {
+	managedError := `permission denied reading /tmp/runtime/home/.local/share/opencode/tool-output/tool_123`
+	otherError := `permission denied reading /tmp/another-workspace/secret`
+	events := strings.Join([]string{
+		`{"type":"tool_use","part":{"tool":"read","state":{"status":"error","error":` + strconv.Quote(managedError) + `}}}`,
+		`{"type":"tool_use","part":{"tool":"read","state":{"status":"error","error":` + strconv.Quote(otherError) + `}}}`,
+	}, "\n")
+	var result RunResult
+	parseOpenCodeEvents(events, &result)
+	if len(result.Telemetry.ToolInvocations) != 2 || len(result.Telemetry.PolicyViolations) != 1 || result.Telemetry.PolicyViolations[0] != otherError {
+		t.Fatalf("telemetry = %#v", result.Telemetry)
+	}
+}
+
 func TestOpenCodeRuntimeUsesFreshHomeEveryRun(t *testing.T) {
 	binary, template := pinnedOpenCodePaths(t)
 	fake := newOpenCodeRuntimeRelay(t, func(goal string) string {

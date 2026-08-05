@@ -329,12 +329,17 @@ func parseOpenCodeEvents(output string, result *RunResult) {
 				}
 			}
 			result.Telemetry.ToolInvocations = append(result.Telemetry.ToolInvocations, invocation)
-			if event.Part.State.Status == "error" && strings.Contains(strings.ToLower(event.Part.State.Error), "permission") {
+			if event.Part.State.Status == "error" && strings.Contains(strings.ToLower(event.Part.State.Error), "permission") && !isManagedToolOutputDenial(event.Part.State.Error) {
 				result.Telemetry.PolicyViolations = append(result.Telemetry.PolicyViolations, event.Part.State.Error)
 			}
 		}
 	}
 	result.Prose = prose.String()
+}
+
+func isManagedToolOutputDenial(detail string) bool {
+	normalized := filepath.ToSlash(strings.ToLower(detail))
+	return strings.Contains(normalized, "/.local/share/opencode/tool-output/")
 }
 
 func fromOpenCodeTool(name string) Tool {

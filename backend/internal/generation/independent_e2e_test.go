@@ -55,11 +55,14 @@ func (r *recordingGenerator) snapshot() []recordedGenerationCall {
 // real provider plus Daytona verification path. It intentionally generates
 // exactly two problems: one Python unit problem and one Go HTTP problem.
 func TestIndependentGeneration(t *testing.T) {
-	cfg := config.Load()
+	cfg, cfgErr := config.Load()
+	if cfgErr != nil {
+		t.Fatalf("config.Load: %v", cfgErr)
+	}
 	if cfg.DaytonaAPIKey == "" || len(cfg.GenAIProviders) == 0 {
 		t.Skip("set Daytona and GenAI credentials via doppler run -p codegym -c dev")
 	}
-	runner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL)
+	runner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL, cfg.Environment)
 	if err != nil {
 		t.Fatalf("NewDaytonaRunner: %v", err)
 	}

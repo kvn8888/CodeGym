@@ -22,7 +22,10 @@ func TestInterleavedRuntimeBenchmark(t *testing.T) {
 	if os.Getenv("CODEGYM_RUN_AGENT_RUNTIME_BENCHMARK") != "1" {
 		t.Skip("set CODEGYM_RUN_AGENT_RUNTIME_BENCHMARK=1 under Doppler to run the bounded model benchmark")
 	}
-	cfg := config.Load()
+	cfg, cfgErr := config.Load()
+	if cfgErr != nil {
+		t.Fatalf("config.Load: %v", cfgErr)
+	}
 	if len(cfg.GenAIProviders) == 0 {
 		t.Fatal("no GenAI provider is configured")
 	}

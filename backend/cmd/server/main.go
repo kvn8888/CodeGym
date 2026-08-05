@@ -126,13 +126,14 @@ func main() {
 		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
 
+	settingsService := settings.NewService(settingsStore, nil)
 	var executionRunner execution.Runner
 	if cfg.DaytonaAPIKey != "" {
 		daytonaRunner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL)
 		if err != nil {
 			log.Fatalf("could not configure Daytona runner: %v", err)
 		}
-		executionRunner = daytonaRunner
+		executionRunner = daytonaRunner.WithHedgeCountProvider(settingsService)
 		log.Print("CodeGym API execution runner: Daytona")
 	} else {
 		log.Print("CodeGym API execution runner disabled; set DAYTONA_API_KEY to enable")
@@ -142,7 +143,6 @@ func main() {
 	memoryService := memory.NewService(memoryStore, nil)
 	sessionService := session.NewService(sessionStore, nil)
 	usageService := usage.NewService(usageStore, nil)
-	settingsService := settings.NewService(settingsStore, nil)
 	executionService := execution.NewService(executionStore, executionRunner, nil)
 	problemService := problems.NewService(problemStore)
 	if cfg.SeedDemo {

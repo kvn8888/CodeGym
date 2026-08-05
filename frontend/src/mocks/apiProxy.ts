@@ -11,6 +11,7 @@ import type {
   Problem,
   Submission,
   SubmissionFile,
+  SubmissionMode,
   TestResult,
   UserMemoryProfile,
   UserProfile,
@@ -77,6 +78,7 @@ interface MockProblemFixture {
 }
 
 let mockProblemFixture: MockProblemFixture | null = null;
+const mockSubmissions = new Map<string, { mode: SubmissionMode; problemId?: string }>();
 
 export function setMockProblemFixture(fixture: MockProblemFixture | null) {
   mockProblemFixture = fixture ? structuredClone(fixture) : null;
@@ -642,17 +644,49 @@ export async function mockApiFetch(
   }
 
   if (method === 'POST' && path === '/submissions') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as { mode?: SubmissionMode; problem_id?: string };
+    const mode = body.mode ?? 'submit';
+    const submissionId = `mock-submission-${Date.now()}`;
+    mockSubmissions.set(submissionId, { mode, problemId: body.problem_id });
     return json(
-      { submission_id: `mock-submission-${Date.now()}`, memory_update_status: 'synced' },
+      {
+        submission_id: submissionId,
+        ...(mode === 'submit' ? { memory_update_status: 'synced' } : {}),
+      },
       { status: 202 },
     );
   }
 
   const submissionMatch = path.match(/^\/submissions\/([^/]+)$/);
   if (method === 'GET' && submissionMatch) {
+    const record = mockSubmissions.get(submissionMatch[1]);
+    const mode = record?.mode ?? 'submit';
+    const baseResult = mockProblemFixture?.result ?? mockPassingResult;
+    const submittedProblem =
+      mockProblemFixture && mockProblemFixture.problem.id === record?.problemId
+        ? mockProblemFixture.problem
+        : mockProblems.find((problem) => problem.id === record?.problemId);
+    const executedCount =
+      mode === 'run' ? (submittedProblem?.public_cases?.length ?? 0) : baseResult.total;
+    const testCases =
+      mode === 'run' ? baseResult.test_cases.slice(0, executedCount) : baseResult.test_cases;
+    const passed = testCases.filter((testCase) => testCase.status === 'pass').length;
+    const result: TestResult =
+      mode === 'run'
+        ? {
+            ...baseResult,
+            total: executedCount,
+            passed,
+            failed: executedCount - passed,
+            test_cases: testCases,
+          }
+        : baseResult;
     const submission: Submission = {
       status: 'completed',
-      result: mockProblemFixture?.result ?? mockPassingResult,
+      mode,
+      executed_count: executedCount,
+      result,
       stdout: '',
       output_truncated: false,
     };

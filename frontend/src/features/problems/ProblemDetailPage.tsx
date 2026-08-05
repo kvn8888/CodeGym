@@ -18,8 +18,10 @@ import type {
   Problem,
   Submission,
   SubmissionFile,
+  SubmissionMode,
   SubmissionStatus,
   TestCaseResult,
+  TestResult,
 } from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 
@@ -103,6 +105,29 @@ function isTerminalFailureSubmission(
   return submission.status in terminalFailurePresentation;
 }
 
+function submissionModeLabel(mode: SubmissionMode | undefined) {
+  return mode === 'run' ? 'SAMPLE RUN' : 'GRADED SUBMIT';
+}
+
+function submissionResultSummary(submission: Submission, result?: TestResult) {
+  const executedCount = submission.executed_count ?? result?.total ?? 0;
+  const caseLabel = executedCount === 1 ? 'case' : 'cases';
+
+  if (!result) {
+    return submission.mode === 'run'
+      ? `${executedCount} sample ${caseLabel} executed`
+      : `${executedCount} ${caseLabel} executed`;
+  }
+
+  if (submission.mode === 'run') {
+    return result.status === 'pass'
+      ? `${executedCount} sample ${caseLabel} passed`
+      : `${result.passed} of ${executedCount} sample ${caseLabel} passed`;
+  }
+
+  return `${result.passed} of ${executedCount} passed`;
+}
+
 function CapturedStdout({ submission }: { submission: Submission }) {
   if (!submission.stdout && !submission.output_truncated) return null;
   return (
@@ -136,6 +161,7 @@ export function ProblemDetailPage({
   const sessionStateRef = useRef<Record<string, unknown>>({ schema_version: 1 });
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runRequestRef = useRef(0);
+  const submissionInFlightRef = useRef(false);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [files, setFiles] = useState<SubmissionFile[]>([]);
   const [activeFile, setActiveFile] = useState(0);
@@ -143,6 +169,7 @@ export function ProblemDetailPage({
   const [resumedDraft, setResumedDraft] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [submitting, setSubmitting] = useState(false);
+  const [activeSubmissionMode, setActiveSubmissionMode] = useState<SubmissionMode | null>(null);
   const [submission, setSubmission] = useState<Submission | null>(initialSubmission);
   const [hintsRevealed, setHintsRevealed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -504,18 +531,22 @@ export function ProblemDetailPage({
     }
   }, []);
 
-  const handleSubmit = async () => {
-    if (!problem || !sessionId) return;
+  const handleSubmit = async (mode: SubmissionMode) => {
+    if (!problem || !sessionId || submissionInFlightRef.current) return;
+    submissionInFlightRef.current = true;
     const requestID = runRequestRef.current + 1;
     runRequestRef.current = requestID;
     const submittedFiles = filesRef.current;
     setSubmitting(true);
+    setActiveSubmissionMode(mode);
     setSubmission(null);
     setError(null);
     try {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       await persistDraft(submittedFiles, hintsRef.current);
-      setMemoryUpdateStatus('pending');
+      if (mode === 'submit') {
+        setMemoryUpdateStatus('pending');
+      }
       const res = await api.post<{
         submission_id: string;
         memory_update_status?: 'synced' | 'failed';
@@ -523,6 +554,7 @@ export function ProblemDetailPage({
         problem_id: problem.id,
         session_id: sessionId,
         files: submittedFiles,
+        mode,
       });
       sessionStateRef.current = {
         ...sessionStateRef.current,
@@ -531,7 +563,7 @@ export function ProblemDetailPage({
           ? { memory_update_status: res.memory_update_status }
           : {}),
       };
-      if (res.memory_update_status) {
+      if (mode === 'submit' && res.memory_update_status) {
         setMemoryUpdateStatus(res.memory_update_status);
       }
 
@@ -552,10 +584,20 @@ export function ProblemDetailPage({
       }
     } catch (err) {
       if (runRequestRef.current === requestID) {
-        setError(err instanceof Error ? err.message : 'Submission failed.');
+        setError(
+          err instanceof Error
+            ? err.message
+            : mode === 'run'
+              ? 'Run failed.'
+              : 'Submission failed.',
+        );
       }
     } finally {
-      if (runRequestRef.current === requestID) setSubmitting(false);
+      if (runRequestRef.current === requestID) {
+        submissionInFlightRef.current = false;
+        setSubmitting(false);
+        setActiveSubmissionMode(null);
+      }
     }
   };
 
@@ -697,29 +739,44 @@ export function ProblemDetailPage({
       {/* Right: Editor + Results */}
       <div ref={rightPaneRef} className="min-w-0 flex-1 flex flex-col bg-[#1e1e1e]">
         {/* File tabs */}
-        <div className="flex items-center border-b border-[#333] bg-[#252526]">
-          {files.map((file, i) => (
+        <div className="border-b border-[#333] bg-[#252526]">
+          <div className="flex items-center border-b border-[#333]">
+            {files.map((file, i) => (
+              <button
+                key={file.path}
+                onClick={() => setActiveFile(i)}
+                className={`px-4 py-2 text-xs border-r border-[#333] transition-colors ${
+                  i === activeFile
+                    ? 'bg-[#1e1e1e] text-[#ccc]'
+                    : 'text-[#666] hover:text-[#ccc]'
+                }`}
+              >
+                {file.path}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2">
+            <p className="flex-1 text-[10px] leading-4 text-[#858585]">
+              Run checks sample cases. Submit grades the full hidden suite.
+            </p>
             <button
-              key={file.path}
-              onClick={() => setActiveFile(i)}
-              className={`px-4 py-2 text-xs border-r border-[#333] transition-colors ${
-                i === activeFile
-                  ? 'bg-[#1e1e1e] text-[#ccc]'
-                  : 'text-[#666] hover:text-[#ccc]'
-              }`}
+              type="button"
+              onClick={() => void handleSubmit('run')}
+              disabled={submitting || !sessionId}
+              className="rounded-md border border-[#555] bg-[#2d2d2d] px-4 py-1.5 text-sm font-medium text-[#ccc] transition-colors hover:bg-[#333] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
             >
-              {file.path}
+              {submitting && activeSubmissionMode === 'run' ? 'RUNNING' : 'RUN'}
             </button>
-          ))}
-          <div className="flex-1" />
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !sessionId}
-            className="m-1.5 rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
-            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
-          >
-            {submitting ? 'RUNNING' : 'RUN'}
-          </button>
+            <button
+              type="button"
+              onClick={() => void handleSubmit('submit')}
+              disabled={submitting || !sessionId}
+              className="rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
+              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+            >
+              {submitting && activeSubmissionMode === 'submit' ? 'SUBMITTING' : 'SUBMIT'}
+            </button>
+          </div>
         </div>
 
         {/* Editor */}
@@ -794,19 +851,21 @@ export function ProblemDetailPage({
                       {result.status === 'pass' ? 'PASS' : 'FAIL'}
                     </span>
                     <span className="text-[10px] text-[#666]">
-                      {result.passed}/{result.total} {'\u2014'} {result.duration_ms}ms
+                      {submissionModeLabel(submission.mode)} {'\u00b7'}{' '}
+                      {submissionResultSummary(submission, result)} {'\u00b7'}{' '}
+                      {result.duration_ms}ms
                     </span>
-                    {memoryUpdateStatus === 'pending' && (
+                    {submission.mode !== 'run' && memoryUpdateStatus === 'pending' && (
                       <span className="ml-auto text-[10px] text-[#dcdcaa]">
                         UPDATING MEMORY
                       </span>
                     )}
-                    {memoryUpdateStatus === 'synced' && (
+                    {submission.mode !== 'run' && memoryUpdateStatus === 'synced' && (
                       <span className="ml-auto text-[10px] text-[#4ec9b0]">
                         MEMORY UPDATED
                       </span>
                     )}
-                    {memoryUpdateStatus === 'failed' && (
+                    {submission.mode !== 'run' && memoryUpdateStatus === 'failed' && (
                       <button
                         type="button"
                         onClick={() => void retryMemoryUpdate()}
@@ -855,6 +914,10 @@ export function ProblemDetailPage({
                       className={`text-xs font-bold ${terminalFailurePresentation[terminalFailure.status].tone}`}
                     >
                       {terminalFailurePresentation[terminalFailure.status].label}
+                    </span>
+                    <span className="text-[10px] text-[#666]">
+                      {submissionModeLabel(terminalFailure.mode)} {'\u00b7'}{' '}
+                      {submissionResultSummary(terminalFailure)}
                     </span>
                   </div>
                   <p className="px-4 py-3 font-mono text-[11px] leading-5 text-[#b8b8b8]">

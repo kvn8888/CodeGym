@@ -293,7 +293,7 @@ func TestGoHTTPStrategyBuildsAndRunsServerDefinition(t *testing.T) {
 		t.Fatalf("Go HTTP definition = %#v", definition)
 	}
 	if definition.Entrypoint != goHTTPLauncherPath || definition.Files.Skeleton[0].Path != "main.go" ||
-		definition.TestConfig.ReadinessTimeoutSeconds != 10 || definition.Runtime.TimeoutSeconds != 60 {
+		definition.TestConfig.ReadinessTimeoutSeconds != 10 || definition.Runtime.TimeoutSeconds != 120 {
 		t.Fatalf("Go HTTP wiring = %#v", definition)
 	}
 	if len(definition.HiddenTestFiles) != 4 || len(definition.PublicTestFiles) != 4 ||

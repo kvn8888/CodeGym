@@ -98,7 +98,7 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 		t.Fatalf("GetDefinition HTTP seed: %v", err)
 	}
 	if httpDefinition.TestConfig.Strategy != TestStrategyHTTP || httpDefinition.Language != "go" ||
-		httpDefinition.Entrypoint != "codegym_http_compile.py" || httpDefinition.Runtime.TimeoutSeconds != 60 ||
+		httpDefinition.Entrypoint != "codegym_http_compile.py" || httpDefinition.Runtime.TimeoutSeconds != 120 ||
 		len(httpDefinition.HiddenTestFiles) != 4 || len(httpDefinition.PublicTestFiles) != 4 || len(httpDefinition.PublicCases) != 2 {
 		t.Fatalf("HTTP seed wiring = %#v", httpDefinition)
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/daytona/clients/sdk-go/pkg/daytona"
 	"github.com/daytona/clients/sdk-go/pkg/options"
 	"github.com/daytona/clients/sdk-go/pkg/types"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
 const (
@@ -37,8 +38,17 @@ const (
 var ErrInfrastructureBusy = errors.New("execution infrastructure is busy; please retry")
 
 type DaytonaRunner struct {
-	client        daytonaSandboxClient
-	createBackoff time.Duration
+	client             daytonaSandboxClient
+	environment        environment.Name
+	createBackoff      time.Duration
+	hedgeCountProvider HedgeCountProvider
+	activeRuns         activeRunRegistry
+}
+
+// HedgeCountProvider resolves the request-time workspace hedge count. Runtime
+// settings implement this interface without coupling execution to persistence.
+type HedgeCountProvider interface {
+	HedgeCount(ctx context.Context) int
 }
 
 type daytonaSandboxClient interface {
@@ -63,6 +73,32 @@ func (a daytonaClientAdapter) Create(ctx context.Context, params types.SnapshotP
 		return nil, err
 	}
 	return daytonaSandboxAdapter{sandbox: sandbox}, nil
+}
+
+func (a daytonaClientAdapter) ListSubmissionSandboxes(ctx context.Context) ([]sweepSandbox, error) {
+	iterator := a.client.List(ctx, &daytona.ListSandboxesQuery{
+		Labels: map[string]string{codegymSandboxLabel: codegymSandboxLabelValue},
+	})
+	sandboxes := make([]sweepSandbox, 0)
+	for iterator.Next() {
+		sandbox := iterator.Value()
+		createdAt := ""
+		if sandbox.CreatedAt != nil {
+			createdAt = *sandbox.CreatedAt
+		}
+		labels := make(map[string]string, len(sandbox.Labels))
+		for key, value := range sandbox.Labels {
+			labels[key] = value
+		}
+		sandboxes = append(sandboxes, sweepSandbox{
+			id: sandbox.ID, labels: labels, providerCreatedAt: createdAt,
+			delete: sandbox.Delete,
+		})
+	}
+	if err := iterator.Err(); err != nil {
+		return nil, err
+	}
+	return sandboxes, nil
 }
 
 type daytonaSandboxAdapter struct {
@@ -91,7 +127,10 @@ func (a daytonaSandboxAdapter) Delete(ctx context.Context) error {
 
 // NewDaytonaRunner builds a runner from explicit credentials (loaded from
 // config, not raw env, so tests and main stay explicit).
-func NewDaytonaRunner(apiKey, apiURL string) (*DaytonaRunner, error) {
+func NewDaytonaRunner(apiKey, apiURL string, codegymEnvironment environment.Name) (*DaytonaRunner, error) {
+	if !codegymEnvironment.Valid() {
+		return nil, errors.New("create Daytona runner: CodeGym environment must be dev, stg, or prd")
+	}
 	client, err := daytona.NewClientWithConfig(&types.DaytonaConfig{
 		APIKey: apiKey,
 		APIUrl: apiURL,
@@ -101,8 +140,16 @@ func NewDaytonaRunner(apiKey, apiURL string) (*DaytonaRunner, error) {
 	}
 	return &DaytonaRunner{
 		client:        daytonaClientAdapter{client: client},
+		environment:   codegymEnvironment,
 		createBackoff: defaultCreateBackoff,
 	}, nil
+}
+
+// WithHedgeCountProvider enables request-time hedging controls. A nil provider
+// preserves the compiled-safe default of one and the exact legacy path.
+func (r *DaytonaRunner) WithHedgeCountProvider(provider HedgeCountProvider) *DaytonaRunner {
+	r.hedgeCountProvider = provider
+	return r
 }
 
 // Run executes one submission in an ephemeral, fully network-blocked sandbox
@@ -244,39 +291,168 @@ func (r *DaytonaRunner) Run(ctx context.Context, spec RunSpec) (outcome RunOutco
 }
 
 func (r *DaytonaRunner) createSandbox(ctx context.Context, params types.SnapshotParams) (daytonaRunnerSandbox, int, error) {
+	if !r.environment.Valid() {
+		return nil, 0, errors.New("create Daytona sandbox: CodeGym environment is not configured")
+	}
+	hedgeCount := 1
+	if r.hedgeCountProvider != nil {
+		hedgeCount = r.hedgeCountProvider.HedgeCount(ctx)
+	}
+	if hedgeCount < 1 {
+		hedgeCount = 1
+	}
+	if hedgeCount > 3 {
+		hedgeCount = 3
+	}
+
+	// Clone labels before enriching them so a caller cannot observe mutation of
+	// its map. Every candidate for this run shares one unique run id, making
+	// provisioned orphans discoverable without confusing independent runs.
+	labels := make(map[string]string, len(params.SandboxBaseParams.Labels)+4)
+	for key, value := range params.SandboxBaseParams.Labels {
+		labels[key] = value
+	}
+	runID := newID("sandbox_run")
+	labels[codegymSandboxLabel] = codegymSandboxLabelValue
+	labels[codegymEnvironmentLabel] = string(r.environment)
+	labels[codegymRunIDLabel] = runID
+	labels[codegymCreatedAtLabel] = strconv.FormatInt(time.Now().UTC().Unix(), 10)
+	params.SandboxBaseParams.Labels = labels
+
+	r.activeRuns.add(runID)
+	releaseActive := true
+	defer func() {
+		if releaseActive {
+			r.activeRuns.remove(runID)
+		}
+	}()
+
+	// SAFETY: count=1 is intentionally the legacy serial implementation. It
+	// uses the original request context and creates no goroutines or channels.
+	if hedgeCount == 1 {
+		var lastErr error
+		attempts := 0
+		for attempt := 1; attempt <= sandboxCreateAttempts; attempt++ {
+			attempts = attempt
+			sandbox, err := r.client.Create(ctx, params)
+			if err == nil {
+				releaseActive = false
+				return &activeTrackingSandbox{
+					daytonaRunnerSandbox: sandbox,
+					runID:                runID,
+					registry:             &r.activeRuns,
+				}, attempts, nil
+			}
+			lastErr = err
+			log.Printf("daytona sandbox create attempt failed attempt=%d/%d err=%v", attempt, sandboxCreateAttempts, err)
+			if attempt == sandboxCreateAttempts {
+				break
+			}
+			if r.createBackoff <= 0 {
+				continue
+			}
+			timer := time.NewTimer(r.createBackoff)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				lastErr = ctx.Err()
+				return nil, attempts, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
+					ErrInfrastructureBusy, attempts, lastErr)
+			case <-timer.C:
+			}
+		}
+		return nil, attempts, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
+			ErrInfrastructureBusy, attempts, lastErr)
+	}
+
+	type createResult struct {
+		sandbox  daytonaRunnerSandbox
+		attempts int
+		err      error
+	}
+
+	// Never inherit request cancellation for hedged creates. Canceling a create
+	// can hide an already-provisioned sandbox id and make cleanup impossible.
+	createCtx := context.WithoutCancel(ctx)
+	results := make(chan createResult, hedgeCount)
+	createOne := func(lane int) {
+		var lastErr error
+		attempts := 0
+		for attempt := 1; attempt <= sandboxCreateAttempts; attempt++ {
+			attempts = attempt
+			sandbox, err := r.client.Create(createCtx, params)
+			if err == nil {
+				results <- createResult{sandbox: sandbox, attempts: attempts}
+				return
+			}
+			lastErr = err
+			log.Printf("daytona hedged sandbox create attempt failed lane=%d attempt=%d/%d err=%v",
+				lane, attempt, sandboxCreateAttempts, err)
+			if attempt < sandboxCreateAttempts && r.createBackoff > 0 {
+				time.Sleep(r.createBackoff)
+			}
+		}
+		results <- createResult{attempts: attempts, err: lastErr}
+	}
+	for lane := 1; lane <= hedgeCount; lane++ {
+		go createOne(lane)
+	}
+
+	received := 0
+	totalAttempts := 0
 	var lastErr error
-	attempts := 0
-	for attempt := 1; attempt <= sandboxCreateAttempts; attempt++ {
-		attempts = attempt
-		sandbox, err := r.client.Create(ctx, params)
-		if err == nil {
-			return sandbox, attempts, nil
-		}
-		lastErr = err
-		log.Printf("daytona sandbox create attempt failed attempt=%d/%d err=%v", attempt, sandboxCreateAttempts, err)
-		if attempt == sandboxCreateAttempts {
-			break
-		}
-		if r.createBackoff <= 0 {
+	for received < hedgeCount {
+		result := <-results
+		received++
+		totalAttempts += result.attempts
+		if result.err != nil {
+			lastErr = result.err
 			continue
 		}
-		timer := time.NewTimer(r.createBackoff)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
+
+		remaining := hedgeCount - received
+		if remaining > 0 {
+			// Hold a second active reference until every loser finishes creating
+			// and is reaped. The winner may finish before a slow create returns.
+			r.activeRuns.add(runID)
+			go func() {
+				defer r.activeRuns.remove(runID)
+				for range remaining {
+					loser := <-results
+					if loser.err != nil || loser.sandbox == nil {
+						continue
+					}
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					deleteErr := loser.sandbox.Delete(cleanupCtx)
+					cancel()
+					if deleteErr != nil {
+						log.Printf("daytona hedged loser cleanup failed run_id=%s err=%v", runID, deleteErr)
+						continue
+					}
+					log.Printf("daytona hedged loser cleanup ok run_id=%s", runID)
 				}
-			}
-			lastErr = ctx.Err()
-			return nil, attempts, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
-				ErrInfrastructureBusy, attempts, lastErr)
-		case <-timer.C:
+			}()
 		}
+
+		releaseActive = false
+		attempts := totalAttempts
+		if attempts < hedgeCount {
+			attempts = hedgeCount
+		}
+		return &activeTrackingSandbox{
+			daytonaRunnerSandbox: result.sandbox,
+			runID:                runID,
+			registry:             &r.activeRuns,
+		}, attempts, nil
 	}
-	return nil, attempts, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
-		ErrInfrastructureBusy, attempts, lastErr)
+
+	return nil, totalAttempts, fmt.Errorf("%w: sandbox creation failed after %d attempts: %v",
+		ErrInfrastructureBusy, totalAttempts, lastErr)
 }
 
 func executionDeadlineExceeded(ctx context.Context, err error) bool {

@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/environment"
 )
 
-const tokenVersion = 1
+const tokenVersion = 2
 
 type Clock func() time.Time
 
@@ -25,6 +27,7 @@ type OperationChecker interface {
 }
 
 type ServiceConfig struct {
+	Environment             environment.Name
 	TokenSecret             string
 	TokenTTL                time.Duration
 	DefaultMaxTotalTokens   int64
@@ -36,6 +39,7 @@ type ServiceConfig struct {
 
 type Service struct {
 	store                   Store
+	environment             environment.Name
 	secret                  []byte
 	tokenTTL                time.Duration
 	defaultMaxTotalTokens   int64
@@ -48,6 +52,9 @@ type Service struct {
 func NewService(store Store, cfg ServiceConfig) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("agentrelay: store is required")
+	}
+	if !cfg.Environment.Valid() {
+		return nil, errors.New("agentrelay: environment must be dev, stg, or prd")
 	}
 	secret := strings.TrimSpace(cfg.TokenSecret)
 	if len(secret) < 32 {
@@ -71,6 +78,7 @@ func NewService(store Store, cfg ServiceConfig) (*Service, error) {
 	}
 	return &Service{
 		store:                   store,
+		environment:             cfg.Environment,
 		secret:                  []byte(secret),
 		tokenTTL:                cfg.TokenTTL,
 		defaultMaxTotalTokens:   cfg.DefaultMaxTotalTokens,
@@ -128,7 +136,8 @@ func (s *Service) Issue(ctx context.Context, input IssueInput) (IssueResult, err
 	claims := tokenPayload{
 		Version: tokenVersion, TokenID: newID("relay_token"), BudgetID: budget.ID,
 		OperationID: budget.OperationID, WorkspaceID: budget.WorkspaceID,
-		UserID: budget.UserID, IssuedAt: now.Unix(), ExpiresAt: now.Add(s.tokenTTL).Unix(),
+		UserID: budget.UserID, Environment: s.environment,
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(s.tokenTTL).Unix(),
 	}
 	token, err := s.sign(claims)
 	if err != nil {
@@ -224,14 +233,15 @@ type tokenHeader struct {
 }
 
 type tokenPayload struct {
-	Version     int    `json:"ver"`
-	TokenID     string `json:"jti"`
-	BudgetID    string `json:"bid"`
-	OperationID string `json:"operation_id"`
-	WorkspaceID string `json:"workspace_id"`
-	UserID      string `json:"user_id"`
-	IssuedAt    int64  `json:"iat"`
-	ExpiresAt   int64  `json:"exp"`
+	Version     int              `json:"ver"`
+	TokenID     string           `json:"jti"`
+	BudgetID    string           `json:"bid"`
+	OperationID string           `json:"operation_id"`
+	WorkspaceID string           `json:"workspace_id"`
+	UserID      string           `json:"user_id"`
+	Environment environment.Name `json:"environment"`
+	IssuedAt    int64            `json:"iat"`
+	ExpiresAt   int64            `json:"exp"`
 }
 
 func (s *Service) sign(payload tokenPayload) (string, error) {
@@ -282,8 +292,12 @@ func (s *Service) verify(token string) (tokenPayload, error) {
 	var payload tokenPayload
 	if json.Unmarshal(payloadBytes, &payload) != nil || payload.Version != tokenVersion ||
 		payload.TokenID == "" || payload.BudgetID == "" || payload.OperationID == "" ||
-		payload.WorkspaceID == "" || payload.UserID == "" || payload.IssuedAt <= 0 || payload.ExpiresAt <= 0 {
+		payload.WorkspaceID == "" || payload.UserID == "" || !payload.Environment.Valid() ||
+		payload.IssuedAt <= 0 || payload.ExpiresAt <= 0 {
 		return tokenPayload{}, ErrInvalidToken
+	}
+	if payload.Environment != s.environment {
+		return tokenPayload{}, ErrEnvironmentMismatch
 	}
 	now := s.now().UTC()
 	if !now.Before(time.Unix(payload.ExpiresAt, 0)) {
@@ -298,7 +312,7 @@ func (s *Service) verify(token string) (tokenPayload, error) {
 func (p tokenPayload) toClaims() Claims {
 	return Claims{
 		TokenID: p.TokenID, BudgetID: p.BudgetID, OperationID: p.OperationID,
-		WorkspaceID: p.WorkspaceID, UserID: p.UserID,
+		WorkspaceID: p.WorkspaceID, UserID: p.UserID, Environment: p.Environment,
 		IssuedAt: time.Unix(p.IssuedAt, 0).UTC(), ExpiresAt: time.Unix(p.ExpiresAt, 0).UTC(),
 	}
 }

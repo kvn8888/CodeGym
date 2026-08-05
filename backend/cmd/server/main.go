@@ -23,6 +23,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/settings"
 	"github.com/kvn8888/codegym/backend/internal/submission"
 	"github.com/kvn8888/codegym/backend/internal/usage"
 	"github.com/kvn8888/codegym/backend/internal/workflow"
@@ -34,7 +35,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("could not load config: %v", err)
+	}
+	log.Printf("CodeGym environment resolved environment=%s", cfg.Environment)
 
 	authenticator, err := buildAuthenticator(cfg)
 	if err != nil {
@@ -51,6 +56,7 @@ func main() {
 	var chatStore chat.Store = chat.NewInMemoryStore()
 	var workflowStore workflow.Store = workflow.NewInMemoryStore()
 	var relayStore agentrelay.Store = agentrelay.NewInMemoryStore()
+	var settingsStore settings.Store = settings.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -73,6 +79,7 @@ func main() {
 		postgresChatStore := chat.NewPostgresStore(pool)
 		postgresWorkflowStore := workflow.NewPostgresStore(pool)
 		postgresRelayStore := agentrelay.NewPostgresStore(pool)
+		postgresSettingsStore := settings.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -103,6 +110,9 @@ func main() {
 		if err := postgresRelayStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap agent relay schema: %v", err)
 		}
+		if err := postgresSettingsStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap runtime settings schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
@@ -114,19 +124,34 @@ func main() {
 		chatStore = postgresChatStore
 		workflowStore = postgresWorkflowStore
 		relayStore = postgresRelayStore
-		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, genai usage, execution, and problem stores")
+		settingsStore = postgresSettingsStore
+		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, runtime settings, genai usage, execution, and problem stores")
 	} else {
-		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
+		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, runtime settings, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
 
+	settingsService := settings.NewService(settingsStore, nil)
 	var executionRunner execution.Runner
 	if cfg.DaytonaAPIKey != "" {
-		daytonaRunner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL)
+		daytonaRunner, err := execution.NewDaytonaRunner(cfg.DaytonaAPIKey, cfg.DaytonaAPIURL, cfg.Environment)
 		if err != nil {
 			log.Fatalf("could not configure Daytona runner: %v", err)
 		}
-		executionRunner = daytonaRunner
+		executionRunner = daytonaRunner.WithHedgeCountProvider(settingsService)
 		log.Print("CodeGym API execution runner: Daytona")
+		if !cfg.SandboxSweeper.Disabled {
+			sweeper := execution.NewSweeper(
+				daytonaRunner,
+				cfg.SandboxSweeper.MaxAge,
+				cfg.SandboxSweeper.Interval,
+				nil,
+			)
+			go sweeper.Run(ctx)
+			log.Printf("CodeGym Daytona orphan sweeper scheduled every %s max_age=%s environment=%s",
+				cfg.SandboxSweeper.Interval, cfg.SandboxSweeper.MaxAge, cfg.Environment)
+		} else {
+			log.Print("CodeGym Daytona orphan sweeper disabled")
+		}
 	} else {
 		log.Print("CodeGym API execution runner disabled; set DAYTONA_API_KEY to enable")
 	}
@@ -192,6 +217,7 @@ func main() {
 			log.Print("CodeGym agent relay disabled: token secret is set but no GenAI provider is configured")
 		} else {
 			relayService, err := agentrelay.NewService(relayStore, agentrelay.ServiceConfig{
+				Environment: cfg.Environment,
 				TokenSecret: cfg.Relay.TokenSecret, TokenTTL: cfg.Relay.TokenTTL,
 				DefaultMaxTotalTokens:   cfg.Relay.MaxTotalTokens,
 				DefaultMaxCostUSDMicros: cfg.Relay.MaxCostUSDMicros,
@@ -253,8 +279,10 @@ func main() {
 		MemoryProfiles:       profileSynthesizer,
 		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,
 		Usage:                usageService,
+		Settings:             settingsService,
 		CORSAllowedOrigins:   cfg.CORSAllowedOrigins,
 		DatabaseURL:          cfg.DatabaseURL,
+		Environment:          cfg.Environment,
 		AgentRelay:           relayHTTPHandler,
 	})
 

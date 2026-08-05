@@ -7,6 +7,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/chat"
+	"github.com/kvn8888/codegym/backend/internal/environment"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
@@ -14,6 +15,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/settings"
 	"github.com/kvn8888/codegym/backend/internal/submission"
 	"github.com/kvn8888/codegym/backend/internal/usage"
 	"github.com/kvn8888/codegym/backend/internal/workflow"
@@ -39,8 +41,10 @@ type Dependencies struct {
 	MemoryProfiles       *generation.ProfileSynthesizer
 	MemoryRefreshTrigger string
 	Usage                *usage.Service
+	Settings             *settings.Service
 	CORSAllowedOrigins   []string
 	DatabaseURL          string
+	Environment          environment.Name
 	AgentRelay           *agentrelay.HTTPHandler
 }
 
@@ -57,7 +61,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", handlers.Health)
-	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.DatabaseURL))
+	mux.HandleFunc("GET /ready", handlers.NewReadyHandler(deps.DatabaseURL, deps.Environment))
 	// The sandbox-facing relay is deliberately outside the Auth0/identity/
 	// workspace chain. It authenticates short-lived operation tokens itself.
 	mux.HandleFunc("GET /api/v1/agent-relay/v1/models", func(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +104,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/memory/notes/maintain", generateHandler.MaintainProfile)
 	costHandler := handlers.NewCostHandler(deps.Usage)
 	protected.HandleFunc("GET /api/v1/cost", costHandler.Cost)
+	settingsHandler := handlers.NewSettingsHandler(deps.Settings)
+	protected.HandleFunc("GET /api/v1/settings/{key}", settingsHandler.Get)
+	protected.HandleFunc("PUT /api/v1/settings/{key}", settingsHandler.Put)
 	executionHandler := handlers.NewExecutionHandler(deps.Execution)
 	protected.HandleFunc("POST /api/v1/executions", executionHandler.Submit)
 	protected.HandleFunc("GET /api/v1/executions", executionHandler.List)

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kvn8888/codegym/backend/internal/environment"
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
 	"github.com/kvn8888/codegym/backend/internal/usage"
 )
@@ -153,6 +154,7 @@ func newBudgetHarness(t *testing.T, maxTokens, maxCost int64, deadlineAfter time
 	checker := &operationChecker{active: map[string]bool{"ws-a\x00user-a\x00op-a": true}}
 	relayStore := NewInMemoryStore()
 	tokens, err := NewService(relayStore, ServiceConfig{
+		Environment: environment.Dev,
 		TokenSecret: testSecret, TokenTTL: 5 * time.Minute,
 		DefaultMaxTotalTokens: maxTokens, DefaultMaxCostUSDMicros: maxCost,
 		DefaultMaxWallClock: 10 * time.Minute,

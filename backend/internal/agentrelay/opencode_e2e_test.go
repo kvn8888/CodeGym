@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kvn8888/codegym/backend/internal/environment"
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
 	"github.com/kvn8888/codegym/backend/internal/usage"
 )
@@ -74,6 +75,7 @@ func TestOpenCodeThroughRelayToolRoundTrip(t *testing.T) {
 	checker := &operationChecker{active: map[string]bool{"ws-e2e\x00user-e2e\x00op-e2e": true}}
 	relayStore := NewInMemoryStore()
 	tokenService, err := NewService(relayStore, ServiceConfig{
+		Environment: environment.Dev,
 		TokenSecret: testSecret, TokenTTL: 2 * time.Minute,
 		DefaultMaxTotalTokens: 100_000, DefaultMaxCostUSDMicros: 1_000_000,
 		DefaultMaxWallClock: 2 * time.Minute,

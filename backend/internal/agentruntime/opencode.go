@@ -113,8 +113,8 @@ func (r *OpenCodeRuntime) Run(ctx context.Context, task TaskSpec) (result RunRes
 	runContext, cancel := context.WithDeadline(ctx, task.Deadline)
 	defer cancel()
 	prompt := fmt.Sprintf(
-		"%s\n\nBefore your final response, write %s as strict JSON with version=%d, completed, summary, artifacts, and checks. This manifest is only a claim; backend verification decides success.",
-		task.Goal, ManifestRelativePath, ManifestVersion,
+		"%s\n\n%s",
+		task.Goal, resultManifestInstructions(),
 	)
 	command := exec.CommandContext(
 		runContext, r.config.BinaryPath, "run", "--format", "json", "--auto",
@@ -151,7 +151,8 @@ func (r *OpenCodeRuntime) Run(ctx context.Context, task TaskSpec) (result RunRes
 		result.Telemetry.Termination = TerminationRuntimeFailure
 		return result, nil
 	}
-	if result.Telemetry.Turns >= task.TurnCeiling && strings.TrimSpace(result.Prose) == "" {
+	result.Manifest = LoadManifest(task.WorkingDirectory)
+	if result.Telemetry.Turns >= task.TurnCeiling && result.Manifest.Status != ManifestPresent {
 		result.Telemetry.Termination = TerminationTurnCeiling
 		return result, nil
 	}
@@ -175,7 +176,13 @@ func (r *OpenCodeRuntime) verifyVersion(ctx context.Context) error {
 }
 
 func (r *OpenCodeRuntime) buildConfig(task TaskSpec) ([]byte, error) {
-	permissions := map[string]any{"*": "deny", "external_directory": "deny"}
+	permissions := map[string]any{
+		"*": "deny",
+		"external_directory": map[string]string{
+			"*":                                     "deny",
+			"~/.local/share/opencode/tool-output/*": "allow",
+		},
+	}
 	for _, allowed := range task.AllowedTools {
 		name := openCodeToolName(allowed)
 		permissions[name] = "allow"
@@ -322,12 +329,17 @@ func parseOpenCodeEvents(output string, result *RunResult) {
 				}
 			}
 			result.Telemetry.ToolInvocations = append(result.Telemetry.ToolInvocations, invocation)
-			if event.Part.State.Status == "error" && strings.Contains(strings.ToLower(event.Part.State.Error), "permission") {
+			if event.Part.State.Status == "error" && strings.Contains(strings.ToLower(event.Part.State.Error), "permission") && !isManagedToolOutputDenial(event.Part.State.Error) {
 				result.Telemetry.PolicyViolations = append(result.Telemetry.PolicyViolations, event.Part.State.Error)
 			}
 		}
 	}
 	result.Prose = prose.String()
+}
+
+func isManagedToolOutputDenial(detail string) bool {
+	normalized := filepath.ToSlash(strings.ToLower(detail))
+	return strings.Contains(normalized, "/.local/share/opencode/tool-output/")
 }
 
 func fromOpenCodeTool(name string) Tool {

@@ -80,6 +80,71 @@ func TestBenchmarkInterleavesAndWritesReport(t *testing.T) {
 	if _, err := os.Stat(reportPath); err != nil {
 		t.Fatal(err)
 	}
+	if report.Runs[0].Turns != 2 || report.Runs[0].ManifestRaw != `{"version":1,"completed":true}` || report.Runs[0].Prose != "scripted completion" {
+		t.Fatalf("preserved run evidence = %#v", report.Runs[0])
+	}
+	if len(report.Runs[0].ToolInvocations) != 1 || report.Runs[0].ToolInvocations[0].Tool != ToolWriteFile {
+		t.Fatalf("preserved tool trace = %#v", report.Runs[0].ToolInvocations)
+	}
+}
+
+func TestBenchmarkContinuesAtScheduledOrderWithoutReplayingRuns(t *testing.T) {
+	fixtures := BenchmarkFixtures()
+	report, err := RunBenchmark(t.Context(), BenchmarkConfig{
+		PurposeBuilt: &scriptedBenchmarkRuntime{name: "purpose-built"},
+		OpenCode:     &scriptedBenchmarkRuntime{name: "opencode"},
+		Fixtures:     fixtures, Repetitions: 3, StartOrder: 12,
+		TurnCeiling: 3, RunDeadline: 10 * time.Second, OutputCapBytes: DefaultOutputCap,
+		WorkingRoot: t.TempDir(), ModelDeployment: "fake/model",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "complete" || report.ScheduleStartOrder != 12 || report.ScheduleTotalRuns != 12 {
+		t.Fatalf("continuation schedule = %#v", report)
+	}
+	if len(report.Runs) != 1 {
+		t.Fatalf("continuation ran %d tasks, want exactly 1", len(report.Runs))
+	}
+	run := report.Runs[0]
+	if run.Order != 12 || run.Runtime != "purpose-built" || run.Fixture != "express" || run.Repetition != 3 {
+		t.Fatalf("continued run = %#v", run)
+	}
+}
+
+func TestMergeBenchmarkReportSegmentsRequiresCompleteNonOverlappingSchedule(t *testing.T) {
+	condition := BenchmarkReport{
+		Version: BenchmarkReportVersion, DecisionRule: PredeclaredDecisionRule,
+		ModelDeployment: "fake/model", ExecutionEnvironment: "fake/daytona", BaseSnapshot: "snapshot",
+		TurnCeiling: 16, RunDeadlineMS: 120_000, OutputCapBytes: 1024, RetryPolicy: "zero retries",
+		RelayMaxTokens: 100, RelayMaxCostUSDMicros: 200, RelayWallClockMS: 300,
+		FixtureFingerprints: map[string]string{"fixture": "hash"},
+		WorkspacesCreated:   1, WorkspacesDeleted: 1, SandboxesCreated: 1, SandboxesDeleted: 1,
+	}
+	first := condition
+	first.Runs = []BenchmarkRun{{Order: 1, Runtime: "purpose-built", Passed: true}}
+	second := condition
+	second.Runs = []BenchmarkRun{{Order: 2, Runtime: "opencode", Passed: false}}
+
+	merged, err := mergeBenchmarkReportSegments(2, first, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.Status != "complete" || len(merged.Runs) != 2 || merged.RelayMaxTokens != 200 ||
+		merged.WorkspacesCreated != 2 || merged.SandboxesDeleted != 2 || merged.Decision.Selected != "purpose-built" {
+		t.Fatalf("merged report = %#v", merged)
+	}
+	if _, err := mergeBenchmarkReportSegments(2, first, first); err == nil || !stringsContains(err.Error(), "replayed") {
+		t.Fatalf("duplicate merge error = %v", err)
+	}
+	if _, err := mergeBenchmarkReportSegments(3, first, second); err == nil || !stringsContains(err.Error(), "missing scheduled run 3") {
+		t.Fatalf("incomplete merge error = %v", err)
+	}
+	changed := second
+	changed.TurnCeiling = 15
+	if _, err := mergeBenchmarkReportSegments(2, first, changed); err == nil || !stringsContains(err.Error(), "conditions differ") {
+		t.Fatalf("condition mismatch error = %v", err)
+	}
 }
 
 type scriptedBenchmarkRuntime struct {
@@ -104,8 +169,12 @@ func (r *scriptedBenchmarkRuntime) Run(_ context.Context, task TaskSpec) (RunRes
 		return RunResult{}, err
 	}
 	return RunResult{
-		Telemetry: Telemetry{Runtime: r.name, Termination: TerminationCompleted, WallTime: time.Millisecond},
-		Manifest:  LoadManifest(task.WorkingDirectory),
+		Telemetry: Telemetry{
+			Runtime: r.name, Turns: 2, Termination: TerminationCompleted, WallTime: time.Millisecond,
+			ToolInvocations: []ToolInvocation{{Tool: ToolWriteFile}},
+		},
+		Manifest: LoadManifest(task.WorkingDirectory),
+		Prose:    "scripted completion",
 	}, nil
 }
 

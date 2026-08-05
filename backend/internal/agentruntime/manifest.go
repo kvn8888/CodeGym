@@ -13,6 +13,13 @@ import (
 
 const maxManifestBytes = 64 * 1024
 
+func resultManifestInstructions() string {
+	return fmt.Sprintf(
+		"Before your final response, write %s as a single JSON object. The minimum valid file is exactly {\"version\":%d,\"completed\":true}. completed is your claim that you finished; it is not the verdict, and backend verification alone decides success. Do not wrap the JSON in Markdown or append another JSON value. Optional telemetry fields are summary (string), artifacts (workspace-relative string array), and checks (array of objects with name, passed, and optional detail).",
+		ManifestRelativePath, ManifestVersion,
+	)
+}
+
 func LoadManifest(workingDirectory string) ManifestClaim {
 	path := filepath.Join(workingDirectory, filepath.FromSlash(ManifestRelativePath))
 	file, err := os.Open(path)
@@ -32,22 +39,41 @@ func LoadManifest(workingDirectory string) ManifestClaim {
 		return ManifestClaim{Status: ManifestMalformed, Error: "result manifest exceeds 64 KiB"}
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
-	var manifest ResultManifest
-	if err := decoder.Decode(&manifest); err != nil {
+	var fields map[string]json.RawMessage
+	if err := decoder.Decode(&fields); err != nil {
 		return ManifestClaim{Status: ManifestMalformed, Error: fmt.Sprintf("decode result manifest: %v", err)}
 	}
 	if err := requireJSONEOF(decoder); err != nil {
 		return ManifestClaim{Status: ManifestMalformed, Error: err.Error()}
 	}
+	var manifest ResultManifest
+	version, ok := fields["version"]
+	if !ok {
+		return ManifestClaim{Status: ManifestMalformed, Error: "result manifest field version is required"}
+	}
+	if err := json.Unmarshal(version, &manifest.Version); err != nil {
+		return ManifestClaim{Status: ManifestMalformed, Error: fmt.Sprintf("decode result manifest field version: %v", err)}
+	}
 	if manifest.Version != ManifestVersion {
 		return ManifestClaim{Status: ManifestMalformed, Error: fmt.Sprintf("unsupported result manifest version %d", manifest.Version)}
 	}
-	for _, artifact := range manifest.Artifacts {
-		if strings.TrimSpace(artifact) == "" || filepath.IsAbs(artifact) || escapesRoot(artifact) {
-			return ManifestClaim{Status: ManifestMalformed, Error: fmt.Sprintf("invalid artifact path %q", artifact)}
-		}
+	completed, ok := fields["completed"]
+	if !ok {
+		return ManifestClaim{Status: ManifestMalformed, Error: "result manifest field completed is required"}
 	}
+	if err := json.Unmarshal(completed, &manifest.Completed); err != nil {
+		return ManifestClaim{Status: ManifestMalformed, Error: fmt.Sprintf("decode result manifest field completed: %v", err)}
+	}
+	_ = json.Unmarshal(fields["summary"], &manifest.Summary)
+	var artifacts []string
+	_ = json.Unmarshal(fields["artifacts"], &artifacts)
+	for _, artifact := range artifacts {
+		if strings.TrimSpace(artifact) == "" || filepath.IsAbs(artifact) || escapesRoot(artifact) {
+			continue
+		}
+		manifest.Artifacts = append(manifest.Artifacts, artifact)
+	}
+	_ = json.Unmarshal(fields["checks"], &manifest.Checks)
 	return ManifestClaim{Status: ManifestPresent, Manifest: &manifest}
 }
 

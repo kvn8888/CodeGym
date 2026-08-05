@@ -7,13 +7,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
 	"time"
 )
 
-const BenchmarkReportVersion = 1
+const (
+	BenchmarkReportVersion       = 1
+	DefaultBenchmarkTurnCeiling  = 16
+	DefaultBenchmarkRunDeadline  = 2 * time.Minute
+	DefaultBenchmarkMaxSandboxes = 30
+)
 
 const PredeclaredDecisionRule = "Any policy violation disqualifies that runtime. Completion rate is primary. On equal completion, opencode wins only if it improves mean repair iterations or median wall time by at least 20 percent while using no more total tokens or cost; otherwise purpose-built wins. Inconclusive selects purpose-built."
 
@@ -26,11 +33,16 @@ type UsageMeter func(ctx context.Context) (UsageSnapshot, error)
 
 type SandboxMeter func() (created, deleted int)
 
+type SandboxSecondsMeter func() float64
+
+type BenchmarkVerifierFactory func(fixture BenchmarkFixture) Verifier
+
 type BenchmarkConfig struct {
 	PurposeBuilt          AgentRuntime
 	OpenCode              AgentRuntime
 	Fixtures              []BenchmarkFixture
 	Repetitions           int
+	StartOrder            int
 	TurnCeiling           int
 	RunDeadline           time.Duration
 	OutputCapBytes        int
@@ -38,6 +50,7 @@ type BenchmarkConfig struct {
 	ReportPath            string
 	ModelDeployment       string
 	ExecutionEnvironment  string
+	BaseSnapshot          string
 	Limitations           []string
 	RelayMaxTokens        int64
 	RelayMaxCostUSDMicros int64
@@ -46,6 +59,8 @@ type BenchmarkConfig struct {
 	MaxSandboxes          int
 	UsageMeter            UsageMeter
 	SandboxMeter          SandboxMeter
+	SandboxSecondsMeter   SandboxSecondsMeter
+	VerifierFactory       BenchmarkVerifierFactory
 }
 
 type BenchmarkRun struct {
@@ -56,12 +71,18 @@ type BenchmarkRun struct {
 	Passed           bool              `json:"passed"`
 	Detail           string            `json:"detail,omitempty"`
 	Termination      TerminationReason `json:"termination"`
+	Turns            int               `json:"turns"`
 	ManifestStatus   ManifestStatus    `json:"manifest_status"`
+	ManifestError    string            `json:"manifest_error,omitempty"`
+	ManifestRaw      string            `json:"manifest_raw,omitempty"`
+	Prose            string            `json:"prose,omitempty"`
 	RepairIterations int               `json:"repair_iterations"`
 	Tokens           TokenUsage        `json:"tokens"`
 	CostUSDMicros    int64             `json:"cost_usd_micros"`
 	WallTimeMS       int64             `json:"wall_time_ms"`
 	SandboxSeconds   float64           `json:"sandbox_seconds"`
+	ToolInvocations  []ToolInvocation  `json:"tool_invocations,omitempty"`
+	Progress         []ProgressEvent   `json:"progress,omitempty"`
 	PolicyViolations []string          `json:"policy_violations,omitempty"`
 }
 
@@ -92,6 +113,7 @@ type BenchmarkReport struct {
 	DecisionRule          string                    `json:"decision_rule"`
 	ModelDeployment       string                    `json:"model_deployment"`
 	ExecutionEnvironment  string                    `json:"execution_environment"`
+	BaseSnapshot          string                    `json:"base_snapshot,omitempty"`
 	Limitations           []string                  `json:"limitations,omitempty"`
 	RelayMaxTokens        int64                     `json:"relay_max_tokens"`
 	RelayMaxCostUSDMicros int64                     `json:"relay_max_cost_usd_micros"`
@@ -100,12 +122,15 @@ type BenchmarkReport struct {
 	RunDeadlineMS         int64                     `json:"run_deadline_ms"`
 	OutputCapBytes        int                       `json:"output_cap_bytes"`
 	RetryPolicy           string                    `json:"retry_policy"`
+	ScheduleStartOrder    int                       `json:"schedule_start_order"`
+	ScheduleTotalRuns     int                       `json:"schedule_total_runs"`
 	FixtureFingerprints   map[string]string         `json:"fixture_fingerprints"`
 	Runs                  []BenchmarkRun            `json:"runs"`
 	Summaries             []RuntimeBenchmarkSummary `json:"summaries"`
 	Decision              BenchmarkDecision         `json:"decision"`
 	SandboxesCreated      int                       `json:"sandboxes_created"`
 	SandboxesDeleted      int                       `json:"sandboxes_deleted"`
+	SandboxSeconds        float64                   `json:"sandbox_seconds"`
 	WorkspacesCreated     int                       `json:"workspaces_created"`
 	WorkspacesDeleted     int                       `json:"workspaces_deleted"`
 	StoppedReason         string                    `json:"stopped_reason,omitempty"`
@@ -124,6 +149,13 @@ func RunBenchmark(ctx context.Context, config BenchmarkConfig) (BenchmarkReport,
 	if config.Repetitions <= 0 {
 		config.Repetitions = 3
 	}
+	totalScheduledRuns := config.Repetitions * len(config.Fixtures) * 2
+	if config.StartOrder == 0 {
+		config.StartOrder = 1
+	}
+	if config.StartOrder < 1 || config.StartOrder > totalScheduledRuns {
+		return BenchmarkReport{}, fmt.Errorf("agentruntime: benchmark start order %d is outside schedule 1..%d", config.StartOrder, totalScheduledRuns)
+	}
 	if config.TurnCeiling <= 1 || config.RunDeadline <= 0 || config.OutputCapBytes <= 0 {
 		return BenchmarkReport{}, errors.New("agentruntime: benchmark turn, deadline, and output ceilings must be positive")
 	}
@@ -131,7 +163,7 @@ func RunBenchmark(ctx context.Context, config BenchmarkConfig) (BenchmarkReport,
 		config.WorkingRoot = "/private/tmp"
 	}
 	if config.MaxSandboxes <= 0 {
-		config.MaxSandboxes = 40
+		config.MaxSandboxes = DefaultBenchmarkMaxSandboxes
 	}
 	if config.RetryPolicy == "" {
 		config.RetryPolicy = "zero retries; every failure counts"
@@ -142,11 +174,13 @@ func RunBenchmark(ctx context.Context, config BenchmarkConfig) (BenchmarkReport,
 	report := BenchmarkReport{
 		Version: BenchmarkReportVersion, StartedAt: time.Now().UTC(), Status: "running",
 		DecisionRule: PredeclaredDecisionRule, ModelDeployment: config.ModelDeployment,
-		ExecutionEnvironment: config.ExecutionEnvironment, Limitations: append([]string(nil), config.Limitations...),
+		ExecutionEnvironment: config.ExecutionEnvironment, BaseSnapshot: config.BaseSnapshot,
+		Limitations:    append([]string(nil), config.Limitations...),
 		RelayMaxTokens: config.RelayMaxTokens, RelayMaxCostUSDMicros: config.RelayMaxCostUSDMicros,
 		RelayWallClockMS: config.RelayWallClock.Milliseconds(), TurnCeiling: config.TurnCeiling,
 		RunDeadlineMS: config.RunDeadline.Milliseconds(), OutputCapBytes: config.OutputCapBytes,
-		RetryPolicy: config.RetryPolicy, FixtureFingerprints: map[string]string{}, Runs: []BenchmarkRun{},
+		RetryPolicy: config.RetryPolicy, ScheduleStartOrder: config.StartOrder, ScheduleTotalRuns: totalScheduledRuns,
+		FixtureFingerprints: map[string]string{}, Runs: []BenchmarkRun{},
 	}
 	for _, fixture := range config.Fixtures {
 		report.FixtureFingerprints[fixture.ID] = fixtureFingerprint(fixture)
@@ -162,12 +196,15 @@ func RunBenchmark(ctx context.Context, config BenchmarkConfig) (BenchmarkReport,
 				runtimeOrder = []string{"opencode", "purpose-built"}
 			}
 			for _, runtimeName := range runtimeOrder {
+				order++
+				if order < config.StartOrder {
+					continue
+				}
 				if reason := benchmarkStopReason(ctx, config, report); reason != "" {
 					report.Status = "stopped"
 					report.StoppedReason = reason
 					return finishBenchmarkReport(report, config)
 				}
-				order++
 				workingDirectory, err := os.MkdirTemp(config.WorkingRoot, "codegym-agent-benchmark-")
 				if err != nil {
 					return report, fmt.Errorf("agentruntime: create benchmark workspace: %w", err)
@@ -203,16 +240,24 @@ func RunBenchmark(ctx context.Context, config BenchmarkConfig) (BenchmarkReport,
 				}
 				benchmarkRun := BenchmarkRun{
 					Order: order, Runtime: runtimeName, Fixture: fixture.ID, Repetition: repetition,
-					Termination: runResult.Telemetry.Termination, ManifestStatus: runResult.Manifest.Status,
+					Termination: runResult.Telemetry.Termination, Turns: runResult.Telemetry.Turns,
+					ManifestStatus: runResult.Manifest.Status, ManifestError: runResult.Manifest.Error,
+					ManifestRaw: readBenchmarkManifestRaw(workingDirectory), Prose: runResult.Prose,
 					RepairIterations: runResult.Telemetry.RepairIterations, Tokens: runResult.Telemetry.Tokens,
 					CostUSDMicros: runResult.Telemetry.CostUSDMicros,
 					WallTimeMS:    runResult.Telemetry.WallTime.Milliseconds(), SandboxSeconds: runResult.Telemetry.SandboxSeconds,
+					ToolInvocations:  append([]ToolInvocation(nil), runResult.Telemetry.ToolInvocations...),
+					Progress:         append([]ProgressEvent(nil), runResult.Telemetry.Progress...),
 					PolicyViolations: append([]string(nil), runResult.Telemetry.PolicyViolations...),
 				}
 				if runErr != nil {
 					benchmarkRun.Detail = runErr.Error()
 				} else {
-					verification, verifyErr := Evaluate(ctx, FixtureVerifier{Fixture: fixture}, task, runResult)
+					verifier := Verifier(FixtureVerifier{Fixture: fixture})
+					if config.VerifierFactory != nil {
+						verifier = config.VerifierFactory(fixture)
+					}
+					verification, verifyErr := Evaluate(ctx, verifier, task, runResult)
 					if verifyErr != nil {
 						benchmarkRun.Detail = verifyErr.Error()
 					} else {
@@ -238,6 +283,9 @@ func finishBenchmarkReport(report BenchmarkReport, config BenchmarkConfig) (Benc
 	if config.SandboxMeter != nil {
 		report.SandboxesCreated, report.SandboxesDeleted = config.SandboxMeter()
 	}
+	if config.SandboxSecondsMeter != nil {
+		report.SandboxSeconds = config.SandboxSecondsMeter()
+	}
 	report.Summaries = summarizeBenchmarkRuns(report.Runs)
 	report.Decision = decideBenchmark(report.Summaries)
 	if report.WorkspacesCreated != report.WorkspacesDeleted {
@@ -252,6 +300,100 @@ func finishBenchmarkReport(report BenchmarkReport, config BenchmarkConfig) (Benc
 		}
 	}
 	return report, nil
+}
+
+func mergeBenchmarkReportSegments(expectedRuns int, segments ...BenchmarkReport) (BenchmarkReport, error) {
+	if expectedRuns <= 0 || len(segments) == 0 {
+		return BenchmarkReport{}, errors.New("agentruntime: benchmark report merge requires segments and a positive run count")
+	}
+	merged := segments[0]
+	merged.Runs = nil
+	merged.Summaries = nil
+	merged.Decision = BenchmarkDecision{}
+	merged.Status = "running"
+	merged.StoppedReason = ""
+	merged.ScheduleStartOrder = 1
+	merged.ScheduleTotalRuns = expectedRuns
+	merged.RelayMaxTokens = 0
+	merged.RelayMaxCostUSDMicros = 0
+	merged.RelayWallClockMS = 0
+	merged.WorkspacesCreated = 0
+	merged.WorkspacesDeleted = 0
+	merged.SandboxesCreated = 0
+	merged.SandboxesDeleted = 0
+	merged.SandboxSeconds = 0
+
+	byOrder := make(map[int]BenchmarkRun, expectedRuns)
+	for index, segment := range segments {
+		if index > 0 {
+			if err := validateBenchmarkSegmentCompatibility(segments[0], segment); err != nil {
+				return BenchmarkReport{}, fmt.Errorf("agentruntime: merge benchmark segment %d: %w", index+1, err)
+			}
+		}
+		if segment.StartedAt.Before(merged.StartedAt) {
+			merged.StartedAt = segment.StartedAt
+		}
+		if segment.FinishedAt.After(merged.FinishedAt) {
+			merged.FinishedAt = segment.FinishedAt
+		}
+		merged.RelayMaxTokens += segment.RelayMaxTokens
+		merged.RelayMaxCostUSDMicros += segment.RelayMaxCostUSDMicros
+		merged.RelayWallClockMS += segment.RelayWallClockMS
+		merged.WorkspacesCreated += segment.WorkspacesCreated
+		merged.WorkspacesDeleted += segment.WorkspacesDeleted
+		merged.SandboxesCreated += segment.SandboxesCreated
+		merged.SandboxesDeleted += segment.SandboxesDeleted
+		merged.SandboxSeconds += segment.SandboxSeconds
+		for _, limitation := range segment.Limitations {
+			if !containsString(merged.Limitations, limitation) {
+				merged.Limitations = append(merged.Limitations, limitation)
+			}
+		}
+		for _, run := range segment.Runs {
+			if run.Order < 1 || run.Order > expectedRuns {
+				return BenchmarkReport{}, fmt.Errorf("agentruntime: merged run order %d is outside schedule 1..%d", run.Order, expectedRuns)
+			}
+			if _, exists := byOrder[run.Order]; exists {
+				return BenchmarkReport{}, fmt.Errorf("agentruntime: merged run order %d was replayed", run.Order)
+			}
+			byOrder[run.Order] = run
+		}
+	}
+	for order := 1; order <= expectedRuns; order++ {
+		run, exists := byOrder[order]
+		if !exists {
+			return BenchmarkReport{}, fmt.Errorf("agentruntime: merged benchmark is missing scheduled run %d", order)
+		}
+		merged.Runs = append(merged.Runs, run)
+	}
+	if merged.WorkspacesCreated != merged.WorkspacesDeleted || merged.SandboxesCreated != merged.SandboxesDeleted {
+		return BenchmarkReport{}, fmt.Errorf("agentruntime: merged benchmark has an unbalanced resource ledger")
+	}
+	merged.Status = "complete"
+	merged.Summaries = summarizeBenchmarkRuns(merged.Runs)
+	merged.Decision = decideBenchmark(merged.Summaries)
+	return merged, nil
+}
+
+func validateBenchmarkSegmentCompatibility(want, got BenchmarkReport) error {
+	if want.Version != got.Version || want.DecisionRule != got.DecisionRule || want.ModelDeployment != got.ModelDeployment ||
+		want.ExecutionEnvironment != got.ExecutionEnvironment || want.BaseSnapshot != got.BaseSnapshot ||
+		want.TurnCeiling != got.TurnCeiling || want.RunDeadlineMS != got.RunDeadlineMS ||
+		want.OutputCapBytes != got.OutputCapBytes || want.RetryPolicy != got.RetryPolicy ||
+		want.RelayMaxTokens != got.RelayMaxTokens || want.RelayMaxCostUSDMicros != got.RelayMaxCostUSDMicros ||
+		want.RelayWallClockMS != got.RelayWallClockMS || !maps.Equal(want.FixtureFingerprints, got.FixtureFingerprints) {
+		return errors.New("benchmark conditions differ")
+	}
+	return nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func benchmarkStopReason(ctx context.Context, config BenchmarkConfig, report BenchmarkReport) string {
@@ -410,4 +552,21 @@ func writeBenchmarkReport(path string, report BenchmarkReport) error {
 		return fmt.Errorf("agentruntime: publish benchmark report: %w", err)
 	}
 	return nil
+}
+
+func readBenchmarkManifestRaw(workingDirectory string) string {
+	path := filepath.Join(workingDirectory, filepath.FromSlash(ManifestRelativePath))
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+	payload, err := io.ReadAll(io.LimitReader(file, maxManifestBytes+1))
+	if err != nil {
+		return ""
+	}
+	if len(payload) > maxManifestBytes {
+		return string(payload[:maxManifestBytes]) + "\n<manifest truncated at 64 KiB>"
+	}
+	return string(payload)
 }

@@ -83,6 +83,34 @@ func TestValue(t *testing.T) {
 	}
 }
 
+func TestPurposeBuiltRuntimeManifestDiagnostic(t *testing.T) {
+	workingDirectory := t.TempDir()
+	relay := newFakeRelay(t, []fakeRelayStep{
+		toolStep("manifest", ToolWriteFile, map[string]any{"path": ManifestRelativePath, "content": `{"version":1,"completed":`}),
+		{content: "DONE"},
+	})
+	defer relay.Close()
+	runtimeAdapter := &PurposeBuiltRuntime{Client: newTestRelayClient(t, relay.URL)}
+	result, err := runtimeAdapter.Run(t.Context(), TaskSpec{
+		Goal: "write a completion claim", WorkingDirectory: workingDirectory,
+		AllowedTools: []Tool{ToolWriteFile}, TurnCeiling: 3,
+		Deadline: time.Now().Add(10 * time.Second), OutputCapBytes: DefaultOutputCap,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Manifest.Status != ManifestMalformed || !strings.Contains(result.Manifest.Error, "decode result manifest") {
+		t.Fatalf("manifest diagnostic = %#v", result.Manifest)
+	}
+	verification, err := (FixtureVerifier{}).Verify(t.Context(), TaskSpec{}, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification.Passed || !strings.Contains(verification.Detail, result.Manifest.Error) {
+		t.Fatalf("verification = %#v", verification)
+	}
+}
+
 func TestPurposeBuiltRuntimeCeilingsStopToolDispatch(t *testing.T) {
 	t.Run("turn ceiling", func(t *testing.T) {
 		workingDirectory := t.TempDir()

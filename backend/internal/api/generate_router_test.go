@@ -36,7 +36,7 @@ type passingVerifyRunner struct{}
 func (passingVerifyRunner) Run(_ context.Context, _ execution.RunSpec) (execution.RunOutcome, error) {
 	return execution.RunOutcome{
 		ExitCode: 0,
-		Output: `CODEGYM_RESULT {"tests":[{"name":"one","status":"pass","duration_ms":1,"error":null},{"name":"single","status":"pass","duration_ms":1,"error":null},{"name":"spaces","status":"pass","duration_ms":1,"error":null},{"name":"empty","status":"pass","duration_ms":1,"error":null}],"compile_error":null}`,
+		Output:   `CODEGYM_RESULT {"tests":[{"name":"one","status":"pass","duration_ms":1,"error":null},{"name":"single","status":"pass","duration_ms":1,"error":null},{"name":"spaces","status":"pass","duration_ms":1,"error":null},{"name":"empty","status":"pass","duration_ms":1,"error":null}],"compile_error":null}`,
 		Duration: time.Millisecond,
 	}, nil
 }
@@ -322,12 +322,12 @@ func TestGenerateRoutePersistsWorkspaceScopedProblem(t *testing.T) {
 		"subcategory":"strings","tags":["strings"],"difficulty":1,"estimated_minutes":15,
 		"function_name":"reverse_words","parameters":[{"name":"value","type":"str"}],
 		"return_type":"str","hints":["Split first."],
-		"reference_solution":"def reverse_words(value: str) -> str:\n    return ' '.join(reversed(value.split()))",
-		"test_cases":[
-			{"name":"one","args":["hello world"],"expected":"world hello"},
-			{"name":"single","args":["hello"],"expected":"hello"},
-			{"name":"spaces","args":["a b c"],"expected":"c b a"},
-			{"name":"empty","args":[""],"expected":""}
+			"reference_solution":"def reverse_words(value: str) -> str:\n    return ' '.join(reversed(value.split()))",
+			"test_cases":[
+				{"name":"one","kind":"example","hidden":false,"args":["hello world"],"expected":"world hello"},
+				{"name":"single","kind":"functional","hidden":false,"args":["hello"],"expected":"hello"},
+				{"name":"spaces","kind":"hidden","hidden":true,"args":["a b c"],"expected":"c b a"},
+				{"name":"empty","kind":"edge","hidden":true,"args":[""],"expected":""}
 		]
 	}`
 	orchestrator := generation.NewOrchestrator(memoryService, staticGenerator{payload: payload})
@@ -353,7 +353,8 @@ func TestGenerateRoutePersistsWorkspaceScopedProblem(t *testing.T) {
 	getRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
 	router.ServeHTTP(get, getRequest)
 	if get.Code != http.StatusOK || strings.Contains(get.Body.String(), "reference_solution") ||
-		strings.Contains(get.Body.String(), "CODEGYM_RESULT") {
+		strings.Contains(get.Body.String(), "CODEGYM_RESULT") || strings.Contains(get.Body.String(), `"spaces"`) ||
+		!strings.Contains(get.Body.String(), `"one"`) {
 		t.Fatalf("unsafe or missing public problem: %d %s", get.Code, get.Body.String())
 	}
 	otherScope := httptest.NewRecorder()

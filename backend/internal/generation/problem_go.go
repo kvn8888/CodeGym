@@ -18,32 +18,66 @@ func buildGoProblemDefinition(output GeneratedProblem) (problems.Definition, err
 		return problems.Definition{}, err
 	}
 	output.Comparator = comparator
-
-	caseSources := make([]string, 0, len(output.TestCases))
-	usesChecker := false
-	for index, test := range output.TestCases {
-		name := strings.TrimSpace(test.Name)
-		if name == "" {
-			name = fmt.Sprintf("case-%d", index+1)
-		}
-		resolved, err := problems.ResolveComparator(output.Comparator, test.Comparator)
-		if err != nil {
-			return problems.Definition{}, fmt.Errorf("case %q comparator: %w", name, err)
-		}
-		usesChecker = usesChecker || resolved.Kind == problems.ComparatorChecker
-		caseSource, err := buildGoCaseSource(output, test, name, resolved)
-		if err != nil {
-			return problems.Definition{}, err
-		}
-		caseSources = append(caseSources, caseSource)
+	hiddenFiles, err := buildGoUnitTestFiles(output, output.TestCases)
+	if err != nil {
+		return problems.Definition{}, err
 	}
-
+	publicFiles, err := buildGoUnitTestFiles(output, problems.SelectUnitCases(output.TestCases, false))
+	if err != nil {
+		return problems.Definition{}, err
+	}
 	parameters := make([]string, 0, len(output.Parameters))
 	for _, parameter := range output.Parameters {
 		parameters = append(parameters, parameter.Name+" "+parameter.Type)
 	}
 	skeleton := fmt.Sprintf("package main\n\nfunc %s(%s) %s {\n\tpanic(\"TODO: implement this function\")\n}\n",
 		output.FunctionName, strings.Join(parameters, ", "), output.ReturnType)
+	hints := make([]problems.Hint, 0, len(output.Hints))
+	for index, hint := range output.Hints {
+		hints = append(hints, problems.Hint{Cost: index, Text: strings.TrimSpace(hint)})
+	}
+	return problems.Definition{
+		Problem: problems.Problem{
+			Summary: problems.Summary{
+				Title: output.Title, Category: output.Category, Language: "go",
+				Difficulty: output.Difficulty, Tags: output.Tags,
+				EstimatedMinutes: output.EstimatedMinutes, Type: "coding",
+			},
+			Version: "1.0.0", Description: output.Description, Subcategory: output.Subcategory,
+			Runtime:     problems.Runtime{Image: "go1.25.4", TimeoutSeconds: 30, MemoryMB: 1024, NetworkMode: "block-all"},
+			Files:       problems.FileManifest{Skeleton: []problems.FileRef{{Path: "solution.go", Entry: true}}},
+			TestConfig:  problems.TestConfig{Strategy: "unit", Comparator: output.Comparator},
+			PublicCases: problems.ProjectPublicUnitCases(output.TestCases),
+			Hints:       hints,
+		},
+		SkeletonFiles:     []problems.File{{Path: "solution.go", Content: skeleton}},
+		PublicTestFiles:   publicFiles,
+		HiddenTestFiles:   hiddenFiles,
+		ReferenceSolution: strings.TrimRight(output.ReferenceSolution, "\n") + "\n",
+		Entrypoint:        ".codegym/compile_and_run.py",
+	}, nil
+}
+
+func buildGoUnitTestFiles(output GeneratedProblem, cases []problems.UnitCase) ([]problems.File, error) {
+	caseSources := make([]string, 0, len(cases))
+	usesChecker := false
+	for index, test := range cases {
+		name := strings.TrimSpace(test.Name)
+		if name == "" {
+			name = fmt.Sprintf("case-%d", index+1)
+		}
+		resolved, err := problems.ResolveComparator(output.Comparator, test.Comparator)
+		if err != nil {
+			return nil, fmt.Errorf("case %q comparator: %w", name, err)
+		}
+		usesChecker = usesChecker || resolved.Kind == problems.ComparatorChecker
+		caseSource, err := buildGoCaseSource(output, test, name, resolved)
+		if err != nil {
+			return nil, err
+		}
+		caseSources = append(caseSources, caseSource)
+	}
+
 	runner := fmt.Sprintf(`package main
 
 import (
@@ -149,10 +183,6 @@ func main() {
 }
 `, strings.Join(caseSources, "\n"))
 
-	hints := make([]problems.Hint, 0, len(output.Hints))
-	for index, hint := range output.Hints {
-		hints = append(hints, problems.Hint{Cost: index, Text: strings.TrimSpace(hint)})
-	}
 	hiddenFiles := []problems.File{
 		{Path: "test_solution.go", Content: runner},
 		{Path: "codegym_comparator.go", Content: execution.GoComparatorSource},
@@ -161,24 +191,7 @@ func main() {
 	if usesChecker {
 		hiddenFiles = append(hiddenFiles, problems.File{Path: "checker.go", Content: strings.TrimRight(output.Checker, "\n") + "\n"})
 	}
-
-	return problems.Definition{
-		Problem: problems.Problem{
-			Summary: problems.Summary{
-				Title: output.Title, Category: output.Category, Language: "go",
-				Difficulty: output.Difficulty, Tags: output.Tags,
-				EstimatedMinutes: output.EstimatedMinutes, Type: "coding",
-			},
-			Version: "1.0.0", Description: output.Description, Subcategory: output.Subcategory,
-			Runtime:    problems.Runtime{Image: "go1.25.4", TimeoutSeconds: 30, MemoryMB: 1024, NetworkMode: "block-all"},
-			Files:      problems.FileManifest{Skeleton: []problems.FileRef{{Path: "solution.go", Entry: true}}},
-			TestConfig: problems.TestConfig{Strategy: "unit", Comparator: output.Comparator}, Hints: hints,
-		},
-		SkeletonFiles:     []problems.File{{Path: "solution.go", Content: skeleton}},
-		HiddenTestFiles:   hiddenFiles,
-		ReferenceSolution: strings.TrimRight(output.ReferenceSolution, "\n") + "\n",
-		Entrypoint:        ".codegym/compile_and_run.py",
-	}, nil
+	return hiddenFiles, nil
 }
 
 func buildGoCaseSource(output GeneratedProblem, test ProblemTestCase, name string, comparator problems.Comparator) (string, error) {

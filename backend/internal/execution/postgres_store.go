@@ -25,8 +25,9 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			user_id text NOT NULL,
-			problem_id text NOT NULL DEFAULT '',
-			language text NOT NULL,
+				problem_id text NOT NULL DEFAULT '',
+				mode text NOT NULL DEFAULT 'submit',
+				language text NOT NULL,
 			entrypoint text NOT NULL,
 			files jsonb NOT NULL,
 			status text NOT NULL,
@@ -56,6 +57,7 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			END IF;
 		END $$`,
 		`ALTER TABLE execution_runs ADD COLUMN IF NOT EXISTS judge_result jsonb`,
+		`ALTER TABLE execution_runs ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'submit'`,
 		`CREATE INDEX IF NOT EXISTS idx_execution_runs_scope_created_at ON execution_runs (workspace_id, user_id, created_at DESC)`,
 		`DO $$
 		BEGIN
@@ -115,8 +117,9 @@ func (s *PostgresStore) CreateRun(ctx context.Context, run Run) error {
 			id,
 			workspace_id,
 			user_id,
-			problem_id,
-			language,
+				problem_id,
+				mode,
+				language,
 			entrypoint,
 			files,
 			status,
@@ -128,8 +131,8 @@ func (s *PostgresStore) CreateRun(ctx context.Context, run Run) error {
 			created_at,
 			completed_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12, $13, $14, $15)
-	`, run.ID, run.WorkspaceID, run.UserID, run.ProblemID, run.Language, run.Entrypoint,
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13, $14, $15, $16)
+		`, run.ID, run.WorkspaceID, run.UserID, run.ProblemID, run.Mode, run.Language, run.Entrypoint,
 		string(filesJSON), string(run.Status), run.ExitCode, run.Output, judgeResultJSON,
 		run.Error, run.DurationMs, run.CreatedAt.UTC(), completedAtUTC(run.CompletedAt))
 	return err
@@ -204,8 +207,9 @@ const selectRunColumns = `
 		id,
 		workspace_id,
 		user_id,
-		problem_id,
-		language,
+			problem_id,
+			mode,
+			language,
 		entrypoint,
 		files::text,
 		status,
@@ -228,6 +232,7 @@ func scanRun(row pgx.Row) (Run, error) {
 		&run.WorkspaceID,
 		&run.UserID,
 		&run.ProblemID,
+		&run.Mode,
 		&run.Language,
 		&run.Entrypoint,
 		&filesJSON,

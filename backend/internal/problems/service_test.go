@@ -44,6 +44,15 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 	if definition.ReferenceSolution == "" || len(definition.HiddenTestFiles) == 0 {
 		t.Fatal("seed is missing server-only execution artifacts")
 	}
+	if counts := CountUnitCaseVisibility(twoSumCases()); counts != (CaseVisibilityCounts{Public: 2, Hidden: 2}) ||
+		len(definition.PublicCases) != counts.Public || len(definition.PublicTestFiles) != 2 {
+		t.Fatalf("two-sum public/hidden mix = %#v definition=%#v", counts, definition)
+	}
+	publicSeedHarness := definition.PublicTestFiles[0].Content
+	if strings.Contains(publicSeedHarness, "handles duplicate values") || strings.Contains(publicSeedHarness, "handles negative values") ||
+		!strings.Contains(publicSeedHarness, "finds a pair without relying on order") {
+		t.Fatalf("two-sum public harness has wrong cases: %s", publicSeedHarness)
+	}
 	seedHarness := definition.HiddenTestFiles[0].Content
 	for _, protocol := range []string{"cases.jsonl", "verdict.json", "signal.setitimer"} {
 		if !strings.Contains(seedHarness, protocol) {
@@ -89,7 +98,8 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 		t.Fatalf("GetDefinition HTTP seed: %v", err)
 	}
 	if httpDefinition.TestConfig.Strategy != TestStrategyHTTP || httpDefinition.Language != "go" ||
-		httpDefinition.Entrypoint != "codegym_http_compile.py" || httpDefinition.Runtime.TimeoutSeconds != 60 || len(httpDefinition.HiddenTestFiles) != 4 {
+		httpDefinition.Entrypoint != "codegym_http_compile.py" || httpDefinition.Runtime.TimeoutSeconds != 60 ||
+		len(httpDefinition.HiddenTestFiles) != 4 || len(httpDefinition.PublicTestFiles) != 4 || len(httpDefinition.PublicCases) != 2 {
 		t.Fatalf("HTTP seed wiring = %#v", httpDefinition)
 	}
 	if len(httpSkeleton.Files) != 1 || httpSkeleton.Files[0].Path != "main.go" || !strings.Contains(httpSkeleton.Files[0].Content, `os.Getenv("PORT")`) {
@@ -99,8 +109,14 @@ func TestEnsureSeedIsIdempotentAndKeepsHiddenArtifactsPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal public HTTP seed: %v", err)
 	}
-	if strings.Contains(string(httpPublicJSON), "creates-an-item") || strings.Contains(string(httpPublicJSON), "codegym_http_cases") {
-		t.Fatalf("public HTTP seed leaked hidden cases: %s", httpPublicJSON)
+	if !strings.Contains(string(httpPublicJSON), "creates-an-item") || strings.Contains(string(httpPublicJSON), "increments-item-identifiers") || strings.Contains(string(httpPublicJSON), "codegym_http_cases") {
+		t.Fatalf("public HTTP seed projection is incorrect: %s", httpPublicJSON)
+	}
+	publicHTTPHarness := httpDefinition.PublicTestFiles[2].Content
+	fullHTTPHarness := httpDefinition.HiddenTestFiles[2].Content
+	if strings.Contains(publicHTTPHarness, "returns-not-found-for-an-unknown-item") ||
+		!strings.Contains(fullHTTPHarness, "returns-not-found-for-an-unknown-item") {
+		t.Fatalf("HTTP seed public/hidden harness split is incorrect\npublic=%s\nfull=%s", publicHTTPHarness, fullHTTPHarness)
 	}
 }
 

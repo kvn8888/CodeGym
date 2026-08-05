@@ -33,6 +33,9 @@ type harnessConfig struct {
 }
 
 type httpCase struct {
+	Kind       string          `json:"kind"`
+	Hidden     bool            `json:"hidden"`
+	Rationale  string          `json:"rationale"`
 	Name       string          `json:"name"`
 	Request    httpRequest     `json:"request"`
 	Expect     httpExpectation `json:"expect"`

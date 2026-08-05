@@ -2,6 +2,8 @@ package problems
 
 import (
 	"context"
+	"encoding/json"
+	"maps"
 	"sort"
 	"sync"
 )
@@ -64,10 +66,27 @@ func visibleTo(definition Definition, workspaceID, userID string) bool {
 func cloneDefinition(definition Definition) Definition {
 	definition.Tags = append([]string(nil), definition.Tags...)
 	definition.Hints = append([]Hint(nil), definition.Hints...)
+	definition.PublicCases = clonePublicCases(definition.PublicCases)
 	definition.Files.Skeleton = append([]FileRef(nil), definition.Files.Skeleton...)
 	definition.SkeletonFiles = append([]File(nil), definition.SkeletonFiles...)
+	definition.PublicTestFiles = append([]File(nil), definition.PublicTestFiles...)
 	definition.HiddenTestFiles = append([]File(nil), definition.HiddenTestFiles...)
 	return definition
+}
+
+func clonePublicCases(cases []PublicCase) []PublicCase {
+	cloned := make([]PublicCase, len(cases))
+	for index, testCase := range cases {
+		cloned[index] = testCase
+		cloned[index].Args = append([]json.RawMessage(nil), testCase.Args...)
+		if testCase.Request != nil {
+			request := *testCase.Request
+			request.Headers = maps.Clone(testCase.Request.Headers)
+			request.Body = cloneRawMessage(testCase.Request.Body)
+			cloned[index].Request = &request
+		}
+	}
+	return cloned
 }
 
 func cloneSummary(summary Summary) Summary {

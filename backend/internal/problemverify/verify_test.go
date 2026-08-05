@@ -128,10 +128,10 @@ func sampleGenerated() generation.GeneratedProblem {
         seen.add(value)
     return False`,
 		TestCases: []generation.ProblemTestCase{
-			{Name: "basic", Args: raws([]any{[]int{1, 5, 3}, 2}), Expected: raw(true)},
-			{Name: "missing", Args: raws([]any{[]int{1, 2, 3}, 8}), Expected: raw(false)},
-			{Name: "negative", Args: raws([]any{[]int{-2, 4, 1}, 3}), Expected: raw(true)},
-			{Name: "duplicate", Args: raws([]any{[]int{2, 2}, 0}), Expected: raw(true)},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindExample}, Name: "basic", Args: raws([]any{[]int{1, 5, 3}, 2}), Expected: raw(true)},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindFunctional}, Name: "missing", Args: raws([]any{[]int{1, 2, 3}, 8}), Expected: raw(false)},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindEdge, Hidden: true}, Name: "negative", Args: raws([]any{[]int{-2, 4, 1}, 3}), Expected: raw(true)},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindHidden, Hidden: true}, Name: "duplicate", Args: raws([]any{[]int{2, 2}, 0}), Expected: raw(true)},
 		},
 	}
 }
@@ -309,10 +309,10 @@ func multiAnswerGenerated(comparator problems.Comparator) generation.GeneratedPr
         return False, "indices must be distinct and in range"
     return nums[left] + nums[right] == target, "selected values do not sum to target"`,
 		TestCases: []generation.ProblemTestCase{
-			{Name: "first", Args: raws([]any{[]int{1, 4, 2, 3}, 5}), Expected: raw([]int{0, 1})},
-			{Name: "second", Args: raws([]any{[]int{2, 6, 3, 5}, 8}), Expected: raw([]int{0, 1})},
-			{Name: "negative", Args: raws([]any{[]int{-1, 5, 1, 3}, 4}), Expected: raw([]int{0, 1})},
-			{Name: "zero", Args: raws([]any{[]int{0, 10, 4, 6}, 10}), Expected: raw([]int{0, 1})},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindExample}, Name: "first", Args: raws([]any{[]int{1, 4, 2, 3}, 5}), Expected: raw([]int{0, 1})},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindFunctional}, Name: "second", Args: raws([]any{[]int{2, 6, 3, 5}, 8}), Expected: raw([]int{0, 1})},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindEdge, Hidden: true}, Name: "negative", Args: raws([]any{[]int{-1, 5, 1, 3}, 4}), Expected: raw([]int{0, 1})},
+			{CaseMetadata: problems.CaseMetadata{Kind: problems.CaseKindHidden, Hidden: true}, Name: "zero", Args: raws([]any{[]int{0, 10, 4, 6}, 10}), Expected: raw([]int{0, 1})},
 		},
 	}
 }

@@ -64,6 +64,9 @@ type Run struct {
 	ProblemID  string `json:"problem_id,omitempty"`
 	Language   string `json:"language"`
 	Entrypoint string `json:"entrypoint"`
+	// Mode is submission metadata persisted with the run. Raw execution
+	// endpoints omit it; the submission projection exposes the typed value.
+	Mode string `json:"-"`
 	// Files are persisted for execution diagnostics but never serialized:
 	// submission runs include server-only hidden tests.
 	Files    []File `json:"-"`
@@ -85,6 +88,7 @@ type SubmitRunInput struct {
 	Language   string `json:"language"`
 	Entrypoint string `json:"entrypoint"`
 	Strategy   string `json:"strategy,omitempty"`
+	Mode       string `json:"mode,omitempty"`
 	Files      []File `json:"files"`
 	Limits     Limits `json:"limits"`
 }

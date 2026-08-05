@@ -20,8 +20,42 @@ export interface Problem extends ProblemSummary {
     strategy: 'unit' | 'http';
     readiness_timeout_seconds?: number;
   };
+  /** Required on current API responses; optional here for pre-split mock compatibility. */
+  public_cases?: PublicProblemCase[];
   hints?: Hint[];
 }
+
+export type ProblemCaseKind = 'example' | 'functional' | 'edge' | 'stress' | 'hidden';
+
+export interface PublicUnitProblemCase {
+  strategy: 'unit';
+  name: string;
+  kind: ProblemCaseKind;
+  args: unknown[];
+  expected: unknown;
+  explanation?: string;
+}
+
+export interface PublicHttpProblemCase {
+  strategy: 'http';
+  name: string;
+  kind: ProblemCaseKind;
+  request: {
+    method: string;
+    path: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+  };
+  expected: {
+    status: number;
+    json?: unknown;
+    headers?: Record<string, string>;
+    body?: string;
+  };
+  explanation?: string;
+}
+
+export type PublicProblemCase = PublicUnitProblemCase | PublicHttpProblemCase;
 
 export interface RuntimeConfig {
   image: string;
@@ -44,6 +78,15 @@ export interface Hint {
 export interface SubmissionFile {
   path: string;
   content: string;
+}
+
+export type SubmissionMode = 'run' | 'submit';
+
+export interface SubmitProblemInput {
+  problem_id: string;
+  session_id?: string;
+  files: SubmissionFile[];
+  mode?: SubmissionMode;
 }
 
 export interface TestResult {
@@ -77,6 +120,10 @@ export type SubmissionStatus =
 
 export interface Submission {
   status: SubmissionStatus;
+  /** Required on current API responses; optional here for pre-mode mock compatibility. */
+  mode?: SubmissionMode;
+  /** Required on current API responses; optional here for pre-mode mock compatibility. */
+  executed_count?: number;
   result?: TestResult;
   failure_detail?: string;
   stdout: string;

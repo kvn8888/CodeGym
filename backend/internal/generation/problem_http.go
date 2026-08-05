@@ -44,6 +44,9 @@ func validateGeneratedHTTPProblem(output GeneratedProblem) (GeneratedProblem, er
 	}
 	output.Comparator = config.Comparator
 	output.HTTPTestCases = cases
+	if err := problems.ValidateCaseVisibilityMix(problems.CountHTTPCaseVisibility(cases), 2); err != nil {
+		return output, err
+	}
 	return output, nil
 }
 

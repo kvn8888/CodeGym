@@ -22,9 +22,10 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS problems (
 			id text PRIMARY KEY,
-			public_spec jsonb NOT NULL,
-			skeleton_files jsonb NOT NULL,
-			hidden_test_files jsonb NOT NULL,
+				public_spec jsonb NOT NULL,
+				skeleton_files jsonb NOT NULL,
+				public_test_files jsonb NOT NULL DEFAULT '[]'::jsonb,
+				hidden_test_files jsonb NOT NULL,
 			reference_solution text NOT NULL,
 			entrypoint text NOT NULL,
 			visibility text NOT NULL DEFAULT 'global',
@@ -36,6 +37,7 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 		`ALTER TABLE problems ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'global'`,
 		`ALTER TABLE problems ADD COLUMN IF NOT EXISTS workspace_id text`,
 		`ALTER TABLE problems ADD COLUMN IF NOT EXISTS user_id text`,
+		`ALTER TABLE problems ADD COLUMN IF NOT EXISTS public_test_files jsonb NOT NULL DEFAULT '[]'::jsonb`,
 		`UPDATE problems SET visibility = 'global' WHERE visibility IS NULL OR visibility = ''`,
 		`CREATE INDEX IF NOT EXISTS idx_problems_scope ON problems (workspace_id, user_id) WHERE visibility = 'workspace'`,
 		`DO $$
@@ -86,6 +88,10 @@ func (s *PostgresStore) Upsert(ctx context.Context, definition Definition) error
 	if err != nil {
 		return fmt.Errorf("encode problem skeleton files: %w", err)
 	}
+	publicTestFiles, err := json.Marshal(definition.PublicTestFiles)
+	if err != nil {
+		return fmt.Errorf("encode problem public test files: %w", err)
+	}
 	hiddenFiles, err := json.Marshal(definition.HiddenTestFiles)
 	if err != nil {
 		return fmt.Errorf("encode problem hidden files: %w", err)
@@ -95,8 +101,9 @@ func (s *PostgresStore) Upsert(ctx context.Context, definition Definition) error
 		INSERT INTO problems (
 			id,
 			public_spec,
-			skeleton_files,
-			hidden_test_files,
+				skeleton_files,
+				public_test_files,
+				hidden_test_files,
 			reference_solution,
 			entrypoint,
 			visibility,
@@ -104,31 +111,34 @@ func (s *PostgresStore) Upsert(ctx context.Context, definition Definition) error
 			user_id,
 			updated_at
 		)
-		VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5, $6, $7, $8, $9, now())
+			VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10, now())
 		ON CONFLICT (id) DO UPDATE
-		SET public_spec = EXCLUDED.public_spec,
-			skeleton_files = EXCLUDED.skeleton_files,
-			hidden_test_files = EXCLUDED.hidden_test_files,
+			SET public_spec = EXCLUDED.public_spec,
+				skeleton_files = EXCLUDED.skeleton_files,
+				public_test_files = EXCLUDED.public_test_files,
+				hidden_test_files = EXCLUDED.hidden_test_files,
 			reference_solution = EXCLUDED.reference_solution,
 			entrypoint = EXCLUDED.entrypoint,
 			visibility = EXCLUDED.visibility,
 			workspace_id = EXCLUDED.workspace_id,
 			user_id = EXCLUDED.user_id,
 			updated_at = now()
-	`, definition.ID, string(publicSpec), string(skeletonFiles), string(hiddenFiles), definition.ReferenceSolution, definition.Entrypoint, normalizeVisibility(definition.Visibility), nullableString(definition.WorkspaceID), nullableString(definition.UserID))
+		`, definition.ID, string(publicSpec), string(skeletonFiles), string(publicTestFiles), string(hiddenFiles), definition.ReferenceSolution, definition.Entrypoint, normalizeVisibility(definition.Visibility), nullableString(definition.WorkspaceID), nullableString(definition.UserID))
 	return err
 }
 
 func (s *PostgresStore) Get(ctx context.Context, id, workspaceID, userID string) (Definition, error) {
 	var publicSpec []byte
 	var skeletonFiles []byte
+	var publicTestFiles []byte
 	var hiddenFiles []byte
 	var definition Definition
 	err := s.pool.QueryRow(ctx, `
 		SELECT
 			public_spec,
-			skeleton_files,
-			hidden_test_files,
+				skeleton_files,
+				public_test_files,
+				hidden_test_files,
 			reference_solution,
 			entrypoint,
 			visibility,
@@ -140,6 +150,7 @@ func (s *PostgresStore) Get(ctx context.Context, id, workspaceID, userID string)
 	`, id, workspaceID, userID).Scan(
 		&publicSpec,
 		&skeletonFiles,
+		&publicTestFiles,
 		&hiddenFiles,
 		&definition.ReferenceSolution,
 		&definition.Entrypoint,
@@ -158,6 +169,9 @@ func (s *PostgresStore) Get(ctx context.Context, id, workspaceID, userID string)
 	}
 	if err := json.Unmarshal(skeletonFiles, &definition.SkeletonFiles); err != nil {
 		return Definition{}, fmt.Errorf("decode problem skeleton files: %w", err)
+	}
+	if err := json.Unmarshal(publicTestFiles, &definition.PublicTestFiles); err != nil {
+		return Definition{}, fmt.Errorf("decode problem public test files: %w", err)
 	}
 	if err := json.Unmarshal(hiddenFiles, &definition.HiddenTestFiles); err != nil {
 		return Definition{}, fmt.Errorf("decode problem hidden files: %w", err)

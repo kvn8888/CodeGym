@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
@@ -16,6 +17,8 @@ import (
 )
 
 var ErrInvalidInput = errors.New("invalid submission input")
+
+const MaxRevealedFailureBytes = 2048
 
 type Service struct {
 	problems   *problems.Service
@@ -42,6 +45,10 @@ func NewService(
 }
 
 func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, error) {
+	mode, err := normalizeMode(input.Mode)
+	if err != nil {
+		return Accepted{}, err
+	}
 	problemID := strings.TrimSpace(input.ProblemID)
 	if problemID == "" {
 		return Accepted{}, fmt.Errorf("%w: problem_id is required", ErrInvalidInput)
@@ -59,20 +66,32 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 		}
 	}
 
-	s.recordEvent(ctx, memory.TypeAttemptStarted, "Started a coding attempt.", definition, sessionID, map[string]any{
-		"file_count": len(input.Files),
-	})
+	if mode == ModeSubmit {
+		s.recordEvent(ctx, memory.TypeAttemptStarted, "Started a coding attempt.", definition, sessionID, map[string]any{
+			"file_count": len(input.Files),
+		})
+	}
 
-	files, err := AssembleFiles(input.Files, definition.HiddenTestFiles)
+	testFiles := definition.HiddenTestFiles
+	if mode == ModeRun {
+		testFiles = definition.PublicTestFiles
+		if len(testFiles) == 0 {
+			return Accepted{}, fmt.Errorf("%w: problem has no public cases", ErrInvalidInput)
+		}
+	}
+	files, err := AssembleFiles(input.Files, testFiles)
 	if err != nil {
 		return Accepted{}, err
 	}
-	s.recordEvent(ctx, memory.TypeAttemptSubmitted, "Submitted a coding attempt.", definition, sessionID, nil)
+	if mode == ModeSubmit {
+		s.recordEvent(ctx, memory.TypeAttemptSubmitted, "Submitted a coding attempt.", definition, sessionID, nil)
+	}
 	run, err := s.executions.SubmitRun(ctx, execution.SubmitRunInput{
 		ProblemID:  problemID,
 		Language:   definition.Language,
 		Entrypoint: definition.Entrypoint,
 		Strategy:   string(definition.TestConfig.Strategy),
+		Mode:       string(mode),
 		Files:      files,
 		Limits: execution.Limits{
 			TimeoutSeconds: definition.Runtime.TimeoutSeconds,
@@ -85,7 +104,7 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 	}
 
 	memoryStatus := ""
-	if sessionID != "" && isTerminal(run.Status) {
+	if mode == ModeSubmit && sessionID != "" && isTerminal(run.Status) {
 		sessionFiles := make([]session.FileInput, 0, len(input.Files))
 		for _, file := range input.Files {
 			sessionFiles = append(sessionFiles, session.FileInput{
@@ -130,6 +149,17 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 	}
 
 	return Accepted{SubmissionID: run.ID, MemoryUpdateStatus: memoryStatus}, nil
+}
+
+func normalizeMode(input Mode) (Mode, error) {
+	mode := Mode(strings.ToLower(strings.TrimSpace(string(input))))
+	if mode == "" {
+		return ModeSubmit, nil
+	}
+	if mode != ModeRun && mode != ModeSubmit {
+		return "", fmt.Errorf("%w: mode must be run or submit", ErrInvalidInput)
+	}
+	return mode, nil
 }
 
 func (s *Service) recordEvent(ctx context.Context, eventType, summary string, definition problems.Definition, sessionID string, extra map[string]any) bool {
@@ -229,22 +259,23 @@ func (s *Service) validateSession(ctx context.Context, sessionID, problemID stri
 	return nil
 }
 
-// AssembleFiles merges learner files with server-owned hidden tests. Hidden
-// paths are reserved so user uploads cannot overwrite the harness.
-func AssembleFiles(userFiles []execution.File, hiddenFiles []problems.File) ([]execution.File, error) {
-	hiddenPaths := make(map[string]struct{}, len(hiddenFiles))
-	for _, file := range hiddenFiles {
-		hiddenPaths[file.Path] = struct{}{}
+// AssembleFiles merges learner files with the selected server-owned judge
+// bundle. Judge paths are reserved so user uploads cannot overwrite either the
+// public-only or full-suite harness.
+func AssembleFiles(userFiles []execution.File, testFiles []problems.File) ([]execution.File, error) {
+	testPaths := make(map[string]struct{}, len(testFiles))
+	for _, file := range testFiles {
+		testPaths[file.Path] = struct{}{}
 	}
 
-	files := make([]execution.File, 0, len(userFiles)+len(hiddenFiles))
+	files := make([]execution.File, 0, len(userFiles)+len(testFiles))
 	for _, file := range userFiles {
-		if _, reserved := hiddenPaths[file.Path]; reserved {
+		if _, reserved := testPaths[file.Path]; reserved {
 			return nil, fmt.Errorf("%w: file path %q is reserved by the problem", ErrInvalidInput, file.Path)
 		}
 		files = append(files, file)
 	}
-	for _, file := range hiddenFiles {
+	for _, file := range testFiles {
 		files = append(files, execution.File{Path: file.Path, Content: file.Content})
 	}
 	return files, nil
@@ -261,11 +292,16 @@ func isTerminal(status execution.Status) bool {
 }
 
 func viewFromRun(run execution.Run) View {
-	view := View{}
+	mode, err := normalizeMode(Mode(run.Mode))
+	if err != nil {
+		mode = ModeSubmit
+	}
+	view := View{Mode: mode}
 	if run.JudgeResult != nil {
 		view.Stdout = run.JudgeResult.Stdout
 		view.OutputTruncated = run.JudgeResult.OutputTruncated
-		view.FailureDetail = run.JudgeResult.FailureDetail
+		view.FailureDetail = truncateOptionalFailure(run.JudgeResult.FailureDetail)
+		view.ExecutedCount = len(run.JudgeResult.Cases)
 	}
 	switch run.Status {
 	case execution.StatusQueued:
@@ -299,11 +335,43 @@ func viewFromRun(run execution.Run) View {
 			return view
 		}
 		result.DurationMs = run.DurationMs
+		truncateTestResultFailures(&result)
 		view.Status = StatusCompleted
 		view.Result = &result
+		view.ExecutedCount = result.Total
 		return view
 	default:
 		view.Status = StatusError
 		return view
 	}
+}
+
+func truncateTestResultFailures(result *TestResult) {
+	if result == nil {
+		return
+	}
+	result.CompileError = truncateOptionalFailure(result.CompileError)
+	for index := range result.TestCases {
+		result.TestCases[index].Error = truncateOptionalFailure(result.TestCases[index].Error)
+	}
+}
+
+func truncateOptionalFailure(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	truncated := truncateFailure(*value)
+	return &truncated
+}
+
+func truncateFailure(value string) string {
+	if len(value) <= MaxRevealedFailureBytes {
+		return value
+	}
+	const suffix = "... [truncated]"
+	limit := MaxRevealedFailureBytes - len(suffix)
+	for limit > 0 && !utf8.ValidString(value[:limit]) {
+		limit--
+	}
+	return value[:limit] + suffix
 }

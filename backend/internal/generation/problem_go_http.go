@@ -24,15 +24,13 @@ func buildGoHTTPProblemDefinition(output GeneratedProblem) (problems.Definition,
 	if err != nil {
 		return problems.Definition{}, err
 	}
-	harnessConfig, err := json.Marshal(struct {
-		ReadinessTimeoutSeconds int                 `json:"readiness_timeout_seconds"`
-		Cases                   []problems.HTTPCase `json:"cases"`
-	}{
-		ReadinessTimeoutSeconds: config.ReadinessTimeoutSeconds,
-		Cases:                   cases,
-	})
+	hiddenFiles, err := buildGoHTTPTestFiles(config, cases)
 	if err != nil {
-		return problems.Definition{}, fmt.Errorf("encode HTTP harness cases: %w", err)
+		return problems.Definition{}, err
+	}
+	publicFiles, err := buildGoHTTPTestFiles(config, problems.SelectHTTPCases(cases, false))
+	if err != nil {
+		return problems.Definition{}, err
 	}
 	hints := make([]problems.Hint, 0, len(output.Hints))
 	for index, hint := range output.Hints {
@@ -48,19 +46,35 @@ func buildGoHTTPProblemDefinition(output GeneratedProblem) (problems.Definition,
 				EstimatedMinutes: output.EstimatedMinutes, Type: "coding",
 			},
 			Version: "1.0.0", Description: output.Description, Subcategory: output.Subcategory,
-			Runtime:    problems.Runtime{Image: "go1.25.4", TimeoutSeconds: 60, MemoryMB: 1024, NetworkMode: "block-all"},
-			Files:      problems.FileManifest{Skeleton: []problems.FileRef{{Path: output.Entrypoint, Entry: true}}},
-			TestConfig: config,
-			Hints:      hints,
+			Runtime:     problems.Runtime{Image: "go1.25.4", TimeoutSeconds: 60, MemoryMB: 1024, NetworkMode: "block-all"},
+			Files:       problems.FileManifest{Skeleton: []problems.FileRef{{Path: output.Entrypoint, Entry: true}}},
+			TestConfig:  config,
+			PublicCases: problems.ProjectPublicHTTPCases(cases),
+			Hints:       hints,
 		},
-		SkeletonFiles: []problems.File{{Path: output.Entrypoint, Content: starter}},
-		HiddenTestFiles: []problems.File{
-			{Path: goHTTPHarnessPath, Content: execution.GoHTTPHarnessSource},
-			{Path: goHTTPComparatorPath, Content: execution.GoComparatorSource},
-			{Path: goHTTPCasesPath, Content: string(harnessConfig)},
-			{Path: goHTTPLauncherPath, Content: execution.GoHTTPCompileRunnerSource},
-		},
+		SkeletonFiles:     []problems.File{{Path: output.Entrypoint, Content: starter}},
+		PublicTestFiles:   publicFiles,
+		HiddenTestFiles:   hiddenFiles,
 		ReferenceSolution: reference,
 		Entrypoint:        goHTTPLauncherPath,
+	}, nil
+}
+
+func buildGoHTTPTestFiles(config problems.TestConfig, cases []problems.HTTPCase) ([]problems.File, error) {
+	harnessConfig, err := json.Marshal(struct {
+		ReadinessTimeoutSeconds int                 `json:"readiness_timeout_seconds"`
+		Cases                   []problems.HTTPCase `json:"cases"`
+	}{
+		ReadinessTimeoutSeconds: config.ReadinessTimeoutSeconds,
+		Cases:                   cases,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode HTTP harness cases: %w", err)
+	}
+	return []problems.File{
+		{Path: goHTTPHarnessPath, Content: execution.GoHTTPHarnessSource},
+		{Path: goHTTPComparatorPath, Content: execution.GoComparatorSource},
+		{Path: goHTTPCasesPath, Content: string(harnessConfig)},
+		{Path: goHTTPLauncherPath, Content: execution.GoHTTPCompileRunnerSource},
 	}, nil
 }

@@ -67,6 +67,10 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 	if err != nil {
 		return Run{}, err
 	}
+	mode, err := normalizeSubmissionMode(input.Mode)
+	if err != nil {
+		return Run{}, err
+	}
 
 	run := Run{
 		ID:          newID("exec_run"),
@@ -75,6 +79,7 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		ProblemID:   strings.TrimSpace(input.ProblemID),
 		Language:    lang.Name,
 		Entrypoint:  input.Entrypoint,
+		Mode:        mode,
 		Files:       input.Files,
 		Status:      StatusQueued,
 		CreatedAt:   s.now().UTC(),
@@ -141,6 +146,17 @@ func (s *Service) SubmitRun(ctx context.Context, input SubmitRunInput) (Run, err
 		return Run{}, err
 	}
 	return run, nil
+}
+
+func normalizeSubmissionMode(value string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(value))
+	if mode == "" {
+		mode = "submit"
+	}
+	if mode != "run" && mode != "submit" {
+		return "", fmt.Errorf("submission mode must be run or submit, got %q", value)
+	}
+	return mode, nil
 }
 
 func normalizeTestStrategy(value string) (TestStrategy, error) {

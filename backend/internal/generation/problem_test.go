@@ -30,10 +30,10 @@ const validProblemPayload = `{
   "hints":["Track values already seen.","Check both directions."],
   "reference_solution":"def has_pair_difference(nums: list[int], k: int) -> bool:\n    seen = set()\n    for value in nums:\n        if value-k in seen or value+k in seen:\n            return True\n        seen.add(value)\n    return False",
   "test_cases":[
-    {"name":"basic","args":[[1,5,3],2],"expected":true},
-    {"name":"missing","args":[[1,2,3],8],"expected":false},
-    {"name":"negative","args":[[-2,4,1],3],"expected":true},
-    {"name":"duplicate","args":[[2,2],0],"expected":true}
+	    {"name":"basic","kind":"example","hidden":false,"rationale":"Shows an ordinary match.","args":[[1,5,3],2],"expected":true},
+	    {"name":"missing","kind":"functional","hidden":false,"rationale":"Shows the no-match result.","args":[[1,2,3],8],"expected":false},
+	    {"name":"negative","kind":"edge","hidden":true,"rationale":"Checks negative values.","args":[[-2,4,1],3],"expected":true},
+	    {"name":"duplicate","kind":"hidden","hidden":true,"rationale":"Checks equal values with zero difference.","args":[[2,2],0],"expected":true}
   ]
 }`
 
@@ -55,10 +55,10 @@ const validGoProblemPayload = `{
   "hints":["Count each nested value.","Map keys arrive from JSON objects."],
   "reference_solution":"package main\n\nfunc summarizeBuckets(values [][]float64, labels map[int][]string, enabled bool) map[string]int {\n    result := map[string]int{\"values\": 0, \"labels\": 0}\n    if !enabled { return result }\n    for _, bucket := range values { result[\"values\"] += len(bucket) }\n    for _, bucketLabels := range labels { result[\"labels\"] += len(bucketLabels) }\n    return result\n}",
   "test_cases":[
-    {"name":"basic","args":[[[1.5,2.5],[3.0]],{"1":["a"],"2":["b","c"]},true],"expected":{"values":3,"labels":3}},
-    {"name":"disabled","args":[[[1.0]],{"1":["a"]},false],"expected":{"values":0,"labels":0}},
-    {"name":"empty","args":[[],{},true],"expected":{"values":0,"labels":0}},
-    {"name":"mixed empty","args":[[[],[4.0]],{"-1":[]},true],"expected":{"values":1,"labels":0}}
+	    {"name":"basic","kind":"example","hidden":false,"rationale":"Shows enabled aggregation.","args":[[[1.5,2.5],[3.0]],{"1":["a"],"2":["b","c"]},true],"expected":{"values":3,"labels":3}},
+	    {"name":"disabled","kind":"functional","hidden":false,"rationale":"Shows disabled behavior.","args":[[[1.0]],{"1":["a"]},false],"expected":{"values":0,"labels":0}},
+	    {"name":"empty","kind":"edge","hidden":true,"rationale":"Checks empty collections.","args":[[],{},true],"expected":{"values":0,"labels":0}},
+	    {"name":"mixed empty","kind":"hidden","hidden":true,"rationale":"Checks nested empty values.","args":[[[],[4.0]],{"-1":[]},true],"expected":{"values":1,"labels":0}}
   ]
 }`
 
@@ -78,10 +78,10 @@ const validGoHTTPProblemPayload = `{
   "reference_solution":"package main\n\nimport (\n    \"encoding/json\"\n    \"log\"\n    \"net/http\"\n    \"os\"\n    \"sync\"\n)\n\nfunc main() {\n    port := os.Getenv(\"PORT\")\n    mux := http.NewServeMux()\n    var mu sync.Mutex\n    items := map[string]map[string]string{}\n    mux.HandleFunc(\"GET /health\", func(w http.ResponseWriter, r *http.Request) {\n        w.Header().Set(\"Content-Type\", \"application/json\")\n        _ = json.NewEncoder(w).Encode(map[string]string{\"status\": \"ok\"})\n    })\n    mux.HandleFunc(\"POST /items\", func(w http.ResponseWriter, r *http.Request) {\n        input := map[string]string{}\n        if json.NewDecoder(r.Body).Decode(&input) != nil { http.Error(w, \"bad request\", 400); return }\n        created := map[string]string{\"id\": \"1\", \"name\": input[\"name\"]}\n        mu.Lock(); items[created[\"id\"]] = created; mu.Unlock()\n        w.Header().Set(\"Content-Type\", \"application/json\")\n        w.WriteHeader(http.StatusCreated)\n        _ = json.NewEncoder(w).Encode(created)\n    })\n    mux.HandleFunc(\"GET /items/{id}\", func(w http.ResponseWriter, r *http.Request) {\n        mu.Lock(); found, ok := items[r.PathValue(\"id\")]; mu.Unlock()\n        if !ok { http.NotFound(w, r); return }\n        w.Header().Set(\"Content-Type\", \"application/json\")\n        _ = json.NewEncoder(w).Encode(found)\n    })\n    if err := http.ListenAndServe(\":\"+port, mux); err != nil { log.Fatal(err) }\n}",
   "comparator":{"kind":"exact"},
   "http_test_cases":[
-    {"name":"health","request":{"method":"GET","path":"/health"},"expect":{"status":200,"json":{"status":"ok"},"headers":{"content-type":"application/json"}}},
-    {"name":"creates-item","request":{"method":"POST","path":"/items","headers":{"content-type":"application/json"},"body":{"name":"book"}},"expect":{"status":201,"json":{"id":"1","name":"book"}}},
-    {"name":"gets-item","request":{"method":"GET","path":"/items/1"},"expect":{"status":200,"json":{"name":"book","id":"1"}}},
-    {"name":"missing-item","request":{"method":"GET","path":"/items/404"},"expect":{"status":404,"body":"404 page not found\n"}}
+	    {"name":"health","kind":"example","hidden":false,"rationale":"Shows the health response.","request":{"method":"GET","path":"/health"},"expect":{"status":200,"json":{"status":"ok"},"headers":{"content-type":"application/json"}}},
+	    {"name":"creates-item","kind":"example","hidden":false,"rationale":"Shows item creation.","request":{"method":"POST","path":"/items","headers":{"content-type":"application/json"},"body":{"name":"book"}},"expect":{"status":201,"json":{"id":"1","name":"book"}}},
+	    {"name":"gets-item","kind":"functional","hidden":true,"rationale":"Checks persisted state.","request":{"method":"GET","path":"/items/1"},"expect":{"status":200,"json":{"name":"book","id":"1"}}},
+	    {"name":"missing-item","kind":"edge","hidden":true,"rationale":"Checks missing resources.","request":{"method":"GET","path":"/items/404"},"expect":{"status":404,"body":"404 page not found\n"}}
   ]
 }`
 
@@ -119,7 +119,7 @@ func TestGenerateProblemRepairsOnceAndBuildsControlledHarness(t *testing.T) {
 	if len(generator.requests) != 2 || !strings.Contains(generator.requests[1].Instructions, "previous output was rejected") {
 		t.Fatalf("requests = %#v", generator.requests)
 	}
-	if definition.Entrypoint != "test_solution.py" || len(definition.HiddenTestFiles) != 2 {
+	if definition.Entrypoint != "test_solution.py" || len(definition.HiddenTestFiles) != 2 || len(definition.PublicTestFiles) != 2 || len(definition.PublicCases) != 2 {
 		t.Fatalf("definition missing controlled runner: %#v", definition)
 	}
 	runner := hiddenFileContent(t, definition, "test_solution.py")
@@ -296,15 +296,17 @@ func TestGoHTTPStrategyBuildsAndRunsServerDefinition(t *testing.T) {
 		definition.TestConfig.ReadinessTimeoutSeconds != 10 || definition.Runtime.TimeoutSeconds != 60 {
 		t.Fatalf("Go HTTP wiring = %#v", definition)
 	}
-	if len(definition.HiddenTestFiles) != 4 || !strings.Contains(hiddenFileContent(t, definition, goHTTPCasesPath), "creates-item") {
+	if len(definition.HiddenTestFiles) != 4 || len(definition.PublicTestFiles) != 4 ||
+		!strings.Contains(hiddenFileContent(t, definition, goHTTPCasesPath), "gets-item") ||
+		strings.Contains(publicFileContent(t, definition, goHTTPCasesPath), "gets-item") {
 		t.Fatalf("Go HTTP hidden files = %#v", definition.HiddenTestFiles)
 	}
 	public, err := json.Marshal(definition.Problem)
 	if err != nil {
 		t.Fatalf("marshal public problem: %v", err)
 	}
-	if strings.Contains(string(public), "creates-item") {
-		t.Fatalf("public problem leaked HTTP cases: %s", public)
+	if !strings.Contains(string(public), "creates-item") || strings.Contains(string(public), "gets-item") || strings.Contains(string(public), "missing-item") {
+		t.Fatalf("public problem projection is incorrect: %s", public)
 	}
 
 	root := t.TempDir()
@@ -420,6 +422,50 @@ func TestValidateGeneratedProblemRejectsMismatchedTypedCases(t *testing.T) {
 	}
 }
 
+func TestGeneratedProblemsRequireBalancedPublicAndHiddenCases(t *testing.T) {
+	for name, fixture := range map[string]string{
+		"python unit": validProblemPayload,
+		"go unit":     validGoProblemPayload,
+		"go http":     validGoHTTPProblemPayload,
+	} {
+		language := "python"
+		if strings.HasPrefix(name, "go ") {
+			language = "go"
+		}
+		generated, err := ValidateGeneratedProblemForLanguage(json.RawMessage(fixture), language)
+		if err != nil {
+			t.Fatalf("%s fixture: %v", name, err)
+		}
+		counts := problems.CountUnitCaseVisibility(generated.TestCases)
+		if generated.Strategy == problems.TestStrategyHTTP {
+			counts = problems.CountHTTPCaseVisibility(generated.HTTPTestCases)
+		}
+		if counts.Public != 2 || counts.Hidden != 2 {
+			t.Fatalf("%s counts = %#v", name, counts)
+		}
+		definition, err := BuildProblemDefinition(generated)
+		if err != nil {
+			t.Fatalf("build %s: %v", name, err)
+		}
+		if len(definition.PublicCases) != counts.Public || len(definition.PublicTestFiles) == 0 || len(definition.HiddenTestFiles) == 0 {
+			t.Fatalf("%s definition visibility bundles = %#v", name, definition)
+		}
+	}
+
+	allHidden := strings.ReplaceAll(validProblemPayload, `"hidden":false`, `"hidden":true`)
+	if _, err := ValidateGeneratedProblem(json.RawMessage(allHidden)); err == nil || !strings.Contains(err.Error(), "public") {
+		t.Fatalf("zero-public unit cases err = %v", err)
+	}
+	allPublicHTTP := strings.ReplaceAll(validGoHTTPProblemPayload, `"hidden":true`, `"hidden":false`)
+	if _, err := ValidateGeneratedProblemForLanguage(json.RawMessage(allPublicHTTP), "go"); err == nil || !strings.Contains(err.Error(), "hidden") {
+		t.Fatalf("zero-hidden HTTP cases err = %v", err)
+	}
+	missingHidden := strings.Replace(validProblemPayload, `,"hidden":false`, "", 1)
+	if _, err := ValidateGeneratedProblem(json.RawMessage(missingHidden)); err == nil || !strings.Contains(err.Error(), "must include hidden") {
+		t.Fatalf("missing hidden field err = %v", err)
+	}
+}
+
 func TestGenerateProblemStopsAfterOneRepair(t *testing.T) {
 	generator := &problemSequenceGenerator{payloads: []string{`{}`, `{}`}}
 	orchestrator := NewOrchestrator(memory.NewService(memory.NewInMemoryStore(), nil), generator)
@@ -437,5 +483,16 @@ func hiddenFileContent(t *testing.T, definition problems.Definition, path string
 		}
 	}
 	t.Fatalf("hidden file %q not found", path)
+	return ""
+}
+
+func publicFileContent(t *testing.T, definition problems.Definition, path string) string {
+	t.Helper()
+	for _, file := range definition.PublicTestFiles {
+		if file.Path == path {
+			return file.Content
+		}
+	}
+	t.Fatalf("public test file %q not found", path)
 	return ""
 }

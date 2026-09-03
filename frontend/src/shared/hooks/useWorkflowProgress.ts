@@ -58,7 +58,9 @@ function fallbackEvent(kind: WorkflowKind, status: WorkflowStatus): WorkflowEven
       ? 'Update memory'
       : kind === 'mcq_next_round'
         ? 'Update memory and prepare the next set'
-        : 'Prepare question set';
+        : kind === 'problem_generation'
+          ? 'Generate coding problem'
+          : 'Prepare question set';
   return {
     operation_id: 'non-streaming-fallback',
     sequence: 1,

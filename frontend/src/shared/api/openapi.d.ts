@@ -1289,7 +1289,7 @@ export interface components {
             operation_id?: string;
         };
         /** @enum {string} */
-        WorkflowKind: "mcq_generation" | "memory_reflection" | "mcq_next_round";
+        WorkflowKind: "mcq_generation" | "memory_reflection" | "mcq_next_round" | "problem_generation";
         /** @enum {string} */
         WorkflowStatus: "queued" | "running" | "succeeded" | "failed";
         CreateWorkflowOperationInput: {

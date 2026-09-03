@@ -94,10 +94,10 @@ var kindSteps = map[Kind][]stepDefinition{
 		{ID: "questions_ready", Label: "Next question set ready"},
 	},
 	KindProblemGeneration: {
-		{ID: "load_context", Label: "Load personalization"},
-		{ID: "generate_problem", Label: "Generate coding problem"},
-		{ID: "verify_solution", Label: "Verify reference solution"},
-		{ID: "save_problem", Label: "Save coding problem"},
+		{ID: "load_context", Label: "Read your memory profile"},
+		{ID: "generate_problem", Label: "Draft the coding problem"},
+		{ID: "verify_solution", Label: "Verify the reference solution"},
+		{ID: "save_problem", Label: "Save the coding problem"},
 		{ID: "problem_ready", Label: "Coding problem ready"},
 	},
 }

@@ -6,12 +6,11 @@ import { GeneratePage } from './GeneratePage';
 import { GenerationProgressActivity } from './GenerationProgressActivity';
 
 const codingSteps = [
-  ['memory_context', 'Read your memory profile'],
-  ['draft_problem', 'Draft the problem statement'],
-  ['build_examples', 'Create sample cases'],
-  ['generate_tests', 'Generate hidden tests'],
-  ['verify_problem', 'Verify the reference solution'],
-  ['save_workspace', 'Save to your workspace'],
+  ['load_context', 'Read your memory profile'],
+  ['generate_problem', 'Draft the coding problem'],
+  ['verify_solution', 'Verify the reference solution'],
+  ['save_problem', 'Save the coding problem'],
+  ['problem_ready', 'Coding problem ready'],
 ] as const;
 
 const mcqSteps = [
@@ -20,14 +19,6 @@ const mcqSteps = [
   ['generate_questions', 'Generate question set'],
   ['validate_questions', 'Validate answer choices'],
   ['save_session', 'Save practice session'],
-] as const;
-
-const interviewSteps = [
-  ['memory_context', 'Read your memory profile'],
-  ['prepare_focus', 'Prepare interview focus'],
-  ['draft_opening', 'Create opening question'],
-  ['create_session', 'Create interview session'],
-  ['save_thread', 'Save interview room'],
 ] as const;
 
 type ProgressStep = readonly [string, string];
@@ -57,10 +48,6 @@ function mcqEvents(statuses: WorkflowStatus[], terminalIndex = -1): WorkflowEven
   return workflowEvents('mcq-generation-story', mcqSteps, statuses, terminalIndex);
 }
 
-function interviewEvents(statuses: WorkflowStatus[], terminalIndex = -1): WorkflowEvent[] {
-  return workflowEvents('interview-generation-story', interviewSteps, statuses, terminalIndex);
-}
-
 const meta = {
   title: 'Pages/Generate/Generation Progress',
   component: GenerationProgressActivity,
@@ -86,7 +73,7 @@ export const Starting: Story = {
   args: {
     defaultExpanded: true,
     connectionState: 'connecting',
-    events: codingEvents(['queued', 'queued', 'queued', 'queued', 'queued', 'queued']),
+    events: codingEvents(['queued', 'queued', 'queued', 'queued', 'queued']),
   },
 };
 
@@ -103,31 +90,21 @@ export const MCQGeneration: Story = {
 export const DraftingProblem: Story = {
   args: {
     defaultExpanded: true,
-    events: codingEvents(['succeeded', 'running', 'queued', 'queued', 'queued', 'queued']),
+    events: codingEvents(['succeeded', 'running', 'queued', 'queued', 'queued']),
   },
 };
 
 export const VerifyingTests: Story = {
   args: {
     defaultExpanded: true,
-    events: codingEvents(['succeeded', 'succeeded', 'succeeded', 'succeeded', 'running', 'queued']),
+    events: codingEvents(['succeeded', 'succeeded', 'running', 'queued', 'queued']),
   },
 };
 
 export const Collapsed: Story = {
   args: {
     defaultExpanded: false,
-    events: codingEvents(['succeeded', 'running', 'queued', 'queued', 'queued', 'queued']),
-  },
-};
-
-export const InterviewGeneration: Story = {
-  name: 'Interview generation',
-  parameters: { generationFormat: 'interview' },
-  args: {
-    title: 'Generating interview',
-    defaultExpanded: true,
-    events: interviewEvents(['succeeded', 'succeeded', 'running', 'queued', 'queued']),
+    events: codingEvents(['succeeded', 'running', 'queued', 'queued', 'queued']),
   },
 };
 
@@ -135,8 +112,8 @@ export const Complete: Story = {
   args: {
     defaultExpanded: true,
     events: codingEvents(
-      ['succeeded', 'succeeded', 'succeeded', 'succeeded', 'succeeded', 'succeeded'],
-      5,
+      ['succeeded', 'succeeded', 'succeeded', 'succeeded', 'succeeded'],
+      4,
     ),
   },
 };
@@ -144,7 +121,7 @@ export const Complete: Story = {
 export const RetryableFailure: Story = {
   args: {
     defaultExpanded: true,
-    events: codingEvents(['succeeded', 'succeeded', 'succeeded', 'failed', 'queued', 'queued'], 3),
+    events: codingEvents(['succeeded', 'succeeded', 'failed', 'queued', 'queued'], 2),
   },
 };
 
@@ -152,7 +129,7 @@ export const Reconnecting: Story = {
   args: {
     defaultExpanded: true,
     connectionState: 'reconnecting',
-    events: codingEvents(['succeeded', 'succeeded', 'running', 'queued', 'queued', 'queued']),
+    events: codingEvents(['succeeded', 'running', 'queued', 'queued', 'queued']),
   },
 };
 

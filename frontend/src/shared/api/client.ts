@@ -95,7 +95,11 @@ export interface ServerSentEvent<T = unknown> {
   data: T;
 }
 
-export type WorkflowKind = 'mcq_generation' | 'memory_reflection' | 'mcq_next_round';
+export type WorkflowKind =
+  | 'mcq_generation'
+  | 'memory_reflection'
+  | 'mcq_next_round'
+  | 'problem_generation';
 export type WorkflowStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 export interface WorkflowOperation {

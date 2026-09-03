@@ -33,6 +33,39 @@ describe('GeneratePage', () => {
         if (url.includes('/sessions?') || url.includes('/practice-intakes?')) {
           return apiResponse([]);
         }
+        if (url.endsWith('/workflow-operations') && method === 'POST') {
+          return apiResponse(
+            {
+              operation: {
+                id: 'problem-workflow-1',
+                workspace_id: 'workspace-1',
+                user_id: 'user-1',
+                kind: 'problem_generation',
+                status: 'queued',
+                last_sequence: 1,
+                created_at: '2026-09-03T14:00:00Z',
+                updated_at: '2026-09-03T14:00:00Z',
+              },
+              events: [
+                {
+                  operation_id: 'problem-workflow-1',
+                  sequence: 1,
+                  step_id: 'load_context',
+                  label: 'Load personalization',
+                  status: 'queued',
+                  timestamp: '2026-09-03T14:00:00Z',
+                },
+              ],
+            },
+            201,
+          );
+        }
+        if (url.endsWith('/workflow-operations/problem-workflow-1/events')) {
+          return new Response(null, {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
+          });
+        }
         if (url.endsWith('/generate')) {
           return apiResponse({
             kind: 'problem',
@@ -63,6 +96,7 @@ describe('GeneratePage', () => {
       );
       expect(request?.body).toMatchObject({
         kind: 'problem',
+        operation_id: 'problem-workflow-1',
         spec: { language: 'go' },
       });
     });

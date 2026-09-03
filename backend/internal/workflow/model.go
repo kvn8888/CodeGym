@@ -5,9 +5,10 @@ import "time"
 type Kind string
 
 const (
-	KindMCQGeneration    Kind = "mcq_generation"
-	KindMemoryReflection Kind = "memory_reflection"
-	KindMCQNextRound     Kind = "mcq_next_round"
+	KindMCQGeneration     Kind = "mcq_generation"
+	KindMemoryReflection  Kind = "memory_reflection"
+	KindMCQNextRound      Kind = "mcq_next_round"
+	KindProblemGeneration Kind = "problem_generation"
 )
 
 type Status string
@@ -91,5 +92,12 @@ var kindSteps = map[Kind][]stepDefinition{
 		{ID: "validate_questions", Label: "Validate question set"},
 		{ID: "repair_questions", Label: "Repair invalid output if needed"},
 		{ID: "questions_ready", Label: "Next question set ready"},
+	},
+	KindProblemGeneration: {
+		{ID: "load_context", Label: "Load personalization"},
+		{ID: "generate_problem", Label: "Generate coding problem"},
+		{ID: "verify_solution", Label: "Verify reference solution"},
+		{ID: "save_problem", Label: "Save coding problem"},
+		{ID: "problem_ready", Label: "Coding problem ready"},
 	},
 }

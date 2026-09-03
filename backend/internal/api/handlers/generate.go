@@ -78,8 +78,8 @@ type evaluateFreeResponseBody struct {
 	Answer         string `json:"answer"`
 }
 
-// Generate handles POST /api/v1/generate. Only kind "mcq" is implemented;
-// "problem" and "interview" reuse this route as their orchestration lands.
+// Generate handles POST /api/v1/generate. Kinds "mcq" and "problem" are
+// implemented; "interview" reuses this route as its orchestration lands.
 func (h *GenerateHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	if h.orchestrator == nil {
 		response.Error(w, http.StatusServiceUnavailable, "generation_unconfigured",
@@ -119,6 +119,15 @@ func (h *GenerateHandler) Generate(w http.ResponseWriter, r *http.Request) {
 		}
 		h.generateMCQ(w, r, body.Spec, body.IntakeID)
 	case generation.KindProblem:
+		reporter, err := h.attachWorkflow(r, body.OperationID, workflow.KindProblemGeneration)
+		if err != nil {
+			h.workflowAttachError(w, err)
+			return
+		}
+		if reporter != nil {
+			r = r.WithContext(workflow.WithReporter(r.Context(), reporter))
+			defer ensureWorkflowTerminal(r, "problem_ready")()
+		}
 		h.generateProblem(w, r, body.Spec, body.IntakeID)
 	case generation.KindInterview:
 		response.Error(w, http.StatusNotImplemented, "kind_not_implemented",
@@ -175,6 +184,7 @@ func (h *GenerateHandler) generateProblem(w http.ResponseWriter, r *http.Request
 		response.Error(w, http.StatusBadGateway, "generation_failed", "The model did not return a usable coding problem. Try again or adjust the topic.")
 		return
 	}
+	reportWorkflowStep(r, "verify_solution", workflow.StatusRunning, nil, false)
 	definition, _, err = problemverify.Verify(r.Context(), h.orchestrator, h.runner, definition, generated)
 	if err != nil {
 		if r.Context().Err() != nil {
@@ -182,20 +192,36 @@ func (h *GenerateHandler) generateProblem(w http.ResponseWriter, r *http.Request
 		}
 		log.Printf("problem verification failed: %v", err)
 		if errors.Is(err, problemverify.ErrUnavailable) {
+			reportWorkflowStep(r, "verify_solution", workflow.StatusFailed, map[string]any{
+				"reason_code": "verification_unconfigured", "retryable": true,
+			}, true)
 			response.Error(w, http.StatusServiceUnavailable, "verification_unconfigured",
 				"Problem verification requires an execution runner. Set DAYTONA_API_KEY to enable coding-problem generation.")
 			return
 		}
+		reasonCode := "verification_error"
+		if errors.Is(err, problemverify.ErrRejected) {
+			reasonCode = "verification_failed"
+		}
+		reportWorkflowStep(r, "verify_solution", workflow.StatusFailed, map[string]any{
+			"reason_code": reasonCode, "retryable": true,
+		}, true)
 		response.Error(w, http.StatusBadGateway, "verification_failed",
 			"The generated problem did not pass reference verification. Try again or adjust the topic.")
 		return
 	}
+	reportWorkflowStep(r, "verify_solution", workflow.StatusSucceeded, nil, false)
+	reportWorkflowStep(r, "save_problem", workflow.StatusRunning, nil, false)
 	problem, err := h.problems.PersistGenerated(r.Context(), definition)
 	if err != nil {
 		log.Printf("generated problem persistence failed: %v", err)
+		reportWorkflowStep(r, "save_problem", workflow.StatusFailed, map[string]any{
+			"reason_code": "persistence_failed", "retryable": true,
+		}, true)
 		response.Error(w, http.StatusInternalServerError, "problem_persistence_failed", "The generated problem could not be saved.")
 		return
 	}
+	reportWorkflowStep(r, "save_problem", workflow.StatusSucceeded, nil, false)
 	h.recordEvent(r, memory.RecordEventInput{
 		Source:  memory.SourceGenerate,
 		Type:    memory.TypeProblemGenerated,
@@ -207,6 +233,7 @@ func (h *GenerateHandler) generateProblem(w http.ResponseWriter, r *http.Request
 			"schema_version": 1,
 		}),
 	})
+	reportWorkflowTerminal(r, "problem_ready", workflow.StatusSucceeded, nil)
 	response.JSON(w, http.StatusOK, generateProblemResponse{
 		Kind: string(generation.KindProblem), ProblemID: problem.ID, Problem: problem,
 		Provider: result.Provider, Model: result.Model,

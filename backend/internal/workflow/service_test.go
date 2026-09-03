@@ -39,6 +39,29 @@ func TestCreateSeedsOrderedServerOwnedSteps(t *testing.T) {
 	}
 }
 
+func TestCreateProblemGenerationSeedsOrderedSteps(t *testing.T) {
+	service := NewService(NewInMemoryStore(), nil)
+	result, err := service.Create(testContext("workspace-a", "user-a"), CreateInput{
+		Kind: KindProblemGeneration,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSteps := []string{"load_context", "generate_problem", "verify_solution", "save_problem", "problem_ready"}
+	if len(result.Events) != len(wantSteps) {
+		t.Fatalf("got %d seeded events, want %d", len(result.Events), len(wantSteps))
+	}
+	for index, stepID := range wantSteps {
+		event := result.Events[index]
+		if event.StepID != stepID || event.Status != StatusQueued {
+			t.Fatalf("event %d = %#v, want %s/queued", index, event, stepID)
+		}
+		if event.Label == "" {
+			t.Fatalf("event %d has no server-owned label", index)
+		}
+	}
+}
+
 func TestReporterAllocatesMonotonicSequenceAndTerminalState(t *testing.T) {
 	service := NewService(NewInMemoryStore(), nil)
 	ctx := testContext("workspace-a", "user-a")

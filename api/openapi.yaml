@@ -2664,7 +2664,7 @@ components:
           description: Optional completed intake in the caller's workspace. Its self-report remains separate from demonstrated memory.
         operation_id:
           type: string
-          description: Optional scoped workflow operation receiving deterministic MCQ progress events.
+          description: Optional scoped workflow operation receiving deterministic MCQ or coding-problem progress events.
 
     PreparePracticeIntakeInput:
       type: object
@@ -2834,7 +2834,7 @@ components:
 
     WorkflowKind:
       type: string
-      enum: [mcq_generation, memory_reflection, mcq_next_round]
+      enum: [mcq_generation, memory_reflection, mcq_next_round, problem_generation]
 
     WorkflowStatus:
       type: string

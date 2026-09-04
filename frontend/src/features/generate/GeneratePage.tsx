@@ -277,6 +277,9 @@ export function GeneratePage({
 
   const launchPractice = async (config: NewPracticeConfig) => {
     if (config.format === 'mcq') {
+      // A previous coding run may have left its progress overlay visible;
+      // MCQ starts do not use the workflow stream, so hide it.
+      workflowProgress.dismiss();
       const session = await api.post<PracticeSession>('/sessions', {
         kind: 'mcq',
         title: sessionTitle('mcq', config.prompt),
@@ -307,6 +310,8 @@ export function GeneratePage({
     }
 
     if (config.format === 'interview') {
+      // Same as MCQ above: do not leave a stale coding overlay mounted.
+      workflowProgress.dismiss();
       const session = await api.post<PracticeSession>('/sessions', {
         kind: 'interview',
         title: sessionTitle('interview', config.prompt),

@@ -35,7 +35,7 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 				REFERENCES workspace_memberships (workspace_id, user_id)
 				ON DELETE CASCADE,
 			CONSTRAINT chk_workflow_kind CHECK (
-				kind IN ('mcq_generation', 'memory_reflection', 'mcq_next_round')
+				kind IN ('mcq_generation', 'memory_reflection', 'mcq_next_round', 'problem_generation')
 			),
 			CONSTRAINT chk_workflow_status CHECK (
 				status IN ('queued', 'running', 'succeeded', 'failed')
@@ -56,6 +56,28 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 				status IN ('queued', 'running', 'succeeded', 'failed')
 			)
 		)`,
+		// Existing databases created before problem_generation existed still
+		// carry the three-kind chk_workflow_kind constraint; CREATE TABLE IF
+		// NOT EXISTS alone leaves it in place and rejects problem_generation
+		// inserts. Repair it idempotently, following the execution store's
+		// chk_execution_runs_status repair.
+		`DO $$
+		DECLARE
+			definition text;
+		BEGIN
+			SELECT pg_get_constraintdef(oid)
+			INTO definition
+			FROM pg_constraint
+			WHERE conname = 'chk_workflow_kind'
+				AND conrelid = 'workflow_operations'::regclass;
+
+			IF definition IS NULL OR definition NOT LIKE '%problem_generation%' THEN
+				ALTER TABLE workflow_operations DROP CONSTRAINT IF EXISTS chk_workflow_kind;
+				ALTER TABLE workflow_operations
+					ADD CONSTRAINT chk_workflow_kind
+					CHECK (kind IN ('mcq_generation', 'memory_reflection', 'mcq_next_round', 'problem_generation'));
+			END IF;
+		END $$`,
 	}
 	for _, statement := range statements {
 		if _, err := s.pool.Exec(ctx, statement); err != nil {

@@ -14,11 +14,11 @@ const codingSteps = [
 ] as const;
 
 const mcqSteps = [
-  ['memory_context', 'Read your memory profile'],
-  ['select_concepts', 'Select target concepts'],
-  ['generate_questions', 'Generate question set'],
-  ['validate_questions', 'Validate answer choices'],
-  ['save_session', 'Save practice session'],
+  ['load_context', 'Load personalization'],
+  ['generate_questions', 'Generate questions'],
+  ['validate_questions', 'Validate question set'],
+  ['repair_questions', 'Repair invalid output if needed'],
+  ['questions_ready', 'Question set ready'],
 ] as const;
 
 type ProgressStep = readonly [string, string];

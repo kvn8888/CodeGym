@@ -43,6 +43,13 @@ func TestNeonProblemGenerationWorkflow(t *testing.T) {
 
 	identityStore := identity.NewPostgresStore(pool)
 	workflowStore := workflow.NewPostgresStore(pool)
+	defer func() {
+		repairCtx, repairCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer repairCancel()
+		if err := workflowStore.EnsureSchema(repairCtx); err != nil {
+			t.Logf("restore workflow schema after test: %v", err)
+		}
+	}()
 	if err := identityStore.EnsureSchema(ctx); err != nil {
 		t.Fatalf("ensure identity schema: %v", err)
 	}
@@ -70,7 +77,7 @@ func TestNeonProblemGenerationWorkflow(t *testing.T) {
 	}
 	if _, err := pool.Exec(ctx, `ALTER TABLE workflow_operations
 		ADD CONSTRAINT chk_workflow_kind
-		CHECK (kind IN ('mcq_generation', 'memory_reflection', 'mcq_next_round'))`); err != nil {
+		CHECK (kind IN ('mcq_generation', 'memory_reflection', 'mcq_next_round')) NOT VALID`); err != nil {
 		t.Fatalf("install legacy kind constraint: %v", err)
 	}
 

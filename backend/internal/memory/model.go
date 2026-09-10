@@ -7,6 +7,7 @@ import (
 
 // Profile is the long-lived memory summary for a user within a workspace.
 type Profile struct {
+	Version      int64              `json:"version"`
 	Summary      string             `json:"summary"`
 	UpdatedAt    time.Time          `json:"updated_at"`
 	NextReviewAt time.Time          `json:"next_review_at"`

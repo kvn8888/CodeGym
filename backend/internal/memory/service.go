@@ -174,7 +174,29 @@ func (s *Service) ReplaceProfile(ctx context.Context, profile Profile) (Profile,
 	if err := s.store.UpsertProfile(ctx, id.workspaceID, id.userID, profile); err != nil {
 		return Profile{}, err
 	}
-	return profile, nil
+	updated, err := s.store.GetProfile(ctx, id.workspaceID, id.userID)
+	if err != nil {
+		return Profile{}, err
+	}
+	return normalizeProfileCollections(updated), nil
+}
+
+// ReplaceProfileIfVersion atomically replaces the scoped profile only when it
+// still matches the version read by the caller.
+func (s *Service) ReplaceProfileIfVersion(ctx context.Context, profile Profile, expectedVersion int64) (Profile, error) {
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+	profile = normalizeProfileCollections(profile)
+	if err := s.store.ReplaceProfileIfVersion(ctx, id.workspaceID, id.userID, profile, expectedVersion); err != nil {
+		return Profile{}, err
+	}
+	updated, err := s.store.GetProfile(ctx, id.workspaceID, id.userID)
+	if err != nil {
+		return Profile{}, err
+	}
+	return normalizeProfileCollections(updated), nil
 }
 
 // RefreshProfileFor is the explicit-scope version of RefreshProfile. Use this

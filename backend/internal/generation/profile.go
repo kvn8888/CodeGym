@@ -68,6 +68,14 @@ type ProfileRefreshResult struct {
 // failures are best-effort: a persisted profile is preserved, while a first
 // refresh remains an unpersisted empty state until the model succeeds.
 func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRefreshInput) (ProfileRefreshResult, error) {
+	result, err := s.refreshProfileOnce(ctx, input)
+	if errors.Is(err, memory.ErrStaleProfile) {
+		return s.refreshProfileOnce(ctx, input)
+	}
+	return result, err
+}
+
+func (s *ProfileSynthesizer) refreshProfileOnce(ctx context.Context, input ProfileRefreshInput) (ProfileRefreshResult, error) {
 	if s == nil || s.memory == nil {
 		return ProfileRefreshResult{}, errors.New("profile synthesis requires memory")
 	}
@@ -148,7 +156,7 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		EvidenceDigest:  evidenceDigest,
 	}
 	reportWorkflow(ctx, "save_profile", workflow.StatusRunning, nil, false)
-	updated, err := s.memory.ReplaceProfile(ctx, next)
+	updated, err := s.memory.ReplaceProfileIfVersion(ctx, next, current.Version)
 	if err != nil {
 		reportWorkflow(ctx, "save_profile", workflow.StatusFailed, map[string]any{
 			"reason_code": "persistence_failed", "retryable": true,

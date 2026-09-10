@@ -23,14 +23,15 @@ func TestProfileSynthesizerCuratesAndPersistsFullProfile(t *testing.T) {
 		t.Fatalf("seed event: %v", err)
 	}
 
-	payload := json.RawMessage(`{
+	notePayload := json.RawMessage(`{"actions":[{"op":"create","note":{"id":"note_sql-joins","title":"SQL join direction","summary":"Review which side preserves unmatched rows.","tags":["sql","joins"],"action":"review"}}]}`)
+	profilePayload := json.RawMessage(`{
 		"summary":"SQL join direction is the current priority.",
 		"strengths":[],
 		"growth_edges":["SQL Joins"],
 		"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":62,"trend":"down"}],
 		"notes":[{"id":"note_sql-joins","title":"SQL join direction","summary":"Review which side preserves unmatched rows.","tags":["sql","joins"],"action":"review"}]
 	}`)
-	generator := &scriptedGenerator{payloads: []json.RawMessage{payload}}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{notePayload, profilePayload}}
 	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
 
 	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "round-1"})
@@ -61,7 +62,13 @@ func TestProfileSynthesizerCuratesAndPersistsFullProfile(t *testing.T) {
 	if err != nil || persisted.Summary != result.Profile.Summary {
 		t.Fatalf("persisted profile = %#v, err=%v", persisted, err)
 	}
-	request := generator.requests[0]
+	if len(generator.requests) != 2 {
+		t.Fatalf("requests = %#v", generator.requests)
+	}
+	if generator.requests[0].Kind != KindNotes || generator.requests[0].Schema.Name != "note_actions" {
+		t.Fatalf("note request = %#v", generator.requests[0])
+	}
+	request := generator.requests[1]
 	if request.Kind != KindProfile || request.Schema.Name != "memory_profile" {
 		t.Fatalf("request = %#v", request)
 	}
@@ -82,7 +89,7 @@ func TestProfileSynthesizerReportsEvidenceThroughPersistence(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{"actions":[]}`), json.RawMessage(`{
 		"summary":"Graphs need practice.","strengths":[],"growth_edges":["Graphs"],
 		"skills":[{"id":"graphs","label":"Graphs","area":"DSA","level":2,"confidence":60,"trend":"flat"}],
 		"notes":[{"id":"note_graphs","title":"Graphs","summary":"Review traversal.","tags":["graphs"],"action":"review"}]
@@ -147,6 +154,128 @@ func TestProfileSynthesizerPreservesPersistedProfileOnInvalidOutput(t *testing.T
 	persisted, _ := service.GetProfile(ctx)
 	if persisted.Summary != previous.Summary {
 		t.Fatalf("invalid output replaced profile: %#v", persisted)
+	}
+}
+
+func TestProfileSynthesizerDoesNotPersistNotesWhenProfileStageFails(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+
+	previous := memory.Profile{
+		Summary:      "Known-good curated profile.",
+		UpdatedAt:    now.Add(-time.Hour),
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []memory.SkillProficiency{},
+		Notes:        []memory.Note{},
+	}
+	previous, err := service.ReplaceProfile(ctx, previous)
+	if err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source:  "mcq",
+		Type:    "answer_incorrect",
+		Summary: "Missed a SQL joins question.",
+		Payload: json.RawMessage(`{
+			"session_id":"mcq_r1",
+			"question_id":"q_sql_1",
+			"round":1,
+			"topic":"SQL Joins",
+			"correct":false
+		}`),
+	}); err != nil {
+		t.Fatalf("seed answer event: %v", err)
+	}
+
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source:  "mcq",
+		Type:    "session_completed",
+		Summary: "Finished round 1.",
+		Payload: json.RawMessage(`{
+			"session_id":"mcq_r1",
+			"round":1,
+			"question_count":1,
+			"answered_count":1,
+			"correct_count":0
+		}`),
+	}); err != nil {
+		t.Fatalf("seed completion event: %v", err)
+	}
+
+	noteCandidate := json.RawMessage(`{
+		"actions":[
+			{
+				"op":"create",
+				"note":{
+					"id":"note_sql_joins",
+					"title":"SQL joins",
+					"summary":"Review join direction and unmatched-row behavior.",
+					"tags":["sql","joins"],
+					"action":"review"
+				}
+			}
+		],
+		"reason":"missed SQL joins"
+	}`)
+
+	invalidProfileCandidate := json.RawMessage(`{
+		"summary":"",
+		"strengths":[],
+		"growth_edges":[],
+		"skills":[],
+		"notes":[
+			{
+				"id":"note_sql_joins",
+				"title":"SQL joins",
+				"summary":"Review join direction and unmatched-row behavior.",
+				"tags":["sql","joins"],
+				"action":"review"
+			}
+		]
+	}`)
+
+	generator := &scriptedGenerator{
+		payloads: []json.RawMessage{noteCandidate, invalidProfileCandidate},
+	}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).
+		WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "mcq_r1",
+		Trigger:   "set-completion",
+	})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Skipped == "" {
+		t.Fatal("expected skipped result after invalid profile stage")
+	}
+	if len(generator.requests) != 2 {
+		t.Fatalf("model calls = %d, want note stage and profile stage", len(generator.requests))
+	}
+	if generator.requests[0].Kind != KindNotes {
+		t.Fatalf("first model call kind = %q, want %q", generator.requests[0].Kind, KindNotes)
+	}
+	if generator.requests[1].Kind != KindProfile {
+		t.Fatalf("second model call kind = %q, want %q", generator.requests[1].Kind, KindProfile)
+	}
+
+	persisted, err := service.GetProfile(ctx)
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	if persisted.Summary != previous.Summary {
+		t.Fatalf("summary changed after failed profile stage: %#v", persisted)
+	}
+	if len(persisted.Notes) != 0 {
+		t.Fatalf("note candidate was persisted before profile stage succeeded: %#v", persisted.Notes)
+	}
+	if persisted.Version != previous.Version {
+		t.Fatalf("profile version changed after failed profile stage: got %d want %d", persisted.Version, previous.Version)
 	}
 }
 
@@ -228,7 +357,7 @@ func TestParseCuratedProfileRejectsNoteSummaryRegression(t *testing.T) {
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
 	current := memory.Profile{Notes: []memory.Note{{
 		ID: "note_sql", Title: "SQL joins",
-		Summary: "Earlier sets showed confusion on unmatched rows and LEFT vs INNER; keep reviewing cardinality examples before the next SQL set.",
+		Summary:   "Earlier sets showed confusion on unmatched rows and LEFT vs INNER; keep reviewing cardinality examples before the next SQL set.",
 		CreatedAt: now.Add(-time.Hour), Action: "review",
 	}}}
 	raw := json.RawMessage(`{
@@ -287,7 +416,7 @@ func TestProfileSynthesizerRefreshAllProfilesUsesLLM(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed event: %v", err)
 	}
-	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{"actions":[]}`), json.RawMessage(`{
 		"summary":"Queue ordering needs reinforcement.","strengths":[],"growth_edges":["Queues"],
 		"skills":[{"id":"queues","label":"Queues","area":"DSA","level":2,"confidence":50,"trend":"down"}],
 		"notes":[]
@@ -302,7 +431,7 @@ func TestProfileSynthesizerRefreshAllProfilesUsesLLM(t *testing.T) {
 	if err != nil || profile.Summary != "Queue ordering needs reinforcement." {
 		t.Fatalf("profile=%#v err=%v", profile, err)
 	}
-	if len(generator.requests) != 1 || generator.requests[0].Kind != KindProfile {
+	if len(generator.requests) != 2 || generator.requests[0].Kind != KindNotes || generator.requests[1].Kind != KindProfile {
 		t.Fatalf("worker requests = %#v", generator.requests)
 	}
 }
@@ -317,12 +446,13 @@ func TestProfileSynthesizerSkipsUnchangedDailyEvidence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed event: %v", err)
 	}
-	payload := json.RawMessage(`{
+	notePayload := json.RawMessage(`{"actions":[]}`)
+	profilePayload := json.RawMessage(`{
 		"summary":"Queue ordering needs reinforcement.","strengths":[],"growth_edges":["Queues"],
 		"skills":[{"id":"queues","label":"Queues","area":"DSA","level":2,"confidence":50,"trend":"down"}],
 		"notes":[]
 	}`)
-	generator := &scriptedGenerator{payloads: []json.RawMessage{payload, payload}}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{notePayload, profilePayload, notePayload, profilePayload}}
 	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
 
 	first, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{Trigger: "daily"})
@@ -334,7 +464,7 @@ func TestProfileSynthesizerSkipsUnchangedDailyEvidence(t *testing.T) {
 	if err != nil || second.Changed || second.Skipped != "memory evidence is unchanged" {
 		t.Fatalf("second refresh = %#v, err=%v", second, err)
 	}
-	if len(generator.requests) != 1 {
+	if len(generator.requests) != 2 {
 		t.Fatalf("unchanged daily refresh used model tokens; requests=%d", len(generator.requests))
 	}
 
@@ -345,7 +475,7 @@ func TestProfileSynthesizerSkipsUnchangedDailyEvidence(t *testing.T) {
 		t.Fatalf("append evidence: %v", err)
 	}
 	third, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{Trigger: "daily"})
-	if err != nil || !third.Changed || len(generator.requests) != 2 {
+	if err != nil || !third.Changed || len(generator.requests) != 4 {
 		t.Fatalf("changed refresh = %#v requests=%d err=%v", third, len(generator.requests), err)
 	}
 }

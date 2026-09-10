@@ -117,6 +117,14 @@ func (s *ProfileSynthesizer) refreshProfileOnce(ctx context.Context, input Profi
 		return ProfileRefreshResult{Profile: current, Skipped: "memory evidence is unchanged"}, nil
 	}
 	evidenceInput.SessionID = strings.TrimSpace(input.SessionID)
+	candidateNotes, _, _, err := s.maintainNoteCandidate(ctx, current, evidenceInput, now)
+	if err != nil {
+		reportWorkflow(ctx, "synthesize_profile", workflow.StatusFailed, map[string]any{
+			"reason_code": "note_generation_failed", "retryable": true,
+		}, true)
+		return s.fallback(current, "note generation failed: "+err.Error()), nil
+	}
+	profileContext := profileWithCandidateNotes(current, candidateNotes)
 	evidence, err := json.Marshal(evidenceInput)
 	if err != nil {
 		return ProfileRefreshResult{}, fmt.Errorf("encode profile evidence: %w", err)
@@ -127,7 +135,7 @@ func (s *ProfileSynthesizer) refreshProfileOnce(ctx context.Context, input Profi
 		Spec:         evidence,
 		Schema:       Schema{Name: "memory_profile", Version: "1", JSONSchema: profileJSONSchema},
 		Instructions: profileSystemPrompt,
-	}, current)
+	}, profileContext)
 	if err != nil {
 		reportWorkflow(ctx, "synthesize_profile", workflow.StatusFailed, map[string]any{
 			"reason_code": "provider_failed", "retryable": true,
@@ -145,6 +153,7 @@ func (s *ProfileSynthesizer) refreshProfileOnce(ctx context.Context, input Profi
 		return s.fallback(current, "generated profile was invalid: "+err.Error()), nil
 	}
 	reportWorkflow(ctx, "validate_profile", workflow.StatusSucceeded, nil, false)
+	next.Notes = candidateNotes
 	next.Provenance = &memory.ProfileProvenance{
 		SchemaVersion:   1,
 		Trigger:         firstProfileValue(strings.TrimSpace(input.Trigger), "manual"),
@@ -182,6 +191,33 @@ func skipProfileWorkflow(ctx context.Context) {
 
 func (s *ProfileSynthesizer) fallback(current memory.Profile, reason string) ProfileRefreshResult {
 	return ProfileRefreshResult{Profile: current, Skipped: reason, Changed: false}
+}
+
+func (s *ProfileSynthesizer) maintainNoteCandidate(ctx context.Context, current memory.Profile, evidence profileEvidence, now time.Time) ([]memory.Note, []NoteAction, GenerateResult, error) {
+	spec, err := json.Marshal(evidence)
+	if err != nil {
+		return nil, nil, GenerateResult{}, fmt.Errorf("encode note evidence: %w", err)
+	}
+	generated, err := s.orchestrator.GenerateWithProfile(ctx, GenerateInput{
+		Kind:         KindNotes,
+		Spec:         spec,
+		Schema:       Schema{Name: "note_actions", Version: "1", JSONSchema: notesJSONSchema},
+		Instructions: notesSystemPrompt,
+	}, current)
+	if err != nil {
+		return nil, nil, GenerateResult{}, err
+	}
+	actions, err := ParseNoteActions(generated.Object)
+	if err != nil {
+		return nil, nil, generated, err
+	}
+	return ApplyNoteActions(current.Notes, actions, now), actions, generated, nil
+}
+
+func profileWithCandidateNotes(current memory.Profile, notes []memory.Note) memory.Profile {
+	next := current
+	next.Notes = append([]memory.Note(nil), notes...)
+	return next
 }
 
 // RefreshAllProfiles is the daily-worker entrypoint. It establishes the same

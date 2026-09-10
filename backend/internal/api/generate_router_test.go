@@ -172,6 +172,7 @@ func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
 	generator := &sequencedGenerator{payloads: []string{
+		`{"actions":[{"op":"create","note":{"id":"note_sql-joins","title":"SQL joins","summary":"Missed LEFT JOIN semantics.","tags":["sql"],"action":"review"}}]}`,
 		`{"summary":"SQL joins need another pass; two-pointer fundamentals are progressing.","strengths":["Two Pointers"],"growth_edges":["SQL Joins"],"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":55,"trend":"down"},{"id":"two-pointers","label":"Two Pointers","area":"DSA","level":3,"confidence":70,"trend":"up"}],"notes":[{"id":"note_sql-joins","title":"SQL joins","summary":"Missed LEFT JOIN semantics.","tags":["sql"],"action":"review"}]}`,
 	}}
 	orchestrator := generation.NewOrchestrator(memoryService, generator)

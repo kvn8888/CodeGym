@@ -163,6 +163,7 @@ func (s *ProfileSynthesizer) refreshProfileOnce(ctx context.Context, input Profi
 		EvidenceThrough: latestEvidenceTime(evidenceEvents),
 		EventCount:      len(evidenceEvents),
 		EvidenceDigest:  evidenceDigest,
+		EvidenceSources: profileEvidenceSources(evidenceEvents),
 	}
 	reportWorkflow(ctx, "save_profile", workflow.StatusRunning, nil, false)
 	updated, err := s.memory.ReplaceProfileIfVersion(ctx, next, current.Version)
@@ -405,22 +406,21 @@ var evidencePayloadKeys = map[string]bool{
 
 func profileEvidenceEvents(events []memory.Event) []memory.Event {
 	out := make([]memory.Event, 0, len(events))
-	questionIndexes := map[string]int{}
+	indexes := map[string]int{}
 	for _, event := range events {
 		if event.Source == "memory" || event.Source == "system" {
 			continue
 		}
 		event = canonicalProfileEvidenceEvent(event)
-		if key := profileQuestionEvidenceKey(event); key != "" && isProfileQuestionOutcome(event.Type) {
-			if index, exists := questionIndexes[key]; exists {
-				existing := out[index]
-				if existing.Type == "question_skipped" && event.Type != "question_skipped" {
-					continue
+		key := profileEvidenceSourceKey(event)
+		if key != "" {
+			if index, exists := indexes[key]; exists {
+				if profileEvidenceEventPreferred(event, out[index]) {
+					out[index] = event
 				}
-				out[index] = event
 				continue
 			}
-			questionIndexes[key] = len(out)
+			indexes[key] = len(out)
 		}
 		out = append(out, event)
 	}
@@ -469,6 +469,115 @@ func profileQuestionEvidenceKey(event memory.Event) string {
 		return ""
 	}
 	return sessionID + "\x00" + questionID
+}
+
+func profileEvidenceSourceKey(event memory.Event) string {
+	payload := map[string]any{}
+	if len(event.Payload) > 0 {
+		_ = json.Unmarshal(event.Payload, &payload)
+	}
+	source := strings.TrimSpace(event.Source)
+	eventType := strings.TrimSpace(event.Type)
+	if source == "" || eventType == "" {
+		return strings.TrimSpace(event.ID)
+	}
+	sessionID, _ := payload["session_id"].(string)
+	questionID, _ := payload["question_id"].(string)
+	round := profileStringValue(payload["round"])
+	problemID, _ := payload["problem_id"].(string)
+
+	parts := []string{source, eventType}
+	if outcome := profileEvidenceOutcome(event); outcome != "" {
+		parts = append(parts, "outcome", outcome)
+	}
+	if sessionID != "" {
+		parts = append(parts, "session", sessionID)
+	}
+	if questionID != "" {
+		parts = append(parts, "question", questionID)
+	}
+	if round != "" {
+		parts = append(parts, "round", round)
+	}
+	if problemID != "" {
+		parts = append(parts, "problem", problemID)
+	}
+	if len(parts) > 2 {
+		return strings.Join(parts, ":")
+	}
+	if event.ID != "" {
+		return "event:" + event.ID
+	}
+	return source + ":" + eventType + ":" + profileEventDigest(event)
+}
+
+func profileEvidenceSources(events []memory.Event) []memory.ProfileEvidenceSource {
+	sources := make([]memory.ProfileEvidenceSource, 0, len(events))
+	for _, event := range events {
+		payload := map[string]any{}
+		if len(event.Payload) > 0 {
+			_ = json.Unmarshal(event.Payload, &payload)
+		}
+		sessionID, _ := payload["session_id"].(string)
+		questionID, _ := payload["question_id"].(string)
+		sources = append(sources, memory.ProfileEvidenceSource{
+			Key:        profileEvidenceSourceKey(event),
+			Source:     event.Source,
+			Type:       event.Type,
+			SessionID:  strings.TrimSpace(sessionID),
+			QuestionID: strings.TrimSpace(questionID),
+			Round:      profileStringValue(payload["round"]),
+			Digest:     profileEventDigest(event),
+			OccurredAt: event.OccurredAt.UTC(),
+		})
+	}
+	return sources
+}
+
+func profileStringValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		return fmt.Sprintf("%.0f", typed)
+	case int:
+		return fmt.Sprintf("%d", typed)
+	default:
+		return ""
+	}
+}
+
+func profileEventDigest(event memory.Event) string {
+	encoded, err := json.Marshal(struct {
+		Source  string          `json:"source"`
+		Type    string          `json:"type"`
+		Summary string          `json:"summary,omitempty"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}{Source: event.Source, Type: event.Type, Summary: event.Summary, Payload: event.Payload})
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(encoded))
+}
+
+func profileEvidenceEventPreferred(candidate, existing memory.Event) bool {
+	candidateRichness := profileEvidencePayloadRichness(candidate.Payload)
+	existingRichness := profileEvidencePayloadRichness(existing.Payload)
+	if candidateRichness != existingRichness {
+		return candidateRichness > existingRichness
+	}
+	return profileEvidenceEventTime(candidate).After(profileEvidenceEventTime(existing))
+}
+
+func profileEvidencePayloadRichness(raw json.RawMessage) int {
+	return len(compactEvidencePayload(raw))
+}
+
+func profileEvidenceEventTime(event memory.Event) time.Time {
+	if !event.OccurredAt.IsZero() {
+		return event.OccurredAt.UTC()
+	}
+	return event.CreatedAt.UTC()
 }
 
 func isProfileQuestionOutcome(eventType string) bool {

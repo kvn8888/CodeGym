@@ -80,6 +80,146 @@ func TestProfileSynthesizerCuratesAndPersistsFullProfile(t *testing.T) {
 	}
 }
 
+func TestProfileSynthesizerDedupesReplayedLogicalEvidence(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	for _, input := range []memory.RecordEventInput{
+		{Source: "mcq", Type: "answer_incorrect", Summary: "Missed SQL joins.", OccurredAt: now.Add(-4 * time.Minute), Payload: json.RawMessage(`{"session_id":"mcq_r1","question_id":"q_sql_1","correct":false}`)},
+		{Source: "mcq", Type: "answer_incorrect", Summary: "Missed SQL joins replay.", OccurredAt: now.Add(-3 * time.Minute), Payload: json.RawMessage(`{"session_id":"mcq_r1","question_id":"q_sql_1","topic":"SQL Joins","correct":false}`)},
+		{Source: "mcq", Type: "session_completed", Summary: "Finished round 1.", OccurredAt: now.Add(-2 * time.Minute), Payload: json.RawMessage(`{"session_id":"mcq_r1","round":1}`)},
+		{Source: "mcq", Type: "session_completed", Summary: "Finished round 1 replay.", OccurredAt: now.Add(-time.Minute), Payload: json.RawMessage(`{"session_id":"mcq_r1","round":1,"question_count":1,"answered_count":1,"correct_count":0}`)},
+	} {
+		if _, err := service.RecordEvent(ctx, input); err != nil {
+			t.Fatalf("seed event: %v", err)
+		}
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{"actions":[]}`), json.RawMessage(`{
+		"summary":"SQL joins need review.","strengths":[],"growth_edges":["SQL Joins"],
+		"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":55,"trend":"down"}],
+		"notes":[]
+	}`)}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "mcq_r1", Trigger: "set-completion"})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Profile.Provenance == nil || result.Profile.Provenance.EventCount != 2 {
+		t.Fatalf("provenance = %#v", result.Profile.Provenance)
+	}
+	if len(result.Profile.Provenance.EvidenceSources) != 2 {
+		t.Fatalf("evidence sources = %#v", result.Profile.Provenance.EvidenceSources)
+	}
+	keys := map[string]bool{}
+	for _, source := range result.Profile.Provenance.EvidenceSources {
+		if keys[source.Key] {
+			t.Fatalf("duplicate evidence source key saved: %#v", result.Profile.Provenance.EvidenceSources)
+		}
+		keys[source.Key] = true
+	}
+
+	var evidence profileEvidence
+	if err := json.Unmarshal(generator.requests[1].Spec, &evidence); err != nil {
+		t.Fatalf("decode evidence: %v", err)
+	}
+	if evidence.TotalEvents != 2 || len(evidence.Recent) != 2 {
+		t.Fatalf("evidence = %#v", evidence)
+	}
+	if evidence.Recent[0].Details["topic"] != "SQL Joins" {
+		t.Fatalf("less complete question replay was kept: %#v", evidence.Recent[0].Details)
+	}
+	if evidence.Recent[1].Details["correct_count"] == nil {
+		t.Fatalf("less complete round replay was kept: %#v", evidence.Recent[1].Details)
+	}
+}
+
+func TestProfileSynthesizerKeepsDistinctFreeResponseOutcomes(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	for _, input := range []memory.RecordEventInput{
+		{Source: "mcq", Type: "free_response_evaluated", Summary: "Written answer was incorrect.", Payload: json.RawMessage(`{"session_id":"round-1","question_id":"q1","topic":"Indexes","correct":false}`)},
+		{Source: "mcq", Type: "free_response_evaluated", Summary: "Written answer was correct.", Payload: json.RawMessage(`{"session_id":"round-1","question_id":"q1","topic":"Indexes","correct":true}`)},
+	} {
+		if _, err := service.RecordEvent(ctx, input); err != nil {
+			t.Fatalf("seed event: %v", err)
+		}
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{"actions":[]}`), json.RawMessage(`{
+		"summary":"Index evidence changed across written evaluations.","strengths":[],"growth_edges":[],
+		"skills":[{"id":"indexes","label":"Indexes","area":"Data Systems","level":2,"confidence":45,"trend":"flat"}],
+		"notes":[]
+	}`)}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "round-1", Trigger: "set-completion"})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Profile.Provenance == nil || len(result.Profile.Provenance.EvidenceSources) != 2 {
+		t.Fatalf("provenance = %#v", result.Profile.Provenance)
+	}
+
+	var evidence profileEvidence
+	if err := json.Unmarshal(generator.requests[1].Spec, &evidence); err != nil {
+		t.Fatalf("decode evidence: %v", err)
+	}
+	outcomes := map[string]bool{}
+	for _, event := range evidence.Recent {
+		outcomes[event.Outcome] = true
+	}
+	if !outcomes["incorrect"] || !outcomes["correct"] {
+		t.Fatalf("outcomes = %#v", evidence.Recent)
+	}
+}
+
+func TestProfileSynthesizerKeepsDistinctSkipAndAnswerEvidence(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	for _, input := range []memory.RecordEventInput{
+		{Source: "mcq", Type: "question_skipped", Summary: "Skipped a Spring Profiles question.", Payload: json.RawMessage(`{"session_id":"round-1","question_id":"q1","topic":"Spring Profiles","correct":true,"skipped":true}`)},
+		{Source: "mcq", Type: "question_answered", Summary: "Answered a Spring Profiles question.", Payload: json.RawMessage(`{"session_id":"round-1","question_id":"q1","topic":"Spring Profiles","correct":true}`)},
+	} {
+		if _, err := service.RecordEvent(ctx, input); err != nil {
+			t.Fatalf("seed event: %v", err)
+		}
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{"actions":[]}`), json.RawMessage(`{
+		"summary":"Spring Profiles evidence is mixed and limited.","strengths":[],"growth_edges":[],
+		"skills":[{"id":"spring-profiles","label":"Spring Profiles","area":"Backend","level":2,"confidence":45,"trend":"flat"}],
+		"notes":[]
+	}`)}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "round-1", Trigger: "set-completion"})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Profile.Provenance == nil || result.Profile.Provenance.EventCount != 2 || len(result.Profile.Provenance.EvidenceSources) != 2 {
+		t.Fatalf("provenance = %#v", result.Profile.Provenance)
+	}
+
+	var evidence profileEvidence
+	if err := json.Unmarshal(generator.requests[1].Spec, &evidence); err != nil {
+		t.Fatalf("decode evidence: %v", err)
+	}
+	seen := map[string]profileEvidenceEvent{}
+	for _, event := range evidence.Recent {
+		seen[event.Type] = event
+	}
+	if _, ok := seen["question_skipped"]; !ok {
+		t.Fatalf("skip evidence missing: %#v", evidence.Recent)
+	}
+	if _, ok := seen["question_answered"]; !ok {
+		t.Fatalf("answer evidence missing: %#v", evidence.Recent)
+	}
+	if _, leaked := seen["question_skipped"].Details["correct"]; leaked {
+		t.Fatalf("skip evidence leaked revealed correctness: %#v", seen["question_skipped"].Details)
+	}
+}
+
 func TestProfileSynthesizerReportsEvidenceThroughPersistence(t *testing.T) {
 	ctx := scopedContext()
 	now := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
@@ -523,7 +663,7 @@ func TestProfileEvidenceCanonicalizesSkipAndSuppressesRevealCorrectness(t *testi
 	}
 
 	evidenceEvents := profileEvidenceEvents(events)
-	if len(evidenceEvents) != 2 {
+	if len(evidenceEvents) != 3 {
 		t.Fatalf("evidence events = %#v", evidenceEvents)
 	}
 	if evidenceEvents[0].Type != "question_skipped" {
@@ -541,7 +681,7 @@ func TestProfileEvidenceCanonicalizesSkipAndSuppressesRevealCorrectness(t *testi
 	}
 
 	evidence := buildProfileEvidence(evidenceEvents, memory.Profile{}, "round-1")
-	if len(evidence.Recent) != 2 || evidence.Recent[0].Outcome != "skipped" || evidence.Recent[1].Outcome != "correct" {
+	if len(evidence.Recent) != 3 || evidence.Recent[0].Outcome != "skipped" || evidence.Recent[1].Outcome != "correct" || evidence.Recent[2].Outcome != "correct" {
 		t.Fatalf("outcomes = %#v", evidence.Recent)
 	}
 }

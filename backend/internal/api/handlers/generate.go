@@ -376,6 +376,7 @@ func (h *GenerateHandler) MaintainProfile(w http.ResponseWriter, r *http.Request
 	if result.Skipped != "" {
 		log.Printf("memory profile synthesis used fallback: %s", result.Skipped)
 		if result.Skipped == "generation is not configured" ||
+			strings.HasPrefix(result.Skipped, "note generation failed") ||
 			strings.HasPrefix(result.Skipped, "profile generation failed") ||
 			strings.HasPrefix(result.Skipped, "generated profile was invalid") {
 			response.Error(w, http.StatusBadGateway, "memory_profile_synthesis_failed", "The result is saved, but memory could not be updated. Retry this update.")

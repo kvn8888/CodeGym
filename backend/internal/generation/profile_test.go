@@ -174,6 +174,21 @@ func TestProfileSynthesizerKeepsDistinctFreeResponseOutcomes(t *testing.T) {
 	}
 }
 
+func TestProfileEvidenceDedupesExactReplayWithoutReplacingTimestamp(t *testing.T) {
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	payload := json.RawMessage(`{"session_id":"mcq_r1","round":1,"question_count":1,"answered_count":1,"correct_count":0}`)
+	evidence := profileEvidenceEvents([]memory.Event{
+		{Source: "mcq", Type: "session_completed", Summary: "Finished round.", Payload: payload, OccurredAt: now},
+		{Source: "mcq", Type: "session_completed", Summary: "Finished round replay.", Payload: payload, OccurredAt: now.Add(time.Hour)},
+	})
+	if len(evidence) != 1 {
+		t.Fatalf("evidence = %#v", evidence)
+	}
+	if !evidence[0].OccurredAt.Equal(now) || evidence[0].Summary != "Finished round." {
+		t.Fatalf("exact replay replaced original event: %#v", evidence[0])
+	}
+}
+
 func TestProfileSynthesizerKeepsDistinctSkipAndAnswerEvidence(t *testing.T) {
 	ctx := scopedContext()
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)

@@ -455,22 +455,6 @@ func canonicalProfileEvidenceEvent(event memory.Event) memory.Event {
 	return event
 }
 
-func profileQuestionEvidenceKey(event memory.Event) string {
-	if event.Source != "mcq" {
-		return ""
-	}
-	var payload map[string]any
-	if len(event.Payload) == 0 || json.Unmarshal(event.Payload, &payload) != nil {
-		return ""
-	}
-	sessionID, _ := payload["session_id"].(string)
-	questionID, _ := payload["question_id"].(string)
-	if sessionID == "" || questionID == "" {
-		return ""
-	}
-	return sessionID + "\x00" + questionID
-}
-
 func profileEvidenceSourceKey(event memory.Event) string {
 	payload := map[string]any{}
 	if len(event.Payload) > 0 {
@@ -565,6 +549,9 @@ func profileEvidenceEventPreferred(candidate, existing memory.Event) bool {
 	existingRichness := profileEvidencePayloadRichness(existing.Payload)
 	if candidateRichness != existingRichness {
 		return candidateRichness > existingRichness
+	}
+	if reflect.DeepEqual(compactEvidencePayload(candidate.Payload), compactEvidencePayload(existing.Payload)) {
+		return false
 	}
 	return profileEvidenceEventTime(candidate).After(profileEvidenceEventTime(existing))
 }

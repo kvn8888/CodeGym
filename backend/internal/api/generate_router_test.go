@@ -234,6 +234,29 @@ func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	}
 }
 
+func TestMaintainProfileRouteReturnsRetryableFailureWhenNoteStageFails(t *testing.T) {
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	generator := &sequencedGenerator{payloads: []string{`{"actions":"not an array"}`}}
+	router := newGenerateTestRouter(t, generation.NewOrchestrator(memoryService, generator), memoryService)
+
+	event := httptest.NewRecorder()
+	eventRequest := httptest.NewRequest(http.MethodPost, "/api/v1/memory/events", strings.NewReader(`{"source":"mcq","type":"answer_incorrect","summary":"Missed SQL Joins.","payload":{"session_id":"mcq_r1","question_id":"q1","topic":"SQL Joins","correct":false}}`))
+	eventRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(event, eventRequest)
+	if event.Code != http.StatusCreated {
+		t.Fatalf("event status = %d: %s", event.Code, event.Body.String())
+	}
+
+	maintain := httptest.NewRecorder()
+	maintainRequest := httptest.NewRequest(http.MethodPost, "/api/v1/memory/profile/maintain", strings.NewReader(`{"session_id":"mcq_r1"}`))
+	maintainRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(maintain, maintainRequest)
+	if maintain.Code != http.StatusBadGateway || !strings.Contains(maintain.Body.String(), "memory_profile_synthesis_failed") {
+		t.Fatalf("maintain status = %d body=%s", maintain.Code, maintain.Body.String())
+	}
+}
+
 func TestMaintainProfileCompatibilityRouteWorksWithoutOrchestrator(t *testing.T) {
 	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
 	router := newGenerateTestRouter(t, nil, memoryService)

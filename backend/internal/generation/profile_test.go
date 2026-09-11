@@ -1,6 +1,7 @@
 package generation
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -445,6 +446,96 @@ func TestProfileSynthesizerDoesNotPersistNotesWhenProfileStageFails(t *testing.T
 	if persisted.Version != previous.Version {
 		t.Fatalf("profile version changed after failed profile stage: got %d want %d", persisted.Version, previous.Version)
 	}
+}
+
+func TestProfileSynthesizerRetriesOnceAfterStaleSave(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	store := &staleOnceProfileStore{InMemoryStore: memory.NewInMemoryStore()}
+	service := memory.NewService(store, func() time.Time { return now })
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: "mcq", Type: "answer_incorrect", Summary: "Missed SQL joins.",
+		Payload: json.RawMessage(`{"session_id":"mcq_r1","question_id":"q1","topic":"SQL Joins","correct":false}`),
+	}); err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{
+		json.RawMessage(`{"actions":[]}`),
+		json.RawMessage(`{"summary":"first attempt","strengths":[],"growth_edges":["SQL Joins"],"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":50,"trend":"down"}],"notes":[]}`),
+		json.RawMessage(`{"actions":[]}`),
+		json.RawMessage(`{"summary":"retried attempt","strengths":[],"growth_edges":["SQL Joins"],"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":55,"trend":"down"}],"notes":[]}`),
+	}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "mcq_r1", Trigger: "set-completion"})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Profile.Summary != "retried attempt" {
+		t.Fatalf("profile = %#v", result.Profile)
+	}
+	if len(generator.requests) != 4 {
+		t.Fatalf("model calls = %d, want first attempt plus retry", len(generator.requests))
+	}
+	if store.replaceAttempts != 2 {
+		t.Fatalf("replace attempts = %d, want retry after stale save", store.replaceAttempts)
+	}
+}
+
+func TestProfileSynthesizerRevisesExistingNoteIdentity(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	previous, err := service.ReplaceProfile(ctx, memory.Profile{
+		Summary:      "SQL joins look uncertain from an earlier round.",
+		UpdatedAt:    now.Add(-time.Hour),
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{"SQL Joins"},
+		Skills:       []memory.SkillProficiency{},
+		Notes: []memory.Note{{
+			ID: "note_sql_joins", Title: "SQL joins", Summary: "Review join direction.",
+			Tags: []string{"sql"}, Action: "review", CreatedAt: now.Add(-time.Hour),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: "mcq", Type: "question_answered", Summary: "Answered SQL joins correctly without help.",
+		Payload: json.RawMessage(`{"session_id":"mcq_r2","question_id":"q1","topic":"SQL Joins","correct":true}`),
+	}); err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{
+		json.RawMessage(`{"actions":[{"op":"update","note":{"id":"note_sql_joins","title":"SQL joins","summary":"Join direction is improving; keep an eye on unmatched rows.","tags":["sql"],"action":"keep"}}]}`),
+		json.RawMessage(`{"summary":"SQL joins improved after later correct evidence.","strengths":["SQL Joins"],"growth_edges":[],"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":3,"confidence":65,"trend":"up"}],"notes":[{"id":"note_sql_joins","title":"SQL joins","summary":"Join direction is improving; keep an eye on unmatched rows.","tags":["sql"],"action":"keep"}]}`),
+	}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "mcq_r2", Trigger: "set-completion"})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Profile.Summary == previous.Summary || result.Profile.Summary != "SQL joins improved after later correct evidence." {
+		t.Fatalf("summary was not revised: %#v", result.Profile)
+	}
+	if len(result.Profile.Notes) != 1 || result.Profile.Notes[0].ID != "note_sql_joins" || result.Profile.Notes[0].Action != "keep" {
+		t.Fatalf("note identity/action = %#v", result.Profile.Notes)
+	}
+}
+
+type staleOnceProfileStore struct {
+	*memory.InMemoryStore
+	replaceAttempts int
+}
+
+func (s *staleOnceProfileStore) ReplaceProfileIfVersion(ctx context.Context, workspaceID, userID string, profile memory.Profile, expectedVersion int64) error {
+	s.replaceAttempts++
+	if s.replaceAttempts == 1 {
+		return memory.ErrStaleProfile
+	}
+	return s.InMemoryStore.ReplaceProfileIfVersion(ctx, workspaceID, userID, profile, expectedVersion)
 }
 
 func TestProfileSynthesizerDoesNotPersistDeterministicFallbackForFirstProfile(t *testing.T) {

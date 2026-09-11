@@ -229,6 +229,9 @@ func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	if !foundNote {
 		t.Fatalf("generation memory context missing maintained note: %+v", lastRequest.MemoryContext.Notes)
 	}
+	if !strings.Contains(lastRequest.MemoryContext.Summary, "SQL joins need another pass") {
+		t.Fatalf("generation memory context missing maintained summary: %+v", lastRequest.MemoryContext)
+	}
 	if !strings.Contains(string(lastRequest.Spec), "drill my weak spots") {
 		t.Fatalf("spec missing user prompt: %s", lastRequest.Spec)
 	}

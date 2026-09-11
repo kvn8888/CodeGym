@@ -80,6 +80,19 @@ func TestProfileSynthesizerCuratesAndPersistsFullProfile(t *testing.T) {
 	}
 }
 
+func TestProfilePromptIncludesEvidenceInterpretationGuardrails(t *testing.T) {
+	for _, phrase := range []string{
+		"single incorrect answer is limited evidence",
+		"Assisted success",
+		"not independent mastery",
+		"used_help=true",
+	} {
+		if !strings.Contains(profileSystemPrompt, phrase) {
+			t.Fatalf("profile prompt missing %q", phrase)
+		}
+	}
+}
+
 func TestProfileSynthesizerDedupesReplayedLogicalEvidence(t *testing.T) {
 	ctx := scopedContext()
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)

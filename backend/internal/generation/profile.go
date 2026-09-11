@@ -117,12 +117,15 @@ func (s *ProfileSynthesizer) refreshProfileOnce(ctx context.Context, input Profi
 		return ProfileRefreshResult{Profile: current, Skipped: "memory evidence is unchanged"}, nil
 	}
 	evidenceInput.SessionID = strings.TrimSpace(input.SessionID)
-	candidateNotes, _, _, err := s.maintainNoteCandidate(ctx, current, evidenceInput, now)
-	if err != nil {
-		reportWorkflow(ctx, "synthesize_profile", workflow.StatusFailed, map[string]any{
-			"reason_code": "note_generation_failed", "retryable": true,
-		}, true)
-		return s.fallback(current, "note generation failed: "+err.Error()), nil
+	candidateNotes := append([]memory.Note(nil), current.Notes...)
+	if supportsNotesFirstRefresh(input, evidenceEvents) {
+		candidateNotes, _, _, err = s.maintainNoteCandidate(ctx, current, evidenceInput, now)
+		if err != nil {
+			reportWorkflow(ctx, "synthesize_profile", workflow.StatusFailed, map[string]any{
+				"reason_code": "note_generation_failed", "retryable": true,
+			}, true)
+			return s.fallback(current, "note generation failed: "+err.Error()), nil
+		}
 	}
 	profileContext := profileWithCandidateNotes(current, candidateNotes)
 	evidence, err := json.Marshal(evidenceInput)
@@ -219,6 +222,36 @@ func profileWithCandidateNotes(current memory.Profile, notes []memory.Note) memo
 	next := current
 	next.Notes = append([]memory.Note(nil), notes...)
 	return next
+}
+
+func supportsNotesFirstRefresh(input ProfileRefreshInput, events []memory.Event) bool {
+	sessionID := strings.TrimSpace(input.SessionID)
+	if sessionID == "" {
+		return false
+	}
+	hasCompletion := false
+	hasOutcome := false
+	for _, event := range events {
+		if event.Source != "mcq" {
+			continue
+		}
+		payload := map[string]any{}
+		if len(event.Payload) > 0 {
+			_ = json.Unmarshal(event.Payload, &payload)
+		}
+		eventSessionID, _ := payload["session_id"].(string)
+		if strings.TrimSpace(eventSessionID) != sessionID {
+			continue
+		}
+		if event.Type == "session_completed" {
+			hasCompletion = true
+			continue
+		}
+		if isProfileQuestionOutcome(event.Type) {
+			hasOutcome = true
+		}
+	}
+	return hasCompletion && hasOutcome
 }
 
 // RefreshAllProfiles is the daily-worker entrypoint. It establishes the same

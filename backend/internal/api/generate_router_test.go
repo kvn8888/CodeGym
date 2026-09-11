@@ -190,6 +190,7 @@ func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	for _, event := range []string{
 		`{"source":"mcq","type":"answer_incorrect","summary":"Missed a SQL Joins question.","payload":{"session_id":"mcq_r1","topic":"SQL Joins","correct":false}}`,
 		`{"source":"mcq","type":"question_answered","summary":"Answered a Two Pointers question correctly.","payload":{"session_id":"mcq_r1","topic":"Two Pointers","correct":true}}`,
+		`{"source":"mcq","type":"session_completed","summary":"Finished round 1.","payload":{"session_id":"mcq_r1","round":1,"question_count":2,"answered_count":2,"correct_count":1}}`,
 	} {
 		if code := authed(http.MethodPost, "/api/v1/memory/events", event).Code; code != http.StatusCreated {
 			t.Fatalf("seed event status = %d", code)
@@ -249,6 +250,13 @@ func TestMaintainProfileRouteReturnsRetryableFailureWhenNoteStageFails(t *testin
 	router.ServeHTTP(event, eventRequest)
 	if event.Code != http.StatusCreated {
 		t.Fatalf("event status = %d: %s", event.Code, event.Body.String())
+	}
+	completion := httptest.NewRecorder()
+	completionRequest := httptest.NewRequest(http.MethodPost, "/api/v1/memory/events", strings.NewReader(`{"source":"mcq","type":"session_completed","summary":"Finished round 1.","payload":{"session_id":"mcq_r1","round":1,"question_count":1,"answered_count":1,"correct_count":0}}`))
+	completionRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(completion, completionRequest)
+	if completion.Code != http.StatusCreated {
+		t.Fatalf("completion status = %d: %s", completion.Code, completion.Body.String())
 	}
 
 	maintain := httptest.NewRecorder()

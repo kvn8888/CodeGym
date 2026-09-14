@@ -1624,6 +1624,7 @@ components:
     MemoryProfile:
       type: object
       required:
+        - version
         - summary
         - updated_at
         - next_review_at
@@ -1632,6 +1633,10 @@ components:
         - skills
         - notes
       properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
         summary:
           type: string
         updated_at:
@@ -1684,6 +1689,33 @@ components:
         evidence_digest:
           type: string
           description: Stable digest of filtered profile evidence. Unchanged daily ticks skip the model call when this digest still matches.
+        evidence_sources:
+          type: array
+          description: Durable source identifiers for the deduplicated evidence included in the latest profile synthesis.
+          items:
+            $ref: "#/components/schemas/MemoryProfileEvidenceSource"
+
+    MemoryProfileEvidenceSource:
+      type: object
+      required: [key, source, type, occurred_at]
+      properties:
+        key:
+          type: string
+        source:
+          type: string
+        type:
+          type: string
+        session_id:
+          type: string
+        question_id:
+          type: string
+        round:
+          type: string
+        digest:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
 
     SkillProficiency:
       type: object

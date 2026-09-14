@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -135,6 +136,113 @@ func TestNeonIdentityAndMemoryBootstrap(t *testing.T) {
 	}
 
 	assertMembershipConstraint(t, ctx, pool)
+}
+
+func TestNeonMemoryReplaceProfileIfVersionRejectsStaleWrites(t *testing.T) {
+	databaseURL := os.Getenv("CODEGYM_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = os.Getenv("NEON_CONNECTION_STRING")
+	}
+	if databaseURL == "" {
+		t.Skip("set CODEGYM_TEST_DATABASE_URL or NEON_CONNECTION_STRING to run Neon integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("configure Postgres pool: %v", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatalf("ping Postgres: %v", err)
+	}
+
+	identityStore := identity.NewPostgresStore(pool)
+	memoryStore := memory.NewPostgresStore(pool)
+	if err := identityStore.EnsureSchema(ctx); err != nil {
+		t.Fatalf("ensure identity schema: %v", err)
+	}
+	if err := memoryStore.EnsureSchema(ctx); err != nil {
+		t.Fatalf("ensure memory schema: %v", err)
+	}
+
+	suffix := time.Now().UTC().Format("20060102150405.000000000")
+	userID := "test-user-stale-" + suffix
+	workspaceID := "test-tenant-stale-" + suffix
+	defer cleanupRows(t, pool, workspaceID, userID)
+
+	identityService := identity.NewService(identityStore)
+	principal := auth.Principal{
+		UserID:             userID,
+		DefaultWorkspaceID: workspaceID,
+		WorkspaceIDs:       []string{workspaceID},
+		UserMetadata: auth.UserMetadata{
+			Email:       userID + "@example.com",
+			DisplayName: "Test User " + suffix,
+		},
+	}
+	if err := identityService.EnsurePersonalWorkspace(ctx, principal); err != nil {
+		t.Fatalf("ensure personal workspace: %v", err)
+	}
+
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	first := memory.Profile{
+		Summary:      "version one",
+		UpdatedAt:    now,
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []memory.SkillProficiency{},
+		Notes:        []memory.Note{},
+	}
+	if err := memoryStore.ReplaceProfileIfVersion(ctx, workspaceID, userID, first, 0); err != nil {
+		t.Fatalf("create profile with version zero: %v", err)
+	}
+	persisted, err := memoryStore.GetProfile(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("get first profile: %v", err)
+	}
+	if persisted.Version != 1 || persisted.Summary != "version one" {
+		t.Fatalf("first profile = %#v", persisted)
+	}
+
+	second := memory.Profile{
+		Summary:      "version two",
+		UpdatedAt:    now.Add(time.Minute),
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []memory.SkillProficiency{},
+		Notes:        []memory.Note{},
+	}
+	if err := memoryStore.ReplaceProfileIfVersion(ctx, workspaceID, userID, second, persisted.Version); err != nil {
+		t.Fatalf("replace current profile: %v", err)
+	}
+
+	stale := memory.Profile{
+		Summary:      "stale overwrite",
+		UpdatedAt:    now.Add(2 * time.Minute),
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []memory.SkillProficiency{},
+		Notes:        []memory.Note{},
+	}
+	err = memoryStore.ReplaceProfileIfVersion(ctx, workspaceID, userID, stale, persisted.Version)
+	if !errors.Is(err, memory.ErrStaleProfile) {
+		t.Fatalf("stale replace error = %v, want ErrStaleProfile", err)
+	}
+
+	persisted, err = memoryStore.GetProfile(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("get final profile: %v", err)
+	}
+	if persisted.Version != 2 || persisted.Summary != "version two" {
+		t.Fatalf("stale write overwrote current profile: %#v", persisted)
+	}
 }
 
 func assertConstraints(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {

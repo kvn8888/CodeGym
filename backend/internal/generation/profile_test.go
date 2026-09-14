@@ -544,6 +544,95 @@ func TestProfileSynthesizerRevisesExistingNoteIdentity(t *testing.T) {
 	}
 }
 
+func TestProfileSynthesizerPreservesNotesOutsideCompletedMCQRefresh(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	seeded, err := service.ReplaceProfile(ctx, memory.Profile{
+		Summary:      "SQL joins remain a useful reminder.",
+		UpdatedAt:    now.Add(-time.Hour),
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{"SQL Joins"},
+		Skills:       []memory.SkillProficiency{},
+		Notes: []memory.Note{{
+			ID: "note_sql_joins", Title: "SQL joins", Summary: "Review unmatched-row behavior.",
+			Tags: []string{"sql"}, Action: "review", CreatedAt: now.Add(-time.Hour),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Summary: "Solved a queue implementation problem.",
+		Payload: json.RawMessage(`{"session_id":"coding_r1","problem_id":"queue-1","topic":"Queues","passed":true}`),
+	}); err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{
+		"summary":"Queue implementation is improving.","strengths":["Queues"],"growth_edges":[],
+		"skills":[{"id":"queues","label":"Queues","area":"DSA","level":3,"confidence":65,"trend":"up"}],
+		"notes":[]
+	}`)}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "coding_r1", Trigger: "set-completion"})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Skipped != "" {
+		t.Fatalf("unexpected skipped result: %s", result.Skipped)
+	}
+	if len(generator.requests) != 1 || generator.requests[0].Kind != KindProfile {
+		t.Fatalf("requests = %#v", generator.requests)
+	}
+	if len(result.AppliedActions) != 0 {
+		t.Fatalf("non-MCQ refresh changed notes: %#v", result.AppliedActions)
+	}
+	if len(result.Profile.Notes) != 1 || result.Profile.Notes[0].ID != seeded.Notes[0].ID || result.Profile.Notes[0].Summary != seeded.Notes[0].Summary {
+		t.Fatalf("notes were not preserved: %#v", result.Profile.Notes)
+	}
+}
+
+func TestProfileSynthesizerRequiresMatchingMCQCompletionSessionForNotesFirst(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	for _, input := range []memory.RecordEventInput{
+		{Source: "mcq", Type: "answer_incorrect", Summary: "Missed SQL joins in the completed round.", Payload: json.RawMessage(`{"session_id":"mcq_r1","question_id":"q1","topic":"SQL Joins","correct":false}`)},
+		{Source: "mcq", Type: "session_completed", Summary: "Finished round 1.", Payload: json.RawMessage(`{"session_id":"mcq_r1","round":1,"question_count":1,"answered_count":1,"correct_count":0}`)},
+		{Source: "mcq", Type: "answer_incorrect", Summary: "Missed indexes in a different pending round.", Payload: json.RawMessage(`{"session_id":"mcq_r2","question_id":"q2","topic":"Indexes","correct":false}`)},
+	} {
+		if _, err := service.RecordEvent(ctx, input); err != nil {
+			t.Fatalf("seed event: %v", err)
+		}
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{
+		"summary":"Indexes need more practice.","strengths":[],"growth_edges":["Indexes"],
+		"skills":[{"id":"indexes","label":"Indexes","area":"Data Systems","level":2,"confidence":45,"trend":"down"}],
+		"notes":[]
+	}`)}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "mcq_r2", Trigger: "set-completion"})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Skipped != "" {
+		t.Fatalf("unexpected skipped result: %s", result.Skipped)
+	}
+	if len(generator.requests) != 1 || generator.requests[0].Kind != KindProfile {
+		t.Fatalf("notes-first ran without a matching completion session: %#v", generator.requests)
+	}
+	var evidence profileEvidence
+	if err := json.Unmarshal(generator.requests[0].Spec, &evidence); err != nil {
+		t.Fatalf("decode evidence: %v", err)
+	}
+	if evidence.SessionID != "mcq_r2" {
+		t.Fatalf("focused session id = %q", evidence.SessionID)
+	}
+}
+
 type staleOnceProfileStore struct {
 	*memory.InMemoryStore
 	replaceAttempts int

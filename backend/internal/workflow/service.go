@@ -45,7 +45,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (CreateResult, 
 	kind := Kind(strings.TrimSpace(string(input.Kind)))
 	steps, ok := kindSteps[kind]
 	if !ok {
-		return CreateResult{}, errors.New("kind must be mcq_generation, memory_reflection, or mcq_next_round")
+		return CreateResult{}, errors.New("kind must be mcq_generation, memory_reflection, mcq_next_round, or problem_generation")
 	}
 	now := s.now().UTC()
 	operation := Operation{

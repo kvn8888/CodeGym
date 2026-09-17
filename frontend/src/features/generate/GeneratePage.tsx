@@ -15,11 +15,13 @@ import type {
   UserMemoryProfile,
 } from '../../shared/api/types';
 import { QuestionModal } from './QuestionModal';
+import { GenerationProgressActivity } from './GenerationProgressActivity';
 import {
   WorkspacePage,
   WorkspacePageHeader,
   WorkspaceSectionHeader,
 } from '../../shared/components/WorkspacePage';
+import { useWorkflowProgress } from '../../shared/hooks/useWorkflowProgress';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -170,6 +172,7 @@ export function GeneratePage({
     initialIntake ? configFromIntake(initialIntake) : null,
   );
   const [intakeSaving, setIntakeSaving] = useState(false);
+  const workflowProgress = useWorkflowProgress();
 
   const selectedFormat = practiceFormats.find((item) => item.value === format) ?? practiceFormats[0];
   const FormatIcon = selectedFormat.icon;
@@ -227,8 +230,56 @@ export function GeneratePage({
       .slice(0, 4);
   }, [format, recentSessions]);
 
+  const launchCodingPractice = async (
+    config: NewPracticeConfig,
+    operationId: string | undefined,
+    signal: AbortSignal,
+  ) => {
+    const generated = await api.request<{
+      kind: 'problem';
+      problem_id: string;
+      problem: Problem;
+      provider: string;
+      model: string;
+    }>('/generate', {
+      method: 'POST',
+      signal,
+      body: JSON.stringify({
+        kind: 'problem',
+        intake_id: config.intakeId,
+        operation_id: operationId,
+        spec: {
+          topic: config.prompt,
+          prompt: config.prompt,
+          difficulty: config.difficulty,
+          language: config.language ?? 'python',
+        },
+      }),
+    });
+    const session = await api.post<PracticeSession>('/sessions', {
+      kind: 'workspace',
+      title: generated.problem.title || sessionTitle('coding', config.prompt),
+      problem_id: generated.problem_id,
+      state: {
+        schema_version: 1,
+        format: 'coding',
+        prompt: config.prompt,
+        difficulty: config.difficulty,
+        intake_id: config.intakeId,
+        problem_id: generated.problem_id,
+        memory_update_status: 'idle',
+      },
+    });
+    navigate(`/problems/${encodeURIComponent(generated.problem_id)}?session=${encodeURIComponent(session.id)}&from=generate`, {
+      state: { newPractice: { sessionId: session.id, config } },
+    });
+  };
+
   const launchPractice = async (config: NewPracticeConfig) => {
     if (config.format === 'mcq') {
+      // A previous coding run may have left its progress overlay visible;
+      // MCQ starts do not use the workflow stream, so hide it.
+      workflowProgress.dismiss();
       const session = await api.post<PracticeSession>('/sessions', {
         kind: 'mcq',
         title: sessionTitle('mcq', config.prompt),
@@ -259,6 +310,8 @@ export function GeneratePage({
     }
 
     if (config.format === 'interview') {
+      // Same as MCQ above: do not leave a stale coding overlay mounted.
+      workflowProgress.dismiss();
       const session = await api.post<PracticeSession>('/sessions', {
         kind: 'interview',
         title: sessionTitle('interview', config.prompt),
@@ -275,39 +328,9 @@ export function GeneratePage({
       return;
     }
 
-    const generated = await api.post<{
-      kind: 'problem';
-      problem_id: string;
-      problem: Problem;
-      provider: string;
-      model: string;
-    }>('/generate', {
-      kind: 'problem',
-      intake_id: config.intakeId,
-      spec: {
-        topic: config.prompt,
-        prompt: config.prompt,
-        difficulty: config.difficulty,
-        language: config.language ?? 'python',
-      },
-    });
-    const session = await api.post<PracticeSession>('/sessions', {
-      kind: 'workspace',
-      title: generated.problem.title || sessionTitle('coding', config.prompt),
-      problem_id: generated.problem_id,
-      state: {
-        schema_version: 1,
-        format: 'coding',
-        prompt: config.prompt,
-        difficulty: config.difficulty,
-        intake_id: config.intakeId,
-        problem_id: generated.problem_id,
-        memory_update_status: 'idle',
-      },
-    });
-    navigate(`/problems/${encodeURIComponent(generated.problem_id)}?session=${encodeURIComponent(session.id)}&from=generate`, {
-      state: { newPractice: { sessionId: session.id, config } },
-    });
+    await workflowProgress.run('problem_generation', (operationId, signal) =>
+      launchCodingPractice(config, operationId, signal),
+    );
   };
 
   const prepareIntake = async (config: NewPracticeConfig, restart = false) => {
@@ -758,6 +781,12 @@ export function GeneratePage({
             onSkip={() => finishIntake('skipped')}
           />
         )}
+      {workflowProgress.state.visible && workflowProgress.state.kind === 'problem_generation' && (
+        <GenerationProgressActivity
+          events={workflowProgress.state.events}
+          connectionState={workflowProgress.state.connectionState}
+        />
+      )}
     </WorkspacePage>
   );
 }

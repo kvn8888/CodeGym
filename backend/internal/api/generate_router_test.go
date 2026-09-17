@@ -172,6 +172,7 @@ func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
 	generator := &sequencedGenerator{payloads: []string{
+		`{"actions":[{"op":"create","note":{"id":"note_sql-joins","title":"SQL joins","summary":"Missed LEFT JOIN semantics.","tags":["sql"],"action":"review"}}]}`,
 		`{"summary":"SQL joins need another pass; two-pointer fundamentals are progressing.","strengths":["Two Pointers"],"growth_edges":["SQL Joins"],"skills":[{"id":"sql-joins","label":"SQL Joins","area":"Data Systems","level":2,"confidence":55,"trend":"down"},{"id":"two-pointers","label":"Two Pointers","area":"DSA","level":3,"confidence":70,"trend":"up"}],"notes":[{"id":"note_sql-joins","title":"SQL joins","summary":"Missed LEFT JOIN semantics.","tags":["sql"],"action":"review"}]}`,
 	}}
 	orchestrator := generation.NewOrchestrator(memoryService, generator)
@@ -189,6 +190,7 @@ func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	for _, event := range []string{
 		`{"source":"mcq","type":"answer_incorrect","summary":"Missed a SQL Joins question.","payload":{"session_id":"mcq_r1","topic":"SQL Joins","correct":false}}`,
 		`{"source":"mcq","type":"question_answered","summary":"Answered a Two Pointers question correctly.","payload":{"session_id":"mcq_r1","topic":"Two Pointers","correct":true}}`,
+		`{"source":"mcq","type":"session_completed","summary":"Finished round 1.","payload":{"session_id":"mcq_r1","round":1,"question_count":2,"answered_count":2,"correct_count":1}}`,
 	} {
 		if code := authed(http.MethodPost, "/api/v1/memory/events", event).Code; code != http.StatusCreated {
 			t.Fatalf("seed event status = %d", code)
@@ -228,8 +230,41 @@ func TestMaintainProfileRouteAppliesActionsAndAuditsEvents(t *testing.T) {
 	if !foundNote {
 		t.Fatalf("generation memory context missing maintained note: %+v", lastRequest.MemoryContext.Notes)
 	}
+	if !strings.Contains(lastRequest.MemoryContext.Summary, "SQL joins need another pass") {
+		t.Fatalf("generation memory context missing maintained summary: %+v", lastRequest.MemoryContext)
+	}
 	if !strings.Contains(string(lastRequest.Spec), "drill my weak spots") {
 		t.Fatalf("spec missing user prompt: %s", lastRequest.Spec)
+	}
+}
+
+func TestMaintainProfileRouteReturnsRetryableFailureWhenNoteStageFails(t *testing.T) {
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	generator := &sequencedGenerator{payloads: []string{`{"actions":"not an array"}`}}
+	router := newGenerateTestRouter(t, generation.NewOrchestrator(memoryService, generator), memoryService)
+
+	event := httptest.NewRecorder()
+	eventRequest := httptest.NewRequest(http.MethodPost, "/api/v1/memory/events", strings.NewReader(`{"source":"mcq","type":"answer_incorrect","summary":"Missed SQL Joins.","payload":{"session_id":"mcq_r1","question_id":"q1","topic":"SQL Joins","correct":false}}`))
+	eventRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(event, eventRequest)
+	if event.Code != http.StatusCreated {
+		t.Fatalf("event status = %d: %s", event.Code, event.Body.String())
+	}
+	completion := httptest.NewRecorder()
+	completionRequest := httptest.NewRequest(http.MethodPost, "/api/v1/memory/events", strings.NewReader(`{"source":"mcq","type":"session_completed","summary":"Finished round 1.","payload":{"session_id":"mcq_r1","round":1,"question_count":1,"answered_count":1,"correct_count":0}}`))
+	completionRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(completion, completionRequest)
+	if completion.Code != http.StatusCreated {
+		t.Fatalf("completion status = %d: %s", completion.Code, completion.Body.String())
+	}
+
+	maintain := httptest.NewRecorder()
+	maintainRequest := httptest.NewRequest(http.MethodPost, "/api/v1/memory/profile/maintain", strings.NewReader(`{"session_id":"mcq_r1"}`))
+	maintainRequest.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(maintain, maintainRequest)
+	if maintain.Code != http.StatusBadGateway || !strings.Contains(maintain.Body.String(), "memory_profile_synthesis_failed") {
+		t.Fatalf("maintain status = %d body=%s", maintain.Code, maintain.Body.String())
 	}
 }
 

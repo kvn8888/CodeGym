@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -122,6 +123,83 @@ func TestServiceRefreshProfilePersistsDerivedMemory(t *testing.T) {
 	}
 	if persisted.Summary != profile.Summary {
 		t.Fatal("expected refreshed profile to be persisted")
+	}
+}
+
+func TestServiceReplaceProfileIfVersionRejectsStaleProfile(t *testing.T) {
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := NewService(NewInMemoryStore(), func() time.Time { return now })
+	ctx := scopedContext()
+
+	first, err := service.ReplaceProfile(ctx, Profile{
+		Summary:      "version one",
+		UpdatedAt:    now,
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []SkillProficiency{},
+		Notes:        []Note{},
+	})
+	if err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	if first.Version != 1 {
+		t.Fatalf("version = %d, want 1", first.Version)
+	}
+
+	if _, err := service.ReplaceProfileIfVersion(ctx, Profile{
+		Summary:      "version two",
+		UpdatedAt:    now.Add(time.Minute),
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []SkillProficiency{},
+		Notes:        []Note{},
+	}, first.Version); err != nil {
+		t.Fatalf("replace current version: %v", err)
+	}
+
+	_, err = service.ReplaceProfileIfVersion(ctx, Profile{
+		Summary:      "stale version",
+		UpdatedAt:    now.Add(2 * time.Minute),
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []SkillProficiency{},
+		Notes:        []Note{},
+	}, first.Version)
+	if !errors.Is(err, ErrStaleProfile) {
+		t.Fatalf("stale replace error = %v, want ErrStaleProfile", err)
+	}
+
+	persisted, err := service.GetProfile(ctx)
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	if persisted.Summary != "version two" {
+		t.Fatalf("stale profile overwrote current: %#v", persisted)
+	}
+}
+
+func TestServiceReplaceProfileIfVersionCreatesFirstProfileAtVersionOne(t *testing.T) {
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := NewService(NewInMemoryStore(), func() time.Time { return now })
+	ctx := scopedContext()
+
+	profile, err := service.ReplaceProfileIfVersion(ctx, Profile{
+		Summary:      "first profile",
+		UpdatedAt:    now,
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []SkillProficiency{},
+		Notes:        []Note{},
+	}, 0)
+	if err != nil {
+		t.Fatalf("replace missing version zero: %v", err)
+	}
+	if profile.Version != 1 {
+		t.Fatalf("version = %d, want 1", profile.Version)
 	}
 }
 

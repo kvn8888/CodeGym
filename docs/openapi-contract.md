@@ -144,14 +144,16 @@ Create event response data:
 }
 ```
 
-Profile response data includes `summary`, `updated_at`, `next_review_at`,
-`strengths`, `growth_edges`, `skills`, `notes`, and optional synthesis
-`provenance`. The same validated synthesis operation serves manual refresh,
-set-completion refresh, and the scheduled worker. `/memory/notes/maintain`
-remains a deprecated compatibility alias for `/memory/profile/maintain`.
-Daily refresh stores a stable `provenance.evidence_digest`; when the filtered
-learning evidence is unchanged, the worker skips the model call and leaves the
-existing profile and timestamps untouched.
+Profile response data includes `version`, `summary`, `updated_at`,
+`next_review_at`, `strengths`, `growth_edges`, `skills`, `notes`, and optional
+synthesis `provenance`. The same validated synthesis operation serves manual
+refresh, set-completion refresh, and the scheduled worker.
+`/memory/notes/maintain` remains a deprecated compatibility alias for
+`/memory/profile/maintain`. Daily refresh stores a stable
+`provenance.evidence_digest`; provenance may also include `evidence_sources` for
+deduplicated source tracking. When the filtered learning evidence is unchanged,
+the worker skips the model call and leaves the existing profile and timestamps
+untouched.
 
 ## Curl Examples
 

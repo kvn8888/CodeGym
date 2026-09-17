@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -126,6 +127,16 @@ func (s *PostgresStore) GetProfile(ctx context.Context, workspaceID, userID stri
 }
 
 func (s *PostgresStore) UpsertProfile(ctx context.Context, workspaceID, userID string, profile Profile) error {
+	current, err := s.GetProfile(ctx, workspaceID, userID)
+	if errors.Is(err, ErrProfileNotFound) {
+		if profile.Version == 0 {
+			profile.Version = 1
+		}
+	} else if err != nil {
+		return err
+	} else {
+		profile.Version = current.Version + 1
+	}
 	profile.UpdatedAt = profile.UpdatedAt.UTC()
 	profile.NextReviewAt = profile.NextReviewAt.UTC()
 
@@ -143,6 +154,58 @@ func (s *PostgresStore) UpsertProfile(ctx context.Context, workspaceID, userID s
 			next_review_at = EXCLUDED.next_review_at
 	`, workspaceID, userID, string(profileJSON), profile.UpdatedAt, profile.NextReviewAt)
 	return err
+}
+
+func (s *PostgresStore) ReplaceProfileIfVersion(ctx context.Context, workspaceID, userID string, profile Profile, expectedVersion int64) error {
+	profile.Version = expectedVersion + 1
+	profile.UpdatedAt = profile.UpdatedAt.UTC()
+	profile.NextReviewAt = profile.NextReviewAt.UTC()
+
+	profileJSON, err := json.Marshal(profile)
+	if err != nil {
+		return fmt.Errorf("encode memory profile: %w", err)
+	}
+
+	var tag pgconn.CommandTag
+	var execErr error
+	if expectedVersion == 0 {
+		tag, execErr = s.pool.Exec(ctx, `
+			INSERT INTO user_memory_profiles (workspace_id, user_id, profile, updated_at, next_review_at)
+			VALUES ($1, $2, $3::jsonb, $4, $5)
+			ON CONFLICT (workspace_id, user_id) DO NOTHING
+		`, workspaceID, userID, string(profileJSON), profile.UpdatedAt, profile.NextReviewAt)
+	} else {
+		tag, execErr = s.pool.Exec(ctx, `
+			UPDATE user_memory_profiles
+			SET profile = $3::jsonb,
+				updated_at = $4,
+				next_review_at = $5
+			WHERE workspace_id = $1
+				AND user_id = $2
+				AND COALESCE((profile->>'version')::bigint, 0) = $6
+		`, workspaceID, userID, string(profileJSON), profile.UpdatedAt, profile.NextReviewAt, expectedVersion)
+	}
+	if execErr != nil {
+		return execErr
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		err := s.pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM user_memory_profiles
+				WHERE workspace_id = $1 AND user_id = $2
+			)
+		`, workspaceID, userID).Scan(&exists)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return ErrProfileNotFound
+		}
+		return ErrStaleProfile
+	}
+	return nil
 }
 
 func (s *PostgresStore) AppendEvent(ctx context.Context, event Event) error {

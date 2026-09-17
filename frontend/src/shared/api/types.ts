@@ -143,6 +143,7 @@ export interface UpdateUserProfileInput {
 }
 
 export interface UserMemoryProfile {
+  version: number;
   summary: string;
   updated_at: string;
   next_review_at: string;
@@ -150,6 +151,30 @@ export interface UserMemoryProfile {
   growth_edges: string[];
   skills: SkillProficiency[];
   notes: MemoryNote[];
+  provenance?: MemoryProfileProvenance;
+}
+
+export interface MemoryProfileProvenance {
+  schema_version: number;
+  trigger: 'manual' | 'daily' | 'set-completion';
+  provider: string;
+  model: string;
+  synthesized_at: string;
+  evidence_through: string;
+  event_count: number;
+  evidence_digest?: string;
+  evidence_sources?: MemoryProfileEvidenceSource[];
+}
+
+export interface MemoryProfileEvidenceSource {
+  key: string;
+  source: string;
+  type: string;
+  session_id?: string;
+  question_id?: string;
+  round?: string;
+  digest?: string;
+  occurred_at: string;
 }
 
 export interface SkillProficiency {

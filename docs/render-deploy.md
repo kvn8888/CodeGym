@@ -117,7 +117,14 @@ Set these in Doppler (`codegym` / `stg`); never in Render, Vercel, or `prd`:
 | `NEON_API_BASE_URL` | Optional override; defaults to `https://console.neon.tech/api/v2`. |
 
 The script refuses to run when any required variable is missing or when the
-preprod and production branch ids are equal. Render holds only the
+preprod and production branch ids are equal. On a real run it additionally
+fetches the preprod branch from the Neon API before the destructive POST and
+refuses to issue the restore unless the returned branch id matches
+`NEON_PREPROD_BRANCH_ID` and its parent is `NEON_PROD_BRANCH_ID`. `DRY_RUN`
+accepts `true`/`1`/`yes`/`on` (case-insensitive) for a dry run and
+`false`/`0`/`no`/`off` for a real run; any other value fails closed. A dry
+run performs zero network calls: it skips the parent verification and reports
+that the check would run during a real run. Render holds only the
 `DOPPLER_TOKEN` service token for `codegym` / `stg` on the cron job.
 
 ### Manual rerun
@@ -170,9 +177,10 @@ is never written to by this job.
 Render Cron run history is our record of the last successful refresh: a
 successful run means the Neon reset completed, the branch became ready, and
 staging `/ready` passed. Render captures the script's stdout/stderr per run
-on the cron job's **Runs** page. Exit `0` means all three phases succeeded;
+on the cron job's **Runs** page. Exit `0` means all phases succeeded;
 any non-zero exit marks the run failed with an `ERROR:` line naming the
-phase (restore request, branch poll timeout, or `/ready` poll timeout).
+phase (parent verification, restore request, branch poll timeout, or `/ready`
+poll timeout).
 Render Runs/logs plus Neon's branch "last reset" timestamp are the
 operational audit trail. There is intentionally no in-database marker (a
 preprod row would be wiped by the next reset), and no new table was created

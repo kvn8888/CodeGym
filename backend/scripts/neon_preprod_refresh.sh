@@ -3,10 +3,12 @@
 # for CodeGym Staging to become healthy again.
 #
 # What it does:
-#   1. POSTs a "reset from parent" restore to the Neon API for the preprod
+#   1. Verifies via the Neon API that the preprod branch is a child of the
+#      configured production branch (refuses to continue otherwise).
+#   2. POSTs a "reset from parent" restore to the Neon API for the preprod
 #      branch (source = production branch, restored to head).
-#   2. Polls the Neon API until the preprod branch reports current_state=ready.
-#   3. Polls the staging /ready endpoint until it returns 2xx.
+#   3. Polls the Neon API until the preprod branch reports current_state=ready.
+#   4. Polls the staging /ready endpoint until it returns 2xx.
 #
 # Required env (see backend/.env.example; values live in Doppler `stg` only):
 #   NEON_API_KEY, NEON_PROJECT_ID, NEON_PREPROD_BRANCH_ID, NEON_PROD_BRANCH_ID
@@ -14,8 +16,10 @@
 # Optional env:
 #   NEON_API_BASE_URL (default https://console.neon.tech/api/v2)
 #   CODEGYM_STAGING_BASE_URL (default https://codegym-staging.onrender.com)
-#   DRY_RUN (default false; when true, validate config and print the planned
-#     action without calling Neon)
+#   DRY_RUN (default false; case-insensitive true/1/yes/on enables dry-run,
+#     false/0/no/off enables a real run; any other value fails closed).
+#     When dry-run is enabled, validate config and print the planned action
+#     without calling Neon (zero network calls).
 #   NEON_POLL_INTERVAL_SECONDS (default 15), NEON_POLL_TIMEOUT_SECONDS (default 900)
 #   READY_POLL_INTERVAL_SECONDS (default 15), READY_POLL_TIMEOUT_SECONDS (default 600)
 #   Poll interval/timeout values must be positive integers in seconds.
@@ -27,18 +31,6 @@
 # Never prints API keys, connection strings, or other secret values.
 set -euo pipefail
 
-neon_api_base_url="${NEON_API_BASE_URL:-https://console.neon.tech/api/v2}"
-neon_api_base_url="${neon_api_base_url%/}"
-
-staging_base_url="${CODEGYM_STAGING_BASE_URL:-https://codegym-staging.onrender.com}"
-staging_base_url="${staging_base_url%/}"
-
-dry_run="${DRY_RUN:-false}"
-neon_poll_interval="${NEON_POLL_INTERVAL_SECONDS:-15}"
-neon_poll_timeout="${NEON_POLL_TIMEOUT_SECONDS:-900}"
-ready_poll_interval="${READY_POLL_INTERVAL_SECONDS:-15}"
-ready_poll_timeout="${READY_POLL_TIMEOUT_SECONDS:-600}"
-
 log() {
   printf '%s\n' "$1"
 }
@@ -47,6 +39,34 @@ fail() {
   printf 'ERROR: %s\n' "$1" >&2
   exit 1
 }
+
+neon_api_base_url="${NEON_API_BASE_URL:-https://console.neon.tech/api/v2}"
+neon_api_base_url="${neon_api_base_url%/}"
+
+staging_base_url="${CODEGYM_STAGING_BASE_URL:-https://codegym-staging.onrender.com}"
+staging_base_url="${staging_base_url%/}"
+
+dry_run_raw="${DRY_RUN:-false}"
+# Normalize for case-insensitive matching. An unrecognized value fails closed
+# so a typo can never silently become a real reset. Checked before any
+# network call.
+dry_run="$(printf '%s' "${dry_run_raw}" | tr '[:upper:]' '[:lower:]')"
+is_dry_run=false
+case "${dry_run}" in
+  1 | true | yes | on)
+    is_dry_run=true
+    ;;
+  0 | false | no | off)
+    is_dry_run=false
+    ;;
+  *)
+    fail "unrecognized DRY_RUN value '${dry_run_raw}': expected one of true/1/yes/on or false/0/no/off (case-insensitive)."
+    ;;
+esac
+neon_poll_interval="${NEON_POLL_INTERVAL_SECONDS:-15}"
+neon_poll_timeout="${NEON_POLL_TIMEOUT_SECONDS:-900}"
+ready_poll_interval="${READY_POLL_INTERVAL_SECONDS:-15}"
+ready_poll_timeout="${READY_POLL_TIMEOUT_SECONDS:-600}"
 
 # Validate required configuration before any destructive request.
 missing=()
@@ -93,15 +113,50 @@ require_positive_int "READY_POLL_TIMEOUT_SECONDS" "${ready_poll_timeout}"
 restore_url="${neon_api_base_url}/projects/${NEON_PROJECT_ID}/branches/${NEON_PREPROD_BRANCH_ID}/restore"
 branch_url="${neon_api_base_url}/projects/${NEON_PROJECT_ID}/branches/${NEON_PREPROD_BRANCH_ID}"
 
-case "${dry_run}" in
-  1 | true | yes | on)
-    log "DRY RUN: configuration valid."
-    log "DRY RUN: would POST ${restore_url} with source_branch_id=${NEON_PROD_BRANCH_ID} (production parent, head)."
-    log "DRY RUN: would then poll ${branch_url} until current_state=ready."
-    log "DRY RUN: would then poll ${staging_base_url}/ready until healthy."
-    exit 0
-    ;;
-esac
+if [[ "${is_dry_run}" == "true" ]]; then
+  log "DRY RUN: configuration valid."
+  log "DRY RUN: would verify ${branch_url} is a child of production branch ${NEON_PROD_BRANCH_ID}."
+  log "DRY RUN: would POST ${restore_url} with source_branch_id=${NEON_PROD_BRANCH_ID} (production parent, head)."
+  log "DRY RUN: would then poll ${branch_url} until current_state=ready."
+  log "DRY RUN: would then poll ${staging_base_url}/ready until healthy."
+  exit 0
+fi
+
+# Confirm the branch relationship before the destructive POST: the configured
+# preprod branch must exist and report the configured production branch as
+# its parent. Only branch IDs are compared/logged here, never credentials.
+log "Verifying preprod branch ${NEON_PREPROD_BRANCH_ID} is a child of production branch ${NEON_PROD_BRANCH_ID}."
+verify_response="$(curl -fsS --max-time 30 \
+  "${branch_url}" \
+  -H "accept: application/json" \
+  -H "authorization: Bearer ${NEON_API_KEY}")" || fail "could not verify preprod branch ${NEON_PREPROD_BRANCH_ID} via the Neon API; refusing to reset."
+
+verify_result="$(python3 - "${verify_response}" "${NEON_PREPROD_BRANCH_ID}" "${NEON_PROD_BRANCH_ID}" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (ValueError, IndexError):
+    print("unverified")
+    sys.exit(0)
+branch = payload.get("branch", {})
+if not isinstance(branch, dict):
+    print("unverified")
+    sys.exit(0)
+if branch.get("id") != sys.argv[2]:
+    print("id-mismatch")
+    sys.exit(0)
+if branch.get("parent_id") != sys.argv[3]:
+    print("parent-mismatch")
+    sys.exit(0)
+print("verified")
+PY
+)"
+if [[ "${verify_result}" != "verified" ]]; then
+  fail "refusing to reset: preprod branch ${NEON_PREPROD_BRANCH_ID} failed parent verification against production branch ${NEON_PROD_BRANCH_ID} (result: ${verify_result})."
+fi
+log "Parent verification passed for preprod branch ${NEON_PREPROD_BRANCH_ID}."
 
 log "Requesting Neon reset of preprod branch ${NEON_PREPROD_BRANCH_ID} from production branch ${NEON_PROD_BRANCH_ID}."
 

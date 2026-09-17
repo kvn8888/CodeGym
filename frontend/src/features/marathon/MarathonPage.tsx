@@ -451,22 +451,6 @@ export function MarathonPage() {
         ? selectedIndices.length > 0
         : responseText.trim().length > 0;
   const currentCorrectIndices = currentQ?.correctIndices ?? [];
-  const missedRequiredCount = currentCorrectIndices.filter(
-    (index) => !selectedIndices.includes(index),
-  ).length;
-  const incorrectSelectedCount = selectedIndices.filter(
-    (index) => !currentCorrectIndices.includes(index),
-  ).length;
-  const isCurrentMultiSelectCorrect =
-    currentQuestionType === 'multi_select' && sameIndexSet(selectedIndices, currentCorrectIndices);
-  const multiSelectFeedbackDetails = [
-    missedRequiredCount > 0
-      ? `${missedRequiredCount} required ${missedRequiredCount === 1 ? 'option was' : 'options were'} missed`
-      : null,
-    incorrectSelectedCount > 0
-      ? `${incorrectSelectedCount} incorrect ${incorrectSelectedCount === 1 ? 'option was' : 'options were'} selected`
-      : null,
-  ].filter((detail): detail is string => Boolean(detail));
 
   const trackMcqEvent = (type: MemoryEventType, summary: string, payload: Record<string, unknown>) => {
     const occurredAt = new Date().toISOString();
@@ -1477,6 +1461,8 @@ export function MarathonPage() {
               confirmed && currentQuestionType === 'multi_select' && isCorrect && !isSelected;
             const isSelectedCorrect = confirmed && isSelected && isCorrect;
             const isSelectedIncorrect = confirmed && isSelected && !isCorrect;
+            const isRevealedSingleCorrect =
+              confirmed && currentQuestionType === 'single_select' && isCorrect && !isSelected;
 
             let stateClasses =
               'border bg-background text-muted-foreground hover:bg-accent/50';
@@ -1511,17 +1497,19 @@ export function MarathonPage() {
                       'mt-0.5 flex size-4 shrink-0 items-center justify-center border-2 transition-colors',
                       currentQuestionType === 'multi_select' ? 'rounded-sm' : 'rounded-full',
                       confirmed
-                        ? isSelectedCorrect || (currentQuestionType !== 'multi_select' && isCorrect)
+                        ? isSelectedCorrect
                           ? 'border-green-700'
                           : isSelectedIncorrect || isMissedRequired
                             ? 'border-red-800'
+                            : isRevealedSingleCorrect
+                              ? 'border-green-700'
                             : 'border-input'
                         : isSelected
                           ? 'border-primary'
                       : 'border-input',
                     )}
                   >
-                    {(isSelected || (confirmed && currentQuestionType !== 'multi_select' && isCorrect)) && (
+                    {isSelected && (
                       <div
                         className={cn(
                           'size-2',
@@ -1538,10 +1526,14 @@ export function MarathonPage() {
                   <MarkdownContent variant="inline" className="min-w-0 flex-1">
                     {option}
                   </MarkdownContent>
-                  {confirmed &&
-                    (currentQuestionType !== 'multi_select' ? isCorrect : isSelectedCorrect) && (
+                  {confirmed && isSelectedCorrect && (
                     <span className="ml-auto flex shrink-0 items-center gap-1 self-center text-xs font-semibold text-green-700">
                       <SuccessCheck /> Correct
+                    </span>
+                  )}
+                  {isRevealedSingleCorrect && (
+                    <span className="ml-auto shrink-0 self-center text-xs font-semibold text-green-700">
+                      Correct answer
                     </span>
                   )}
                   {isSelectedIncorrect && (
@@ -1558,27 +1550,6 @@ export function MarathonPage() {
               </button>
             );
           })}
-        </div>
-      )}
-
-      {confirmed && currentQuestionType === 'multi_select' && (
-        <div
-          className={cn(
-            'mb-6 rounded-lg border px-4 py-3 text-sm leading-5',
-            isCurrentMultiSelectCorrect
-              ? 'border-green-400 bg-green-100 text-green-900'
-              : 'border-red-400 bg-red-100 text-red-900',
-          )}
-          role="status"
-        >
-          <div className="font-medium">
-            {isCurrentMultiSelectCorrect ? 'Correct' : 'Incorrect'}
-          </div>
-          {!isCurrentMultiSelectCorrect && multiSelectFeedbackDetails.length > 0 && (
-            <div className="mt-1">
-              {multiSelectFeedbackDetails.join('; ')}.
-            </div>
-          )}
         </div>
       )}
 

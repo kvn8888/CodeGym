@@ -24,6 +24,13 @@ export const MultiSelectRun: Story = {
   },
 };
 
+/** Confirmed partial selection shows missed required answers distinctly. */
+export const MultiSelectPartialFeedback: Story = {
+  parameters: {
+    initialPath: '/marathon?session=sess_multi_select_partial_confirmed',
+  },
+};
+
 /** A written draft is restored and can be evaluated without losing its text. */
 export const FreeResponseRun: Story = {
   parameters: {

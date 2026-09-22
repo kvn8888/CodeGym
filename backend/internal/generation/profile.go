@@ -354,6 +354,7 @@ var evidencePayloadKeys = map[string]bool{
 	"skipped_count": true, "correct_count": true, "generated": true,
 	"question_type": true, "answer_length": true, "selected_count": true,
 	"correct_option_count": true,
+	"score": true, "max_score": true, "partial_credit": true, "partial_credit_count": true,
 	"round":                true, "problem_id": true, "passed_count": true, "failed_count": true, "total": true,
 	"mode": true, "strengths": true, "growth_edges": true,
 	"turn_count": true, "duration_seconds": true,

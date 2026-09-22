@@ -699,16 +699,23 @@ export function MarathonPage() {
     const roundResults = results.filter((r) => r.round === round);
     const roundSkips = skippedQuestions.filter((item) => item.round === round);
     const correctCount = roundResults.filter((r) => r.correct).length;
+    const roundScore = roundResults.reduce((sum, result) => sum + result.score, 0);
+    const partialCreditCount = roundResults.filter(
+      (result) => result.score > 0 && result.score < 1,
+    ).length;
     if (!completionEventRoundsRef.current.has(round)) {
       trackMcqEvent(
         'session_completed',
-        `Finished round ${round} with ${correctCount} of ${roundResults.length} answered correctly and ${roundSkips.length} skipped.`,
+        `Finished round ${round} with ${formatScore(roundScore)} of ${roundResults.length} points earned, ${correctCount} full-credit answers, and ${roundSkips.length} skipped.`,
         {
           session_id: sessionIdRef.current,
           question_count: roundResults.length + roundSkips.length,
           answered_count: roundResults.length,
           skipped_count: roundSkips.length,
           correct_count: correctCount,
+          score: roundScore,
+          max_score: roundResults.length,
+          partial_credit_count: partialCreditCount,
           round,
         },
       );
@@ -1069,6 +1076,9 @@ export function MarathonPage() {
       topic: currentQ.concept,
       question_type: currentQuestionType,
       correct: result.correct,
+      score: result.score,
+      max_score: 1,
+      partial_credit: result.score > 0 && result.score < 1,
       duration_ms: result.timeMs,
       used_help: result.usedHelp,
       round,

@@ -36,15 +36,24 @@ bounded `EVENT_EVIDENCE` object:
       "type":"answer_incorrect",
       "summary":"Missed a SQL join question.",
       "occurred_at":"2026-07-15T18:00:00Z",
-      "details":{"topic":"SQL Joins","correct":false}
+      "details":{
+        "topic":"SQL Joins",
+        "correct":false,
+        "score":0.25,
+        "max_score":1,
+        "partial_credit":true
+      }
     }
   ]
 }
 ```
 
-Only allowlisted, bounded payload details are included. Memory/system audit
-events are excluded so model maintenance does not become self-reinforcing
-learning evidence.
+Only allowlisted, bounded payload details are included. MCQ evidence may include
+numeric `score`, `max_score`, and `partial_credit` fields; treat partial-credit
+scores as partial understanding rather than the same signal as a full miss.
+Memory/system audit events are excluded so model maintenance does not become
+self-reinforcing learning evidence. Raw question text, raw option text, raw
+written answers, and transcripts are not included.
 
 ## Output contract
 

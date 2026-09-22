@@ -61,6 +61,7 @@ interface QuestionResult {
   responseText?: string;
   feedback?: string;
   correct: boolean;
+  score: number;
   timeMs: number;
   usedHelp: boolean;
 }
@@ -173,7 +174,10 @@ function normalizeMarathonSessionState(value: unknown): MarathonSessionState | n
     confirmed: candidate.confirmed ?? false,
     using_fallback: candidate.using_fallback ?? false,
     questions: Array.isArray(candidate.questions) ? candidate.questions : [],
-    results: candidate.results,
+    results: candidate.results.map((result) => ({
+      ...result,
+      score: typeof result.score === 'number' ? result.score : result.correct ? 1 : 0,
+    })),
     skipped_questions: Array.isArray(candidate.skipped_questions)
       ? candidate.skipped_questions
       : [],
@@ -188,6 +192,26 @@ function sameIndexSet(left: number[], right: number[]) {
   if (left.length !== right.length) return false;
   const expected = new Set(right);
   return left.every((value) => expected.has(value));
+}
+
+function clampScore(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function scoreMultiSelect(selected: number[], correct: number[], optionCount: number) {
+  const correctSet = new Set(correct);
+  const correctSelected = selected.filter((value) => correctSet.has(value)).length;
+  const incorrectSelected = selected.length - correctSelected;
+  const totalCorrect = correct.length;
+  const totalIncorrect = Math.max(0, optionCount - totalCorrect);
+  const earned = totalCorrect > 0 ? correctSelected / totalCorrect : 0;
+  const penalty = totalIncorrect > 0 ? 0.5 * (incorrectSelected / totalIncorrect) : 0;
+  return clampScore(earned - penalty);
+}
+
+function formatScore(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 /** Memory event writer for the mcq source. Product interactions queue these
@@ -451,6 +475,7 @@ export function MarathonPage() {
         ? selectedIndices.length > 0
         : responseText.trim().length > 0;
   const currentCorrectIndices = currentQ?.correctIndices ?? [];
+  const earnedPoints = results.reduce((sum, result) => sum + result.score, 0);
 
   const trackMcqEvent = (type: MemoryEventType, summary: string, payload: Record<string, unknown>) => {
     const occurredAt = new Date().toISOString();
@@ -965,12 +990,19 @@ export function MarathonPage() {
 
     setSessionError(null);
     let correct = false;
+    let score = 0;
     let evaluation: FreeResponseEvaluation | null = null;
 
     if (currentQuestionType === 'single_select') {
       correct = selectedIndex === currentQ.correctIndex;
+      score = correct ? 1 : 0;
     } else if (currentQuestionType === 'multi_select') {
       correct = sameIndexSet(selectedIndices, currentQ.correctIndices ?? []);
+      score = scoreMultiSelect(
+        selectedIndices,
+        currentQ.correctIndices ?? [],
+        currentQ.options?.length ?? 0,
+      );
     } else {
       setEvaluating(true);
       try {
@@ -983,6 +1015,7 @@ export function MarathonPage() {
           answer: responseText.trim(),
         });
         correct = evaluation.correct;
+        score = correct ? 1 : 0;
       } catch (err) {
         setSessionError(
           err instanceof Error
@@ -1011,6 +1044,7 @@ export function MarathonPage() {
         ? { responseText: responseText.trim(), feedback: evaluation?.feedback }
         : {}),
       correct,
+      score,
       timeMs: elapsed * 1000,
       usedHelp: helpUsed,
     };
@@ -1377,7 +1411,7 @@ export function MarathonPage() {
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground font-mono text-sm tabular-nums">{elapsed}s</span>
           <span className="text-muted-foreground text-sm">
-            {results.filter((r) => r.correct).length}✓ {results.filter((r) => !r.correct).length}✗
+            {formatScore(earnedPoints)}/{results.length} pts
             {skippedQuestions.length > 0 && ` · ${skippedQuestions.length} skipped`}
           </span>
           <Button

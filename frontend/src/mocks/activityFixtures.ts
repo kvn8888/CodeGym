@@ -289,6 +289,7 @@ export const mockSessions: PracticeSession[] = [
           questionType: 'multi_select',
           selectedIndices: [0, 2],
           correct: false,
+          score: 0.25,
           timeMs: 18_000,
           usedHelp: false,
         },

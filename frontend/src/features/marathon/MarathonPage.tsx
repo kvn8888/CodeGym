@@ -476,6 +476,9 @@ export function MarathonPage() {
         : responseText.trim().length > 0;
   const currentCorrectIndices = currentQ?.correctIndices ?? [];
   const earnedPoints = results.reduce((sum, result) => sum + result.score, 0);
+  const currentResult = results.find(
+    (result) => result.round === round && result.questionId === currentQ?.id,
+  );
 
   const trackMcqEvent = (type: MemoryEventType, summary: string, payload: Record<string, unknown>) => {
     const occurredAt = new Date().toISOString();
@@ -1296,7 +1299,7 @@ export function MarathonPage() {
 
   // ── Results state: summary ───────────────────────────────────────────────
   if (phase === 'results') {
-    const correct = results.filter((r) => r.correct).length;
+    const totalScore = results.reduce((sum, result) => sum + result.score, 0);
     const skipped = skippedQuestions.length;
     const totalTime = results.reduce((sum, r) => sum + r.timeMs, 0);
     const avgTime = results.length > 0 ? Math.round(totalTime / results.length / 1000) : 0;
@@ -1322,10 +1325,10 @@ export function MarathonPage() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <div className="text-[32px] leading-10 font-semibold tabular-nums">
-                  {correct}
+                  {formatScore(totalScore)}
                   <span className="text-muted-foreground text-3xl">/{results.length}</span>
                 </div>
-                <div className="text-muted-foreground mt-2 text-sm">correct answers</div>
+                <div className="text-muted-foreground mt-2 text-sm">points earned</div>
                 {skipped > 0 && (
                   <div className="text-muted-foreground mt-1 text-xs">
                     {skipped} {skipped === 1 ? 'question' : 'questions'} skipped
@@ -1347,12 +1350,19 @@ export function MarathonPage() {
                   <span
                     className={cn(
                       'flex size-4 items-center justify-center rounded-full text-[10px] font-bold text-white',
-                      r.correct ? 'bg-green-700' : 'bg-red-800',
+                      r.score === 1
+                        ? 'bg-green-700'
+                        : r.score > 0
+                          ? 'bg-amber-700'
+                          : 'bg-red-800',
                     )}
                   >
-                    {r.correct ? '✓' : '✗'}
+                    {r.score === 1 ? '✓' : r.score > 0 ? '½' : '✗'}
                   </span>
                   <span className="text-muted-foreground flex-1 truncate">{r.concept}</span>
+                  <span className="text-muted-foreground font-mono tabular-nums">
+                    {formatScore(r.score)}/1
+                  </span>
                   <span className="text-muted-foreground">{Math.round(r.timeMs / 1000)}s</span>
                   {r.usedHelp && (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
@@ -1584,6 +1594,15 @@ export function MarathonPage() {
               </button>
             );
           })}
+        </div>
+      )}
+
+      {confirmed && currentResult && (
+        <div className="text-muted-foreground mb-6 rounded-lg border px-4 py-3 text-sm">
+          Score:{' '}
+          <span className="text-foreground font-mono font-semibold tabular-nums">
+            {formatScore(currentResult.score)}/1
+          </span>
         </div>
       )}
 

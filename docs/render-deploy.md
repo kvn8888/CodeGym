@@ -92,6 +92,117 @@ floating coach on both a Marathon and coding workspace and confirm it uses the
 active session context without sending source files or hidden tests. Finally,
 verify staging transcripts/events never appear in production and vice versa.
 
+## Preprod refresh automation (staging)
+
+CodeGym Staging points at a Neon preprod child branch (via Doppler config
+`stg`), while production uses the parent branch. A Render Cron Job,
+`codegym-preprod-refresh` (see `render.yaml`), keeps staging faithful to
+production by running
+[`backend/scripts/neon_preprod_refresh.sh`](../backend/scripts/neon_preprod_refresh.sh)
+once daily. The script calls Neon's "Reset from parent" API for the preprod
+branch, polls Neon until the branch reports `ready`, then polls staging
+`/ready` until healthy.
+
+### Required Doppler `stg` variables
+
+Set these in Doppler (`codegym` / `stg`); never in Render, Vercel, or `prd`:
+
+| Key | Purpose |
+| --- | --- |
+| `NEON_API_KEY` | Neon control-plane key with branch-reset scope. Separate from `NEON_CONNECTION_STRING`. |
+| `NEON_PROJECT_ID` | Neon project id. |
+| `NEON_PREPROD_BRANCH_ID` | Preprod child branch id (`br-…`). The branch that gets overwritten. |
+| `NEON_PROD_BRANCH_ID` | Production parent branch id (`br-…`). Sent as `source_branch_id`. |
+| `CODEGYM_STAGING_BASE_URL` | Staging origin polled for `/ready` (defaults to `https://codegym-staging.onrender.com`). |
+| `NEON_API_BASE_URL` | Optional override; defaults to `https://console.neon.tech/api/v2`. |
+
+The script refuses to run when any required variable is missing or when the
+preprod and production branch ids are equal. On a real run it additionally
+fetches the preprod branch from the Neon API before the destructive POST and
+refuses to issue the restore unless the returned branch id matches
+`NEON_PREPROD_BRANCH_ID` and its parent is `NEON_PROD_BRANCH_ID`. `DRY_RUN`
+accepts `true`/`1`/`yes`/`on` (case-insensitive) for a dry run and
+`false`/`0`/`no`/`off` for a real run; any other value fails closed. A dry
+run performs zero network calls: it skips the parent verification and reports
+that the check would run during a real run. Render holds only the
+`DOPPLER_TOKEN` service token for `codegym` / `stg` on the cron job.
+
+### Manual rerun
+
+Trigger an out-of-schedule run from the Render Dashboard: open the
+`codegym-preprod-refresh` cron job → **Runs** → **Trigger Run**. To rehearse
+locally without touching Neon:
+
+```sh
+cd backend
+NEON_API_KEY=dummy NEON_PROJECT_ID=dummy NEON_PREPROD_BRANCH_ID=br-preprod-1 \
+  NEON_PROD_BRANCH_ID=br-prod-1 DRY_RUN=true ./scripts/neon_preprod_refresh.sh
+```
+
+`DRY_RUN=true` validates configuration and prints the planned action only.
+For a real manual run, inject `stg` secrets and omit `DRY_RUN`:
+
+```sh
+cd backend
+doppler run -p codegym -c stg -- ./scripts/neon_preprod_refresh.sh
+```
+
+To validate the actual Doppler `stg` configuration without calling Neon:
+
+```sh
+cd backend
+DRY_RUN=true doppler run -p codegym -c stg -- ./scripts/neon_preprod_refresh.sh
+```
+
+### Verification
+
+```sh
+curl https://codegym-staging.onrender.com/ready
+```
+
+Expect 2xx with Postgres mode once the reset settles. The script already
+gates on this check and exits non-zero if staging does not become healthy
+within its timeout.
+
+### Expected interruption
+
+A reset is a complete overwrite of the preprod branch: existing staging
+connections are briefly interrupted (connection details do not change), and
+any staging-local data written since the last refresh is discarded. Active
+staging sessions may need a reload/retry around the run window. Production
+is never written to by this job.
+
+### Where success/failure is visible
+
+Render Cron run history is our record of the last successful refresh: a
+successful run means the Neon reset completed, the branch became ready, and
+staging `/ready` passed. Render captures the script's stdout/stderr per run
+on the cron job's **Runs** page. Exit `0` means all phases succeeded;
+any non-zero exit marks the run failed with an `ERROR:` line naming the
+phase (parent verification, restore request, branch poll timeout, or `/ready`
+poll timeout).
+Render Runs/logs plus Neon's branch "last reset" timestamp are the
+operational audit trail. There is intentionally no in-database marker (a
+preprod row would be wiped by the next reset), and no new table was created
+for this.
+
+### Rollback / failure recovery
+
+Reset-from-parent leaves no backup branch, so there is nothing to roll
+back to — recovery is a re-run once the underlying cause is fixed:
+
+- **Neon API error in the logs** (e.g. preprod has its own child branches,
+  or the parent was restored from a snapshot within the last ~24h, which
+  blocks child resets): resolve in the Neon Console, then **Trigger Run**.
+- **Staging `/ready` timeout**: check the staging web service logs and
+  Doppler `stg` database wiring; the branch itself was already reset, so
+  re-running the job is safe (resets are idempotent toward the same
+  parent head).
+- **Wrong-branch config**: the job only ever targets
+  `NEON_PREPROD_BRANCH_ID`. If the ids were misconfigured, fix them in
+  Doppler `stg` first. This automation never deletes branches; the old
+  staging branch is left untouched.
+
 ## Existing production service
 
 The live service at `codegym.onrender.com` was created in the dashboard and is

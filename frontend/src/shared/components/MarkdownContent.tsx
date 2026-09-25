@@ -44,8 +44,12 @@ export function MarkdownContent({
   const components =
     variant === 'title' ? titleComponents : variant === 'inline' ? inlineComponents : undefined;
 
+  // Title/inline slots live inside <h2> and <button> chrome, where a <div>
+  // wrapper would be invalid heading/button content. Prose keeps the <div>.
+  const Wrapper = variant === 'prose' ? 'div' : 'span';
+
   return (
-    <div
+    <Wrapper
       className={cn(
         'prose-geist min-w-0 max-w-none break-words',
         variant === 'title' && 'text-inherit [&_code]:text-[0.9em]',
@@ -57,6 +61,6 @@ export function MarkdownContent({
       <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={components}>
         {children}
       </ReactMarkdown>
-    </div>
+    </Wrapper>
   );
 }

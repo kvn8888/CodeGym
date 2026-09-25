@@ -61,6 +61,7 @@ interface QuestionResult {
   responseText?: string;
   feedback?: string;
   correct: boolean;
+  score: number;
   timeMs: number;
   usedHelp: boolean;
 }
@@ -173,7 +174,10 @@ function normalizeMarathonSessionState(value: unknown): MarathonSessionState | n
     confirmed: candidate.confirmed ?? false,
     using_fallback: candidate.using_fallback ?? false,
     questions: Array.isArray(candidate.questions) ? candidate.questions : [],
-    results: candidate.results,
+    results: candidate.results.map((result) => ({
+      ...result,
+      score: typeof result.score === 'number' ? result.score : result.correct ? 1 : 0,
+    })),
     skipped_questions: Array.isArray(candidate.skipped_questions)
       ? candidate.skipped_questions
       : [],
@@ -188,6 +192,26 @@ function sameIndexSet(left: number[], right: number[]) {
   if (left.length !== right.length) return false;
   const expected = new Set(right);
   return left.every((value) => expected.has(value));
+}
+
+function clampScore(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function scoreMultiSelect(selected: number[], correct: number[], optionCount: number) {
+  const correctSet = new Set(correct);
+  const correctSelected = selected.filter((value) => correctSet.has(value)).length;
+  const incorrectSelected = selected.length - correctSelected;
+  const totalCorrect = correct.length;
+  const totalIncorrect = Math.max(0, optionCount - totalCorrect);
+  const earned = totalCorrect > 0 ? correctSelected / totalCorrect : 0;
+  const penalty = totalIncorrect > 0 ? 0.5 * (incorrectSelected / totalIncorrect) : 0;
+  return clampScore(earned - penalty);
+}
+
+function formatScore(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 /** Memory event writer for the mcq source. Product interactions queue these
@@ -450,6 +474,11 @@ export function MarathonPage() {
       : currentQuestionType === 'multi_select'
         ? selectedIndices.length > 0
         : responseText.trim().length > 0;
+  const currentCorrectIndices = currentQ?.correctIndices ?? [];
+  const earnedPoints = results.reduce((sum, result) => sum + result.score, 0);
+  const currentResult = results.find(
+    (result) => result.round === round && result.questionId === currentQ?.id,
+  );
 
   const trackMcqEvent = (type: MemoryEventType, summary: string, payload: Record<string, unknown>) => {
     const occurredAt = new Date().toISOString();
@@ -670,16 +699,23 @@ export function MarathonPage() {
     const roundResults = results.filter((r) => r.round === round);
     const roundSkips = skippedQuestions.filter((item) => item.round === round);
     const correctCount = roundResults.filter((r) => r.correct).length;
+    const roundScore = roundResults.reduce((sum, result) => sum + result.score, 0);
+    const partialCreditCount = roundResults.filter(
+      (result) => result.score > 0 && result.score < 1,
+    ).length;
     if (!completionEventRoundsRef.current.has(round)) {
       trackMcqEvent(
         'session_completed',
-        `Finished round ${round} with ${correctCount} of ${roundResults.length} answered correctly and ${roundSkips.length} skipped.`,
+        `Finished round ${round} with ${formatScore(roundScore)} of ${roundResults.length} points earned, ${correctCount} full-credit answers, and ${roundSkips.length} skipped.`,
         {
           session_id: sessionIdRef.current,
           question_count: roundResults.length + roundSkips.length,
           answered_count: roundResults.length,
           skipped_count: roundSkips.length,
           correct_count: correctCount,
+          score: roundScore,
+          max_score: roundResults.length,
+          partial_credit_count: partialCreditCount,
           round,
         },
       );
@@ -964,12 +1000,19 @@ export function MarathonPage() {
 
     setSessionError(null);
     let correct = false;
+    let score = 0;
     let evaluation: FreeResponseEvaluation | null = null;
 
     if (currentQuestionType === 'single_select') {
       correct = selectedIndex === currentQ.correctIndex;
+      score = correct ? 1 : 0;
     } else if (currentQuestionType === 'multi_select') {
       correct = sameIndexSet(selectedIndices, currentQ.correctIndices ?? []);
+      score = scoreMultiSelect(
+        selectedIndices,
+        currentQ.correctIndices ?? [],
+        currentQ.options?.length ?? 0,
+      );
     } else {
       setEvaluating(true);
       try {
@@ -982,6 +1025,7 @@ export function MarathonPage() {
           answer: responseText.trim(),
         });
         correct = evaluation.correct;
+        score = correct ? 1 : 0;
       } catch (err) {
         setSessionError(
           err instanceof Error
@@ -1010,6 +1054,7 @@ export function MarathonPage() {
         ? { responseText: responseText.trim(), feedback: evaluation?.feedback }
         : {}),
       correct,
+      score,
       timeMs: elapsed * 1000,
       usedHelp: helpUsed,
     };
@@ -1031,6 +1076,9 @@ export function MarathonPage() {
       topic: currentQ.concept,
       question_type: currentQuestionType,
       correct: result.correct,
+      score: result.score,
+      max_score: 1,
+      partial_credit: result.score > 0 && result.score < 1,
       duration_ms: result.timeMs,
       used_help: result.usedHelp,
       round,
@@ -1261,7 +1309,7 @@ export function MarathonPage() {
 
   // ── Results state: summary ───────────────────────────────────────────────
   if (phase === 'results') {
-    const correct = results.filter((r) => r.correct).length;
+    const totalScore = results.reduce((sum, result) => sum + result.score, 0);
     const skipped = skippedQuestions.length;
     const totalTime = results.reduce((sum, r) => sum + r.timeMs, 0);
     const avgTime = results.length > 0 ? Math.round(totalTime / results.length / 1000) : 0;
@@ -1287,10 +1335,10 @@ export function MarathonPage() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <div className="text-[32px] leading-10 font-semibold tabular-nums">
-                  {correct}
+                  {formatScore(totalScore)}
                   <span className="text-muted-foreground text-3xl">/{results.length}</span>
                 </div>
-                <div className="text-muted-foreground mt-2 text-sm">correct answers</div>
+                <div className="text-muted-foreground mt-2 text-sm">points earned</div>
                 {skipped > 0 && (
                   <div className="text-muted-foreground mt-1 text-xs">
                     {skipped} {skipped === 1 ? 'question' : 'questions'} skipped
@@ -1312,12 +1360,19 @@ export function MarathonPage() {
                   <span
                     className={cn(
                       'flex size-4 items-center justify-center rounded-full text-[10px] font-bold text-white',
-                      r.correct ? 'bg-green-700' : 'bg-red-800',
+                      r.score === 1
+                        ? 'bg-green-700'
+                        : r.score > 0
+                          ? 'bg-amber-700'
+                          : 'bg-red-800',
                     )}
                   >
-                    {r.correct ? '✓' : '✗'}
+                    {r.score === 1 ? '✓' : r.score > 0 ? '½' : '✗'}
                   </span>
                   <span className="text-muted-foreground flex-1 truncate">{r.concept}</span>
+                  <span className="text-muted-foreground font-mono tabular-nums">
+                    {formatScore(r.score)}/1
+                  </span>
                   <span className="text-muted-foreground">{Math.round(r.timeMs / 1000)}s</span>
                   {r.usedHelp && (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
@@ -1376,7 +1431,7 @@ export function MarathonPage() {
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground font-mono text-sm tabular-nums">{elapsed}s</span>
           <span className="text-muted-foreground text-sm">
-            {results.filter((r) => r.correct).length}✓ {results.filter((r) => !r.correct).length}✗
+            {formatScore(earnedPoints)}/{results.length} pts
             {skippedQuestions.length > 0 && ` · ${skippedQuestions.length} skipped`}
           </span>
           <Button
@@ -1454,13 +1509,24 @@ export function MarathonPage() {
                 : selectedIndex === i;
             const isCorrect =
               currentQuestionType === 'multi_select'
-                ? (currentQ.correctIndices ?? []).includes(i)
+                ? currentCorrectIndices.includes(i)
                 : i === currentQ.correctIndex;
+            const isMissedRequired =
+              confirmed && currentQuestionType === 'multi_select' && isCorrect && !isSelected;
+            const isSelectedCorrect = confirmed && isSelected && isCorrect;
+            const isSelectedIncorrect = confirmed && isSelected && !isCorrect;
+            const isRevealedSingleCorrect =
+              confirmed && currentQuestionType === 'single_select' && isCorrect && !isSelected;
 
             let stateClasses =
               'border bg-background text-muted-foreground hover:bg-accent/50';
             if (confirmed) {
-              if (isCorrect) stateClasses = 'border-green-400 bg-green-100 text-green-900';
+              if (currentQuestionType === 'multi_select') {
+                if (isSelectedCorrect) stateClasses = 'border-green-400 bg-green-100 text-green-900';
+                else if (isSelectedIncorrect || isMissedRequired)
+                  stateClasses = 'border-red-400 bg-red-100 text-red-900';
+                else stateClasses = 'border bg-background text-muted-foreground';
+              } else if (isCorrect) stateClasses = 'border-green-400 bg-green-100 text-green-900';
               else if (isSelected) stateClasses = 'border-red-400 bg-red-100 text-red-900';
               else stateClasses = 'border bg-background text-muted-foreground';
             } else if (isSelected) {
@@ -1485,17 +1551,19 @@ export function MarathonPage() {
                       'mt-0.5 flex size-4 shrink-0 items-center justify-center border-2 transition-colors',
                       currentQuestionType === 'multi_select' ? 'rounded-sm' : 'rounded-full',
                       confirmed
-                        ? isCorrect
+                        ? isSelectedCorrect
                           ? 'border-green-700'
-                          : isSelected
+                          : isSelectedIncorrect || isMissedRequired
                             ? 'border-red-800'
+                            : isRevealedSingleCorrect
+                              ? 'border-green-700'
                             : 'border-input'
                         : isSelected
                           ? 'border-primary'
-                          : 'border-input',
+                      : 'border-input',
                     )}
                   >
-                    {(isSelected || (confirmed && isCorrect)) && (
+                    {isSelected && (
                       <div
                         className={cn(
                           'size-2',
@@ -1512,20 +1580,39 @@ export function MarathonPage() {
                   <MarkdownContent variant="inline" className="min-w-0 flex-1">
                     {option}
                   </MarkdownContent>
-                  {confirmed && isCorrect && (
+                  {confirmed && isSelectedCorrect && (
                     <span className="ml-auto flex shrink-0 items-center gap-1 self-center text-xs font-semibold text-green-700">
                       <SuccessCheck /> Correct
                     </span>
                   )}
-                  {confirmed && isSelected && !isCorrect && (
+                  {isRevealedSingleCorrect && (
+                    <span className="ml-auto shrink-0 self-center text-xs font-semibold text-green-700">
+                      Correct answer
+                    </span>
+                  )}
+                  {isSelectedIncorrect && (
                     <span className="ml-auto shrink-0 self-center text-xs font-semibold text-red-900">
                       ✗ Wrong
+                    </span>
+                  )}
+                  {isMissedRequired && (
+                    <span className="ml-auto shrink-0 self-center text-xs font-semibold text-red-900">
+                      ✗ Missed
                     </span>
                   )}
                 </div>
               </button>
             );
           })}
+        </div>
+      )}
+
+      {confirmed && currentResult && (
+        <div className="text-muted-foreground mb-6 rounded-lg border px-4 py-3 text-sm">
+          Score:{' '}
+          <span className="text-foreground font-mono font-semibold tabular-nums">
+            {formatScore(currentResult.score)}/1
+          </span>
         </div>
       )}
 

@@ -86,15 +86,16 @@ naming guide: additive, readers tolerant of missing fields).
   ```json
   { "schema_version": 1, "question_index": 4, "selected_index": null,
     "confirmed": false,
-    "results": [ { "questionId": "q1", "selectedIndex": 2, "correct": true } ],
+    "results": [ { "questionId": "q1", "selectedIndex": 2, "correct": true, "score": 1 } ],
     "skipped_questions": [ { "questionId": "q2", "round": 1 } ] }
   ```
 
   The active question index, timer, draft selection or written response,
-  completed AI evaluation, generated questions, answer
-  results, and skips are persisted so the run can reopen exactly where it left
-  off. A skip is continuity data in the session snapshot (separate from answer
-  results for UI), and memory records it as a neutral `question_skipped` event.
+  completed AI evaluation, generated questions, answer results with normalized
+  `score`, and skips are persisted so the run can reopen exactly where it left
+  off. Older MCQ snapshots without `score` can derive it from `correct`. A skip
+  is continuity data in the session snapshot (separate from answer results for
+  UI), and memory records it as a neutral `question_skipped` event.
 
 - `interview`: pointer state only. The transcript is append-only
   `session_messages`, owned by a scoped `chat_threads` record that references

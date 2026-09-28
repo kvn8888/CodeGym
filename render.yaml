@@ -26,3 +26,31 @@ services:
       # Doppler project `codegym`, config `prd`.
       - key: DOPPLER_TOKEN
         sync: false
+
+  # Automated Neon preprod refresh for CodeGym Staging (issue #177).
+  #
+  # Resets the Neon preprod child branch from its production parent, waits
+  # for the branch to become ready, then waits for staging /ready to return
+  # healthy. Staging points at preprod through Doppler `stg`, so this job
+  # must use a service token for `codegym` / `stg` (not `prd`).
+  #
+  # NOTE: confirm the exact daily off-hours window with the owner before
+  # relying on this schedule. The value below runs once daily at 07:00 UTC.
+  - type: cron
+    name: codegym-preprod-refresh
+    runtime: go
+    region: oregon
+    repo: https://github.com/kvn8888/CodeGym
+    branch: codegym-v2
+    autoDeploy: true
+    rootDir: backend
+    schedule: "0 7 * * *"
+    # Script-only job: install the Doppler CLI, then run the refresh script
+    # with `stg` secrets. No Go build is needed.
+    buildCommand: mkdir -p ./bin && curl -Ls https://cli.doppler.com/install.sh | sh -s -- --install-path ./bin --no-package-manager --no-verify
+    startCommand: ./bin/doppler run -- ./scripts/neon_preprod_refresh.sh
+    envVars:
+      # Only credential stored on Render. Create a service token for
+      # Doppler project `codegym`, config `stg`.
+      - key: DOPPLER_TOKEN
+        sync: false

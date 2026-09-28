@@ -17,6 +17,27 @@ type Story = StoryObj<typeof MarathonPage>;
 /** An active persisted run restores its exact question, timer, and prior score. */
 export const ActiveRun: Story = {};
 
+/** Issue #110: stem, options, and Help copy render inline code safely. */
+export const MarkdownInlineCode: Story = {
+  parameters: {
+    initialPath: '/marathon?session=sess_markdown_inline',
+  },
+};
+
+/** Generated plain-newline code listings stay readable below the stem. */
+export const MarkdownCodeListing: Story = {
+  parameters: {
+    initialPath: '/marathon?session=sess_markdown_code_block',
+  },
+};
+
+/** Free-response rationale/feedback uses the shared markdown renderer. */
+export const MarkdownFeedback: Story = {
+  parameters: {
+    initialPath: '/marathon?session=sess_markdown_feedback',
+  },
+};
+
 /** Exact-set selection is restored without confirming the question. */
 export const MultiSelectRun: Story = {
   parameters: {

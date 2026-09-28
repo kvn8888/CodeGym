@@ -107,8 +107,8 @@ func (g *problemSequenceGenerator) Generate(_ context.Context, request GenerateR
 	return GenerateResult{Object: json.RawMessage(g.payloads[index]), Provider: "test", Model: "model"}, nil
 }
 
-func TestGenerateProblemRepairsOnceAndBuildsControlledHarness(t *testing.T) {
-	generator := &problemSequenceGenerator{payloads: []string{`{"title":"broken"}`, validProblemPayload}}
+func TestGenerateProblemEntryPointBuildsIndependentControlledHarness(t *testing.T) {
+	generator := newIsolatedRoleGenerator()
 	orchestrator := NewOrchestrator(memory.NewService(memory.NewInMemoryStore(), nil), generator)
 	ctx := generationTestContext()
 
@@ -116,8 +116,9 @@ func TestGenerateProblemRepairsOnceAndBuildsControlledHarness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateProblem: %v", err)
 	}
-	if len(generator.requests) != 2 || !strings.Contains(generator.requests[1].Instructions, "previous output was rejected") {
-		t.Fatalf("requests = %#v", generator.requests)
+	requests := generator.recordedRequests()
+	if len(requests) != 3 {
+		t.Fatalf("requests = %#v", requests)
 	}
 	if definition.Entrypoint != "test_solution.py" || len(definition.HiddenTestFiles) != 2 || len(definition.PublicTestFiles) != 2 || len(definition.PublicCases) != 2 {
 		t.Fatalf("definition missing controlled runner: %#v", definition)
@@ -374,15 +375,15 @@ func TestGoStrategyRejectsOutOfScopeTypes(t *testing.T) {
 	}
 }
 
-func TestGenerateProblemSelectsGoStrategy(t *testing.T) {
-	generator := &problemSequenceGenerator{payloads: []string{validGoProblemPayload}}
+func TestGenerateProblemSpecSelectsGoStrategy(t *testing.T) {
+	generator := &problemSequenceGenerator{payloads: []string{validIndependentGoHTTPSpec}}
 	orchestrator := NewOrchestrator(memory.NewService(memory.NewInMemoryStore(), nil), generator)
-	definition, generated, _, err := GenerateProblem(generationTestContext(), orchestrator, ProblemSpec{Topic: "maps", Language: "go"})
+	generated, _, err := GenerateProblemSpec(generationTestContext(), orchestrator, ProblemSpec{Topic: "http api", Language: "go"})
 	if err != nil {
-		t.Fatalf("GenerateProblem: %v", err)
+		t.Fatalf("GenerateProblemSpec: %v", err)
 	}
-	if definition.Language != "go" || generated.Language != "go" || len(generator.requests) != 1 || !strings.Contains(generator.requests[0].Instructions, "safe Go coding problem") {
-		t.Fatalf("Go strategy result = %#v %#v requests=%#v", definition, generated, generator.requests)
+	if generated.Language != "go" || generated.Strategy != problems.TestStrategyHTTP || len(generator.requests) != 1 {
+		t.Fatalf("Go strategy result = %#v requests=%#v", generated, generator.requests)
 	}
 	for _, guidance := range []string{
 		"JSON type of every response field",

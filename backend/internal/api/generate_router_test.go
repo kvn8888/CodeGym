@@ -23,6 +23,37 @@ type staticGenerator struct {
 	payload string
 }
 
+type independentProblemGenerator struct{}
+
+func (independentProblemGenerator) Generate(_ context.Context, request generation.GenerateRequest) (generation.GenerateResult, error) {
+	var payload string
+	switch request.Kind {
+	case generation.KindProblemSpec:
+		payload = `{
+			"language":"python","strategy":"unit","title":"Reverse Words",
+			"description":"Reverse the words.","category":"algorithms","subcategory":"strings",
+			"tags":["strings"],"difficulty":1,"estimated_minutes":15,"hints":["Split first."],
+			"entrypoint":"reverse_words","signature":"def reverse_words(value: str) -> str",
+			"io_contract":"Accept one string and return one string containing its words in reverse order.",
+			"comparator":{"kind":"exact"},
+			"ambiguity_resolutions":["Empty input returns the empty string.","Runs of whitespace are normalized to one space."],
+			"function_name":"reverse_words","parameters":[{"name":"value","type":"str"}],"return_type":"str"
+		}`
+	case generation.KindProblemTests:
+		payload = `{"test_cases":[
+			{"name":"one","kind":"example","hidden":false,"args":["hello world"],"expected":"world hello"},
+			{"name":"single","kind":"functional","hidden":false,"args":["hello"],"expected":"hello"},
+			{"name":"spaces","kind":"hidden","hidden":true,"args":["a b c"],"expected":"c b a"},
+			{"name":"empty","kind":"edge","hidden":true,"args":[""],"expected":""}
+		]}`
+	case generation.KindProblemReference:
+		payload = `{"reference_solution":"def reverse_words(value: str) -> str:\n    return ' '.join(reversed(value.split()))"}`
+	default:
+		payload = `{}`
+	}
+	return generation.GenerateResult{Object: []byte(payload), Provider: "static", Model: "fake-model"}, nil
+}
+
 func (s staticGenerator) Generate(_ context.Context, _ generation.GenerateRequest) (generation.GenerateResult, error) {
 	return generation.GenerateResult{
 		Object:   []byte(s.payload),
@@ -317,20 +348,7 @@ func TestGenerateRouteNotImplementedKinds(t *testing.T) {
 
 func TestGenerateRoutePersistsWorkspaceScopedProblem(t *testing.T) {
 	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
-	payload := `{
-		"title":"Reverse Words","description":"Reverse the words.","category":"algorithms",
-		"subcategory":"strings","tags":["strings"],"difficulty":1,"estimated_minutes":15,
-		"function_name":"reverse_words","parameters":[{"name":"value","type":"str"}],
-		"return_type":"str","hints":["Split first."],
-			"reference_solution":"def reverse_words(value: str) -> str:\n    return ' '.join(reversed(value.split()))",
-			"test_cases":[
-				{"name":"one","kind":"example","hidden":false,"args":["hello world"],"expected":"world hello"},
-				{"name":"single","kind":"functional","hidden":false,"args":["hello"],"expected":"hello"},
-				{"name":"spaces","kind":"hidden","hidden":true,"args":["a b c"],"expected":"c b a"},
-				{"name":"empty","kind":"edge","hidden":true,"args":[""],"expected":""}
-		]
-	}`
-	orchestrator := generation.NewOrchestrator(memoryService, staticGenerator{payload: payload})
+	orchestrator := generation.NewOrchestrator(memoryService, independentProblemGenerator{})
 	router := newGenerateTestRouter(t, orchestrator, memoryService)
 
 	recorder := httptest.NewRecorder()

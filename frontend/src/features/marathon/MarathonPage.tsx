@@ -10,6 +10,7 @@ import { motion } from 'motion/react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { HelpFlashcard } from './HelpFlashcard';
+import { splitQuestionStem } from './questionStem';
 import { api, createMemoryEvent } from '../../shared/api/client';
 import type { MCQQuestionType, NewPracticeConfig, PracticeSession } from '../../shared/api/types';
 import { MarkdownContent } from '../../shared/components/MarkdownContent';
@@ -444,6 +445,7 @@ export function MarathonPage() {
 
   const currentQ = questions[questionIndex];
   const currentQuestionType = questionTypeOf(currentQ);
+  const { stem: questionStem, code: questionCode } = splitQuestionStem(currentQ.text);
   const canConfirm =
     currentQuestionType === 'single_select'
       ? selectedIndex !== null
@@ -1410,8 +1412,13 @@ export function MarathonPage() {
             : 'Single answer'}
       </div>
       <h2 className="mb-5 text-xl leading-7 font-semibold">
-        <MarkdownContent variant="title">{currentQ.text}</MarkdownContent>
+        <MarkdownContent variant="title">{questionStem}</MarkdownContent>
       </h2>
+      {questionCode !== null && (
+        <pre className="mb-6 overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-sm leading-6">
+          <code>{questionCode}</code>
+        </pre>
+      )}
 
       {currentQuestionType === 'free_response' ? (
         <div className="mb-6">

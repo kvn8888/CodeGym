@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "environment.verifier-result.v1",
+  "verifierRunId": "verify_01JFAIL",
+  "builderRunId": "buildrun_01JFAIL",
+  "verdict": "rejected",
+  "failedStage": "build",
+  "repairable": true,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "stage": "build",
+      "code": "DEPENDENCY_RESOLUTION_FAILED",
+      "message": "Maven could not resolve spring-boot-starter-parent:3.3.5 from the configured dependency cache.",
+      "details": {
+        "dependency": "org.springframework.boot:spring-boot-starter-parent:3.3.5"
+      }
+    }
+  ],
+  "evidence": {
+    "checks": [
+      {
+        "stage": "manifest",
+        "command": null,
+        "exitCode": 0,
+        "summary": "Manifest schema passed."
+      },
+      {
+        "stage": "build",
+        "command": "mvn -q test-compile",
+        "exitCode": 1,
+        "summary": "Dependency resolution failed."
+      }
+    ]
+  },
+  "promotion": {
+    "allowed": false,
+    "reason": "Build check failed."
+  }
+}

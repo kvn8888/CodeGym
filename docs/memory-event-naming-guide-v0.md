@@ -82,12 +82,12 @@ metadata, not message text.
 | Type | When to Emit |
 | --- | --- |
 | `session_started` | User started an MCQ or marathon session. |
-| `question_answered` | User correctly answered one single-select or multi-select question. |
+| `question_answered` | User answered one single-select or multi-select question with full or partial credit. Include `score`, `max_score`, and `partial_credit`; never store raw option text. |
 | `question_skipped` | User deliberately skipped a question; this is neutral evidence, not an incorrect answer. Include `skipped: true` and `answer_revealed: true` because the UI shows the correct answer without crediting it to the learner. |
-| `free_response_evaluated` | AI evaluation completed for one written response. Store only correctness, answer length, concept, timing, and provider metadata; never store the raw answer. |
-| `session_completed` | User finished the session. |
+| `free_response_evaluated` | AI evaluation completed for one written response. Store only correctness, binary score, answer length, concept, timing, and provider metadata; never store the raw answer. |
+| `session_completed` | User finished the session. Include answered/skipped counts plus aggregate `score`, `max_score`, and `partial_credit_count`. |
 | `session_exited` | User left an unfinished session after its durable state was saved. |
-| `answer_incorrect` | User missed a question worth tracking for growth edges. |
+| `answer_incorrect` | User missed a question or earned zero credit. Include `score`, `max_score`, and `partial_credit` when available. |
 
 ### `memory`
 
@@ -286,7 +286,12 @@ Review checklist for any new event:
   "payload": {
     "session_id": "mcq_sess_9",
     "question_count": 10,
+    "answered_count": 9,
+    "skipped_count": 1,
     "correct_count": 7,
+    "score": 7.5,
+    "max_score": 9,
+    "partial_credit_count": 1,
     "topic": "api_patterns",
     "schema_version": 1
   }

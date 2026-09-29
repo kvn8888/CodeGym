@@ -53,8 +53,9 @@ Rules:
   repeatedly when that is genuinely the best fit, but vary formats when the
   concepts support it.
 - Selection items have exactly four plausible options. Single-select has one
-  correctIndex. Multi-select has 1-3 unique correctIndices and requires an exact
-  set match.
+  correctIndex. Multi-select has 1-3 unique correctIndices. Full credit requires
+  an exact set match; the runtime may award partial credit for incomplete or
+  extra selections using the application scoring rule.
 - Free-response items have no options or indices. expectedAnswer and rubric are
   concise and objective; helpContent does not reveal the answer.
 - Vary correct option positions across the set.

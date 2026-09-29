@@ -28,6 +28,7 @@ type Config struct {
 	SeedDemo           bool
 	CORSAllowedOrigins []string
 	MemoryWorker       WorkerConfig
+	SandboxSweeper     SweeperConfig
 	// GenAI is the legacy single-provider view (Gemini / CODEGYM_GENAI_*).
 	// Prefer GenAIProviders for multi-provider routing.
 	GenAI          GenAIConfig
@@ -57,6 +58,13 @@ type WorkerConfig struct {
 	Disabled bool
 	Interval time.Duration
 	Trigger  string
+}
+
+// SweeperConfig controls conservative cleanup of orphaned Daytona sandboxes.
+type SweeperConfig struct {
+	Disabled bool
+	Interval time.Duration
+	MaxAge   time.Duration
 }
 
 const (
@@ -197,6 +205,17 @@ func Load() Config {
 				24*time.Hour,
 			),
 			Trigger: memoryRefreshTriggerEnv(),
+		},
+		SandboxSweeper: SweeperConfig{
+			Disabled: boolEnv("CODEGYM_SANDBOX_SWEEPER_DISABLED", false),
+			Interval: positiveDurationEnv(
+				"CODEGYM_SANDBOX_SWEEPER_INTERVAL",
+				5*time.Minute,
+			),
+			MaxAge: positiveDurationEnv(
+				"CODEGYM_SANDBOX_SWEEPER_MAX_AGE",
+				15*time.Minute,
+			),
 		},
 		GenAI:              legacyGenAI,
 		GenAIProviders:     providers,

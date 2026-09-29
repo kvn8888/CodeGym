@@ -51,6 +51,7 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 		"/ready":                                  {http.MethodGet},
 		"/api/v1/me":                              {http.MethodGet, http.MethodPatch},
 		"/api/v1/cost":                            {http.MethodGet},
+		"/api/v1/settings/{key}":                  {http.MethodGet, http.MethodPut},
 		"/api/v1/memory/profile":                  {http.MethodGet},
 		"/api/v1/memory/profile/refresh":          {http.MethodPost},
 		"/api/v1/memory/profile/maintain":         {http.MethodPost},

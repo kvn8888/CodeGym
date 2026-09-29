@@ -68,6 +68,14 @@ type ProfileRefreshResult struct {
 // failures are best-effort: a persisted profile is preserved, while a first
 // refresh remains an unpersisted empty state until the model succeeds.
 func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRefreshInput) (ProfileRefreshResult, error) {
+	result, err := s.refreshProfileOnce(ctx, input)
+	if errors.Is(err, memory.ErrStaleProfile) {
+		return s.refreshProfileOnce(ctx, input)
+	}
+	return result, err
+}
+
+func (s *ProfileSynthesizer) refreshProfileOnce(ctx context.Context, input ProfileRefreshInput) (ProfileRefreshResult, error) {
 	if s == nil || s.memory == nil {
 		return ProfileRefreshResult{}, errors.New("profile synthesis requires memory")
 	}
@@ -109,6 +117,17 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		return ProfileRefreshResult{Profile: current, Skipped: "memory evidence is unchanged"}, nil
 	}
 	evidenceInput.SessionID = strings.TrimSpace(input.SessionID)
+	candidateNotes := append([]memory.Note(nil), current.Notes...)
+	if supportsNotesFirstRefresh(input, evidenceEvents) {
+		candidateNotes, _, _, err = s.maintainNoteCandidate(ctx, current, evidenceInput, now)
+		if err != nil {
+			reportWorkflow(ctx, "synthesize_profile", workflow.StatusFailed, map[string]any{
+				"reason_code": "note_generation_failed", "retryable": true,
+			}, true)
+			return s.fallback(current, "note generation failed: "+err.Error()), nil
+		}
+	}
+	profileContext := profileWithCandidateNotes(current, candidateNotes)
 	evidence, err := json.Marshal(evidenceInput)
 	if err != nil {
 		return ProfileRefreshResult{}, fmt.Errorf("encode profile evidence: %w", err)
@@ -119,7 +138,7 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		Spec:         evidence,
 		Schema:       Schema{Name: "memory_profile", Version: "1", JSONSchema: profileJSONSchema},
 		Instructions: profileSystemPrompt,
-	}, current)
+	}, profileContext)
 	if err != nil {
 		reportWorkflow(ctx, "synthesize_profile", workflow.StatusFailed, map[string]any{
 			"reason_code": "provider_failed", "retryable": true,
@@ -137,6 +156,7 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		return s.fallback(current, "generated profile was invalid: "+err.Error()), nil
 	}
 	reportWorkflow(ctx, "validate_profile", workflow.StatusSucceeded, nil, false)
+	next.Notes = candidateNotes
 	next.Provenance = &memory.ProfileProvenance{
 		SchemaVersion:   1,
 		Trigger:         firstProfileValue(strings.TrimSpace(input.Trigger), "manual"),
@@ -146,9 +166,10 @@ func (s *ProfileSynthesizer) RefreshProfile(ctx context.Context, input ProfileRe
 		EvidenceThrough: latestEvidenceTime(evidenceEvents),
 		EventCount:      len(evidenceEvents),
 		EvidenceDigest:  evidenceDigest,
+		EvidenceSources: profileEvidenceSources(evidenceEvents),
 	}
 	reportWorkflow(ctx, "save_profile", workflow.StatusRunning, nil, false)
-	updated, err := s.memory.ReplaceProfile(ctx, next)
+	updated, err := s.memory.ReplaceProfileIfVersion(ctx, next, current.Version)
 	if err != nil {
 		reportWorkflow(ctx, "save_profile", workflow.StatusFailed, map[string]any{
 			"reason_code": "persistence_failed", "retryable": true,
@@ -174,6 +195,63 @@ func skipProfileWorkflow(ctx context.Context) {
 
 func (s *ProfileSynthesizer) fallback(current memory.Profile, reason string) ProfileRefreshResult {
 	return ProfileRefreshResult{Profile: current, Skipped: reason, Changed: false}
+}
+
+func (s *ProfileSynthesizer) maintainNoteCandidate(ctx context.Context, current memory.Profile, evidence profileEvidence, now time.Time) ([]memory.Note, []NoteAction, GenerateResult, error) {
+	spec, err := json.Marshal(evidence)
+	if err != nil {
+		return nil, nil, GenerateResult{}, fmt.Errorf("encode note evidence: %w", err)
+	}
+	generated, err := s.orchestrator.GenerateWithProfile(ctx, GenerateInput{
+		Kind:         KindNotes,
+		Spec:         spec,
+		Schema:       Schema{Name: "note_actions", Version: "1", JSONSchema: notesJSONSchema},
+		Instructions: notesSystemPrompt,
+	}, current)
+	if err != nil {
+		return nil, nil, GenerateResult{}, err
+	}
+	actions, err := ParseNoteActions(generated.Object)
+	if err != nil {
+		return nil, nil, generated, err
+	}
+	return ApplyNoteActions(current.Notes, actions, now), actions, generated, nil
+}
+
+func profileWithCandidateNotes(current memory.Profile, notes []memory.Note) memory.Profile {
+	next := current
+	next.Notes = append([]memory.Note(nil), notes...)
+	return next
+}
+
+func supportsNotesFirstRefresh(input ProfileRefreshInput, events []memory.Event) bool {
+	sessionID := strings.TrimSpace(input.SessionID)
+	if sessionID == "" {
+		return false
+	}
+	hasCompletion := false
+	hasOutcome := false
+	for _, event := range events {
+		if event.Source != "mcq" {
+			continue
+		}
+		payload := map[string]any{}
+		if len(event.Payload) > 0 {
+			_ = json.Unmarshal(event.Payload, &payload)
+		}
+		eventSessionID, _ := payload["session_id"].(string)
+		if strings.TrimSpace(eventSessionID) != sessionID {
+			continue
+		}
+		if event.Type == "session_completed" {
+			hasCompletion = true
+			continue
+		}
+		if isProfileQuestionOutcome(event.Type) {
+			hasOutcome = true
+		}
+	}
+	return hasCompletion && hasOutcome
 }
 
 // RefreshAllProfiles is the daily-worker entrypoint. It establishes the same
@@ -228,6 +306,8 @@ Rules:
 - summary is a living skill document, not a three-sentence status blurb. Start from the current profile summary when one exists. Preserve durable prior observations that remain true (topics practiced, recurring strengths/gaps, calibrated levels, useful techniques). Fold in new evidence by expanding or revising sections. Remove or rewrite only what new evidence contradicts or makes obsolete. As practice accumulates, grow toward 2–4 short paragraphs rather than collapsing history.
 - strengths and growth_edges contain at most 5 concise concepts each; they are the current focus lists, while summary keeps the longer narrative.
 - skills contain at most 30 evidence-backed skills. level is 1..5, confidence is 0..100, and trend is up|flat|down. Reuse existing skill ids/labels when the same concept continues; update level/confidence/trend from the full evidence history, not only the latest session.
+- Distinguish observed results from inferred understanding. A single incorrect answer is limited evidence; record uncertainty or a broad review need rather than a specific misconception unless event details support that misconception.
+- Assisted success (for example used_help=true) is evidence of exposure or progress, not independent mastery. Do not raise mastery level, confidence, strengths, or note disposition from assisted success alone.
 - question_skipped and outcome "skipped" are neutral coverage signals, never correct or incorrect answers. The UI reveals the correct answer after a skip; that reveal is not learner performance. Do not create or retain a growth edge or review note from skips alone. Later correct evidence resolves skip-only uncertainty unless actual incorrect evidence remains.
 - notes are a CRUD-managed desired state for concept reminders, not an append-only log and not a wipe-rewrite. Keep an unchanged note's existing id. When updating a concept, revise the note summary like a living study entry: preserve still-true details and add the new insight; do not shrink a useful note into one vague sentence. Omit stale notes to prune them, and never create a second note for the same concept. Return at most 20.
 - action is internal maintenance metadata: review for an active gap, keep for a durable useful observation, prune only when a returned note should be removed. Normally omit pruned notes from the returned list.
@@ -361,22 +441,21 @@ var evidencePayloadKeys = map[string]bool{
 
 func profileEvidenceEvents(events []memory.Event) []memory.Event {
 	out := make([]memory.Event, 0, len(events))
-	questionIndexes := map[string]int{}
+	indexes := map[string]int{}
 	for _, event := range events {
 		if event.Source == "memory" || event.Source == "system" {
 			continue
 		}
 		event = canonicalProfileEvidenceEvent(event)
-		if key := profileQuestionEvidenceKey(event); key != "" && isProfileQuestionOutcome(event.Type) {
-			if index, exists := questionIndexes[key]; exists {
-				existing := out[index]
-				if existing.Type == "question_skipped" && event.Type != "question_skipped" {
-					continue
+		key := profileEvidenceSourceKey(event)
+		if key != "" {
+			if index, exists := indexes[key]; exists {
+				if profileEvidenceEventPreferred(event, out[index]) {
+					out[index] = event
 				}
-				out[index] = event
 				continue
 			}
-			questionIndexes[key] = len(out)
+			indexes[key] = len(out)
 		}
 		out = append(out, event)
 	}
@@ -411,20 +490,116 @@ func canonicalProfileEvidenceEvent(event memory.Event) memory.Event {
 	return event
 }
 
-func profileQuestionEvidenceKey(event memory.Event) string {
-	if event.Source != "mcq" {
-		return ""
+func profileEvidenceSourceKey(event memory.Event) string {
+	payload := map[string]any{}
+	if len(event.Payload) > 0 {
+		_ = json.Unmarshal(event.Payload, &payload)
 	}
-	var payload map[string]any
-	if len(event.Payload) == 0 || json.Unmarshal(event.Payload, &payload) != nil {
-		return ""
+	source := strings.TrimSpace(event.Source)
+	eventType := strings.TrimSpace(event.Type)
+	if source == "" || eventType == "" {
+		return strings.TrimSpace(event.ID)
 	}
 	sessionID, _ := payload["session_id"].(string)
 	questionID, _ := payload["question_id"].(string)
-	if sessionID == "" || questionID == "" {
+	round := profileStringValue(payload["round"])
+	problemID, _ := payload["problem_id"].(string)
+
+	parts := []string{source, eventType}
+	if outcome := profileEvidenceOutcome(event); outcome != "" {
+		parts = append(parts, "outcome", outcome)
+	}
+	if sessionID != "" {
+		parts = append(parts, "session", sessionID)
+	}
+	if questionID != "" {
+		parts = append(parts, "question", questionID)
+	}
+	if round != "" {
+		parts = append(parts, "round", round)
+	}
+	if problemID != "" {
+		parts = append(parts, "problem", problemID)
+	}
+	if len(parts) > 2 {
+		return strings.Join(parts, ":")
+	}
+	if event.ID != "" {
+		return "event:" + event.ID
+	}
+	return source + ":" + eventType + ":" + profileEventDigest(event)
+}
+
+func profileEvidenceSources(events []memory.Event) []memory.ProfileEvidenceSource {
+	sources := make([]memory.ProfileEvidenceSource, 0, len(events))
+	for _, event := range events {
+		payload := map[string]any{}
+		if len(event.Payload) > 0 {
+			_ = json.Unmarshal(event.Payload, &payload)
+		}
+		sessionID, _ := payload["session_id"].(string)
+		questionID, _ := payload["question_id"].(string)
+		sources = append(sources, memory.ProfileEvidenceSource{
+			Key:        profileEvidenceSourceKey(event),
+			Source:     event.Source,
+			Type:       event.Type,
+			SessionID:  strings.TrimSpace(sessionID),
+			QuestionID: strings.TrimSpace(questionID),
+			Round:      profileStringValue(payload["round"]),
+			Digest:     profileEventDigest(event),
+			OccurredAt: event.OccurredAt.UTC(),
+		})
+	}
+	return sources
+}
+
+func profileStringValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		return fmt.Sprintf("%.0f", typed)
+	case int:
+		return fmt.Sprintf("%d", typed)
+	default:
 		return ""
 	}
-	return sessionID + "\x00" + questionID
+}
+
+func profileEventDigest(event memory.Event) string {
+	encoded, err := json.Marshal(struct {
+		Source  string          `json:"source"`
+		Type    string          `json:"type"`
+		Summary string          `json:"summary,omitempty"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}{Source: event.Source, Type: event.Type, Summary: event.Summary, Payload: event.Payload})
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(encoded))
+}
+
+func profileEvidenceEventPreferred(candidate, existing memory.Event) bool {
+	candidateRichness := profileEvidencePayloadRichness(candidate.Payload)
+	existingRichness := profileEvidencePayloadRichness(existing.Payload)
+	if candidateRichness != existingRichness {
+		return candidateRichness > existingRichness
+	}
+	if reflect.DeepEqual(compactEvidencePayload(candidate.Payload), compactEvidencePayload(existing.Payload)) {
+		return false
+	}
+	return profileEvidenceEventTime(candidate).After(profileEvidenceEventTime(existing))
+}
+
+func profileEvidencePayloadRichness(raw json.RawMessage) int {
+	return len(compactEvidencePayload(raw))
+}
+
+func profileEvidenceEventTime(event memory.Event) time.Time {
+	if !event.OccurredAt.IsZero() {
+		return event.OccurredAt.UTC()
+	}
+	return event.CreatedAt.UTC()
 }
 
 func isProfileQuestionOutcome(eventType string) bool {

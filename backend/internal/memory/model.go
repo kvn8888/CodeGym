@@ -7,6 +7,7 @@ import (
 
 // Profile is the long-lived memory summary for a user within a workspace.
 type Profile struct {
+	Version      int64              `json:"version"`
 	Summary      string             `json:"summary"`
 	UpdatedAt    time.Time          `json:"updated_at"`
 	NextReviewAt time.Time          `json:"next_review_at"`
@@ -20,14 +21,28 @@ type Profile struct {
 // ProfileProvenance records how a curated profile was produced without making
 // operational metadata part of the learner-facing UI.
 type ProfileProvenance struct {
-	SchemaVersion   int       `json:"schema_version"`
-	Trigger         string    `json:"trigger"`
-	Provider        string    `json:"provider"`
-	Model           string    `json:"model"`
-	SynthesizedAt   time.Time `json:"synthesized_at"`
-	EvidenceThrough time.Time `json:"evidence_through"`
-	EventCount      int       `json:"event_count"`
-	EvidenceDigest  string    `json:"evidence_digest,omitempty"`
+	SchemaVersion   int                     `json:"schema_version"`
+	Trigger         string                  `json:"trigger"`
+	Provider        string                  `json:"provider"`
+	Model           string                  `json:"model"`
+	SynthesizedAt   time.Time               `json:"synthesized_at"`
+	EvidenceThrough time.Time               `json:"evidence_through"`
+	EventCount      int                     `json:"event_count"`
+	EvidenceDigest  string                  `json:"evidence_digest,omitempty"`
+	EvidenceSources []ProfileEvidenceSource `json:"evidence_sources,omitempty"`
+}
+
+// ProfileEvidenceSource records durable, non-user-facing source identifiers for
+// the evidence included in the latest profile synthesis.
+type ProfileEvidenceSource struct {
+	Key        string    `json:"key"`
+	Source     string    `json:"source"`
+	Type       string    `json:"type"`
+	SessionID  string    `json:"session_id,omitempty"`
+	QuestionID string    `json:"question_id,omitempty"`
+	Round      string    `json:"round,omitempty"`
+	Digest     string    `json:"digest,omitempty"`
+	OccurredAt time.Time `json:"occurred_at,omitempty"`
 }
 
 // SkillProficiency captures skill-level observations in the user profile.

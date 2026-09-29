@@ -37,7 +37,36 @@ func (s *InMemoryStore) UpsertProfile(_ context.Context, workspaceID, userID str
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.profiles[key(workspaceID, userID)] = profile
+	k := key(workspaceID, userID)
+	current, exists := s.profiles[k]
+	if exists {
+		profile.Version = current.Version + 1
+	} else if profile.Version == 0 {
+		profile.Version = 1
+	}
+	s.profiles[k] = profile
+	return nil
+}
+
+func (s *InMemoryStore) ReplaceProfileIfVersion(_ context.Context, workspaceID, userID string, profile Profile, expectedVersion int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	k := key(workspaceID, userID)
+	current, exists := s.profiles[k]
+	if !exists {
+		if expectedVersion != 0 {
+			return ErrProfileNotFound
+		}
+		profile.Version = 1
+		s.profiles[k] = profile
+		return nil
+	}
+	if current.Version != expectedVersion {
+		return ErrStaleProfile
+	}
+	profile.Version = expectedVersion + 1
+	s.profiles[k] = profile
 	return nil
 }
 

@@ -89,8 +89,10 @@ Output:
 }
 
 Decision rules:
-- Missed concepts: create or update a note with action "review" naming the specific gap.
-- Concepts answered correctly that an existing "review" note covers: update that note toward action "keep" (or prune it if the user has clearly mastered it).
+- Missed concepts: create or update a note with action "review" only when evidence identifies a concrete gap. A single incorrect answer is limited evidence; do not invent a specific misconception unless the event details support it.
+- Assisted success (for example used_help=true) shows exposure or progress, not independent mastery. Do not upgrade a review note to keep/prune from assisted success alone.
+- Concepts answered correctly that an existing "review" note covers: update that note toward action "keep" only when unassisted, repeated, or otherwise strong evidence supports improvement (or prune it if the user has clearly mastered it).
+- Skips are ambiguous coverage signals. Do not create, retain, or prune a note from skips alone; combine them with later observed answers when deciding.
 - Clean sessions with nothing new to remember: return an empty actions array. Do not invent notes.
 - Notes are CRUD state, not an append-only journal. Reuse an existing id for the same semantic concept, update it in place, and prune stale notes. Never create a near-duplicate under a new id.
 - Keep the set small and high-signal (max 20 notes, max 10 actions per pass). Prune the lowest-value note before creating one beyond the cap.

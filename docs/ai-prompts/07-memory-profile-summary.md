@@ -7,13 +7,23 @@ evidence into the profile used by the Memory page and future generation.
 The same operation runs from three trigger paths:
 
 - `daily` through the scheduled worker;
-- `set-completion` after a completed MCQ or problem set; or
+- `set-completion` after a completed MCQ round or problem set; or
 - `both`, selected with `CODEGYM_MEMORY_REFRESH_TRIGGER`.
 
 Append-only events remain the source of factual timestamps, outcomes, skips,
 and engagement. The model curates conclusions: summary, strengths, growth
 edges, skill levels/confidence/trends, and durable notes. Server code validates
-the entire object and owns timestamps and provenance before one profile upsert.
+the entire object and owns timestamps and provenance before one version-checked write.
+
+Completed MCQ rounds use a notes-first variant of the same profile synthesizer.
+When the request `session_id` matches both an MCQ `session_completed` event and
+at least one MCQ outcome event, the server first asks for note CRUD actions,
+applies those actions to candidate notes in memory only, then asks for the full
+profile with those candidate notes in context. The final profile, skills,
+summary, notes, and provenance are saved together in one version-checked write.
+Daily, coding, interview, and unsupported set-completion refreshes do not run
+note CRUD in this story; they preserve existing notes while refreshing the rest
+of the profile.
 
 ## Input contract
 
@@ -45,6 +55,13 @@ bounded `EVENT_EVIDENCE` object:
 Only allowlisted, bounded payload details are included. Memory/system audit
 events are excluded so model maintenance does not become self-reinforcing
 learning evidence.
+
+The profile pass also receives the existing profile as memory context. For a
+completed MCQ notes-first refresh, that context contains the candidate notes
+from the note-action stage so the profile summary and skills are synthesized
+against the maintained notes rather than a parallel raw-event summary path.
+`session_id` is included only as the just-completed focus id; durable conclusions
+must still come from bounded evidence, not from the identifier itself.
 
 ## Output contract
 
@@ -92,6 +109,12 @@ and notes.
 
 Rules:
 - Base every conclusion on repeated or recent evidence. Do not invent experience.
+- Distinguish observed results from inferred understanding. A single incorrect
+  answer is limited evidence; record uncertainty or a broad review need rather
+  than a specific misconception unless event details support that misconception.
+- Assisted success (for example `used_help=true`) is evidence of exposure or
+  progress, not independent mastery. Do not raise mastery level, confidence,
+  strengths, or note disposition from assisted success alone.
 - summary is a living skill document, not a three-sentence status blurb. Start
   from the current profile summary when one exists. Preserve durable prior
   observations that remain true (topics practiced, recurring strengths/gaps,
@@ -139,7 +162,15 @@ Rules:
 - Cold start without a usable provider stays unpersisted. Deterministic signals
   are evidence for synthesis, never durable user-facing conclusions.
 - Successful profiles record schema version, trigger, provider/model,
-  synthesis time, evidence-through time, and event count as provenance.
+  synthesis time, evidence-through time, event count, evidence digest, and
+  source keys as provenance.
+- Profile saves are version-checked. If another refresh saves a newer profile
+  first, the stale refresh retries once with fresh inputs; if it still cannot
+  save, the caller receives a retryable persistence failure rather than
+  overwriting the newer profile.
+- Replayed logical evidence is deduplicated before synthesis. The same MCQ
+  question outcome or round completion does not count twice, while distinct
+  attempts, distinct outcomes, and skip-vs-answer evidence remain separate.
 
 ## Field ownership
 
@@ -147,13 +178,18 @@ Rules:
 |---|---|---|
 | Raw events, outcomes, skips, counts, and event times | Product code | Append-only deterministic evidence |
 | Summary, strengths, Focus next, skill labels/areas/levels/confidence/trends | LLM profile synthesizer | Replaced atomically after validated living-document output |
-| Memory note title, summary, tags, and disposition | LLM profile synthesizer | CRUD-managed desired state; stable concept identity is enforced server-side; updates must not erase still-true detail |
-| Skill `last_practiced`, note `created_at`, profile refresh times, and provenance | Server | Derived or stamped deterministically |
-| Evidence allowlisting, bounds, digests, and skill-support checks | Server | Deterministic validation and token-control guardrails |
+| Memory note title, summary, tags, and disposition | LLM note-action stage for completed MCQ rounds; otherwise preserved by server | CRUD-managed desired state; stable concept identity is enforced server-side; updates must not erase still-true detail |
+| Skill `last_practiced`, note `created_at`, profile refresh times, profile version, and provenance | Server | Derived, stamped, and saved with stale-write protection |
+| Evidence allowlisting, bounds, dedupe keys, digests, and skill-support checks | Server | Deterministic validation, replay safety, and token-control guardrails |
 
 The deterministic skill signal is not the displayed Skill profile. It limits
 which skills the model may claim and supplies factual practice timestamps. The
 model still decides the learner-facing skill assessment.
+
+This profile synthesizer is not an adaptive-difficulty algorithm. It may revise
+summary, focus areas, skill confidence, and note disposition when new evidence
+conflicts with prior conclusions, but it does not choose the next difficulty or
+replace generation strategy.
 
 Legacy rows created before model provenance can be removed with
 `backend/scripts/purge_deterministic_memory_profiles.sql` after this behavior is

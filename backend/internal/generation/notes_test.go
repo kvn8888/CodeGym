@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +85,20 @@ func TestMaintainNotesAppliesLLMActions(t *testing.T) {
 	}
 	if len(profile.Notes) != 1 || profile.Notes[0].ID != "note_sql-joins" {
 		t.Fatalf("persisted notes = %#v", profile.Notes)
+	}
+}
+
+func TestNotesPromptIncludesEvidenceInterpretationGuardrails(t *testing.T) {
+	for _, phrase := range []string{
+		"single incorrect answer is limited evidence",
+		"Assisted success",
+		"not independent mastery",
+		"used_help=true",
+		"Skips are ambiguous coverage signals",
+	} {
+		if !strings.Contains(notesSystemPrompt, phrase) {
+			t.Fatalf("notes prompt missing %q", phrase)
+		}
 	}
 }
 

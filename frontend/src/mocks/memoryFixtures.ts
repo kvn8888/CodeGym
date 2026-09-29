@@ -2,6 +2,7 @@ import type { MemoryEvent, UserMemoryProfile } from '../shared/api/types';
 import { memoryEventSources, memoryEventTypes } from '../shared/api/memoryEvents';
 
 export const mockMemoryProfile: UserMemoryProfile = {
+  version: 1,
   summary:
     'Kevin is strongest when problems connect backend APIs, concurrency, and practical system constraints. Current practice should emphasize writing tests from edge cases, explaining tradeoffs out loud, and translating algorithm patterns into production-style code.',
   updated_at: '2026-07-10T14:30:00.000Z',

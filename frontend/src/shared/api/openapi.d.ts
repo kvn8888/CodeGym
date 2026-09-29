@@ -768,6 +768,8 @@ export interface components {
             error: null;
         };
         MemoryProfile: {
+            /** Format: int64 */
+            version: number;
             summary: string;
             /** Format: date-time */
             updated_at: string;
@@ -792,6 +794,19 @@ export interface components {
             event_count: number;
             /** @description Stable digest of filtered profile evidence. Unchanged daily ticks skip the model call when this digest still matches. */
             evidence_digest?: string;
+            /** @description Durable source identifiers for the deduplicated evidence included in the latest profile synthesis. */
+            evidence_sources?: components["schemas"]["MemoryProfileEvidenceSource"][];
+        };
+        MemoryProfileEvidenceSource: {
+            key: string;
+            source: string;
+            type: string;
+            session_id?: string;
+            question_id?: string;
+            round?: string;
+            digest?: string;
+            /** Format: date-time */
+            occurred_at: string;
         };
         SkillProficiency: {
             id: string;

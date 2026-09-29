@@ -40,16 +40,16 @@ It must not include `ready`, `verified`, or `promotable` fields.
 
 Required fields:
 
-| Field | Description |
-| --- | --- |
-| `schemaVersion` | Initially `environment.builder-result.v1`. |
-| `builderRunId` | Unique preparation run ID. |
-| `runtime` | Runtime name and version. |
-| `sandboxRef` | Temporary sandbox reference, if one exists. |
-| `artifactRef` | Prepared artifact reference, if one exists before promotion. |
-| `proposedManifestPath` | Path to the proposed manifest, or `null` if missing. |
-| `diagnostics` | Builder-produced diagnostics. |
-| `telemetry` | Runtime, token, cost, wall-time, sandbox, and repair metrics. |
+| Field | Owner | Description |
+| --- | --- | --- |
+| `schemaVersion` | Shared | Initially `environment.builder-result.v1`. |
+| `builderRunId` | Builder track | Unique preparation run ID. |
+| `runtime` | Builder track | Runtime name and version. |
+| `sandboxRef` | Builder track | Temporary sandbox reference, if one exists. |
+| `artifactRef` | Builder track | Prepared artifact reference, if one exists before promotion. |
+| `proposedManifestPath` | Builder track | Path to the proposed manifest, or `null` if missing. |
+| `diagnostics` | Builder track | Builder-produced diagnostics. |
+| `telemetry` | Builder track | Runtime, token, cost, wall-time, sandbox, and repair metrics. |
 
 ## Verifier Result
 
@@ -57,17 +57,17 @@ The verifier result is the only contract object that can establish readiness.
 
 Required fields:
 
-| Field | Description |
-| --- | --- |
-| `schemaVersion` | Initially `environment.verifier-result.v1`. |
-| `verifierRunId` | Unique verification run ID. |
-| `builderRunId` | Builder run being verified. |
-| `verdict` | `verified` or `rejected`. |
-| `failedStage` | `null` when verified, otherwise the failed stage. |
-| `repairable` | Whether diagnostics may be sent back for bounded repair. |
-| `diagnostics` | Backend-owned diagnostics. |
-| `evidence` | Checks the backend actually ran. |
-| `promotion` | Whether registry promotion is allowed and why. |
+| Field | Owner | Description |
+| --- | --- | --- |
+| `schemaVersion` | Shared | Initially `environment.verifier-result.v1`. |
+| `verifierRunId` | Verifier track | Unique verification run ID. |
+| `builderRunId` | Shared | Builder run being verified. |
+| `verdict` | Verifier track | `verified` or `rejected`. |
+| `failedStage` | Verifier track | `null` when verified, otherwise the failed stage. |
+| `repairable` | Verifier track | Whether diagnostics may be sent back for bounded repair. |
+| `diagnostics` | Verifier track | Backend-owned diagnostics. |
+| `evidence` | Verifier track | Checks the backend actually ran. |
+| `promotion` | Verifier/registry track | Whether registry promotion is allowed and why. |
 
 Allowed failure stages:
 

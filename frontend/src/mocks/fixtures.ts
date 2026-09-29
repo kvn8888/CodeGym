@@ -25,6 +25,16 @@ export const mockProblems: Problem[] = [
       skeleton: [{ path: 'solution.ts', entry: true }],
     },
     test_config: { strategy: 'unit' },
+    public_cases: [
+      {
+        strategy: 'unit',
+        name: 'reuses a cached cursor',
+        kind: 'example',
+        args: ['cursor-12'],
+        expected: { cursor: 'cursor-12', values: [13, 14], cached: true },
+        explanation: 'A second lookup for the same cursor returns the previously cached page.',
+      },
+    ],
     hints: [
       { cost: 0, text: 'Separate the fetch behavior from the cache storage.' },
       { cost: 1, text: 'A Map preserves insertion order and is a good fit for cursor keys.' },

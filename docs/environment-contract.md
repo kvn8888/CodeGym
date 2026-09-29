@@ -139,13 +139,18 @@ The examples cover:
 - Verifier result for failing build.
 - Verifier result for passing build.
 
+## Recorded Decisions
+
+- Base branch: `codegym-v2`.
+- Epic branch strategy: #184 is the contract base branch for the agent-built environment epic. Track A and Track B may use stacked branches from this contract branch while implementation is in progress.
+- Integration path: completed Track A and Track B work will merge back into the contract branch before an integration branch is created. After integration validates the combined workflow, the completed epic work will merge back to `codegym-v2`.
+- AgentRuntime incorporation: deferred to #185. PRs #172/#173 are benchmark and implementation evidence for Track A, but #184 does not adopt, revise, or reject that runtime contract.
+- Runtime choice remains open: opencode, the purpose-built loop, or both may be used behind the builder boundary. Any runtime selected later must produce a builder result, proposed manifest, diagnostics, and telemetry without claiming readiness.
+
 ## Open Decisions
 
-- Adopt or revise the AgentRuntime contract from #172/#173?
-- Start with opencode, the purpose-built loop, or both behind one interface?
 - What setup permissions are allowed during cold environment creation?
 - What production limits apply to cold builds?
 - Should Spring Boot fail fast when dependency-cache prerequisites are missing?
 - Which exact second technology should be used for the first generic workflow demo?
 - How should existing Python/Go saved exercises be migrated or retired?
-- What base commit and PR integration path should this epic use?

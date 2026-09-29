@@ -13,6 +13,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/problems"
+	"github.com/kvn8888/codegym/backend/internal/workflow"
 )
 
 const (
@@ -391,26 +392,55 @@ func GenerateProblem(ctx context.Context, orchestrator *Orchestrator, spec Probl
 		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, err
 	}
 	instructions := strategy.systemPrompt
+	// Load personalization once so retries reuse a single evidence snapshot
+	// and emit one load_context sequence, matching GenerateMCQSet. This
+	// intentionally changes retries from per-attempt snapshots to one.
+	profile, err := orchestrator.LoadProfile(ctx)
+	if err != nil {
+		return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, err
+	}
 	var lastErr error
 	var lastRaw string
 	for attempt := 1; attempt <= problemMaxAttempts; attempt++ {
-		result, generateErr := orchestrator.Generate(ctx, GenerateInput{
+		reportWorkflow(ctx, "generate_problem", workflow.StatusRunning, map[string]any{
+			"attempt": attempt, "max_attempts": problemMaxAttempts,
+		}, false)
+		result, generateErr := orchestrator.GenerateWithProfile(ctx, GenerateInput{
 			Kind:          KindProblem,
 			Spec:          specJSON,
 			Schema:        Schema{Name: "generated_problem", Version: "1", JSONSchema: strategy.jsonSchema},
 			ModelPolicy:   ModelPolicy{MaxTokens: problemDefaultMaxTokens},
 			Instructions:  instructions,
 			IntakeContext: spec.IntakeContext,
-		})
+		}, profile)
 		if generateErr != nil {
+			reportWorkflow(ctx, "generate_problem", workflow.StatusFailed, map[string]any{
+				"attempt": attempt, "max_attempts": problemMaxAttempts,
+				"reason_code": "provider_failed", "retryable": true,
+			}, true)
 			return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, generateErr
 		}
 		output, validateErr := ValidateGeneratedProblemForLanguage(result.Object, spec.Language)
 		if validateErr == nil {
 			definition, buildErr := BuildProblemDefinition(output)
-			return definition, output, result, buildErr
+			if buildErr != nil {
+				reportWorkflow(ctx, "generate_problem", workflow.StatusFailed, map[string]any{
+					"attempt": attempt, "max_attempts": problemMaxAttempts,
+					"reason_code": "invalid_output", "retryable": false,
+				}, true)
+				return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, buildErr
+			}
+			reportWorkflow(ctx, "generate_problem", workflow.StatusSucceeded, map[string]any{
+				"attempt": attempt, "max_attempts": problemMaxAttempts,
+			}, false)
+			return definition, output, result, nil
 		}
 		lastErr, lastRaw = validateErr, string(result.Object)
+		retryable := attempt < problemMaxAttempts
+		reportWorkflow(ctx, "generate_problem", workflow.StatusFailed, map[string]any{
+			"attempt": attempt, "max_attempts": problemMaxAttempts,
+			"reason_code": "invalid_output", "retryable": retryable,
+		}, !retryable)
 		instructions = strategy.systemPrompt + "\n\nYour previous output was rejected: " + validateErr.Error() + ". Return a complete corrected object."
 	}
 	return problems.Definition{}, GeneratedProblem{}, GenerateResult{}, &InvalidOutputError{

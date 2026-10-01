@@ -220,7 +220,9 @@ If `aud` is the SPA client id or `/api/v2/`, the backend will reject the token.
 
 Frontend env names and deploy notes: [../docs/secrets-and-local-env.md](../docs/secrets-and-local-env.md),
 [../docs/vercel-deploy.md](../docs/vercel-deploy.md). Full auth pipeline:
-[../docs/auth-identity-workspace.md](../docs/auth-identity-workspace.md).
+[../docs/auth-identity-workspace.md](../docs/auth-identity-workspace.md). For a
+conceptual explanation of successful login with rejected API calls, see
+[Auth0 tokens, audience, and CodeGym API access](../docs/auth0-tokens-and-audience.md).
 
 ## Architecture: Principal and Personal Workspace Scope
 

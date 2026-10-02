@@ -65,6 +65,7 @@ func (r *OpenCodeRuntime) Run(ctx context.Context, task TaskSpec) (result RunRes
 	defer func() {
 		result.Telemetry.WallTime = r.config.Now().Sub(startedAt)
 		result.Manifest = LoadManifest(task.WorkingDirectory)
+		AppendNetworkPolicyViolations(&result.Telemetry, task.WorkingDirectory)
 	}()
 	if err := task.Validate(startedAt); err != nil {
 		return result, err

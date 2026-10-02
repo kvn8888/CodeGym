@@ -31,6 +31,7 @@ func (r *PurposeBuiltRuntime) Run(ctx context.Context, task TaskSpec) (result Ru
 	defer func() {
 		result.Telemetry.WallTime = now().Sub(startedAt)
 		result.Manifest = LoadManifest(task.WorkingDirectory)
+		AppendNetworkPolicyViolations(&result.Telemetry, task.WorkingDirectory)
 	}()
 	if r == nil || r.Client == nil {
 		return result, errors.New("agentruntime: purpose-built runtime client is required")

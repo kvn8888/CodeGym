@@ -144,7 +144,7 @@ The examples cover:
 - Base branch: `codegym-v2`.
 - Epic branch strategy: #184 is the contract base branch for the agent-built environment epic. Track A and Track B may use stacked branches from this contract branch while implementation is in progress.
 - Integration path: completed Track A and Track B work will merge back into the contract branch before an integration branch is created. After integration validates the combined workflow, the completed epic work will merge back to `codegym-v2`.
-- AgentRuntime incorporation: deferred to #185. PRs #172/#173 are benchmark and implementation evidence for Track A, but #184 does not adopt, revise, or reject that runtime contract.
+- AgentRuntime incorporation: decided in #185. The `AgentRuntime` seam, ceilings, termination, cleanup, and telemetry from #172/#173 are adopted as the Track A base. The manifest concept is revised to produce `environment.manifest.v1`, and setup permissions and limits are defined at the runtime level. Runtime adapter selection remains open; both adapters are kept behind the interface.
 - Runtime choice remains open: opencode, the purpose-built loop, or both may be used behind the builder boundary. Any runtime selected later must produce a builder result, proposed manifest, diagnostics, and telemetry without claiming readiness.
 
 ## Open Decisions

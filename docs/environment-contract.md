@@ -144,13 +144,14 @@ The examples cover:
 - Base branch: `codegym-v2`.
 - Epic branch strategy: #184 is the contract base branch for the agent-built environment epic. Track A and Track B may use stacked branches from this contract branch while implementation is in progress.
 - Integration path: completed Track A and Track B work will merge back into the contract branch before an integration branch is created. After integration validates the combined workflow, the completed epic work will merge back to `codegym-v2`.
-- AgentRuntime incorporation: decided in #185. The `AgentRuntime` seam, ceilings, termination, cleanup, and telemetry from #172/#173 are adopted as the Track A base. The manifest concept is revised to produce `environment.manifest.v1`, and setup permissions and limits are defined at the runtime level. Runtime adapter selection remains open; both adapters are kept behind the interface.
-- Runtime choice remains open: opencode, the purpose-built loop, or both may be used behind the builder boundary. Any runtime selected later must produce a builder result, proposed manifest, diagnostics, and telemetry without claiming readiness.
+- AgentRuntime incorporation: decided in #185. The `AgentRuntime` seam, ceilings, termination, cleanup, and telemetry from #172/#173 are adopted as the Track A base. The manifest concept is revised to produce `environment.manifest.v1`, and setup permissions and limits are defined at the runtime level. OpenCode is the primary adapter; the purpose-built loop is kept behind the interface so runtimes can be swapped.
+- Runtime selection: OpenCode is the primary adapter. The `AgentRuntime` seam is retained so runtimes can be swapped; the purpose-built loop is kept behind the interface.
+- Network policy: allowlist-first for setup network access. An adversarial probe of the unrestricted route will be built, with concrete risks and vulnerabilities recorded.
+- Package managers: npm, Maven, and Gradle are permitted to download dependencies during setup.
+- Build budget: unbounded spend while using cheap models (Muse-spark-contributor / GPT 6 Luna); Meta-enforced rate limits are the de facto bound. Structural runaway guards (turn ceiling, deadline, output cap) remain enforced.
 
 ## Open Decisions
 
-- What setup permissions are allowed during cold environment creation?
-- What production limits apply to cold builds?
 - Should Spring Boot fail fast when dependency-cache prerequisites are missing?
 - Which exact second technology should be used for the first generic workflow demo?
 - How should existing Python/Go saved exercises be migrated or retired?

@@ -118,7 +118,9 @@ func (r *PurposeBuiltRuntime) Run(ctx context.Context, task TaskSpec) (result Ru
 			}
 			toolResult, invocation, progress, stopReason := r.executeTool(runContext, root, task, call, shellEnvironment, now)
 			result.Telemetry.ToolInvocations = append(result.Telemetry.ToolInvocations, invocation)
-			if stopReason == TerminationRuntimeFailure && strings.HasPrefix(invocation.Error, "attempted disallowed tool") {
+			disallowedTool := stopReason == TerminationRuntimeFailure && strings.HasPrefix(invocation.Error, "attempted disallowed tool")
+			deniedNetwork := strings.HasPrefix(invocation.Error, "network policy denied shell command")
+			if disallowedTool || deniedNetwork {
 				result.Telemetry.PolicyViolations = append(result.Telemetry.PolicyViolations, invocation.Error)
 			}
 			if progress != nil {
@@ -197,6 +199,9 @@ func (r *PurposeBuiltRuntime) executeTool(
 			Command string `json:"command"`
 		}
 		if err := decodeToolArguments(call.Function.Arguments, &input); err != nil {
+			return finish("", err, false)
+		}
+		if err := checkShellNetworkPolicy(input.Command); err != nil {
 			return finish("", err, false)
 		}
 		output, exitCode, truncated, err := runShell(ctx, task.WorkingDirectory, input.Command, shellEnvironment, task.EffectiveOutputCap())

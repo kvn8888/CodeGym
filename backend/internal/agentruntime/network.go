@@ -136,6 +136,20 @@ func ScanWorkspaceNetworkHosts(root string) ([]string, error) {
 	return violations, nil
 }
 
+// checkShellNetworkPolicy denies shell commands reaching non-allowlisted
+// network hosts. Package-manager and registry traffic passes by
+// construction; only offending destinations fail.
+func checkShellNetworkPolicy(command string) error {
+	for _, match := range networkURLPattern.FindAllStringSubmatch(command, -1) {
+		host := strings.ToLower(match[1])
+		if networkHostAllowed(host) {
+			continue
+		}
+		return fmt.Errorf("network policy denied shell command reaching non-allowlisted host %s", host)
+	}
+	return nil
+}
+
 // AppendNetworkPolicyViolations scans the working directory after a run and
 // records findings on telemetry. A scan failure is recorded fail-closed. It
 // never judges the run; the backend verifier owns the verdict.

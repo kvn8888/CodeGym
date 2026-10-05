@@ -1,0 +1,1029 @@
+{
+  "version": 1,
+  "started_at": "2026-08-05T06:48:12.850157Z",
+  "finished_at": "2026-08-05T07:04:16.628005Z",
+  "status": "complete",
+  "decision_rule": "Any policy violation disqualifies that runtime. Completion rate is primary. On equal completion, opencode wins only if it improves mean repair iterations or median wall time by at least 20 percent while using no more total tokens or cost; otherwise purpose-built wins. Inconclusive selects purpose-built.",
+  "model_deployment": "azure/gpt-5.6-terra",
+  "execution_environment": "host-agent-runtime/daytona-real-dependency-verifier",
+  "base_snapshot": "codegym-go-1-25-4-v3",
+  "limitations": [
+    "The coding-agent adapters ran in isolated host workspaces because the operation-scoped local relay is not reachable from Daytona; candidate dependency resolution and black-box verification ran in one ephemeral Daytona sandbox per contract-valid run.",
+    "The shared Daytona base snapshot was codegym-go-1-25-4-v3. Dependency resolution used Daytona's organization-restricted network; the account tier rejected sandbox-level block-all overrides, so the loopback HTTP probe ran under the organization policy after source-level egress checks.",
+    "The corrected 12-run result combines non-overlapping scheduled orders 1-11 and 12. A suite-wide relay cost guard stopped the first segment before order 12; the continuation did not replay any completed order and used the same conditions."
+  ],
+  "relay_max_tokens": 600000,
+  "relay_max_cost_usd_micros": 2038000,
+  "relay_wall_clock_ms": 3600000,
+  "turn_ceiling": 16,
+  "run_deadline_ms": 120000,
+  "output_cap_bytes": 262144,
+  "retry_policy": "zero retries; every failure counts",
+  "schedule_start_order": 1,
+  "schedule_total_runs": 12,
+  "fixture_fingerprints": {
+    "express": "802a3f8019560fb6e07a4abafdcb769c8e0fc83aa2c059ebc588f7759326083a",
+    "go-net-http": "48a27c99582490e0247ab1d14dfecfdb5f24ec051e42925257152f39a4dd79a6"
+  },
+  "runs": [
+    {
+      "order": 1,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 1,
+      "passed": true,
+      "detail": "real dependency resolution and organization-restricted-network Daytona HTTP probe passed",
+      "termination": "completed",
+      "turns": 10,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented a standard-library Go net/http health service bound to 127.0.0.1:$PORT.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test ./...\",\"passed\":true},{\"name\":\"go build\",\"passed\":true},{\"name\":\"runtime GET /health\",\"passed\":true,\"detail\":\"Returned {\\\"status\\\":\\\"ok\\\",\\\"stack\\\":\\\"go\\\"}\"}]}",
+      "prose": "Implemented the Go `net/http` health service.\n\n- `GET /health` returns `{\"status\":\"ok\",\"stack\":\"go\"}`\n- Binds to `127.0.0.1:$PORT`\n- Uses only Go standard library\n- Includes unit tests\n- Verified with `go test ./...`, `go build`, and a local runtime request\n- Added `.codegym/agent-result.json`",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 13556,
+        "input": 11830,
+        "output": 1726,
+        "reasoning": 174,
+        "cache_read": 5632,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 55467,
+      "wall_time_ms": 24132,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:48:14.177992-04:00",
+          "duration": 22958
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:48:15.639102-04:00",
+          "duration": 19025417,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:48:17.175091-04:00",
+          "duration": 601583
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:48:22.808002-04:00",
+          "duration": 673000
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:48:26.303949-04:00",
+          "duration": 1358792
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:48:27.658286-04:00",
+          "duration": 12750
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:48:29.993929-04:00",
+          "duration": 41166,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:48:32.165943-04:00",
+          "duration": 472960500,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:48:35.32315-04:00",
+          "duration": 1357333
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "inspect",
+          "label": "Inspecting workspace",
+          "at": "2026-08-05T02:48:14.178014-04:00"
+        },
+        {
+          "step_id": "implement",
+          "label": "Implemented standard-library health service and tests",
+          "at": "2026-08-05T02:48:27.658298-04:00"
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 1,
+      "passed": true,
+      "detail": "real dependency resolution and organization-restricted-network Daytona HTTP probe passed",
+      "termination": "completed",
+      "turns": 4,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented Go net/http health service\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test\",\"passed\":true},{\"name\":\"go build\",\"passed\":true}]}\n",
+      "prose": "Creating the standard-library service, its test, and the required result file; then I’ll run Go formatting, tests, and a build.Implemented and verified with `go test ./...` and `go build ./...`.",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 17358,
+        "input": 16170,
+        "output": 1188,
+        "reasoning": 142,
+        "cache_read": 10624,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 58246,
+      "wall_time_ms": 18324,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:48:59.709-04:00",
+          "duration": 73000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:48:59.858-04:00",
+          "duration": 5000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:49:00.855-04:00",
+          "duration": 11000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:49:10.4-04:00",
+          "duration": 372000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 1,
+      "passed": true,
+      "detail": "real dependency resolution and organization-restricted-network Daytona HTTP probe passed",
+      "termination": "completed",
+      "turns": 6,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented Express health service bound to loopback and verified its response.\",\"artifacts\":[\"server.js\",\"package-lock.json\"],\"checks\":[{\"name\":\"GET /health\",\"passed\":true,\"detail\":\"Returned the required Express JSON payload on 127.0.0.1:4173.\"}]}",
+      "prose": "I’ll inspect the workspace and existing package setup before adding the service.I found Express pinned at `5.1.0`; I’ll add a localhost-only server, install the pinned dependency, then exercise `/health`.The lockfile validates the exact Express version. I’ll install from it and run the server locally to verify the endpoint without external requests.The first local probe hit a zsh reserved-variable issue after the server started; I’ll rerun it with a safe variable name and record the result.Implemented and verified `GET /health` on `127.0.0.1:$PORT`. Express is locked at `5.1.0`; result recorded in `.codegym/agent-result.json`.",
+      "repair_iterations": 2,
+      "tokens": {
+        "total": 27896,
+        "input": 26292,
+        "output": 1604,
+        "reasoning": 511,
+        "cache_read": 19584,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 89791,
+      "wall_time_ms": 27142,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:49:40.008-04:00",
+          "duration": 4000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:49:40.04-04:00",
+          "duration": 6000000,
+          "error": "File not found: /private/tmp/codegym-agent-benchmark-4066667384/AGENTS.md"
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:49:40.034-04:00",
+          "duration": 21000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:49:46.954-04:00",
+          "duration": 11000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:49:51.309-04:00",
+          "duration": 4000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:49:54.694-04:00",
+          "duration": 1117000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:49:59.998-04:00",
+          "duration": 42000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:50:00.006-04:00",
+          "duration": 39000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:50:00.019-04:00",
+          "duration": 70000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:50:00.398-04:00",
+          "duration": 5000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 1,
+      "passed": false,
+      "detail": "context deadline exceeded",
+      "termination": "deadline_exhausted",
+      "turns": 10,
+      "manifest_status": "absent",
+      "manifest_error": "result manifest is absent",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 15645,
+        "input": 13779,
+        "output": 1866,
+        "reasoning": 239,
+        "cache_read": 4480,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 62440,
+      "wall_time_ms": 120003,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:50:05.829451-04:00",
+          "duration": 15375
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:50:07.379823-04:00",
+          "duration": 150640500,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:50:09.416013-04:00",
+          "duration": 326378375,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:50:13.704426-04:00",
+          "duration": 945625
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:50:15.446912-04:00",
+          "duration": 806375
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:50:19.348326-04:00",
+          "duration": 1265125
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:50:22.047847-04:00",
+          "duration": 36750,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:50:23.811993-04:00",
+          "duration": 13338169417,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:50:39.610933-04:00",
+          "duration": 36456875,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:50:42.558535-04:00",
+          "duration": 82221780500,
+          "exit_code": -1,
+          "error": "context deadline exceeded"
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "inspect",
+          "label": "Inspecting workspace",
+          "at": "2026-08-05T02:50:05.829465-04:00"
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 2,
+      "passed": true,
+      "detail": "real dependency resolution and organization-restricted-network Daytona HTTP probe passed",
+      "termination": "completed",
+      "turns": 7,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented and verified a standard-library Go net/http health service bound to loopback.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test ./...\",\"passed\":true},{\"name\":\"go build and local HTTP health check\",\"passed\":true,\"detail\":\"GET /health on 127.0.0.1:18080 returned the required JSON\"}]}\n",
+      "prose": "Implemented the Go `net/http` service.\n\n- `GET /health` returns:\n  ```json\n  {\"status\":\"ok\",\"stack\":\"go\"}\n  ```\n- Binds to `127.0.0.1:$PORT` (defaults to port `8080` if unset).\n- Uses only the Go standard library.\n- Added unit tests for health response and method handling.\n- Verified with:\n  - `go test ./...`\n  - `go build`\n  - Local HTTP request against the built service.\n- Wrote `.codegym/agent-result.json`.",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 8992,
+        "input": 7597,
+        "output": 1395,
+        "reasoning": 69,
+        "cache_read": 2304,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 39918,
+      "wall_time_ms": 19996,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:52:06.3392-04:00",
+          "duration": 45924417,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:52:07.707221-04:00",
+          "duration": 331500
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:52:12.316052-04:00",
+          "duration": 698625
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:52:15.700784-04:00",
+          "duration": 1086666
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:52:18.121629-04:00",
+          "duration": 1903892958,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:52:22.523151-04:00",
+          "duration": 61056084,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 2,
+      "passed": true,
+      "detail": "real dependency resolution and organization-restricted-network Daytona HTTP probe passed",
+      "termination": "completed",
+      "turns": 7,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented standard-library Go health service.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test ./...\",\"passed\":true},{\"name\":\"go build ./...\",\"passed\":true}]}",
+      "prose": "I’ll add a standard-library server, its tests, and the required result file, then run Go formatting, tests, and build verification.Implemented and verified: `go test ./...`, `go build ./...`, and `go vet ./...` pass.",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 44660,
+        "input": 40518,
+        "output": 4142,
+        "reasoning": 563,
+        "cache_read": 29952,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 163427,
+      "wall_time_ms": 47732,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:52:47.854-04:00",
+          "duration": 6000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:52:48.913-04:00",
+          "duration": 6000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:52:57.516-04:00",
+          "duration": 5000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:53:14.12-04:00",
+          "duration": 110000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:53:25.385-04:00",
+          "duration": 392000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:53:28.752-04:00",
+          "duration": 32000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:53:28.762-04:00",
+          "duration": 24000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:53:28.77-04:00",
+          "duration": 153000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 2,
+      "passed": true,
+      "detail": "real dependency resolution and organization-restricted-network Daytona HTTP probe passed",
+      "termination": "completed",
+      "turns": 8,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Express health service implemented and locally validated.\",\"artifacts\":[\"server.js\",\"package.json\",\"package-lock.json\"],\"checks\":[{\"name\":\"npm ls express\",\"passed\":true,\"detail\":\"express@5.1.0\"},{\"name\":\"GET /health\",\"passed\":true,\"detail\":\"Returned required JSON on 127.0.0.1\"}]}",
+      "prose": "I’ll add the server, install/validate the pinned dependency, then exercise `/health` locally.Implemented and validated Express `5.1.0`; `/health` returns the required JSON on `127.0.0.1:$PORT`.",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 36005,
+        "input": 34541,
+        "output": 1464,
+        "reasoning": 459,
+        "cache_read": 27008,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 108314,
+      "wall_time_ms": 25448,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:53:47.586-04:00",
+          "duration": 6000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:53:48.43-04:00",
+          "duration": 6000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:53:54.814-04:00",
+          "duration": 5000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:53:59.334-04:00",
+          "duration": 4000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:01.909-04:00",
+          "duration": 1058000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:54:04.769-04:00",
+          "duration": 9000000,
+          "error": "The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules [{\"permission\":\"*\",\"action\":\"allow\",\"pattern\":\"*\"},{\"permission\":\"external_directory\",\"pattern\":\"*\",\"action\":\"ask\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/codegym-opencode-runtime-458263198/home/.local/share/opencode/tool-output/*\",\"action\":\"allow\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/opencode/*\",\"action\":\"allow\"},{\"permission\":\"*\",\"action\":\"deny\",\"pattern\":\"*\"},{\"permission\":\"external_directory\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/codegym-opencode-runtime-458263198/home/.local/share/opencode/tool-output/*\",\"action\":\"allow\"},{\"permission\":\"*\",\"action\":\"deny\",\"pattern\":\"*\"},{\"permission\":\"external_directory\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/codegym-opencode-runtime-458263198/home/.local/share/opencode/tool-output/*\",\"action\":\"allow\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/codegym-opencode-runtime-458263198/home/.local/share/opencode/tool-output/*\",\"action\":\"allow\"}]"
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:04.794-04:00",
+          "duration": 2000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:08.145-04:00",
+          "duration": 5000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 8,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 2,
+      "passed": false,
+      "detail": "Daytona dependency/build failed (exit 1): added 67 packages in 754ms\nnpm notice\nnpm notice New minor version of npm available! 11.12.1 -\u003e 11.19.0\nnpm notice Changelog: https://github.com/npm/cli/releases/tag/v11.19.0\nnpm notice To update run: npm install -g npm@11.19.0\nnpm notice\nnode:internal/modules/cjs/loader:1478\n  throw err;\n  ^\n\nError: Cannot find module '/home/daytona/work/server.js'\n    at node:internal/modules/cjs/loader:1475:15\n    at node:internal/main/check_syntax:33:20 {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: []\n}\n\nNode.js v25.9.0",
+      "termination": "completed",
+      "turns": 10,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Built and validated an Express 5.1.0 health service bound to 127.0.0.1:$PORT.\",\"artifacts\":[\"index.js\",\"package.json\",\"package-lock.json\"],\"checks\":[{\"name\":\"express-version\",\"passed\":true,\"detail\":\"Declared and installed Express versions are 5.1.0.\"},{\"name\":\"health-endpoint\",\"passed\":true,\"detail\":\"GET /health returned {status: ok, stack: express}.\"},{\"name\":\"loopback-bind\",\"passed\":true,\"detail\":\"Verified listener at 127.0.0.1:38124.\"}]}\n",
+      "prose": "Implemented the Express service.\n\n- `GET /health` returns `{\"status\":\"ok\",\"stack\":\"express\"}`\n- Binds to `127.0.0.1:$PORT` (defaults to port 3000)\n- Uses and validates pinned `express@5.1.0`\n- Added `npm start`\n- Created lockfile so dependencies install reproducibly without runtime network access\n- Verified endpoint response and loopback listener\n- Wrote `.codegym/agent-result.json`",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 15989,
+        "input": 13900,
+        "output": 2089,
+        "reasoning": 435,
+        "cache_read": 4992,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 66086,
+      "wall_time_ms": 30716,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:54:13.172883-04:00",
+          "duration": 6375
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:14.845364-04:00",
+          "duration": 26825083,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:18.540792-04:00",
+          "duration": 338651417,
+          "exit_code": 0
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:54:21.105223-04:00",
+          "duration": 18792
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:25.916527-04:00",
+          "duration": 1414906042,
+          "exit_code": 0
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:54:29.499204-04:00",
+          "duration": 16333
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:32.741855-04:00",
+          "duration": 358373458,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:38.013082-04:00",
+          "duration": 252588916,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:40.599119-04:00",
+          "duration": 62490875,
+          "exit_code": 0
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "inspect",
+          "label": "Inspecting workspace and package configuration",
+          "at": "2026-08-05T02:54:13.172889-04:00"
+        },
+        {
+          "step_id": "implement",
+          "label": "Installing the pinned Express dependency and creating the service",
+          "at": "2026-08-05T02:54:21.105241-04:00"
+        },
+        {
+          "step_id": "test",
+          "label": "Testing health endpoint, bind address, and Express version",
+          "at": "2026-08-05T02:54:29.499219-04:00"
+        }
+      ]
+    },
+    {
+      "order": 9,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 3,
+      "passed": true,
+      "detail": "real dependency resolution and organization-restricted-network Daytona HTTP probe passed",
+      "termination": "completed",
+      "turns": 8,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented and verified a standard-library Go net/http health service.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test ./...\",\"passed\":true},{\"name\":\"go build ./...\",\"passed\":true},{\"name\":\"runtime GET /health\",\"passed\":true,\"detail\":\"Returned {\\\"status\\\":\\\"ok\\\",\\\"stack\\\":\\\"go\\\"} while bound via 127.0.0.1:$PORT\"}]}",
+      "prose": "Implemented a standard-library Go `net/http` service.\n\n- `GET /health` returns:\n  ```json\n  {\"status\":\"ok\",\"stack\":\"go\"}\n  ```\n- Binds to `127.0.0.1:$PORT`\n- Requires `PORT` to be set\n- Includes unit tests\n- Verified with:\n  - `go test ./...`\n  - `go build ./...`\n  - live local HTTP health check\n- No external dependencies or network egress required.",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 10593,
+        "input": 9109,
+        "output": 1484,
+        "reasoning": 131,
+        "cache_read": 2304,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 45034,
+      "wall_time_ms": 22493,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:46.527127-04:00",
+          "duration": 31957208,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:54:47.930453-04:00",
+          "duration": 354792
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:54:53.214953-04:00",
+          "duration": 981250
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:54:56.532453-04:00",
+          "duration": 724167
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:54:58.861746-04:00",
+          "duration": 37958,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:55:01.03645-04:00",
+          "duration": 1702716666,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:55:04.971413-04:00",
+          "duration": 1746041
+        }
+      ]
+    },
+    {
+      "order": 10,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 3,
+      "passed": false,
+      "detail": "Daytona dependency/build failed (exit 1): go: no module dependencies to download\nall modules verified\nok  \tcodegym-fixture/cmd/service\t0.002s\nno Go files in /home/daytona/work",
+      "termination": "completed",
+      "turns": 7,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Built a standard-library Go net/http health service.\",\"artifacts\":[\"cmd/service/main.go\",\"cmd/service/main_test.go\"],\"checks\":[{\"name\":\"go test ./..\",\"passed\":true},{\"name\":\"go build ./..\",\"passed\":true}]}\n",
+      "prose": "I’ll create a minimal standard-library Go module, add endpoint tests, then build and test it locally.The workspace contains only a Go module. I’ll add the service, tests, and required result file.The initial file-generation command had a shell quoting error; no files were created. I’ll retry with safely quoted source content, then run Go’s formatter, tests, and build.Shell expansion stripped the struct tags. I’ll rewrite the source using encoded content to preserve JSON tags, then validate and create the result record.Implemented `GET /health` in `cmd/service/main.go`.  \n`go test ./...` and `go build ./...` pass.  \nWrote `.codegym/agent-result.json`.",
+      "repair_iterations": 2,
+      "tokens": {
+        "total": 39875,
+        "input": 36324,
+        "output": 3551,
+        "reasoning": 460,
+        "cache_read": 26368,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 144076,
+      "wall_time_ms": 42188,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:55:30.71-04:00",
+          "duration": 10000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:55:31.581-04:00",
+          "duration": 5000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:55:39.045-04:00",
+          "duration": 5000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:55:49.334-04:00",
+          "duration": 25000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:55:53.334-04:00",
+          "duration": 7000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:55:53.353-04:00",
+          "duration": 4000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:56:06.448-04:00",
+          "duration": 337000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 11,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 3,
+      "passed": false,
+      "detail": "context deadline exceeded",
+      "termination": "deadline_exhausted",
+      "turns": 14,
+      "manifest_status": "absent",
+      "manifest_error": "result manifest is absent",
+      "prose": "I’ll add a minimal server, lock/install the pinned dependency for local runtime use, then verify `/health`.I’ll validate the installed Express version and exercise the local-only endpoint.",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 70902,
+        "input": 69568,
+        "output": 1334,
+        "reasoning": 313,
+        "cache_read": 59008,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 193933,
+      "wall_time_ms": 120280,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:56:24.648-04:00",
+          "duration": 3000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:56:25.858-04:00",
+          "duration": 12000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:56:25.866-04:00",
+          "duration": 13000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:56:30.171-04:00",
+          "duration": 6000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:56:31.114-04:00",
+          "duration": 6000000,
+          "truncated": true
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:56:33.618-04:00",
+          "duration": 3000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:56:34.953-04:00",
+          "duration": 4000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:56:35.739-04:00",
+          "duration": 3000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:56:36.675-04:00",
+          "duration": 16000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:56:37.964-04:00",
+          "duration": 61000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:56:38.896-04:00",
+          "duration": 10000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:56:40.544-04:00",
+          "duration": 60000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:56:44.203-04:00",
+          "duration": 4000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:56:46.645-04:00",
+          "duration": 1054000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:56:49.281-04:00",
+          "duration": 6000000,
+          "error": "The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules [{\"permission\":\"*\",\"action\":\"allow\",\"pattern\":\"*\"},{\"permission\":\"external_directory\",\"pattern\":\"*\",\"action\":\"ask\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/codegym-opencode-runtime-3791243217/home/.local/share/opencode/tool-output/*\",\"action\":\"allow\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/opencode/*\",\"action\":\"allow\"},{\"permission\":\"*\",\"action\":\"deny\",\"pattern\":\"*\"},{\"permission\":\"external_directory\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/codegym-opencode-runtime-3791243217/home/.local/share/opencode/tool-output/*\",\"action\":\"allow\"},{\"permission\":\"*\",\"action\":\"deny\",\"pattern\":\"*\"},{\"permission\":\"external_directory\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/codegym-opencode-runtime-3791243217/home/.local/share/opencode/tool-output/*\",\"action\":\"allow\"},{\"permission\":\"external_directory\",\"pattern\":\"/tmp/codegym-opencode-runtime-3791243217/home/.local/share/opencode/tool-output/*\",\"action\":\"allow\"}]"
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "init",
+          "label": "Inspecting workspace and package configuration",
+          "at": "2026-08-05T02:58:21.043088-04:00"
+        },
+        {
+          "step_id": "implement",
+          "label": "Adding Express health endpoint and startup script",
+          "at": "2026-08-05T02:58:21.043091-04:00"
+        }
+      ]
+    },
+    {
+      "order": 12,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 3,
+      "passed": false,
+      "detail": "context deadline exceeded",
+      "termination": "deadline_exhausted",
+      "turns": 9,
+      "manifest_status": "absent",
+      "manifest_error": "result manifest is absent",
+      "repair_iterations": 2,
+      "tokens": {
+        "total": 11476,
+        "input": 10058,
+        "output": 1418,
+        "reasoning": 350,
+        "cache_read": 3456,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 46415,
+      "wall_time_ms": 120003,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T03:02:17.908622-04:00",
+          "duration": 44000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T03:02:19.431718-04:00",
+          "duration": 41094334,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T03:02:24.091587-04:00",
+          "duration": 631209
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T03:02:25.604842-04:00",
+          "duration": 985459
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T03:02:29.14588-04:00",
+          "duration": 1481958
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T03:02:31.43521-04:00",
+          "duration": 8208
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T03:02:33.20162-04:00",
+          "duration": 30792,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T03:02:34.464044-04:00",
+          "duration": 481320542,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T03:02:36.821159-04:00",
+          "duration": 99804668500,
+          "exit_code": -1,
+          "error": "context deadline exceeded"
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "inspect",
+          "label": "Inspecting workspace and existing package setup",
+          "at": "2026-08-05T03:02:17.908666-04:00"
+        },
+        {
+          "step_id": "implement",
+          "label": "Implemented Express server, pinned dependency scripts, and health endpoint test",
+          "at": "2026-08-05T03:02:31.435217-04:00"
+        }
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "runtime": "purpose-built",
+      "runs": 6,
+      "passes": 3,
+      "completion_rate": 0.5,
+      "mean_repair_iterations": 0.8333333333333334,
+      "median_wall_time_ms": 30716,
+      "tokens": {
+        "total": 76251,
+        "input": 66273,
+        "output": 9978,
+        "reasoning": 1398,
+        "cache_read": 23168,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 315360,
+      "policy_violation_count": 0,
+      "disqualified": false
+    },
+    {
+      "runtime": "opencode",
+      "runs": 6,
+      "passes": 4,
+      "completion_rate": 0.6666666666666666,
+      "mean_repair_iterations": 1.1666666666666667,
+      "median_wall_time_ms": 42188,
+      "tokens": {
+        "total": 236696,
+        "input": 223413,
+        "output": 13283,
+        "reasoning": 2448,
+        "cache_read": 172544,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 757787,
+      "policy_violation_count": 0,
+      "disqualified": false
+    }
+  ],
+  "decision": {
+    "selected": "opencode",
+    "outcome": "completion-rate",
+    "reason": "opencode completed more fixtures"
+  },
+  "sandboxes_created": 9,
+  "sandboxes_deleted": 9,
+  "sandbox_seconds": 109.585407541,
+  "workspaces_created": 12,
+  "workspaces_deleted": 12
+}

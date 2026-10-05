@@ -162,7 +162,7 @@ func (r *OpenCodeRuntime) Run(ctx context.Context, task TaskSpec) (result RunRes
 }
 
 func (r *OpenCodeRuntime) verifyVersion(ctx context.Context) error {
-	versionContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+	versionContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(versionContext, r.config.BinaryPath, "--version")
 	output, err := command.Output()

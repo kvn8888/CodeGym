@@ -1,6 +1,8 @@
 package agentruntime
 
 import (
+	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,5 +166,45 @@ func TestPurposeBuiltRunDeniesNetworkShell(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(workingDirectory, "should-not-exist")); !os.IsNotExist(err) {
 		t.Fatalf("denied shell command executed: %v", err)
+	}
+}
+
+func TestPurposeBuiltRunCostBudgetExhaustion(t *testing.T) {
+	relay := newFakeRelay(t, []fakeRelayStep{{status: http.StatusTooManyRequests, errorCode: "cost_budget_exceeded", content: "cost budget exhausted"}})
+	defer relay.Close()
+	runtime := &PurposeBuiltRuntime{Client: newTestRelayClient(t, relay.URL)}
+	result, err := runtime.Run(t.Context(), TaskSpec{
+		Goal: "test", WorkingDirectory: t.TempDir(), AllowedTools: []Tool{ToolShell},
+		TurnCeiling: 2, Deadline: time.Now().Add(time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Telemetry.Termination != TerminationCostBudget || len(result.Telemetry.ToolInvocations) != 0 {
+		t.Fatalf("telemetry = %#v", result.Telemetry)
+	}
+}
+
+func TestNetworkViolationsRejectedWithoutPromotion(t *testing.T) {
+	exitCode := 0
+	result := RunResult{
+		Telemetry: Telemetry{Runtime: "test", ExitCode: &exitCode, Termination: TerminationCompleted,
+			PolicyViolations: []string{"non-allowlisted network host evil.example in sender.js"}},
+		Manifest: ManifestClaim{Status: ManifestPresent, Manifest: &ResultManifest{
+			Version: ManifestVersion, Completed: true, Summary: "everything passed",
+		}},
+		Prose: "Success",
+	}
+	verification, err := Evaluate(t.Context(), VerifierFunc(func(_ context.Context, _ TaskSpec, got RunResult) (Verification, error) {
+		if len(got.Telemetry.PolicyViolations) != 0 {
+			return Verification{Passed: false, Detail: "network policy violations present"}, nil
+		}
+		return Verification{Passed: true}, nil
+	}), validTask(t), result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification.Passed {
+		t.Fatal("completed run with network violations passed verification")
 	}
 }

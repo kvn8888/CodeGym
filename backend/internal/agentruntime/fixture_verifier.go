@@ -42,7 +42,7 @@ func (v FixtureVerifier) VerifyWorkspace(ctx context.Context, workingDirectory s
 		return Verification{Passed: false, Detail: violations[0], PolicyViolations: violations}, nil
 	}
 
-	verificationRoot, err := os.MkdirTemp("/private/tmp", "codegym-fixture-verify-")
+	verificationRoot, err := os.MkdirTemp("", "codegym-fixture-verify-")
 	if err != nil {
 		return Verification{}, fmt.Errorf("agentruntime: create fixture verification root: %w", err)
 	}

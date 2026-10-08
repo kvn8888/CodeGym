@@ -25,7 +25,7 @@ const (
 // defect against the generic path.
 func preparationInstructions(request BuildRequest) string {
 	return fmt.Sprintf(
-		"Prepare a coding practice environment for %s: %s. Create project files, exercise files, and assessment tests in the working directory, then build and test the project there. Use only the supplied tools.",
+		"Prepare a coding practice environment for %s: %s. Create project files, exercise files, and assessment tests in the working directory, then build and test the project there. Write the setup, build, test, and run commands you used as JSON object fields setup, build, test, and run in .codegym/commands.json. Use only the supplied tools.",
 		request.Technology, request.Objective,
 	)
 }
@@ -123,6 +123,12 @@ func (p *Preparer) Prepare(ctx context.Context, request BuildRequest) (BuildResu
 		result.Diagnostics = append(result.Diagnostics, terminationDiagnostic(runResult.Telemetry.Termination))
 		return result, fmt.Errorf("envbuild: preparation ended: %s", runResult.Telemetry.Termination)
 	}
+	manifest, manifestDiagnostics, err := DraftManifest(request, workspace.Root)
+	result.Diagnostics = append(result.Diagnostics, manifestDiagnostics...)
+	if err != nil {
+		return result, err
+	}
+	result.ProposedManifest = manifest
 	completed = true
 	return result, nil
 }

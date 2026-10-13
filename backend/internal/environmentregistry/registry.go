@@ -36,7 +36,6 @@ type Preparation struct {
 // establish byte-level content binding: evidence-command equality
 // constrains the executed setup/build/test stages only, and the snapshot
 // reference is an opaque handle whose content the registry never hashes.
-// No fingerprints or hashes are used or required for this association.
 type VerifiedPreparation struct {
 	preparation Preparation
 	verified    environmentverify.VerifierResult

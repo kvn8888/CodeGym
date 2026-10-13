@@ -60,6 +60,21 @@ type AttemptFunc func(ctx context.Context, round int, diagnostics []Diagnostic) 
 // short-circuits it: every round ends at a verifier answer.
 type RepairLoop struct {
 	Budget RepairBudget
+	// Teardown destroys temporary resources on terminal failure. It runs on
+	// irrecoverable and exhausted endings, never on success, and may be nil
+	// when the caller owns nothing temporary.
+	Teardown func(ctx context.Context, result BuildResult) error
+}
+
+// teardown runs the configured cleanup and joins any failure into err.
+func (l *RepairLoop) teardown(ctx context.Context, result BuildResult, err error) error {
+	if l == nil || l.Teardown == nil {
+		return err
+	}
+	if teardownErr := l.Teardown(ctx, result); teardownErr != nil {
+		return fmt.Errorf("%w: envbuild: terminal cleanup failed: %v", err, teardownErr)
+	}
+	return err
 }
 
 // Run executes the loop. It returns the final round's result with telemetry
@@ -114,7 +129,7 @@ func (l *RepairLoop) Run(ctx context.Context, verifier Verifier, attempt Attempt
 				Details:  map[string]any{"failed_stage": stage},
 			})
 			result.Telemetry.RepairIterations = repairs
-			return result, fmt.Errorf("envbuild: irrecoverable fault at stage %s", stage)
+			return result, l.teardown(ctx, result, fmt.Errorf("envbuild: irrecoverable fault at stage %s", stage))
 		}
 		repairsDone := repairs
 		if repairsDone >= budget.MaxRepairs || time.Duration(wallTimeMs)*time.Millisecond >= budget.MaxWallTime || tokensIn+tokensOut >= budget.MaxTokens {
@@ -130,7 +145,7 @@ func (l *RepairLoop) Run(ctx context.Context, verifier Verifier, attempt Attempt
 			result.Telemetry.TokensOut = tokensOut
 			result.Telemetry.EstimatedCostUsd = costUsd
 			result.Telemetry.RepairIterations = repairsDone
-			return result, fmt.Errorf("envbuild: repair budget exhausted after %d repairs", repairsDone)
+			return result, l.teardown(ctx, result, fmt.Errorf("envbuild: repair budget exhausted after %d repairs", repairsDone))
 		}
 		diagnostics = verification.Diagnostics
 		repairs++

@@ -4,6 +4,7 @@ import { TooltipProvider } from './components/ui/tooltip';
 import { Layout } from './shared/components/Layout';
 import { ProblemListPage } from './features/problems/ProblemListPage';
 import { ProblemDetailPage } from './features/problems/ProblemDetailPage';
+import { PracticePage } from './features/practice/PracticePage';
 import { GeneratePage } from './features/generate/GeneratePage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { MarathonPage } from './features/marathon/MarathonPage';
@@ -20,6 +21,7 @@ function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<ProblemListPage />} />
               <Route path="/problems/:id" element={<ProblemDetailPage />} />
+              <Route path="/practice" element={<PracticePage />} />
               <Route path="/generate" element={<GeneratePage />} />
               <Route path="/marathon" element={<MarathonPage />} />
               <Route path="/interviews/:sessionId" element={<InterviewPage />} />

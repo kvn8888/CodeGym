@@ -61,26 +61,26 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			IF EXISTS (
 				SELECT 1 FROM pg_constraint
 				WHERE conname = 'chk_tenants_tenant_type'
-					AND conrelid = 'workspaces'::regclass
+					AND conrelid = to_regclass('public.workspaces')
 			) THEN
 				ALTER TABLE workspaces RENAME CONSTRAINT chk_tenants_tenant_type TO chk_workspaces_workspace_type;
 			ELSIF to_regclass('public.tenants') IS NOT NULL AND EXISTS (
 				SELECT 1 FROM pg_constraint
 				WHERE conname = 'chk_tenants_tenant_type'
-					AND conrelid = 'tenants'::regclass
+					AND conrelid = to_regclass('public.tenants')
 			) THEN
 				ALTER TABLE tenants DROP CONSTRAINT chk_tenants_tenant_type;
 			END IF;
 			IF EXISTS (
 				SELECT 1 FROM pg_constraint
 				WHERE conname = 'chk_tenant_memberships_role'
-					AND conrelid = 'workspace_memberships'::regclass
+					AND conrelid = to_regclass('public.workspace_memberships')
 			) THEN
 				ALTER TABLE workspace_memberships RENAME CONSTRAINT chk_tenant_memberships_role TO chk_workspace_memberships_role;
 			ELSIF to_regclass('public.tenant_memberships') IS NOT NULL AND EXISTS (
 				SELECT 1 FROM pg_constraint
 				WHERE conname = 'chk_tenant_memberships_role'
-					AND conrelid = 'tenant_memberships'::regclass
+					AND conrelid = to_regclass('public.tenant_memberships')
 			) THEN
 				ALTER TABLE tenant_memberships DROP CONSTRAINT chk_tenant_memberships_role;
 			END IF;

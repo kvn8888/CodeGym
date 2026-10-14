@@ -1,0 +1,1061 @@
+{
+  "version": 1,
+  "started_at": "2026-08-05T06:35:45.708704Z",
+  "finished_at": "2026-08-05T06:45:23.913221Z",
+  "status": "complete",
+  "decision_rule": "Any policy violation disqualifies that runtime. Completion rate is primary. On equal completion, opencode wins only if it improves mean repair iterations or median wall time by at least 20 percent while using no more total tokens or cost; otherwise purpose-built wins. Inconclusive selects purpose-built.",
+  "model_deployment": "azure/gpt-5.6-terra",
+  "execution_environment": "host-agent-runtime/daytona-real-dependency-verifier",
+  "base_snapshot": "codegym-go-1-25-4-v3",
+  "limitations": [
+    "The coding-agent adapters ran in isolated host workspaces because the operation-scoped local relay is not reachable from Daytona; candidate dependency resolution and black-box verification ran in one ephemeral Daytona sandbox per contract-valid run.",
+    "The shared Daytona base snapshot was codegym-go-1-25-4-v3. Each sandbox enabled network only for go mod or npm install, then blocked all network before the HTTP probe."
+  ],
+  "relay_max_tokens": 300000,
+  "relay_max_cost_usd_micros": 2000000,
+  "relay_wall_clock_ms": 1800000,
+  "turn_ceiling": 16,
+  "run_deadline_ms": 120000,
+  "output_cap_bytes": 262144,
+  "retry_policy": "zero retries; every failure counts",
+  "fixture_fingerprints": {
+    "express": "802a3f8019560fb6e07a4abafdcb769c8e0fc83aa2c059ebc588f7759326083a",
+    "go-net-http": "48a27c99582490e0247ab1d14dfecfdb5f24ec051e42925257152f39a4dd79a6"
+  },
+  "runs": [
+    {
+      "order": 1,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 1,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "completed",
+      "turns": 6,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented a standard-library Go net/http health service bound to 127.0.0.1:$PORT.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test ./...\",\"passed\":true},{\"name\":\"go build ./...\",\"passed\":true}]}\n",
+      "prose": "Implemented the standard-library Go HTTP service.\n\n- `GET /health` returns JSON: `{\"status\":\"ok\",\"stack\":\"go\"}`\n- Server binds to `127.0.0.1:$PORT`\n- No non-standard dependencies or network egress requirements\n- Added handler tests, including method rejection behavior\n- Verified with:\n  - `go test ./...`\n  - `go build ./...`",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 6709,
+        "input": 5585,
+        "output": 1124,
+        "reasoning": 70,
+        "cache_read": 1152,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 30824,
+      "wall_time_ms": 16133,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:35:47.505732-04:00",
+          "duration": 35841375,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:35:49.106272-04:00",
+          "duration": 302667
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:35:53.484664-04:00",
+          "duration": 1127541
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:35:57.333997-04:00",
+          "duration": 1435583
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:35:59.384483-04:00",
+          "duration": 772471834,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 1,
+      "passed": false,
+      "detail": "agent result manifest is malformed: decode result manifest: invalid character '\\\\' looking for beginning of object key string",
+      "termination": "completed",
+      "turns": 4,
+      "manifest_status": "malformed",
+      "manifest_error": "decode result manifest: invalid character '\\\\' looking for beginning of object key string",
+      "manifest_raw": "{\\\"version\\\":1,\\\"completed\\\":true,\\\"summary\\\":\\\"Implemented Go net/http health service.\\\",\\\"artifacts\\\":[\\\"main.go\\\",\\\"main_test.go\\\"],\\\"checks\\\":[{\\\"name\\\":\\\"go test ./...\\\",\\\"passed\\\":true}]}",
+      "prose": "Creating the standard-library service, its tests, and the required result record.Implemented and verified with `go build ./...` and `go test ./...`.",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 17113,
+        "input": 15970,
+        "output": 1143,
+        "reasoning": 92,
+        "cache_read": 10112,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 57070,
+      "wall_time_ms": 16492,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:36:24.794-04:00",
+          "duration": 7000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:36:25.715-04:00",
+          "duration": 7000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:36:35.204-04:00",
+          "duration": 24000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 1,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "completed",
+      "turns": 5,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented an Express health service.\",\"artifacts\":[\"server.js\",\"package.json\",\"package-lock.json\"],\"checks\":[{\"name\":\"GET /health\",\"passed\":true,\"detail\":\"Returns required JSON.\"},{\"name\":\"express dependency\",\"passed\":true,\"detail\":\"express@5.1.0 installed.\"}]}",
+      "prose": "I’ll add the Express entry point and scripts, install the pinned dependency, then verify the health endpoint locally.Implemented and verified `GET /health` returns the required Express JSON.",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 20626,
+        "input": 19791,
+        "output": 835,
+        "reasoning": 221,
+        "cache_read": 10112,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 62004,
+      "wall_time_ms": 16572,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:36:39.833-04:00",
+          "duration": 8000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:36:40.978-04:00",
+          "duration": 8000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:36:46.045-04:00",
+          "duration": 6000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:36:51.671-04:00",
+          "duration": 33000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 1,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "completed",
+      "turns": 14,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Built and validated a local Express 5.1.0 service with a GET /health endpoint bound to 127.0.0.1:$PORT.\",\"artifacts\":[\"package.json\",\"package-lock.json\",\"server.js\",\"test/health.test.js\"],\"checks\":[{\"name\":\"npm test\",\"passed\":true},{\"name\":\"express dependency pin and installed version\",\"passed\":true,\"detail\":\"5.1.0\"},{\"name\":\"GET /health\",\"passed\":true,\"detail\":\"Returns { status: ok, stack: express } on 127.0.0.1\"}]}\n",
+      "prose": "Implemented and validated the Express service.\n\n- `GET /health` returns `{\"status\":\"ok\",\"stack\":\"express\"}`\n- Binds using `127.0.0.1:$PORT` (defaults to port 3000 if unset)\n- Uses pinned `express@5.1.0`\n- Added lockfile and local test coverage\n- Verified with `npm test` and a live curl request\n- Added `.codegym/agent-result.json`",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 19717,
+        "input": 17799,
+        "output": 1918,
+        "reasoning": 368,
+        "cache_read": 5632,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 73271,
+      "wall_time_ms": 30899,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:37:03.98822-04:00",
+          "duration": 61375
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:37:05.004114-04:00",
+          "duration": 27535167,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:37:06.246225-04:00",
+          "duration": 281750
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:37:08.703591-04:00",
+          "duration": 288151959,
+          "exit_code": 0
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:37:10.548169-04:00",
+          "duration": 22292
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:37:15.870066-04:00",
+          "duration": 766292
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:37:17.615029-04:00",
+          "duration": 908917
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:37:19.851129-04:00",
+          "duration": 1506625
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:37:21.474107-04:00",
+          "duration": 100000,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:37:22.586688-04:00",
+          "duration": 1711483667,
+          "exit_code": 0
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:37:25.908442-04:00",
+          "duration": 17000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:37:28.897522-04:00",
+          "duration": 403533000,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:37:31.709821-04:00",
+          "duration": 1563958
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "initial",
+          "label": "Inspecting workspace",
+          "at": "2026-08-05T02:37:03.98828-04:00"
+        },
+        {
+          "step_id": "implementation",
+          "label": "Creating Express health service with dependency validation",
+          "at": "2026-08-05T02:37:10.54819-04:00"
+        },
+        {
+          "step_id": "validation",
+          "label": "Validating pinned Express installation and endpoint",
+          "at": "2026-08-05T02:37:25.908458-04:00"
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 2,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "completed",
+      "turns": 11,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented and verified a standard-library Go net/http health service bound to 127.0.0.1:$PORT.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test ./...\",\"passed\":true},{\"name\":\"go build\",\"passed\":true},{\"name\":\"GET /health smoke test\",\"passed\":true,\"detail\":\"Returned {\\\"status\\\":\\\"ok\\\",\\\"stack\\\":\\\"go\\\"}\"}]}",
+      "prose": "Implemented the Go `net/http` health service.\n\n- `GET /health` returns:\n  ```json\n  {\"status\":\"ok\",\"stack\":\"go\"}\n  ```\n- Binds only to `127.0.0.1:$PORT`\n- Uses only the Go standard library\n- Added unit tests for the endpoint and method handling\n- Verified with:\n  - `go test ./...`\n  - `go build`\n  - Live localhost smoke test\n\nAlso wrote `.codegym/agent-result.json`.",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 16110,
+        "input": 14268,
+        "output": 1842,
+        "reasoning": 150,
+        "cache_read": 4992,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 63301,
+      "wall_time_ms": 27548,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:37:38.095884-04:00",
+          "duration": 556500
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:37:39.425176-04:00",
+          "duration": 29293667,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:37:40.583519-04:00",
+          "duration": 332958
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:37:45.369069-04:00",
+          "duration": 1145791
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:37:49.255638-04:00",
+          "duration": 685917
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:37:50.689249-04:00",
+          "duration": 42291
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:37:53.146614-04:00",
+          "duration": 58458,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:37:56.014258-04:00",
+          "duration": 1537757666,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:38:00.013897-04:00",
+          "duration": 5741375
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:38:02.36326-04:00",
+          "duration": 32084
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "initial",
+          "label": "Inspecting workspace and implementing Go HTTP health service",
+          "at": "2026-08-05T02:37:38.096439-04:00"
+        },
+        {
+          "step_id": "implementation",
+          "label": "Health endpoint and standard-library tests added",
+          "metadata": {
+            "files": [
+              "main.go",
+              "main_test.go"
+            ]
+          },
+          "at": "2026-08-05T02:37:50.689291-04:00"
+        },
+        {
+          "step_id": "verification",
+          "label": "Build, unit tests, and live endpoint smoke test passed",
+          "metadata": {
+            "endpoint": "GET http://127.0.0.1:$PORT/health"
+          },
+          "at": "2026-08-05T02:38:02.363291-04:00"
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 2,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "completed",
+      "turns": 6,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented a standard-library Go health service.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test ./...\",\"passed\":true}]}\n",
+      "prose": "I’ll inspect the workspace, then add the minimal standard-library Go service and its tests.The workspace only contains the module definition. I’ll create the service, test, and required result file using standard Go tooling.The initial file-generation command had a shell quoting error; no files were created. I’ll retry with encoded file contents, then format, test, and build.I’ll write the source with safer quoting and rerun the Go checks.Implemented `GET /health` on `127.0.0.1:$PORT` (default `8080`), returning `{\"status\":\"ok\",\"stack\":\"go\"}`.\n`go test ./...` and `go build ./...` pass.",
+      "repair_iterations": 3,
+      "tokens": {
+        "total": 34604,
+        "input": 30364,
+        "output": 4240,
+        "reasoning": 524,
+        "cache_read": 15360,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 139512,
+      "wall_time_ms": 46254,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:38:28.298-04:00",
+          "duration": 33000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:38:28.421-04:00",
+          "duration": 6000000,
+          "exit_code": 128
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:38:29.224-04:00",
+          "duration": 5000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:38:37.537-04:00",
+          "duration": 2000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:38:55.501-04:00",
+          "duration": 3000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:39:07.168-04:00",
+          "duration": 341000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 2,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "completed",
+      "turns": 9,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\": 1, \"completed\": true, \"summary\": \"Express health service implemented\", \"artifacts\": [\"server.js\", \"validate.js\", \"package.json\", \"package-lock.json\"], \"checks\": [{\"name\": \"npm run validate\", \"passed\": true}, {\"name\": \"GET /health\", \"passed\": true, \"detail\": \"Returned status=ok and stack=express\"}]}",
+      "prose": "I’ll add the service and validation scripts, install the pinned dependency, then exercise `/health` locally.Implemented and validated. `GET /health` returns `{\"status\":\"ok\",\"stack\":\"express\"}` on `127.0.0.1:$PORT`.",
+      "repair_iterations": 1,
+      "tokens": {
+        "total": 44164,
+        "input": 42078,
+        "output": 2086,
+        "reasoning": 609,
+        "cache_read": 33792,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 136486,
+      "wall_time_ms": 33706,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:39:29.416-04:00",
+          "duration": 11000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:39:29.437-04:00",
+          "duration": 6000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:39:32.153-04:00",
+          "duration": 18000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:39:33.209-04:00",
+          "duration": 4000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:39:40.365-04:00",
+          "duration": 4000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:39:44.463-04:00",
+          "duration": 3000000,
+          "exit_code": 1
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:39:47.158-04:00",
+          "duration": 4000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:39:47.223-04:00",
+          "duration": 2000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:39:47.213-04:00",
+          "duration": 21000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:39:47.218-04:00",
+          "duration": 17000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:39:47.206-04:00",
+          "duration": 30000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:39:51.385-04:00",
+          "duration": 1055000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:39:56.712-04:00",
+          "duration": 1050000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 8,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 2,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "turn_ceiling_exhausted",
+      "turns": 16,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented an Express 5.1.0 service bound to 127.0.0.1:$PORT with a validated /health endpoint.\",\"artifacts\":[\"server.js\",\"package.json\",\"package-lock.json\",\"test/health.test.js\"],\"checks\":[{\"name\":\"express-version\",\"passed\":true,\"detail\":\"Validated installed Express version is 5.1.0.\"},{\"name\":\"health-endpoint\",\"passed\":true,\"detail\":\"GET /health returned the required JSON payload while bound to 127.0.0.1.\"},{\"name\":\"clean-install-and-test\",\"passed\":true,\"detail\":\"npm ci --ignore-scripts followed by npm test passed.\"}]}\n",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 28771,
+        "input": 25875,
+        "output": 2896,
+        "reasoning": 739,
+        "cache_read": 11520,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 108129,
+      "wall_time_ms": 44505,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:40:02.886593-04:00",
+          "duration": 15917
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:40:04.424633-04:00",
+          "duration": 38924708,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:40:05.410857-04:00",
+          "duration": 278709
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:40:08.929987-04:00",
+          "duration": 1195250
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:40:11.919041-04:00",
+          "duration": 926250
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:40:14.76617-04:00",
+          "duration": 12375
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:40:17.53101-04:00",
+          "duration": 33875,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:40:19.914673-04:00",
+          "duration": 1870507250,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:40:25.723844-04:00",
+          "duration": 47208,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:40:28.056336-04:00",
+          "duration": 309211917,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:40:29.846423-04:00",
+          "duration": 53775875,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:40:35.566313-04:00",
+          "duration": 478541
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:40:39.60397-04:00",
+          "duration": 571542
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:40:41.287095-04:00",
+          "duration": 1278077042,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:40:44.919343-04:00",
+          "duration": 840083
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "inspect",
+          "label": "Inspecting workspace and existing package configuration",
+          "at": "2026-08-05T02:40:02.886607-04:00"
+        },
+        {
+          "step_id": "implement",
+          "label": "Implemented Express health endpoint and start configuration",
+          "at": "2026-08-05T02:40:14.766181-04:00"
+        }
+      ]
+    },
+    {
+      "order": 9,
+      "runtime": "purpose-built",
+      "fixture": "go-net-http",
+      "repetition": 3,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "completed",
+      "turns": 11,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented a standard-library Go net/http service with GET /health returning the required JSON and loopback-only PORT binding.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go build ./...\",\"passed\":true},{\"name\":\"go test ./...\",\"passed\":true},{\"name\":\"runtime health endpoint\",\"passed\":true,\"detail\":\"Verified 127.0.0.1:18080/health returns {\\\"status\\\":\\\"ok\\\",\\\"stack\\\":\\\"go\\\"}\"}]}",
+      "prose": "Implemented the Go `net/http` service.\n\n- `GET /health` returns:\n  ```json\n  {\"status\":\"ok\",\"stack\":\"go\"}\n  ```\n- Binds to `127.0.0.1:$PORT`\n- Uses only Go standard library\n- Added endpoint and method-handling tests\n- Verified with:\n  - `go build ./...`\n  - `go test ./...`\n  - Live loopback request to `/health`\n- Wrote `.codegym/agent-result.json`",
+      "repair_iterations": 2,
+      "tokens": {
+        "total": 15230,
+        "input": 13548,
+        "output": 1682,
+        "reasoning": 112,
+        "cache_read": 3968,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 59103,
+      "wall_time_ms": 24642,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:40:51.32322-04:00",
+          "duration": 16666
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:40:52.844306-04:00",
+          "duration": 26251375,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:40:53.985331-04:00",
+          "duration": 259500
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:40:58.25014-04:00",
+          "duration": 728583
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:41:01.558377-04:00",
+          "duration": 880209
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:41:03.009271-04:00",
+          "duration": 40834
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:41:05.249577-04:00",
+          "duration": 905140041,
+          "exit_code": 2
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:41:08.936074-04:00",
+          "duration": 855545417,
+          "exit_code": 1
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:41:11.720896-04:00",
+          "duration": 1674458
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:41:13.214945-04:00",
+          "duration": 30000
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "start",
+          "label": "Inspecting workspace",
+          "at": "2026-08-05T02:40:51.323235-04:00"
+        },
+        {
+          "step_id": "implementation",
+          "label": "Implemented standard-library HTTP health service and tests",
+          "at": "2026-08-05T02:41:03.00931-04:00"
+        },
+        {
+          "step_id": "verification",
+          "label": "Built, tested, and verified live health endpoint",
+          "metadata": {
+            "build": true,
+            "runtime": true,
+            "tests": true
+          },
+          "at": "2026-08-05T02:41:13.214973-04:00"
+        }
+      ]
+    },
+    {
+      "order": 10,
+      "runtime": "opencode",
+      "fixture": "go-net-http",
+      "repetition": 3,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "completed",
+      "turns": 7,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented Go net/http health service bound to loopback with PORT support.\",\"artifacts\":[\"main.go\",\"main_test.go\"],\"checks\":[{\"name\":\"go test ./...\",\"passed\":true},{\"name\":\"go build ./...\",\"passed\":true}]}\n",
+      "prose": "I’ll add the standard-library service and tests, then build and run them locally.Implemented and verified with `go test ./...` and `go build ./...`.",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 29884,
+        "input": 28594,
+        "output": 1290,
+        "reasoning": 222,
+        "cache_read": 18048,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 90837,
+      "wall_time_ms": 20734,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:41:40.684-04:00",
+          "duration": 11000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:41:41.84-04:00",
+          "duration": 9000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:41:44.605-04:00",
+          "duration": 17000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:41:45.659-04:00",
+          "duration": 3000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:41:52.686-04:00",
+          "duration": 319000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:41:55.501-04:00",
+          "duration": 92000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 11,
+      "runtime": "opencode",
+      "fixture": "express",
+      "repetition": 3,
+      "passed": false,
+      "detail": "context deadline exceeded",
+      "termination": "deadline_exhausted",
+      "turns": 3,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\": 1, \"completed\": true, \"summary\": \"Implemented Express health service.\", \"artifacts\": [\"server.js\"], \"checks\": [{\"name\": \"express-dependency\", \"passed\": true, \"detail\": \"Installed pinned express@5.1.0.\"}]}",
+      "prose": "I’ll create the Express entry point, install the pinned dependency for validation, then smoke-test the bound health endpoint.`package.json` pins Express 5.1.0 and no application files exist. I’ll add the service and result metadata, then install strictly from that manifest.The pinned package installed successfully with no vulnerabilities. I’ll launch the service locally and verify its response without any external network request.",
+      "repair_iterations": 0,
+      "tokens": {
+        "total": 17037,
+        "input": 16008,
+        "output": 1029,
+        "reasoning": 342,
+        "cache_read": 7424,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 55456,
+      "wall_time_ms": 120274,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:42:16.881-04:00",
+          "duration": 16000000
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:42:16.891-04:00",
+          "duration": 17000000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:42:20.008-04:00",
+          "duration": 4000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:42:20.142-04:00",
+          "duration": 3000000,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:42:25.081-04:00",
+          "duration": 40000000,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "order": 12,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 3,
+      "passed": false,
+      "detail": "agentruntime: block Daytona benchmark runtime network: Validation error: Network access is restricted and cannot be overridden at the sandbox level. See https://www.daytona.io/docs/en/network-limits/#tier-based-network-restrictions",
+      "termination": "turn_ceiling_exhausted",
+      "turns": 16,
+      "manifest_status": "present",
+      "manifest_raw": "{\"version\":1,\"completed\":true,\"summary\":\"Implemented an Express 5.1.0 service bound to 127.0.0.1 with GET /health returning the required JSON payload.\",\"artifacts\":[\"package.json\",\"server.js\",\"test/health.test.js\"],\"checks\":[{\"name\":\"JavaScript syntax\",\"passed\":true,\"detail\":\"node --check passed for server and health test.\"},{\"name\":\"Pinned dependency validation\",\"passed\":true,\"detail\":\"package.json declares express exactly as 5.1.0.\"}]}\n",
+      "repair_iterations": 2,
+      "tokens": {
+        "total": 28899,
+        "input": 26304,
+        "output": 2595,
+        "reasoning": 766,
+        "cache_read": 14848,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 104687,
+      "wall_time_ms": 63887,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:44:14.690094-04:00",
+          "duration": 16459
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:44:15.923756-04:00",
+          "duration": 25417042,
+          "exit_code": 0
+        },
+        {
+          "tool": "read_file",
+          "started_at": "2026-08-05T02:44:16.942243-04:00",
+          "duration": 210083
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:44:20.778123-04:00",
+          "duration": 667917
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:44:23.698705-04:00",
+          "duration": 307875
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:44:28.821174-04:00",
+          "duration": 1850083
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T02:44:30.460033-04:00",
+          "duration": 16125
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:44:33.075575-04:00",
+          "duration": 31375,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:44:34.965208-04:00",
+          "duration": 204124334,
+          "exit_code": 2
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:44:37.451761-04:00",
+          "duration": 13064837916,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:44:52.238577-04:00",
+          "duration": 79750,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:44:53.957203-04:00",
+          "duration": 323828125,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:44:57.091685-04:00",
+          "duration": 12198538833,
+          "exit_code": 0
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T02:45:13.436385-04:00",
+          "duration": 173569583,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T02:45:15.514717-04:00",
+          "duration": 1372042
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "initial",
+          "label": "Inspecting workspace",
+          "at": "2026-08-05T02:44:14.690109-04:00"
+        },
+        {
+          "step_id": "implementation",
+          "label": "Express service and local health test created",
+          "at": "2026-08-05T02:44:30.460047-04:00"
+        }
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "runtime": "purpose-built",
+      "runs": 6,
+      "passes": 0,
+      "completion_rate": 0,
+      "mean_repair_iterations": 0.6666666666666666,
+      "median_wall_time_ms": 30899,
+      "tokens": {
+        "total": 115436,
+        "input": 103379,
+        "output": 12057,
+        "reasoning": 2205,
+        "cache_read": 42112,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 439315,
+      "policy_violation_count": 0,
+      "disqualified": false
+    },
+    {
+      "runtime": "opencode",
+      "runs": 6,
+      "passes": 0,
+      "completion_rate": 0,
+      "mean_repair_iterations": 0.6666666666666666,
+      "median_wall_time_ms": 33706,
+      "tokens": {
+        "total": 163428,
+        "input": 152805,
+        "output": 10623,
+        "reasoning": 2010,
+        "cache_read": 94848,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 541365,
+      "policy_violation_count": 0,
+      "disqualified": false
+    }
+  ],
+  "decision": {
+    "selected": "purpose-built",
+    "outcome": "effective-tie-or-inconclusive",
+    "reason": "the predeclared default selects purpose-built"
+  },
+  "sandboxes_created": 10,
+  "sandboxes_deleted": 10,
+  "sandbox_seconds": 116.02589445999999,
+  "workspaces_created": 12,
+  "workspaces_deleted": 12
+}

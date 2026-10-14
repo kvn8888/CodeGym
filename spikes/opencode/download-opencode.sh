@@ -16,6 +16,10 @@ case "${os}/${arch}" in
     asset="opencode-darwin-x64.zip"
     sha256="95953ab2aca4322b90690bf34697cc9b47b6a7c72f78e7c469056fb589124d31"
     ;;
+  Linux/x86_64)
+    asset="opencode-linux-x64.tar.gz"
+    sha256="a4dffcc00a5a93256c6bd06aa0c984320528f564db52a1f4becd5c7de9fb59a1"
+    ;;
   *)
     echo "Unsupported platform: ${os}/${arch}. Add the pinned ${VERSION} asset and checksum to this script." >&2
     exit 2
@@ -39,7 +43,10 @@ if [[ "${actual}" != "${sha256}" ]]; then
   exit 1
 fi
 
-unzip -oq "${archive}" -d "${bin_dir}"
+case "${archive}" in
+  *.zip) unzip -oq "${archive}" -d "${bin_dir}" ;;
+  *.tar.gz) tar -xzf "${archive}" -C "${bin_dir}" ;;
+esac
 chmod 0755 "${bin_dir}/opencode"
 echo "Verified SHA-256: ${sha256}"
 "${bin_dir}/opencode" --version

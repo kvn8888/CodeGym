@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "started_at": "2026-08-05T07:02:16.622713Z",
+  "finished_at": "2026-08-05T07:04:16.628005Z",
+  "status": "complete",
+  "decision_rule": "Any policy violation disqualifies that runtime. Completion rate is primary. On equal completion, opencode wins only if it improves mean repair iterations or median wall time by at least 20 percent while using no more total tokens or cost; otherwise purpose-built wins. Inconclusive selects purpose-built.",
+  "model_deployment": "azure/gpt-5.6-terra",
+  "execution_environment": "host-agent-runtime/daytona-real-dependency-verifier",
+  "base_snapshot": "codegym-go-1-25-4-v3",
+  "limitations": [
+    "The coding-agent adapters ran in isolated host workspaces because the operation-scoped local relay is not reachable from Daytona; candidate dependency resolution and black-box verification ran in one ephemeral Daytona sandbox per contract-valid run.",
+    "The shared Daytona base snapshot was codegym-go-1-25-4-v3. Dependency resolution used Daytona's organization-restricted network; the account tier rejected sandbox-level block-all overrides, so the loopback HTTP probe ran under the organization policy after source-level egress checks."
+  ],
+  "relay_max_tokens": 300000,
+  "relay_max_cost_usd_micros": 1019000,
+  "relay_wall_clock_ms": 1800000,
+  "turn_ceiling": 16,
+  "run_deadline_ms": 120000,
+  "output_cap_bytes": 262144,
+  "retry_policy": "zero retries; every failure counts",
+  "schedule_start_order": 12,
+  "schedule_total_runs": 12,
+  "fixture_fingerprints": {
+    "express": "802a3f8019560fb6e07a4abafdcb769c8e0fc83aa2c059ebc588f7759326083a",
+    "go-net-http": "48a27c99582490e0247ab1d14dfecfdb5f24ec051e42925257152f39a4dd79a6"
+  },
+  "runs": [
+    {
+      "order": 12,
+      "runtime": "purpose-built",
+      "fixture": "express",
+      "repetition": 3,
+      "passed": false,
+      "detail": "context deadline exceeded",
+      "termination": "deadline_exhausted",
+      "turns": 9,
+      "manifest_status": "absent",
+      "manifest_error": "result manifest is absent",
+      "repair_iterations": 2,
+      "tokens": {
+        "total": 11476,
+        "input": 10058,
+        "output": 1418,
+        "reasoning": 350,
+        "cache_read": 3456,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 46415,
+      "wall_time_ms": 120003,
+      "sandbox_seconds": 0,
+      "tool_invocations": [
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T03:02:17.908622-04:00",
+          "duration": 44000
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T03:02:19.431718-04:00",
+          "duration": 41094334,
+          "exit_code": 0
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T03:02:24.091587-04:00",
+          "duration": 631209
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T03:02:25.604842-04:00",
+          "duration": 985459
+        },
+        {
+          "tool": "write_file",
+          "started_at": "2026-08-05T03:02:29.14588-04:00",
+          "duration": 1481958
+        },
+        {
+          "tool": "report_progress",
+          "started_at": "2026-08-05T03:02:31.43521-04:00",
+          "duration": 8208
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T03:02:33.20162-04:00",
+          "duration": 30792,
+          "error": "invalid tool arguments: json: unknown field \"timeout\""
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T03:02:34.464044-04:00",
+          "duration": 481320542,
+          "exit_code": 1
+        },
+        {
+          "tool": "shell",
+          "started_at": "2026-08-05T03:02:36.821159-04:00",
+          "duration": 99804668500,
+          "exit_code": -1,
+          "error": "context deadline exceeded"
+        }
+      ],
+      "progress": [
+        {
+          "step_id": "inspect",
+          "label": "Inspecting workspace and existing package setup",
+          "at": "2026-08-05T03:02:17.908666-04:00"
+        },
+        {
+          "step_id": "implement",
+          "label": "Implemented Express server, pinned dependency scripts, and health endpoint test",
+          "at": "2026-08-05T03:02:31.435217-04:00"
+        }
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "runtime": "purpose-built",
+      "runs": 1,
+      "passes": 0,
+      "completion_rate": 0,
+      "mean_repair_iterations": 2,
+      "median_wall_time_ms": 120003,
+      "tokens": {
+        "total": 11476,
+        "input": 10058,
+        "output": 1418,
+        "reasoning": 350,
+        "cache_read": 3456,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 46415,
+      "policy_violation_count": 0,
+      "disqualified": false
+    },
+    {
+      "runtime": "opencode",
+      "runs": 0,
+      "passes": 0,
+      "completion_rate": 0,
+      "mean_repair_iterations": 0,
+      "median_wall_time_ms": 0,
+      "tokens": {
+        "total": 0,
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "cost_usd_micros": 0,
+      "policy_violation_count": 0,
+      "disqualified": false
+    }
+  ],
+  "decision": {
+    "selected": "opencode",
+    "outcome": "material-tie-break",
+    "reason": "opencode materially improved repair iterations or wall time without token/cost regression"
+  },
+  "sandboxes_created": 0,
+  "sandboxes_deleted": 0,
+  "sandbox_seconds": 0,
+  "workspaces_created": 1,
+  "workspaces_deleted": 1
+}

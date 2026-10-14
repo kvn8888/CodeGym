@@ -25,7 +25,7 @@ const (
 // defect against the generic path.
 func preparationInstructions(request BuildRequest) string {
 	return fmt.Sprintf(
-		"Prepare a coding practice environment for %s: %s. Create project files, exercise files, and assessment tests in the working directory, then build and test the project there. Write the setup, build, test, and run commands you used as JSON object fields setup, build, test, and run in .codegym/commands.json. Use only the supplied tools.",
+		"Prepare a coding practice environment for %s: %s. Create project files, exercise files, and assessment tests in the working directory, then build and test the project there. Write the setup, build, test, and run commands you used as JSON object fields setup, build, test, and run in .codegym/commands.json, including the runtime base as field base. Place hidden assessment tests that learners must never see under .codegym/hidden/. Use only the supplied tools.",
 		request.Technology, request.Objective,
 	)
 }

@@ -70,10 +70,12 @@ var fallbackCommands = map[string]ManifestCommands{
 // declaredCommands is the agent's optional command declaration at
 // .codegym/commands.json. Declared values always win over the fallback table.
 type declaredCommands struct {
-	Setup string `json:"setup"`
-	Build string `json:"build"`
-	Test  string `json:"test"`
-	Run   string `json:"run"`
+	Setup   string `json:"setup"`
+	Build   string `json:"build"`
+	Test    string `json:"test"`
+	Run     string `json:"run"`
+	Base    string `json:"base"`
+	Network string `json:"network"`
 }
 
 // isTestShaped reports the file-naming and directory conventions that mark
@@ -230,6 +232,10 @@ func DraftManifest(request BuildRequest, root string) (*EnvironmentManifest, []D
 			})
 		}
 	}
+	network := declared.Network
+	if strings.TrimSpace(network) == "" {
+		network = "setup-only"
+	}
 	technology := normalizeTechnology(request.Technology)
 	manifest := &EnvironmentManifest{
 		SchemaVersion: "environment.manifest.v1",
@@ -239,8 +245,8 @@ func DraftManifest(request BuildRequest, root string) (*EnvironmentManifest, []D
 			Version:    "0.1.0",
 		},
 		Environment: ManifestEnvironment{
-			Base:            "",
-			Network:         "setup-only",
+			Base:            declared.Base,
+			Network:         network,
 			DependencyFiles: dependencyFiles,
 			Lockfiles:       lockfiles,
 		},

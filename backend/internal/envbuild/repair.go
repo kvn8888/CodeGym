@@ -82,7 +82,7 @@ func (l *RepairLoop) teardown(ctx context.Context, result BuildResult, err error
 // terminal failure returns both the result and the error.
 func (l *RepairLoop) Run(ctx context.Context, verifier Verifier, attempt AttemptFunc) (BuildResult, error) {
 	budget := l.Budget
-	if budget.MaxRepairs <= 0 {
+	if budget.MaxRepairs < 0 {
 		budget.MaxRepairs = DefaultRepairBudget().MaxRepairs
 	}
 	var (

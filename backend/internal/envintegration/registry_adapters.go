@@ -114,15 +114,39 @@ func newVerifierRunID() string {
 	return "verify_" + hex.EncodeToString(raw)
 }
 
-// RegistryVerifier implements the registry Verifier interface with real
-// backend verification. It resolves the snapshot reference to an artifact
-// root, confirms the recorded manifest matches the file the verifier loads,
-// and runs verification with the injected runner.
+// confirmRecordedManifest proves the manifest recorded at build time matches
+// the file the verifier loads, compared as canonical JSON so Go-shape
+// differences between the tracks never matter.
+func confirmRecordedManifest(recorded environmentverify.Manifest, loaded environmentverify.Manifest) error {
+	canonicalRecorded, err := json.Marshal(recorded)
+	if err != nil {
+		return fmt.Errorf("encode recorded manifest: %w", err)
+	}
+	canonicalLoaded, err := json.Marshal(loaded)
+	if err != nil {
+		return fmt.Errorf("encode loaded manifest: %w", err)
+	}
+	var recordedAny, loadedAny any
+	if err := json.Unmarshal(canonicalRecorded, &recordedAny); err != nil {
+		return fmt.Errorf("decode recorded manifest: %w", err)
+	}
+	if err := json.Unmarshal(canonicalLoaded, &loadedAny); err != nil {
+		return fmt.Errorf("decode loaded manifest: %w", err)
+	}
+	if !reflect.DeepEqual(recordedAny, loadedAny) {
+		return fmt.Errorf("recorded manifest differs from the file the verifier loads")
+	}
+	return nil
+}
+
 type RegistryVerifier struct {
 	Roots      func(reference string) (string, error)
 	Runner     environmentverify.CommandRunner
 	Assessment *environmentverify.AssessmentSpec
 	Assessor   environmentverify.AssessmentRunner
+	// Timeouts overrides the default stage deadlines when non-zero. Tests
+	// use it to force timeout paths without waiting out production limits.
+	Timeouts environmentverify.StageTimeouts
 }
 
 // Verify judges one builder output. It returns a verifier result, never an
@@ -172,25 +196,13 @@ func (v *RegistryVerifier) Verify(ctx context.Context, build environmentregistry
 	if err != nil {
 		return reject(environmentverify.StageManifest, environmentverify.CodeManifestMalformed, fmt.Sprintf("envintegration: parse manifest: %v", err), true)
 	}
-	canonicalRecorded, err := json.Marshal(build.Manifest)
-	if err != nil {
-		return reject(environmentverify.StageValidation, environmentverify.CodeManifestInvalid, fmt.Sprintf("envintegration: encode recorded manifest: %v", err), false)
-	}
-	canonicalLoaded, err := json.Marshal(parsed)
-	if err != nil {
-		return reject(environmentverify.StageValidation, environmentverify.CodeManifestInvalid, fmt.Sprintf("envintegration: encode loaded manifest: %v", err), false)
-	}
-	var recordedAny, loadedAny any
-	if err := json.Unmarshal(canonicalRecorded, &recordedAny); err != nil {
-		return reject(environmentverify.StageValidation, environmentverify.CodeManifestInvalid, fmt.Sprintf("envintegration: decode recorded manifest: %v", err), false)
-	}
-	if err := json.Unmarshal(canonicalLoaded, &loadedAny); err != nil {
-		return reject(environmentverify.StageValidation, environmentverify.CodeManifestInvalid, fmt.Sprintf("envintegration: decode loaded manifest: %v", err), false)
-	}
-	if !reflect.DeepEqual(recordedAny, loadedAny) {
-		return reject(environmentverify.StageValidation, environmentverify.CodeManifestInvalid, "envintegration: recorded manifest differs from the file the verifier loads", false)
+	if err := confirmRecordedManifest(build.Manifest, parsed); err != nil {
+		return reject(environmentverify.StageValidation, environmentverify.CodeManifestInvalid, fmt.Sprintf("envintegration: %v", err), false)
 	}
 	opts := environmentverify.DefaultVerifyOptions()
+	if v.Timeouts != (environmentverify.StageTimeouts{}) {
+		opts.Timeouts = v.Timeouts
+	}
 	if v.Assessment != nil {
 		opts.Assessment = v.Assessment
 		opts.Assessor = v.Assessor

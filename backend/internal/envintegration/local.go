@@ -2,8 +2,12 @@ package envintegration
 
 import (
 	"context"
+	"errors"
+	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
 )
@@ -33,11 +37,27 @@ func (r *LocalCommandRunner) outputCap() int {
 // Run executes one stage command. A nonzero exit is a normal stage failure
 // reported in the result; only infrastructure faults return errors, and a
 // context deadline reports a timeout rather than failing the stage silently.
+// The command runs in its own process group so cancellation kills orphaned
+// children too: without this, a killed shell's surviving children hold the
+// output pipes open and the call outlives its own timeout. This is Unix-only,
+// matching the runtime package; production verification runs in Daytona.
 func (r *LocalCommandRunner) Run(ctx context.Context, spec environmentverify.CommandSpec) (environmentverify.CommandResult, error) {
 	r.Calls = append(r.Calls, spec)
 	command := exec.CommandContext(ctx, "sh", "-c", spec.Command)
 	if strings.TrimSpace(spec.WorkDir) != "" {
 		command.Dir = spec.WorkDir
+	}
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.WaitDelay = 2 * time.Second
+	command.Cancel = func() error {
+		if command.Process == nil {
+			return nil
+		}
+		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
 	}
 	output, err := command.CombinedOutput()
 	if len(output) > r.outputCap() {

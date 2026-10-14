@@ -94,7 +94,11 @@
 //   - Production ArtifactSource (registry resolve plus manifest-store
 //     pairing), ContentStore (base file reads), and Runner (sandboxed
 //     boot of the snapshot, overlay of session files, isolated practice
-//     network, teardown) are unwired; fakes stand in per #190.
+//     network, teardown) are unwired; fakes stand in per #190 and the
+//     #191 development sample (SampleArtifactSource, SampleContentStore,
+//     FakeSampleRunner) stands in only when CODEGYM_PRACTICE_SAMPLE=true
+//     in a non-production environment.
+//     Real Track A runtime integration is outside #191.
 //   - Existing execution Run and submission View records carry no
 //     artifact identity, and submission TestResult needs parsed counts
 //     this package deliberately does not fabricate — so no lossy
@@ -115,6 +119,14 @@
 //     quota for practice runs are production items.
 //   - Practice execution records persist in process memory; durable
 //     history is a production integration limit like the other stores.
-//   - No HTTP endpoints are added here; this service interface is the
-//     stable backend surface for #191.
+//     Saved exercises (#191) persist durably via SavedExerciseStore with a
+//     Postgres implementation following the session store conventions; the
+//     in-memory store is tests/development only.
+//   - Browser HTTP endpoints live in api/handlers/practice.go (#191) and
+//     are covered by the OpenAPI practice paths. The development sample
+//     (greet-basics) plus FakeSampleRunner are explicitly dev/testing-only,
+//     gated by CODEGYM_PRACTICE_SAMPLE in non-production environments,
+//     blocked in production, and labelled simulated; a simulated passed is
+//     never verification evidence. The fake never executes learner code
+//     and never materializes hidden files.
 package practice

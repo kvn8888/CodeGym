@@ -62,8 +62,8 @@ func (c Category) ExecutionStatus() execution.Status {
 // strings are deliberately absent: commands name protected files, so
 // echoing them would leak hidden test names.
 type StepSummary struct {
-	Stage    string
-	ExitCode int
+	Stage    string `json:"stage"`
+	ExitCode int    `json:"exit_code"`
 }
 
 // Result is the safe public projection of Run or Submit. Output carries
@@ -76,23 +76,26 @@ type StepSummary struct {
 // source cannot be projected safely from raw text. Per-line build
 // diagnostics await a structured provider contract (see doc.go).
 // Identity fields associate the run with its verified artifact without
-// trusting learner claims.
+// trusting learner claims. Simulated marks development/testing-only
+// sample execution: clients must label it explicitly and never present a
+// simulated "passed" as verification evidence.
 type Result struct {
-	Category        Category
-	Summary         string
-	Output          string
-	OutputTruncated bool
-	Steps           []StepSummary
+	Category        Category      `json:"category"`
+	Summary         string        `json:"summary"`
+	Output          string        `json:"output"`
+	OutputTruncated bool          `json:"output_truncated"`
+	Steps           []StepSummary `json:"steps"`
+	Simulated       bool          `json:"simulated"`
 
-	SessionID       string
-	ArtifactID      string
-	ArtifactVersion string
-	Technology      string
-	EnvironmentBase string
-	NetworkPolicy   string
+	SessionID       string `json:"session_id"`
+	ArtifactID      string `json:"artifact_id"`
+	ArtifactVersion string `json:"artifact_version"`
+	Technology      string `json:"technology"`
+	EnvironmentBase string `json:"environment_base"`
+	NetworkPolicy   string `json:"network_policy"`
 	// RecordID links to the persisted execution record when record
 	// storage is configured and the save succeeded; empty otherwise.
-	RecordID string
+	RecordID string `json:"record_id,omitempty"`
 }
 
 // Run executes the manifest's optional run command when declared;
@@ -218,6 +221,7 @@ func (s *Service) execute(ctx context.Context, snap sessionSnapshot, steps []sta
 		Technology:      snap.technology,
 		EnvironmentBase: snap.environmentBase,
 		NetworkPolicy:   snap.networkPolicy,
+		Simulated:       s.Simulated,
 	}
 	if strings.TrimSpace(snap.id) == "" {
 		return Result{}, errors.New("practice execute requires a session")

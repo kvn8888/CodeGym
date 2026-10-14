@@ -23,9 +23,15 @@ type Config struct {
 	DevWorkspaceID string
 	// Daytona sandbox credentials for the execution runner; both come from
 	// Doppler (codegym/dev). Empty API key disables code execution.
-	DaytonaAPIKey      string
-	DaytonaAPIURL      string
-	SeedDemo           bool
+	DaytonaAPIKey string
+	DaytonaAPIURL string
+	SeedDemo      bool
+	// PracticeSample enables the development/testing-only sample browser
+	// exercise (greet-basics) with an explicitly simulated fake provider.
+	// It is never enabled in production: sample wiring is blocked unless
+	// this flag is explicitly true in a non-production environment, and
+	// simulated results are labelled.
+	PracticeSample     bool
 	CORSAllowedOrigins []string
 	MemoryWorker       WorkerConfig
 	// GenAI is the legacy single-provider view (Gemini / CODEGYM_GENAI_*).
@@ -184,6 +190,7 @@ func Load() Config {
 		DaytonaAPIKey:  os.Getenv("DAYTONA_API_KEY"),
 		DaytonaAPIURL:  os.Getenv("DAYTONA_API_URL"),
 		SeedDemo:       boolEnv("CODEGYM_SEED_DEMO", false),
+		PracticeSample: boolEnv("CODEGYM_PRACTICE_SAMPLE", false),
 		CORSAllowedOrigins: csvEnv("CODEGYM_CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",
@@ -371,6 +378,29 @@ func (c Config) UseAuth0() bool {
 		return true
 	}
 	return c.AuthMode == "" && c.Auth0Audience != "" && (c.Auth0Domain != "" || c.Auth0IssuerURL != "")
+}
+
+// PracticeSampleAllowed reports whether the development/testing-only
+// sample browser exercise may be wired. The flag alone is insufficient:
+// production environments positively reject it. Production is any
+// explicit CODEGYM_ENV=production (or GO_ENV=production) or an
+// Auth0-backed authenticator, which is the production auth path.
+func (c Config) PracticeSampleAllowed() bool {
+	if !c.PracticeSample {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CODEGYM_ENV"))) {
+	case "production", "prod":
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GO_ENV"))) {
+	case "production", "prod":
+		return false
+	}
+	if c.UseAuth0() {
+		return false
+	}
+	return true
 }
 
 func env(key, fallback string) string {

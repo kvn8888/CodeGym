@@ -63,6 +63,47 @@ the shared secret contract. Production Render/Vercel use a single
 `DOPPLER_TOKEN` and `doppler run` — app secrets are not stored in those
 dashboards.
 
+## Browser practice sample (durable saves)
+
+`/practice` serves the development-only simulated exercise
+(`greet-basics-2026-10-01`). Saved exercises survive backend restarts
+**only** when the backend runs against Postgres. Without a database URL the
+server still opens sessions and runs checks, but Save/List/Resume answer
+`503 practice_saved_unavailable` and the UI shows "Saving is unavailable" —
+a restart would otherwise silently discard a reported Save.
+
+Repeatable local launch with a dedicated persistent database (reused across
+restarts; never touches :5432, Neon, or existing auth settings):
+
+```bash
+cd backend
+./scripts/dev-practice-sample.sh
+```
+
+This provisions `$HOME/.codegym-dev/pg-practice` (override with
+`CODEGYM_DEV_DATA_DIR`), starts dedicated Postgres on `127.0.0.1:55434`
+(override with `CODEGYM_DEV_PG_PORT`), creates `codegym_practice_dev`, and
+starts the backend on `127.0.0.1:8080` (override with `CODEGYM_PORT`) with
+durable saves enabled. The database keeps running after the backend exits
+so the next launch resumes the same data; stop it with:
+
+```bash
+pg_ctl -D ~/.codegym-dev/pg-practice stop
+```
+
+Frontend (mock-free, in another terminal):
+
+```bash
+cd frontend
+VITE_API_BASE_URL=http://127.0.0.1:8080/api/v1 VITE_USE_MOCK_API=false npm run dev
+```
+
+Then open `http://127.0.0.1:5173/practice`, edit `solution.py`, Run, Submit,
+Save, stop the backend process completely, start it again with the same
+`./scripts/dev-practice-sample.sh` command, reload, and Resume the saved
+exercise. Startup logs name the active persistence mode without secrets
+(`practice saves: durable Postgres…` vs `saves unavailable…`).
+
 ## GenAI multi-provider routing
 
 `POST /api/v1/generate` goes through an in-process **provider router**. Each

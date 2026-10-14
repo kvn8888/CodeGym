@@ -27,10 +27,16 @@ const (
 	DefaultMemoryMB       = 256
 )
 
-// ArtifactRef selects a verified artifact. It carries a
-// technology/version/objective/tag selector only — never a manifest,
-// command, or readiness claim.
+// ArtifactRef selects a verified artifact. It carries an exact artifact
+// identity pin plus a technology/version/objective/tag selector — never a
+// manifest, command, or readiness claim. #191 callers must pin ArtifactID:
+// technology/version alone can select another exercise and are never used
+// for saved/resume resolution.
 type ArtifactRef struct {
+	// ArtifactID is the exact exercise pin. Empty accepts the served
+	// artifact for the #190 technology selector; #191 browser flows must
+	// set it and resume paths require it.
+	ArtifactID string
 	Technology string
 	// Version is an exact pin. Empty accepts the served version, which is
 	// always reported explicitly on the session and results.
@@ -210,6 +216,13 @@ type Service struct {
 	Runner    Runner
 	// Records persists terminal execution results. Nil skips persistence.
 	Records RecordStore
+	// Saved persists learner saved exercises for #191 resume. Nil disables
+	// save/list/resume with an explicit error.
+	Saved SavedExerciseStore
+	// Simulated marks development/testing-only sample execution. When true,
+	// results carry Simulated=true so clients label them explicitly. Never
+	// enable in production.
+	Simulated bool
 	// CommandTimeout bounds each executed command. Zero selects default.
 	CommandTimeout time.Duration
 	// MaxOutputBytes caps decisive-step output kept on results.
@@ -231,15 +244,22 @@ type Service struct {
 type sessionState struct {
 	id              string
 	owner           string
+	workspaceID     string
 	artifactID      string
 	artifactVersion string
 	technology      string
 	environmentBase string
 	networkPolicy   string
 	snapshot        string
-	editable        []string
-	manifest        environmentverify.Manifest
-	files           map[string]string
+	// builderRunID and verifierRunID pin the exact backend build that
+	// produced the snapshot. Resume compares them against the saved
+	// reference so a same-ID/version replacement is reported explicitly
+	// instead of silently restored. No hashes are used.
+	builderRunID  string
+	verifierRunID string
+	editable      []string
+	manifest      environmentverify.Manifest
+	files         map[string]string
 	// redact holds the exact backend-known sensitive tokens: protected
 	// and hidden file names, basenames, and full contents. It never
 	// leaves the backend; output projection replaces every occurrence.
@@ -366,6 +386,8 @@ func (s *Service) OpenSession(ctx context.Context, owner string, ref ArtifactRef
 		environmentBase: artifact.Record.EnvironmentBase,
 		networkPolicy:   networkPolicy,
 		snapshot:        artifact.Record.SnapshotRef,
+		builderRunID:    artifact.Record.Provenance.BuilderRunID,
+		verifierRunID:   artifact.Record.Provenance.VerifierRunID,
 		editable:        editable,
 		manifest:        manifest,
 		files:           files,
@@ -406,14 +428,37 @@ func (s *Service) require(sessionID, owner string) (*sessionState, error) {
 	return state, nil
 }
 
+// requireBrowser resolves one session for the requesting owner and
+// workspace. Sessions opened without a workspace (the #190 path) accept
+// any workspace for the same owner; browser sessions with a workspace pin
+// require an exact match so cross-workspace access is rejected.
+func (s *Service) requireBrowser(sessionID, owner, workspaceID string) (*sessionState, error) {
+	state, ok := s.sessions[sessionID]
+	if !ok || state == nil {
+		return nil, errors.New("practice session not found")
+	}
+	if state.owner != owner {
+		return nil, errors.New("practice session belongs to another owner")
+	}
+	if state.workspaceID != "" && state.workspaceID != workspaceID {
+		return nil, errors.New("practice session belongs to another workspace")
+	}
+	return state, nil
+}
+
 // checkArtifact enforces the registry boundary: the record must be
 // registry-passed, the manifest structurally valid, record and manifest
 // mutually consistent on identity, and any requested technology/version
-// pin exactly satisfied.
+// pin exactly satisfied. An ArtifactID pin, when set, must match exactly:
+// technology/version alone never select across exercises on pinned paths.
 func checkArtifact(artifact VerifiedArtifact, ref ArtifactRef) error {
 	record := artifact.Record
 	if strings.TrimSpace(record.ArtifactID) == "" {
 		return errors.New("practice artifact has no identity")
+	}
+	if pin := strings.TrimSpace(ref.ArtifactID); pin != "" && pin != record.ArtifactID {
+		return fmt.Errorf("practice requested artifact %q but verified artifact is %q; artifacts are never substituted",
+			pin, record.ArtifactID)
 	}
 	if record.ValidationState != environmentregistry.ValidationPassed {
 		return fmt.Errorf("practice artifact %q version %q is not verified for practice",

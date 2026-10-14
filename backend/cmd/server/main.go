@@ -21,6 +21,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/intake"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/practice"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
 	"github.com/kvn8888/codegym/backend/internal/submission"
@@ -51,6 +52,7 @@ func main() {
 	var chatStore chat.Store = chat.NewInMemoryStore()
 	var workflowStore workflow.Store = workflow.NewInMemoryStore()
 	var relayStore agentrelay.Store = agentrelay.NewInMemoryStore()
+	var practiceSavedStore practice.SavedExerciseStore = practice.NewInMemorySavedExerciseStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -73,6 +75,7 @@ func main() {
 		postgresChatStore := chat.NewPostgresStore(pool)
 		postgresWorkflowStore := workflow.NewPostgresStore(pool)
 		postgresRelayStore := agentrelay.NewPostgresStore(pool)
+		postgresPracticeSavedStore := practice.NewPostgresSavedExerciseStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -103,6 +106,9 @@ func main() {
 		if err := postgresRelayStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap agent relay schema: %v", err)
 		}
+		if err := postgresPracticeSavedStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap practice saved exercise schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
@@ -114,7 +120,8 @@ func main() {
 		chatStore = postgresChatStore
 		workflowStore = postgresWorkflowStore
 		relayStore = postgresRelayStore
-		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, genai usage, execution, and problem stores")
+		practiceSavedStore = postgresPracticeSavedStore
+		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, genai usage, execution, problem, and practice saved exercise stores")
 	} else {
 		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
@@ -237,6 +244,42 @@ func main() {
 		log.Printf("CodeGym daily memory worker disabled trigger=%s", cfg.MemoryWorker.Trigger)
 	}
 
+	// Browser practice (#191) wires the development/testing-only sample
+	// exercise only when explicitly enabled in a non-production
+	// environment. Production keeps the service nil so /practice answers
+	// 503 instead of silently serving a fixture. The fake provider never
+	// executes learner code; no sandbox runtime is built here.
+	//
+	// Durable saves require Postgres: an in-memory saved-exercise store
+	// would report Save success that a restart silently discards, so the
+	// service is wired with Saved=nil (Save/List/Resume answer 503
+	// practice_saved_unavailable) unless DATABASE_URL selects Postgres.
+	var practiceService *practice.Service
+	switch {
+	case cfg.PracticeSample && !cfg.PracticeSampleAllowed():
+		log.Fatalf("CodeGym browser practice sample rejected: CODEGYM_PRACTICE_SAMPLE=true requires a non-production environment without Auth0")
+	case cfg.PracticeSampleAllowed():
+		var practiceSaves practice.SavedExerciseStore
+		if cfg.DatabaseURL != "" {
+			practiceSaves = practiceSavedStore
+			log.Print("CodeGym browser practice saves: durable Postgres practice_saved_exercises")
+		} else {
+			log.Print("CodeGym browser practice saves unavailable: refusing in-memory saves because a restart would discard them; set NEON_CONNECTION_STRING to enable durable saves")
+		}
+		sampleContents := practice.SampleContentStore{}
+		practiceService = &practice.Service{
+			Artifacts: practice.SampleArtifactSource{},
+			Contents:  sampleContents,
+			Runner:    practice.FakeSampleRunner{},
+			Records:   practice.NewInMemoryRecordStore(),
+			Saved:     practiceSaves,
+			Simulated: true,
+		}
+		log.Print("CodeGym browser practice: development sample enabled (explicitly simulated fake provider, never production verification evidence)")
+	default:
+		log.Print("CodeGym browser practice disabled; set CODEGYM_PRACTICE_SAMPLE=true in development to enable the simulated sample")
+	}
+
 	router := api.NewRouter(api.Dependencies{
 		Authenticator:        authenticator,
 		Identity:             identityService,
@@ -249,6 +292,7 @@ func main() {
 		Intakes:              intakeService,
 		Chat:                 chatService,
 		Workflow:             workflowService,
+		Practice:             practiceService,
 		Generation:           generationOrchestrator,
 		MemoryProfiles:       profileSynthesizer,
 		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,

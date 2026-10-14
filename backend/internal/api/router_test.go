@@ -71,6 +71,14 @@ func TestOpenAPIContractCoversRouterRoutes(t *testing.T) {
 		"/api/v1/workflow-operations":             {http.MethodPost},
 		"/api/v1/workflow-operations/{id}/events": {http.MethodGet},
 		"/api/v1/workflow-operations/{id}/cancel": {http.MethodPost},
+		"/api/v1/practice/sessions":               {http.MethodPost},
+		"/api/v1/practice/sessions/{id}":          {http.MethodGet},
+		"/api/v1/practice/sessions/{id}/files":    {http.MethodPut},
+		"/api/v1/practice/sessions/{id}/run":      {http.MethodPost},
+		"/api/v1/practice/sessions/{id}/submit":   {http.MethodPost},
+		"/api/v1/practice/sessions/{id}/save":     {http.MethodPost},
+		"/api/v1/practice/saved":                  {http.MethodGet},
+		"/api/v1/practice/saved/{id}/resume":      {http.MethodPost},
 	}
 
 	for path, methods := range required {

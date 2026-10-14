@@ -364,3 +364,77 @@ export interface GenAICostAggregate {
     call_count: number;
   }>;
 }
+
+/** Browser practice (#191): one learner-visible file. */
+export interface PracticeBrowserFile {
+  path: string;
+  content: string;
+}
+
+/** Browser practice (#191): learner-safe session view with exact identity. */
+export interface PracticeBrowserSession {
+  session_id: string;
+  owner: string;
+  workspace_id: string;
+  artifact_id: string;
+  artifact_version: string;
+  technology: string;
+  environment_base: string;
+  network_policy: string;
+  simulated: boolean;
+  instructions: string;
+  editable: string[];
+  files: PracticeBrowserFile[];
+}
+
+/** Browser practice (#191): safe step summary with stage and exit only. */
+export interface PracticeStepSummary {
+  stage: string;
+  exit_code: number;
+}
+
+/** Browser practice (#191): safe result with category, summary, and capped run output. */
+export type PracticeResultCategory =
+  | 'passed'
+  | 'build-error'
+  | 'test-failure'
+  | 'malformed-manifest'
+  | 'validation-failed'
+  | 'timeout'
+  | 'platform-fault';
+
+export interface PracticeResult {
+  category: PracticeResultCategory;
+  summary: string;
+  output: string;
+  output_truncated: boolean;
+  steps: PracticeStepSummary[];
+  simulated: boolean;
+  session_id: string;
+  artifact_id: string;
+  artifact_version: string;
+  technology: string;
+  environment_base: string;
+  network_policy: string;
+  record_id?: string;
+}
+
+/** Browser practice (#191): public save receipt — identity plus timestamp only. */
+export interface PracticeSavedExercise {
+  id: string;
+  artifact_id: string;
+  artifact_version: string;
+  technology: string;
+  environment_base: string;
+  updated_at: string;
+}
+
+/** Browser practice (#191): list-safe saved summary without file contents. */
+export interface PracticeSavedSummary {
+  id: string;
+  artifact_id: string;
+  artifact_version: string;
+  technology: string;
+  environment_base: string;
+  updated_at: string;
+}

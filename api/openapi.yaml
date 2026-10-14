@@ -1176,6 +1176,234 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/practice/sessions:
+    post:
+      operationId: openPracticeSession
+      summary: Open a browser practice session for an exact verified artifact pin.
+      description: >
+        Requires artifact_id; technology/version alone can select another
+        exercise and are never used for browser resolution. Returns safe
+        instructions and editable files only — never hidden tests or
+        reference solutions. The development sample is simulated and
+        labelled; a simulated passed is local behavior only.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenPracticeSessionInput"
+      responses:
+        "201":
+          description: Browser practice session opened.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeBrowserSessionEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Requested artifact or version does not match the verified artifact; nothing was substituted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Browser practice is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/practice/sessions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PracticeSessionID"
+    get:
+      operationId: getPracticeSession
+      summary: Get the learner-safe view of one browser practice session.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "200":
+          description: Browser session view loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeBrowserSessionEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/practice/sessions/{id}/files:
+    parameters:
+      - $ref: "#/components/parameters/PracticeSessionID"
+    put:
+      operationId: writePracticeSessionFiles
+      summary: Flush multi-file learner edits before Run, Submit, or Save.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WritePracticeFilesInput"
+      responses:
+        "200":
+          description: Edits applied; fresh session view returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeBrowserSessionEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/practice/sessions/{id}/run:
+    parameters:
+      - $ref: "#/components/parameters/PracticeSessionID"
+    post:
+      operationId: runPracticeSession
+      summary: Run the manifest run (or test fallback) with safe feedback.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "200":
+          description: Safe run result with category, summary, stage, exit, and capped run output.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeResultEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/practice/sessions/{id}/submit:
+    parameters:
+      - $ref: "#/components/parameters/PracticeSessionID"
+    post:
+      operationId: submitPracticeSession
+      summary: Submit build then test with safe feedback.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "200":
+          description: Safe submit result with category, summary, stage, and exit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeResultEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/practice/sessions/{id}/save:
+    parameters:
+      - $ref: "#/components/parameters/PracticeSessionID"
+    post:
+      operationId: savePracticeSession
+      summary: Persist the current overlay as a durable saved exercise.
+      description: >
+        Returns the public receipt (identity plus timestamp). Snapshot and
+        build references stay server-side for resume checks.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "201":
+          description: Saved exercise persisted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSavedReceiptEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Saved exercise storage is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/practice/saved:
+    get:
+      operationId: listPracticeSaved
+      summary: List durable saved exercises for resume.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "200":
+          description: Saved exercise summaries loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSavedListEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+
+  /api/v1/practice/saved/{id}/resume:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          example: practice_saved_0123456789abcdef
+    post:
+      operationId: resumePracticeSaved
+      summary: Resume one saved exercise in a fresh session with restored edits.
+      description: >
+        Resolves the exact artifact ID/version, checks the saved build
+        reference, and returns an explicit mismatch for missing,
+        incompatible, or replaced builds instead of silent substitution.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "201":
+          description: Fresh session with restored edits.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeBrowserSessionEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/WorkspaceForbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Saved artifact or build no longer matches the live verified artifact.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1222,6 +1450,13 @@ components:
       schema:
         type: string
         example: workflow_0123456789abcdef
+    PracticeSessionID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        example: practice_sess_0123456789abcdef
 
   responses:
     BadRequest:
@@ -3167,3 +3402,189 @@ components:
         - type: integer
         - type: boolean
         - type: "null"
+
+    OpenPracticeSessionInput:
+      type: object
+      required: [artifact_id]
+      properties:
+        artifact_id:
+          type: string
+          example: greet-basics-2026-10-01
+        version:
+          type: string
+          example: 0.1.0
+        technology:
+          type: string
+          example: python
+
+    PracticeBrowserFile:
+      type: object
+      required: [path, content]
+      properties:
+        path:
+          type: string
+          example: solution.py
+        content:
+          type: string
+
+    PracticeBrowserSession:
+      type: object
+      required: [session_id, owner, workspace_id, artifact_id, artifact_version, technology, environment_base, network_policy, simulated, instructions, editable, files]
+      properties:
+        session_id:
+          type: string
+        owner:
+          type: string
+        workspace_id:
+          type: string
+        artifact_id:
+          type: string
+        artifact_version:
+          type: string
+        technology:
+          type: string
+        environment_base:
+          type: string
+        network_policy:
+          type: string
+        simulated:
+          type: boolean
+        instructions:
+          type: string
+        editable:
+          type: array
+          items:
+            type: string
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeBrowserFile"
+
+    PracticeBrowserSessionEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/PracticeBrowserSession"
+        error:
+          type: "null"
+
+    WritePracticeFilesInput:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeBrowserFile"
+
+    PracticeStepSummary:
+      type: object
+      required: [stage, exit_code]
+      properties:
+        stage:
+          type: string
+        exit_code:
+          type: integer
+
+    PracticeResult:
+      type: object
+      required: [category, summary, output, output_truncated, steps, simulated, session_id, artifact_id, artifact_version, technology, environment_base, network_policy]
+      properties:
+        category:
+          type: string
+          enum: [passed, build-error, test-failure, malformed-manifest, validation-failed, timeout, platform-fault]
+        summary:
+          type: string
+        output:
+          type: string
+        output_truncated:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeStepSummary"
+        simulated:
+          type: boolean
+        session_id:
+          type: string
+        artifact_id:
+          type: string
+        artifact_version:
+          type: string
+        technology:
+          type: string
+        environment_base:
+          type: string
+        network_policy:
+          type: string
+        record_id:
+          type: string
+
+    PracticeResultEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/PracticeResult"
+        error:
+          type: "null"
+
+    PracticeSavedReceipt:
+      type: object
+      description: >
+        Public save confirmation: identity plus timestamp only.
+        Snapshot/build references and file contents stay server-side.
+      required: [id, artifact_id, artifact_version, technology, environment_base, updated_at]
+      properties:
+        id:
+          type: string
+        artifact_id:
+          type: string
+        artifact_version:
+          type: string
+        technology:
+          type: string
+        environment_base:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    PracticeSavedReceiptEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/PracticeSavedReceipt"
+        error:
+          type: "null"
+
+    PracticeSavedSummary:
+      type: object
+      required: [id, artifact_id, artifact_version, technology, environment_base, updated_at]
+      properties:
+        id:
+          type: string
+        artifact_id:
+          type: string
+        artifact_version:
+          type: string
+        technology:
+          type: string
+        environment_base:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    PracticeSavedListEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeSavedSummary"
+        error:
+          type: "null"

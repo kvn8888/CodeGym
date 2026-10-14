@@ -43,37 +43,52 @@ func (r *LocalCommandRunner) outputCap() int {
 // matching the runtime package; production verification runs in Daytona.
 func (r *LocalCommandRunner) Run(ctx context.Context, spec environmentverify.CommandSpec) (environmentverify.CommandResult, error) {
 	r.Calls = append(r.Calls, spec)
-	command := exec.CommandContext(ctx, "sh", "-c", spec.Command)
+	workDir := ""
 	if strings.TrimSpace(spec.WorkDir) != "" {
-		command.Dir = spec.WorkDir
+		workDir = spec.WorkDir
 	}
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.WaitDelay = 2 * time.Second
-	command.Cancel = func() error {
-		if command.Process == nil {
+	exitCode, output, timedOut, err := runLocalStageCommand(ctx, spec.Command, workDir, r.outputCap())
+	if err != nil {
+		return environmentverify.CommandResult{}, err
+	}
+	return environmentverify.CommandResult{ExitCode: exitCode, Output: output, TimedOut: timedOut}, nil
+}
+
+// runLocalStageCommand executes one shell command with process-group
+// termination so cancellation kills orphaned children too. A nonzero exit is
+// a normal result; only infrastructure faults return errors.
+func runLocalStageCommand(ctx context.Context, command, workDir string, capBytes int) (int, string, bool, error) {
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	if strings.TrimSpace(workDir) != "" {
+		cmd.Dir = workDir
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = 2 * time.Second
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
 			return nil
 		}
-		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
 			return os.ErrProcessDone
 		}
 		return err
 	}
-	output, err := command.CombinedOutput()
-	if len(output) > r.outputCap() {
-		output = output[:r.outputCap()]
+	output, err := cmd.CombinedOutput()
+	if capBytes > 0 && len(output) > capBytes {
+		output = output[:capBytes]
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return environmentverify.CommandResult{ExitCode: -1, Output: string(output), TimedOut: true}, nil
+		return -1, string(output), true, nil
 	}
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
-			return environmentverify.CommandResult{ExitCode: exitError.ExitCode(), Output: string(output)}, nil
+			return exitError.ExitCode(), string(output), false, nil
 		}
 		if ctx.Err() != nil {
-			return environmentverify.CommandResult{ExitCode: -1, Output: string(output), TimedOut: true}, nil
+			return -1, string(output), true, nil
 		}
-		return environmentverify.CommandResult{}, err
+		return 0, "", false, err
 	}
-	return environmentverify.CommandResult{ExitCode: 0, Output: string(output)}, nil
+	return 0, string(output), false, nil
 }

@@ -302,7 +302,10 @@ func translateNetworkPolicy(manifest environmentverify.Manifest) (string, error)
 	if manifest.Environment == nil {
 		return "", errors.New("practice artifact manifest has no environment")
 	}
-	if strings.TrimSpace(manifest.Environment.Network) == "none" {
+	// Practice runs never install dependencies: setup is complete by
+	// promotion time, so setup-only carries the same practice invariant as
+	// none, fully isolated practice networking.
+	if network := strings.TrimSpace(manifest.Environment.Network); network == "none" || network == "setup-only" {
 		return execution.NetworkModeBlockAll, nil
 	}
 	return "", fmt.Errorf("practice unknown network policy %q; practice networking is always isolated",

@@ -17,6 +17,11 @@ const (
 	// per the recorded budget decision.
 	prepareTurnCeiling = 16
 	prepareTimeout     = 2 * time.Minute
+	// prepareOutputCap bounds the runtime's captured output for one
+	// preparation. The runtime default (64 KiB) is sized for benchmark tasks;
+	// opencode streams every tool result through it, so a single dependency
+	// download (Maven, npm) exhausted it within seconds.
+	prepareOutputCap = 16 << 20
 )
 
 // preparationInstructions is the single fixed instruction set for cold
@@ -25,7 +30,13 @@ const (
 // defect against the generic path.
 func preparationInstructions(request BuildRequest) string {
 	return fmt.Sprintf(
-		"Prepare a coding practice environment for %s: %s. Create project files, exercise files, and assessment tests in the working directory, then build and test the project there. Write the setup, build, test, and run commands you used as JSON object fields setup, build, test, and run in .codegym/commands.json, including the runtime base as field base. Place hidden assessment tests that learners must never see under .codegym/hidden/. Use only the supplied tools.",
+		"Prepare a coding practice exercise for %s: %s. "+
+			"In the working directory, create a complete, working project with source files, assessment tests, and a short learner-facing exercise statement in EXERCISE.md. "+
+			"Build and test the project there until every assessment test passes. "+
+			"Write the setup, build, test, and run commands you used as JSON object fields setup, build, test, and run in .codegym/commands.json, including the runtime base as field base. "+
+			"Then write the learner starter: for each source file the learner must complete, write a copy under .codegym/starter/ at the same relative path, with the code the exercise asks the learner to write replaced by minimal stubs that still compile, so the assessment tests fail on the starter. "+
+			"Never edit the working project files while writing the starter. "+
+			"Place hidden assessment tests that learners must never see under .codegym/hidden/. Use only the supplied tools.",
 		request.Technology, request.Objective,
 	)
 }
@@ -41,6 +52,15 @@ type Preparer struct {
 	// defaults; tests and fast stacks never set them.
 	TurnCeiling int
 	Timeout     time.Duration
+	// OutputCapBytes overrides prepareOutputCap when positive.
+	OutputCapBytes int
+}
+
+func (p *Preparer) outputCap() int {
+	if p.OutputCapBytes > 0 {
+		return p.OutputCapBytes
+	}
+	return prepareOutputCap
 }
 
 func (p *Preparer) turnCeiling() int {
@@ -129,8 +149,9 @@ func (p *Preparer) Prepare(ctx context.Context, request BuildRequest) (BuildResu
 			agentruntime.ToolShell,
 			agentruntime.ToolReportProgress,
 		},
-		TurnCeiling: p.turnCeiling(),
-		Deadline:    time.Now().Add(p.timeout()),
+		TurnCeiling:    p.turnCeiling(),
+		Deadline:       time.Now().Add(p.timeout()),
+		OutputCapBytes: p.outputCap(),
 	}
 	runResult, err := p.Runtime.Run(ctx, task)
 	result.Telemetry = mapTelemetry(runResult.Telemetry, time.Since(startedAt))

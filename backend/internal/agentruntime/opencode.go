@@ -265,7 +265,9 @@ func runBoundedProcess(ctx context.Context, command *exec.Cmd, capBytes int) (st
 
 func parseOpenCodeEvents(output string, result *RunResult) {
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	scanner.Buffer(make([]byte, 0, 64<<10), DefaultOutputCap)
+	// One event line can carry a whole tool result, so allow lines as large
+	// as the captured output itself.
+	scanner.Buffer(make([]byte, 0, 64<<10), max(len(output), DefaultOutputCap))
 	var prose strings.Builder
 	for scanner.Scan() {
 		var event struct {

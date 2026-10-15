@@ -152,24 +152,8 @@ type RegistryVerifier struct {
 // Verify judges one builder output. It returns a verifier result, never an
 // error: every failure mode becomes a rejected verdict the registry gates on.
 func (v *RegistryVerifier) Verify(ctx context.Context, build environmentregistry.BuildOutput) environmentverify.VerifierResult {
-	verifierRunID := newVerifierRunID()
 	reject := func(stage, code, message string, repairable bool) environmentverify.VerifierResult {
-		failed := stage
-		return environmentverify.VerifierResult{
-			SchemaVersion: environmentverify.VerifierResultSchemaVersion,
-			VerifierRunID: verifierRunID,
-			BuilderRunID:  build.Builder.BuilderRunID,
-			Verdict:       environmentverify.VerdictRejected,
-			FailedStage:   &failed,
-			Repairable:    repairable,
-			Diagnostics: []environmentverify.Diagnostic{{
-				Severity: "error",
-				Stage:    stage,
-				Code:     code,
-				Message:  message,
-			}},
-			Promotion: environmentverify.Promotion{Allowed: false, Reason: message},
-		}
+		return v.withRejection(build, stage, code, message, repairable)
 	}
 	if v == nil || v.Roots == nil {
 		return reject(environmentverify.StagePlatform, environmentverify.CodePlatformFault, "envintegration: snapshot resolver is required", false)
@@ -207,5 +191,27 @@ func (v *RegistryVerifier) Verify(ctx context.Context, build environmentregistry
 		opts.Assessment = v.Assessment
 		opts.Assessor = v.Assessor
 	}
-	return environmentverify.VerifyWithOptions(ctx, v.Runner, build.Builder, root, verifierRunID, opts)
+	return environmentverify.VerifyWithOptions(ctx, v.Runner, build.Builder, root, newVerifierRunID(), opts)
+}
+
+// withRejection builds a rejected verdict for a failure found before the
+// backend checks run. It is nil-safe so wrappers can reject without a
+// configured verifier.
+func (v *RegistryVerifier) withRejection(build environmentregistry.BuildOutput, stage, code, message string, repairable bool) environmentverify.VerifierResult {
+	failed := stage
+	return environmentverify.VerifierResult{
+		SchemaVersion: environmentverify.VerifierResultSchemaVersion,
+		VerifierRunID: newVerifierRunID(),
+		BuilderRunID:  build.Builder.BuilderRunID,
+		Verdict:       environmentverify.VerdictRejected,
+		FailedStage:   &failed,
+		Repairable:    repairable,
+		Diagnostics: []environmentverify.Diagnostic{{
+			Severity: "error",
+			Stage:    stage,
+			Code:     code,
+			Message:  message,
+		}},
+		Promotion: environmentverify.Promotion{Allowed: false, Reason: message},
+	}
 }

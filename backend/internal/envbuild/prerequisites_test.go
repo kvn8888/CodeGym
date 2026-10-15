@@ -62,6 +62,18 @@ func TestCheckPrerequisitesSpringBootSatisfiedCache(t *testing.T) {
 	}
 }
 
+func TestCheckPrerequisitesUncachedOverride(t *testing.T) {
+	t.Setenv("CODEGYM_MAVEN_REPO", t.TempDir())
+	t.Setenv("CODEGYM_ALLOW_UNCACHED_SETUP", "1")
+	prerequisites, err := CheckPrerequisites(t.Context(), "Spring Boot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing := MissingRequired(prerequisites); missing.ID != "" {
+		t.Fatalf("missing = %#v, override should downgrade the cache row", missing)
+	}
+}
+
 func TestEnvironmentManifestMatchesContractExample(t *testing.T) {
 	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "examples", "environment-contract", "valid-manifest.json"))
 	if err != nil {

@@ -10,9 +10,16 @@ import (
 
 // prerequisiteSpec is one row in the prerequisite table. Technologies are
 // rows, never code branches: supporting a new technology adds a table entry.
+// A row may name a waiver environment variable: when it is set to "1", the
+// row downgrades from required to optional with the allowance recorded in
+// its detail. Waivers are per-row data, so no technology ever earns a
+// special case in the check logic.
 type prerequisiteSpec struct {
 	id       string
 	required bool
+	// waiveEnv names the environment variable whose "1" value downgrades
+	// this row to optional, or empty when the row cannot be waived.
+	waiveEnv string
 	check    func(ctx context.Context) (satisfied bool, detail string)
 }
 
@@ -22,9 +29,10 @@ type prerequisiteSpec struct {
 var prerequisiteTable = map[string][]prerequisiteSpec{
 	"spring-boot": {
 		{
-			id:       "spring-boot-dependency-cache",
-			required: true,
-			check:    checkSpringBootDependencyCache,
+			id:        "spring-boot-dependency-cache",
+			required:  true,
+			waiveEnv:  "CODEGYM_ALLOW_UNCACHED_SETUP",
+			check:     checkSpringBootDependencyCache,
 		},
 	},
 }
@@ -69,6 +77,12 @@ func checkSpringBootDependencyCache(context.Context) (bool, string) {
 // CheckPrerequisites evaluates the table rows for a technology. Unknown
 // technologies carry no requirements. It spends no agent budget and starts no
 // runtime; it only reports what platform pieces exist.
+//
+// CODEGYM_ALLOW_UNCACHED_SETUP=1 downgrades the Spring Boot cache row from
+// required to optional for live cold demonstrations: the operator explicitly
+// accepts download time and cost, and Maven Central reachability (proven by
+// the sandbox reachability probe) becomes the resolution path instead of a
+// pre-baked cache.
 func CheckPrerequisites(ctx context.Context, technology string) ([]Prerequisite, error) {
 	specs, ok := prerequisiteTable[normalizeTechnology(technology)]
 	if !ok {
@@ -77,9 +91,14 @@ func CheckPrerequisites(ctx context.Context, technology string) ([]Prerequisite,
 	prerequisites := make([]Prerequisite, 0, len(specs))
 	for _, spec := range specs {
 		satisfied, detail := spec.check(ctx)
+		required := spec.required
+		if required && spec.waiveEnv != "" && strings.TrimSpace(os.Getenv(spec.waiveEnv)) == "1" {
+			required = false
+			detail += " (" + spec.waiveEnv + "=1 explicitly allowed uncached setup; dependencies will resolve live)"
+		}
 		prerequisites = append(prerequisites, Prerequisite{
 			ID:        spec.id,
-			Required:  spec.required,
+			Required:  required,
 			Satisfied: satisfied,
 			Detail:    detail,
 		})

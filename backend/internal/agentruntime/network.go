@@ -19,6 +19,8 @@ var networkAllowlistHosts = []string{
 	"repo1.maven.org",
 	"proxy.golang.org",
 	"sum.golang.org",
+	"pypi.org",
+	"files.pythonhosted.org",
 }
 
 var loopbackHosts = []string{

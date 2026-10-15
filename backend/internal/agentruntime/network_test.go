@@ -24,6 +24,7 @@ func writeNetworkFixture(t *testing.T, root, name, content string) {
 func TestScanWorkspaceNetworkHostsClean(t *testing.T) {
 	root := t.TempDir()
 	writeNetworkFixture(t, root, "package.json", `{"dependencies":{"express":"https://registry.npmjs.org/express/-/express-5.1.0.tgz"}}`)
+	writeNetworkFixture(t, root, "requirements.txt", `requests # https://files.pythonhosted.org/packages/example`)
 	writeNetworkFixture(t, root, "pom.xml", `<repository><url>https://repo.maven.apache.org/maven2</url></repository>`)
 	writeNetworkFixture(t, root, "app.js", `fetch("http://127.0.0.1:8080/health"); fetch('http://localhost:8080/ready');`)
 	writeNetworkFixture(t, root, "go.mod", "module example\n\ngo 1.25\n")

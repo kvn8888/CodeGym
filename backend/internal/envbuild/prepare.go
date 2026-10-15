@@ -36,6 +36,25 @@ func preparationInstructions(request BuildRequest) string {
 type Preparer struct {
 	Runtime     agentruntime.AgentRuntime
 	Provisioner WorkspaceProvisioner
+	// TurnCeiling and Timeout override the standing runaway guards for live
+	// demonstrations with heavyweight toolchains. Zero values keep the
+	// defaults; tests and fast stacks never set them.
+	TurnCeiling int
+	Timeout     time.Duration
+}
+
+func (p *Preparer) turnCeiling() int {
+	if p.TurnCeiling > 0 {
+		return p.TurnCeiling
+	}
+	return prepareTurnCeiling
+}
+
+func (p *Preparer) timeout() time.Duration {
+	if p.Timeout > 0 {
+		return p.Timeout
+	}
+	return prepareTimeout
 }
 
 func newBuilderRunID() string {
@@ -110,8 +129,8 @@ func (p *Preparer) Prepare(ctx context.Context, request BuildRequest) (BuildResu
 			agentruntime.ToolShell,
 			agentruntime.ToolReportProgress,
 		},
-		TurnCeiling: prepareTurnCeiling,
-		Deadline:    time.Now().Add(prepareTimeout),
+		TurnCeiling: p.turnCeiling(),
+		Deadline:    time.Now().Add(p.timeout()),
 	}
 	runResult, err := p.Runtime.Run(ctx, task)
 	result.Telemetry = mapTelemetry(runResult.Telemetry, time.Since(startedAt))

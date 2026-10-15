@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/envbuild"
@@ -25,11 +26,14 @@ const HostTempWorkspaceProvider = "host-temp-workspace"
 // development and CI. Production resolves references through real snapshots;
 // this mapping keeps the handoff testable without one.
 type SnapshotDirectories struct {
+	mu    sync.Mutex
 	roots map[string]string
 }
 
 // Register records a workspace root under a fresh opaque reference.
 func (s *SnapshotDirectories) Register(root string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.roots == nil {
 		s.roots = map[string]string{}
 	}
@@ -44,7 +48,9 @@ func (s *SnapshotDirectories) Register(root string) string {
 
 // Resolve returns the workspace root for a reference.
 func (s *SnapshotDirectories) Resolve(reference string) (string, error) {
+	s.mu.Lock()
 	root, ok := s.roots[reference]
+	s.mu.Unlock()
 	if !ok || strings.TrimSpace(root) == "" {
 		return "", fmt.Errorf("envintegration: unknown snapshot reference %q", reference)
 	}
@@ -76,6 +82,11 @@ func (b *RegistryBuilder) Build(ctx context.Context, req environmentregistry.Bui
 		return environmentregistry.BuildOutput{}, err
 	}
 	if result.ProposedManifest == nil {
+		for _, diagnostic := range result.Diagnostics {
+			if diagnostic.Severity == "error" {
+				return environmentregistry.BuildOutput{}, fmt.Errorf("envintegration: preparation produced no manifest: %s", diagnostic.Message)
+			}
+		}
 		return environmentregistry.BuildOutput{}, fmt.Errorf("envintegration: preparation produced no manifest")
 	}
 	manifestPath, err := WriteManifest(result.Workspace.Root, result.ProposedManifest)

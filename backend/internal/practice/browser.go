@@ -141,18 +141,28 @@ func (state *sessionState) browserView(simulated bool) BrowserSession {
 		EnvironmentBase: state.environmentBase,
 		NetworkPolicy:   state.networkPolicy,
 		Simulated:       simulated,
-		Instructions:    instructionsFor(state.artifactID),
+		Instructions:    instructionsFor(state.artifactID, state.files),
 		Editable:        editable,
 		Files:           files,
 	}
 }
 
+// ExerciseStatementFile is the learner-editable exercise statement an
+// agent-built environment ships at its workspace root.
+const ExerciseStatementFile = "EXERCISE.md"
+
 // instructionsFor returns the learner-safe instructions for one artifact.
 // Unknown artifacts get a generic safe text; the greet fixture README is
 // never served because it documents hidden tests and solutions.
-func instructionsFor(artifactID string) string {
+func instructionsFor(artifactID string, files map[string]string) string {
 	if artifactID == SampleArtifactID {
 		return SampleGreetInstructions
+	}
+	// Agent-built exercises carry their learner-facing statement as an
+	// editable EXERCISE.md; it lives in the learner workspace, so it is
+	// learner-safe by construction.
+	if statement := strings.TrimSpace(files[ExerciseStatementFile]); statement != "" {
+		return statement
 	}
 	return "Edit the listed files, then use Run to see program output and Submit to run the backend checks. " +
 		"Backend feedback reports only a category and short summary; hidden tests are never shown."

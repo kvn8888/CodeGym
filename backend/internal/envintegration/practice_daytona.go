@@ -132,7 +132,7 @@ func (r *DaytonaPracticeRunner) RunCommand(ctx context.Context, spec practice.Ru
 func ProductionPracticeService(
 	artifacts *RegistryArtifactSource,
 	contents *SnapshotContents,
-	runner *DaytonaPracticeRunner,
+	runner practice.Runner,
 	records practice.RecordStore,
 	saved practice.SavedExerciseStore,
 	commandTimeout time.Duration,

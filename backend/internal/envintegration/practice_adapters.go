@@ -83,6 +83,49 @@ func (s *SnapshotContents) ReadArtifactFile(_ context.Context, snapshotRef, file
 	return string(payload), nil
 }
 
+// CopyTree materializes the sealed snapshot tree into dest, preserving
+// relative paths. Only regular files are copied; symlinks and special
+// files are skipped so a hostile artifact cannot escape the space through
+// the local runner. Callers overlay learner files afterwards, matching
+// the production runner where the snapshot is baked into the sandbox and
+// scoped files arrive as the overlay.
+func (s *SnapshotContents) CopyTree(_ context.Context, snapshotRef, dest string) error {
+	if s == nil || s.Roots == nil {
+		return fmt.Errorf("envintegration: snapshot resolver is required")
+	}
+	root, err := s.Roots(snapshotRef)
+	if err != nil {
+		return err
+	}
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		if entry.IsDir() {
+			return os.MkdirAll(filepath.Join(dest, rel), 0o755)
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		full := filepath.Join(dest, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(full, payload, 0o644)
+	})
+}
+
 // PracticeLocalRunner implements the practice runner with local command
 // execution for development and CI. Each execution ID gets an isolated
 // directory under Root that persists across that operation's steps; the
@@ -90,6 +133,12 @@ func (s *SnapshotContents) ReadArtifactFile(_ context.Context, snapshotRef, file
 type PracticeLocalRunner struct {
 	Root           string
 	MaxOutputBytes int
+	// Snapshots materializes the sealed artifact tree into each fresh
+	// execution space before learner files overlay it. Nil keeps the
+	// legacy single-file behavior (spaces hold scoped files only), which
+	// suffices for exercises with no support files; multi-file projects
+	// such as Spring Boot require it.
+	Snapshots *SnapshotContents
 
 	mu     sync.Mutex
 	spaces map[string]string
@@ -112,6 +161,16 @@ func (r *PracticeLocalRunner) RunCommand(ctx context.Context, spec practice.RunS
 		if err != nil {
 			r.mu.Unlock()
 			return practice.RunOutcome{}, err
+		}
+		if r.Snapshots != nil && strings.TrimSpace(spec.SnapshotRef) != "" {
+			// Copy under the same lock that publishes the space so a
+			// concurrent step for this execution can never observe a
+			// half-materialized workspace.
+			if err := r.Snapshots.CopyTree(ctx, spec.SnapshotRef, dir); err != nil {
+				_ = os.RemoveAll(dir)
+				r.mu.Unlock()
+				return practice.RunOutcome{}, fmt.Errorf("envintegration: materialize practice workspace: %w", err)
+			}
 		}
 		space = dir
 		r.spaces[spec.ExecutionID] = space

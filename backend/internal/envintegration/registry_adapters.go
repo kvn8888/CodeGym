@@ -149,6 +149,30 @@ type RegistryVerifier struct {
 	Timeouts environmentverify.StageTimeouts
 }
 
+// withRejection builds a rejected verifier result for failures detected
+// before backend-controlled checks run (missing assessment review, missing
+// artifact identity). It mirrors the rejection shape in Verify so callers
+// that resolve per-build assessment inputs fail closed through the same
+// verdict contract.
+func (v *RegistryVerifier) withRejection(build environmentregistry.BuildOutput, stage, code, message string, repairable bool) environmentverify.VerifierResult {
+	failed := stage
+	return environmentverify.VerifierResult{
+		SchemaVersion: environmentverify.VerifierResultSchemaVersion,
+		VerifierRunID: newVerifierRunID(),
+		BuilderRunID:  build.Builder.BuilderRunID,
+		Verdict:       environmentverify.VerdictRejected,
+		FailedStage:   &failed,
+		Repairable:    repairable,
+		Diagnostics: []environmentverify.Diagnostic{{
+			Severity: "error",
+			Stage:    stage,
+			Code:     code,
+			Message:  message,
+		}},
+		Promotion: environmentverify.Promotion{Allowed: false, Reason: message},
+	}
+}
+
 // Verify judges one builder output. It returns a verifier result, never an
 // error: every failure mode becomes a rejected verdict the registry gates on.
 func (v *RegistryVerifier) Verify(ctx context.Context, build environmentregistry.BuildOutput) environmentverify.VerifierResult {

@@ -3,9 +3,19 @@ package environmentverify
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+// platformAbs returns an absolute path for the current OS so manifest
+// rejection tests exercise the absolute-path branch everywhere.
+func platformAbs(unixPath, windowsPath string) string {
+	if runtime.GOOS == "windows" {
+		return windowsPath
+	}
+	return unixPath
+}
 
 // manifestPaths collects every declared file path across the six manifest
 // file lists.
@@ -148,7 +158,7 @@ func TestValidateArtifactPathTraversal(t *testing.T) {
 		{
 			name: "absolute protected path",
 			mutate: func(m *Manifest) {
-				m.Workspace.Protected = append(m.Workspace.Protected, "/etc/passwd")
+				m.Workspace.Protected = append(m.Workspace.Protected, platformAbs("/etc/passwd", `C:\etc\passwd`))
 			},
 			wants: []string{"workspace.protected", "absolute paths are not allowed"},
 		},
@@ -176,7 +186,7 @@ func TestValidateArtifactPathTraversal(t *testing.T) {
 		{
 			name: "workspace root absolute",
 			mutate: func(m *Manifest) {
-				m.Workspace.Root = "/opt/exercise"
+				m.Workspace.Root = platformAbs("/opt/exercise", `C:\opt\exercise`)
 			},
 			wants: []string{"workspace.root", "absolute paths are not allowed"},
 		},
@@ -204,7 +214,7 @@ func TestValidateArtifactSymlinkEscape(t *testing.T) {
 	}
 	link := filepath.Join(root, "evil.txt")
 	if err := os.Symlink(secret, link); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Skipf("symlink creation not permitted: %v", err)
 	}
 	manifest.Workspace.LearnerEditable = append(manifest.Workspace.LearnerEditable, "evil.txt")
 	requireArtifactError(t, root, manifest, "workspace.learnerEditable", "symlink escapes the artifact root")
@@ -241,7 +251,7 @@ func TestValidateArtifactSymlinkAliasOverlap(t *testing.T) {
 		t.Fatalf("remove alias placeholder: %v", err)
 	}
 	if err := os.Symlink("real.txt", filepath.Join(root, "alias.txt")); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Skipf("symlink creation not permitted: %v", err)
 	}
 	err := ValidateArtifact(root, manifest)
 	if err == nil {
@@ -309,7 +319,7 @@ func TestValidateArtifactHiddenMustNotBeEditable(t *testing.T) {
 		filepath.FromSlash(isolatedHidden),
 		filepath.Join(isolatedRoot, "editable-link.txt"),
 	); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Skipf("symlink creation not permitted: %v", err)
 	}
 	err = ValidateArtifact(isolatedRoot, isolated)
 	if err == nil {
@@ -375,7 +385,7 @@ func TestValidateArtifactHardLinkOverlap(t *testing.T) {
 		t.Fatalf("remove alias placeholder: %v", err)
 	}
 	if err := os.Link(filepath.Join(root, "real.txt"), filepath.Join(root, "hardalias.txt")); err != nil {
-		t.Fatalf("hard link: %v", err)
+		t.Skipf("hard link creation not permitted: %v", err)
 	}
 	err := ValidateArtifact(root, manifest)
 	if err == nil {
@@ -408,7 +418,7 @@ func TestValidateArtifactHardLinkHiddenEditable(t *testing.T) {
 		filepath.Join(root, filepath.FromSlash(hidden)),
 		filepath.Join(root, "hard-editable.txt"),
 	); err != nil {
-		t.Fatalf("hard link: %v", err)
+		t.Skipf("hard link creation not permitted: %v", err)
 	}
 	err := ValidateArtifact(root, manifest)
 	if err == nil {

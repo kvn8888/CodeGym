@@ -1176,6 +1176,77 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/practice-environments/requests:
+    post:
+      operationId: requestPracticeEnvironment
+      summary: Request an agent-built practice environment for a technology and objective.
+      description: >
+        Starts an async agent preparation run through backend verification
+        into a browser practice session. Returns immediately with the
+        operation; poll the operation until it is ready (with session_id)
+        or failed. Unknown technologies within platform capabilities
+        attempt agent preparation subject to budget limits; missing
+        dependency-cache prerequisites fail fast with a clear prerequisite
+        message instead of burning setup attempts.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestPracticeEnvironmentInput"
+      responses:
+        "202":
+          description: Environment request accepted; poll the operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentOperationEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Environment requests are not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/practice-environments/requests/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getPracticeEnvironmentRequest
+      summary: Poll one environment request until it is ready or failed.
+      description: >
+        Unknown IDs and other owners' operations both answer 404 so
+        identifiers cannot be probed across owners.
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceHeader"
+      responses:
+        "200":
+          description: Current operation state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentOperationEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Environment requests are not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   /api/v1/practice/sessions:
     post:
       operationId: openPracticeSession
@@ -3416,6 +3487,46 @@ components:
         technology:
           type: string
           example: python
+
+    RequestPracticeEnvironmentInput:
+      type: object
+      required: [technology, objective]
+      properties:
+        technology:
+          type: string
+          example: spring-boot
+        objective:
+          type: string
+          example: practice dependency injection with services
+
+    EnvironmentOperation:
+      type: object
+      required: [id, technology, objective, status, stage]
+      properties:
+        id:
+          type: string
+        technology:
+          type: string
+        objective:
+          type: string
+        status:
+          type: string
+          enum: [pending, ready, failed]
+        stage:
+          type: string
+        session_id:
+          type: string
+        error:
+          type: string
+
+    EnvironmentOperationEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: "#/components/schemas/EnvironmentOperation"
+        error:
+          type: "null"
 
     PracticeBrowserFile:
       type: object

@@ -33,6 +33,23 @@ type Config struct {
 	// simulated results are labelled.
 	PracticeSample     bool
 	CORSAllowedOrigins []string
+	// EnvDemo enables the agent-built environment demo pipeline: live agent
+	// builds through backend verification into browser practice. Demo-grade
+	// local snapshots stand in for Daytona snapshots; it must never serve
+	// production learners.
+	EnvDemo bool
+	// EnvDemoFixture selects the pinned deterministic Spring Boot exercise
+	// instead of driving a live model. No model credentials or network
+	// required; the built environment still travels the same verifier and
+	// registry gates.
+	EnvDemoFixture bool
+	// AssessmentInputsFile points at reviewed assessment inputs
+	// (MapAssessmentSource JSON) for the demo pipeline. Empty fails closed.
+	AssessmentInputsFile string
+	// OpenCodeBinary/OpenCodeTemplate locate the opencode agent binary and
+	// runtime template for live demo builds.
+	OpenCodeBinary   string
+	OpenCodeTemplate string
 	MemoryWorker       WorkerConfig
 	// GenAI is the legacy single-provider view (Gemini / CODEGYM_GENAI_*).
 	// Prefer GenAIProviders for multi-provider routing.
@@ -191,6 +208,11 @@ func Load() Config {
 		DaytonaAPIURL:  os.Getenv("DAYTONA_API_URL"),
 		SeedDemo:       boolEnv("CODEGYM_SEED_DEMO", false),
 		PracticeSample: boolEnv("CODEGYM_PRACTICE_SAMPLE", false),
+		EnvDemo:        boolEnv("CODEGYM_ENV_DEMO", false),
+		EnvDemoFixture: boolEnv("CODEGYM_ENV_DEMO_FIXTURE", false),
+		AssessmentInputsFile: strings.TrimSpace(os.Getenv("CODEGYM_ASSESSMENT_INPUTS_FILE")),
+		OpenCodeBinary:       strings.TrimSpace(firstEnv("CODEGYM_OPENCODE_BINARY", "OPENCODE_BINARY")),
+		OpenCodeTemplate:     strings.TrimSpace(firstEnv("CODEGYM_OPENCODE_TEMPLATE", "OPENCODE_TEMPLATE")),
 		CORSAllowedOrigins: csvEnv("CODEGYM_CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",

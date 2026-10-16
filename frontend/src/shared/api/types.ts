@@ -438,3 +438,22 @@ export interface PracticeSavedSummary {
   environment_base: string;
   updated_at: string;
 }
+
+/** Agent-built environments (#192): async build operation view. */
+export type EnvironmentOperationStatus = 'pending' | 'ready' | 'failed';
+
+export interface EnvironmentOperation {
+  id: string;
+  technology: string;
+  objective: string;
+  status: EnvironmentOperationStatus;
+  stage: string;
+  session_id?: string;
+  error?: string;
+}
+
+/** Agent-built environments (#192): request input for a technology and objective. */
+export interface RequestPracticeEnvironmentInput {
+  technology: string;
+  objective: string;
+}

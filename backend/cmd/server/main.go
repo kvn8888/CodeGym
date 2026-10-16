@@ -15,6 +15,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/chat"
 	"github.com/kvn8888/codegym/backend/internal/config"
+	"github.com/kvn8888/codegym/backend/internal/envintegration"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
@@ -280,6 +281,25 @@ func main() {
 		log.Print("CodeGym browser practice disabled; set CODEGYM_PRACTICE_SAMPLE=true in development to enable the simulated sample")
 	}
 
+	// Agent-built environment demo (#192) serves async environment requests
+	// through verification into browser practice. The demo practice service
+	// serves verified artifacts only and takes precedence over the simulated
+	// sample when both are enabled; the sample never fronts demo artifacts.
+	var environmentOperations *envintegration.OperationStore
+	if cfg.EnvDemo {
+		demoOperations, demoPractice, err := configureEnvDemo(cfg, relayStore, workflowService, practiceSavedStore)
+		if err != nil {
+			log.Fatalf("could not configure environment demo: %v", err)
+		}
+		environmentOperations = demoOperations
+		if demoPractice != nil {
+			if practiceService != nil {
+				log.Print("CodeGym browser practice: environment demo overrides the simulated sample (verified artifacts only)")
+			}
+			practiceService = demoPractice
+		}
+	}
+
 	router := api.NewRouter(api.Dependencies{
 		Authenticator:        authenticator,
 		Identity:             identityService,
@@ -293,6 +313,7 @@ func main() {
 		Chat:                 chatService,
 		Workflow:             workflowService,
 		Practice:             practiceService,
+		Environments:         environmentOperations,
 		Generation:           generationOrchestrator,
 		MemoryProfiles:       profileSynthesizer,
 		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import { api, ApiRequestError } from '../../shared/api/client';
 import { useCodeGymAuthState } from '../../shared/auth/authState';
@@ -38,6 +39,10 @@ function friendlyError(err: unknown): string {
 export function PracticePage() {
   const { configured: authConfigured, isAuthenticated } = useCodeGymAuthState();
   const apiAuthReady = !authConfigured || isAuthenticated;
+  const [searchParams] = useSearchParams();
+  // An agent-built environment (#192) lands here with ?session=<id> after
+  // its async build verifies. Without it, the development sample opens.
+  const requestedSessionId = searchParams.get('session')?.trim() || null;
   const [session, setSession] = useState<PracticeBrowserSession | null>(null);
   const [files, setFiles] = useState<Array<{ path: string; content: string }>>([]);
   const [activeFile, setActiveFile] = useState(0);
@@ -96,9 +101,14 @@ export function PracticePage() {
     let cancelled = false;
     const load = async () => {
       try {
-        const opened = await api.post<PracticeBrowserSession>('/practice/sessions', {
-          ...SAMPLE_REQUEST,
-        });
+        const opened =
+          requestedSessionId !== null
+            ? await api.get<PracticeBrowserSession>(
+                `/practice/sessions/${encodeURIComponent(requestedSessionId)}`,
+              )
+            : await api.post<PracticeBrowserSession>('/practice/sessions', {
+                ...SAMPLE_REQUEST,
+              });
         if (cancelled) return;
         sessionIdRef.current = opened.session_id;
         setSession(opened);
@@ -118,7 +128,7 @@ export function PracticePage() {
     return () => {
       cancelled = true;
     };
-  }, [apiAuthReady, refreshSavedList]);
+  }, [apiAuthReady, refreshSavedList, requestedSessionId]);
 
   const handleCodeChange = useCallback(
     (value: string | undefined) => {

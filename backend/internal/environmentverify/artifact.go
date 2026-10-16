@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // Path-resolution convention (proposed — the shared contract does not define
@@ -172,24 +171,22 @@ func validateArtifactContents(root string, manifest Manifest) (string, error) {
 }
 
 // resolvedFile pairs a manifest entry with its symlink-resolved absolute
-// path and, where the platform exposes it, its filesystem identity. The
-// declared form is kept so errors can quote what the builder wrote while
-// comparisons use identity.
+// path and its filesystem identity. The declared form is kept so errors can
+// quote what the builder wrote while comparisons use identity.
 type resolvedFile struct {
 	declared  string
 	canonical string
-	dev       uint64
-	ino       uint64
-	hasID     bool
+	info      os.FileInfo
 }
 
 // sameFile reports whether two resolved entries are the same file: equal
-// resolved paths, or equal device-plus-inode identity (hard-link aliases).
+// resolved paths, or equal filesystem identity (hard-link aliases).
+// os.SameFile is device-plus-inode on Unix and volume-plus-index on Windows.
 func sameFile(a, b resolvedFile) bool {
 	if a.canonical == b.canonical {
 		return true
 	}
-	return a.hasID && b.hasID && a.dev == b.dev && a.ino == b.ino
+	return a.info != nil && b.info != nil && os.SameFile(a.info, b.info)
 }
 
 func findSameFile(haystack []resolvedFile, needle resolvedFile) (resolvedFile, bool) {
@@ -201,15 +198,7 @@ func findSameFile(haystack []resolvedFile, needle resolvedFile) (resolvedFile, b
 	return resolvedFile{}, false
 }
 
-// fileIdentity extracts device-plus-inode identity where supported.
-func fileIdentity(info os.FileInfo) (dev, ino uint64, ok bool) {
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, 0, false
-	}
-	return uint64(stat.Dev), stat.Ino, true
-}
-
+// resolveWorkspaceDir joins the manifest-declared workspace root to the
 func resolveWorkspaceDir(root, raw string) (string, error) {
 	field := "workspace.root"
 	rel := filepath.FromSlash(raw)
@@ -292,8 +281,7 @@ func resolveFileList(root, workspaceDir, field string, entries []string) ([]reso
 			return nil, &ArtifactError{Code: CodeArtifactTypeMismatch, Field: field, Entry: entry,
 				msg: fmt.Sprintf("environment artifact: %s entry %q is not a regular file", field, entry)}
 		}
-		dev, ino, hasID := fileIdentity(info)
-		resolved = append(resolved, resolvedFile{declared: entry, canonical: canonical, dev: dev, ino: ino, hasID: hasID})
+		resolved = append(resolved, resolvedFile{declared: entry, canonical: canonical, info: info})
 	}
 	return resolved, nil
 }

@@ -12,9 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/procgroup"
 )
 
 func TestPurposeBuiltRuntimeFakeRelayRepairsBuild(t *testing.T) {
@@ -355,8 +356,7 @@ func assertRecordedProcessGone(t *testing.T, path string) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for {
-		err = syscall.Kill(pid, 0)
-		if errors.Is(err, syscall.ESRCH) {
+		if !procgroup.Alive(pid) {
 			return
 		}
 		if time.Now().After(deadline) {

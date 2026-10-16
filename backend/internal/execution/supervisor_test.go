@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,9 @@ func TestSupervisorScriptDeathModes(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 is required to test the embedded supervisor")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("supervisor.py uses the Unix-only resource module for memory limits")
 	}
 
 	tests := []struct {
@@ -174,6 +178,9 @@ func TestSupervisorAlwaysWritesCrashResultOnConfigurationError(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 is required to test the embedded supervisor")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("supervisor.py uses the Unix-only resource module for memory limits")
 	}
 	root := t.TempDir()
 	supervisorPath := filepath.Join(root, "supervisor.py")

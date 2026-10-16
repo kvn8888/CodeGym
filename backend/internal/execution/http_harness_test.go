@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,9 +10,10 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/procgroup"
 )
 
 type localHTTPHarnessConfig struct {
@@ -203,6 +203,9 @@ func TestHTTPHarnessPrecompiledMatchAndMismatchHaveIdenticalVerdicts(t *testing.
 	if err != nil {
 		t.Skip("go is required for the precompiled HTTP harness test")
 	}
+	if !harnessSourcesCompile(t, GoHTTPHarnessSource, GoComparatorSource) {
+		t.Skip("HTTP harness template requires Unix process groups (syscall.Setpgid)")
+	}
 	snapshotDir := t.TempDir()
 	harnessPath := filepath.Join(snapshotDir, "http_harness.go")
 	comparatorPath := filepath.Join(snapshotDir, "http_comparator.go")
@@ -270,6 +273,28 @@ func runLocalHTTPHarness(t *testing.T, serverSource string, config localHTTPHarn
 	return verdict, progress, root
 }
 
+// harnessSourcesCompile reports whether the server-owned harness and comparator
+// build with the local Go toolchain. The template manages learner-server
+// process groups through syscall.Setpgid, which is only available on Unix.
+func harnessSourcesCompile(t *testing.T, sources ...string) bool {
+	t.Helper()
+	goBinary, err := exec.LookPath("go")
+	if err != nil {
+		return false
+	}
+	dir := t.TempDir()
+	paths := make([]string, 0, len(sources))
+	for i, source := range sources {
+		path := filepath.Join(dir, fmt.Sprintf("harness_%d.go", i))
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			return false
+		}
+		paths = append(paths, path)
+	}
+	command := exec.Command(goBinary, append([]string{"build", "-o", filepath.Join(dir, "harness")}, paths...)...)
+	return command.Run() == nil
+}
+
 func runLocalHTTPHarnessWithEnvironment(
 	t *testing.T,
 	serverSource string,
@@ -282,6 +307,9 @@ func runLocalHTTPHarnessWithEnvironment(
 	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go is required for the local HTTP harness test")
+	}
+	if !harnessSourcesCompile(t, GoHTTPHarnessSource, GoComparatorSource) {
+		t.Skip("HTTP harness template requires Unix process groups (syscall.Setpgid)")
 	}
 	root := t.TempDir()
 	protocolDir := filepath.Join(root, ".codegym")
@@ -341,12 +369,11 @@ func assertRecordedProcessesStopped(t *testing.T, path string) {
 		}
 		deadline := time.Now().Add(2 * time.Second)
 		for {
-			err = syscall.Kill(pid, 0)
-			if errors.Is(err, syscall.ESRCH) {
+			if !procgroup.Alive(pid) {
 				break
 			}
 			if time.Now().After(deadline) {
-				t.Fatalf("process %d still exists after harness cleanup (kill check: %v)", pid, err)
+				t.Fatalf("process %d still exists after harness cleanup", pid)
 			}
 			time.Sleep(20 * time.Millisecond)
 		}

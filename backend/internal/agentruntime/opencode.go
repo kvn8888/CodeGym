@@ -11,8 +11,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/procgroup"
 )
 
 const OpenCodePinnedVersion = "1.18.11"
@@ -44,7 +45,7 @@ func NewOpenCodeRuntime(config OpenCodeConfig) (*OpenCodeRuntime, error) {
 		config.RuntimeTemplate = filepath.Join(filepath.Dir(config.BinaryPath), "home-template", ".config", "opencode")
 	}
 	if config.TempRoot == "" {
-		config.TempRoot = "/tmp"
+		config.TempRoot = os.TempDir()
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -230,23 +231,19 @@ func openCodeToolName(tool Tool) string {
 func runBoundedProcess(ctx context.Context, command *exec.Cmd, capBytes int) (string, int, bool, error) {
 	killProcessGroup := func() {
 		if command.Process != nil {
-			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+			_ = procgroup.Kill(command)
 		}
 	}
 	buffer := newCappedBuffer(capBytes, killProcessGroup)
 	command.Stdout = buffer
 	command.Stderr = buffer
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	procgroup.Setup(command)
 	command.WaitDelay = 2 * time.Second
 	command.Cancel = func() error {
 		if command.Process == nil {
 			return nil
 		}
-		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
-			return os.ErrProcessDone
-		}
-		return err
+		return procgroup.Kill(command)
 	}
 	commandErr := command.Run()
 	exitCode := 0

@@ -499,13 +499,64 @@ func checkVerified(verified environmentverify.VerifierResult) error {
 		if verified.FailedStage != nil {
 			stage = *verified.FailedStage
 		}
+		// The failed stage and first diagnostic ride in the human-readable
+		// reason, not just structured details: operators and learners must
+		// be able to distinguish manifest, setup, build, test, validation,
+		// timeout, and platform failures without backend log access.
 		return &PromotionRefusal{
-			Reason:     "verifier result is not verified",
+			Reason:     fmt.Sprintf("verifier result is not verified (failed stage %q: %s)", stage, summarizeVerifierDiagnostics(verified)),
 			Repairable: true,
 			Details:    map[string]any{"verdict": verified.Verdict, "failedStage": stage, "builderRunId": verified.BuilderRunID},
 		}
 	}
 	return nil
+}
+
+// summarizeVerifierDiagnostics condenses verifier diagnostics to the first
+// error diagnostic's code, message, and capped command output for
+// human-readable refusal reasons.
+func summarizeVerifierDiagnostics(verified environmentverify.VerifierResult) string {
+	for _, diagnostic := range verified.Diagnostics {
+		if strings.TrimSpace(diagnostic.Severity) == "error" {
+			code := strings.TrimSpace(diagnostic.Code)
+			message := strings.TrimSpace(diagnostic.Message)
+			summary := ""
+			switch {
+			case code != "" && message != "":
+				summary = code + ": " + message
+			case message != "":
+				summary = message
+			case code != "":
+				summary = code
+			}
+			if output := diagnosticOutputExcerpt(diagnostic.Details); output != "" {
+				summary += " | output: " + output
+			}
+			return summary
+		}
+	}
+	return "no diagnostic recorded"
+}
+
+// diagnosticOutputExcerpt pulls a capped command-output excerpt out of
+// diagnostic details. Verifier stage rejections record the decisive output
+// under the "output" key; surfacing a prefix keeps failed builds debuggable
+// without backend log access.
+func diagnosticOutputExcerpt(details any) string {
+	fields, ok := details.(map[string]any)
+	if !ok {
+		return ""
+	}
+	raw, ok := fields["output"].(string)
+	if !ok {
+		return ""
+	}
+	const maxExcerpt = 600
+	output := strings.TrimSpace(raw)
+	if len(output) > maxExcerpt {
+		return output[:maxExcerpt] + "…[truncated]"
+	}
+	return output
 }
 
 // checkRegistryCtx fails registry work on a dead backend context.

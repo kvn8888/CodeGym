@@ -240,7 +240,7 @@ func DraftManifest(request BuildRequest, root string) (*EnvironmentManifest, []D
 	manifest := &EnvironmentManifest{
 		SchemaVersion: "environment.manifest.v1",
 		Artifact: ManifestArtifact{
-			ID:         technology + "-" + time.Now().Format("20060102"),
+			ID:         technology + "-" + time.Now().UTC().Format("20060102"),
 			Technology: technology,
 			Version:    "0.1.0",
 		},

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { motion, useReducedMotion } from 'motion/react';
 import {
+  Boxes,
   Brain,
   FlaskConical,
   History,
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/generate', label: 'New', icon: Plus },
   { path: '/practice', label: 'Practice', icon: FlaskConical },
+  { path: '/environments', label: 'Environments', icon: Boxes },
   {
     path: '/',
     label: 'History',

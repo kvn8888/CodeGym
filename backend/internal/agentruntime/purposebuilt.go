@@ -42,7 +42,7 @@ func (r *PurposeBuiltRuntime) Run(ctx context.Context, task TaskSpec) (result Ru
 	if _, err := os.Stat(task.WorkingDirectory); err != nil {
 		return result, fmt.Errorf("agentruntime: inspect working directory: %w", err)
 	}
-	runtimeRoot, err := os.MkdirTemp("/tmp", "codegym-purpose-runtime-")
+	runtimeRoot, err := os.MkdirTemp("", "codegym-purpose-runtime-")
 	if err != nil {
 		return result, fmt.Errorf("agentruntime: create isolated purpose-built home: %w", err)
 	}
@@ -55,7 +55,7 @@ func (r *PurposeBuiltRuntime) Run(ctx context.Context, task TaskSpec) (result Ru
 	if err := os.Mkdir(home, 0o700); err != nil {
 		return result, fmt.Errorf("agentruntime: create purpose-built home: %w", err)
 	}
-	shellEnvironment := safeRuntimeEnvironment(home, "/tmp")
+	shellEnvironment := safeRuntimeEnvironment(home, os.TempDir())
 
 	runContext, cancel := context.WithDeadline(ctx, task.Deadline)
 	defer cancel()

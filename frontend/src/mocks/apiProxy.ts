@@ -71,6 +71,19 @@ interface MockPracticeSaved {
 const mockPracticeSessions = new Map<string, MockPracticeSession>();
 const mockPracticeSaved = new Map<string, MockPracticeSaved>();
 
+interface MockEnvironmentOperation {
+  id: string;
+  technology: string;
+  objective: string;
+  status: 'pending' | 'ready' | 'failed';
+  stage: string;
+  session_id?: string;
+  error?: string;
+  polls: number;
+}
+
+const mockEnvironmentOperations = new Map<string, MockEnvironmentOperation>();
+
 const mockIntakeQuestions = [
   {
     id: 'q1',
@@ -774,6 +787,61 @@ export async function mockApiFetch(
       provider: 'mock',
       model: 'mock-evaluator',
     });
+  }
+
+  // Agent-built environments (#192): async mock that goes ready after one
+  // poll with a sample-backed session, or fails fast for blank input like
+  // the backend's invalid-request path.
+  if (method === 'POST' && path === '/practice-environments/requests') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as { technology?: string; objective?: string };
+    if (!body.technology?.trim() || !body.objective?.trim()) {
+      return error('invalid_request', 'technology and objective are required', 400);
+    }
+    const operation: MockEnvironmentOperation = {
+      id: `envop_mock_${Date.now()}`,
+      technology: body.technology.trim(),
+      objective: body.objective.trim(),
+      status: 'pending',
+      stage: 'resolving',
+      polls: 0,
+    };
+    mockEnvironmentOperations.set(operation.id, operation);
+    const { polls: _requestPolls, ...requestView } = operation;
+    void _requestPolls;
+    return json(requestView, { status: 202 });
+  }
+
+  const environmentStatusMatch = path.match(/^\/practice-environments\/requests\/([^/]+)$/);
+  if (method === 'GET' && environmentStatusMatch) {
+    const operation = mockEnvironmentOperations.get(environmentStatusMatch[1]);
+    if (!operation) return error('operation_not_found', 'No such environment request.', 404);
+    operation.polls += 1;
+    if (operation.polls >= 2 && operation.status === 'pending') {
+      const sessionId = `practice_sess_mock_env_${Date.now()}`;
+      mockPracticeSessions.set(sessionId, {
+        session_id: sessionId,
+        owner: mockUserProfile.user_id,
+        workspace_id: mockUserProfile.default_workspace_id,
+        artifact_id: `${operation.technology}-basics-mock`,
+        artifact_version: '0.1.0',
+        technology: operation.technology,
+        environment_base: `${operation.technology}-mock`,
+        network_policy: 'block-all',
+        simulated: false,
+        instructions: `Mock verified exercise for ${operation.objective}.`,
+        editable: ['solution.py'],
+        files: [{ path: 'solution.py', content: '# mock verified exercise\n' }],
+      });
+      operation.status = 'ready';
+      operation.stage = 'ready';
+      operation.session_id = sessionId;
+    } else if (operation.status === 'pending') {
+      operation.stage = 'resolving';
+    }
+    const { polls: _statusPolls, ...statusView } = operation;
+    void _statusPolls;
+    return json(statusView);
   }
 
   // Browser practice (#191): development sample with simulated safe results.

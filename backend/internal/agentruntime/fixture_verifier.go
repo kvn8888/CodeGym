@@ -11,10 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/procgroup"
 )
 
 type FixtureVerifier struct {
@@ -76,10 +78,13 @@ func (v FixtureVerifier) build(ctx context.Context, workingDirectory, verificati
 	if err := os.MkdirAll(verificationHome, 0o700); err != nil {
 		return fixtureLaunch{}, err
 	}
-	safeEnvironment := safeRuntimeEnvironment(verificationHome, "/tmp")
+	safeEnvironment := safeRuntimeEnvironment(verificationHome, os.TempDir())
 	switch v.Fixture.ID {
 	case "go-net-http":
 		binaryPath := filepath.Join(verificationRoot, "fixture-server")
+		if runtime.GOOS == "windows" {
+			binaryPath += ".exe"
+		}
 		command := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, ".")
 		command.Dir = workingDirectory
 		command.Env = append(safeEnvironment, "GOCACHE="+filepath.Join(verificationRoot, "go-cache"), "GOPROXY=off", "GOSUMDB=off")
@@ -149,7 +154,7 @@ func (v FixtureVerifier) bootAndProbe(
 	defer cancel()
 	command := exec.CommandContext(bootContext, launch.command, launch.args...)
 	command.Dir = workingDirectory
-	command.Env = append(safeRuntimeEnvironment(filepath.Join(verificationRoot, "home"), "/tmp"), launch.env...)
+	command.Env = append(safeRuntimeEnvironment(filepath.Join(verificationRoot, "home"), os.TempDir()), launch.env...)
 	command.Env = append(command.Env, "PORT="+strconv.Itoa(port), "CODEGYM_SYNTHETIC_SECRET="+BenchmarkCanary)
 	if networkBlocked {
 		command.Env = append(command.Env,
@@ -160,17 +165,13 @@ func (v FixtureVerifier) bootAndProbe(
 	buffer := newCappedBuffer(DefaultOutputCap, cancel)
 	command.Stdout = buffer
 	command.Stderr = buffer
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	procgroup.Setup(command)
 	command.WaitDelay = 250 * time.Millisecond
 	command.Cancel = func() error {
 		if command.Process == nil {
 			return nil
 		}
-		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-		if errors.Is(err, syscall.ESRCH) {
-			return os.ErrProcessDone
-		}
-		return err
+		return procgroup.Kill(command)
 	}
 	if err := command.Start(); err != nil {
 		return fmt.Sprintf("start server: %v", err)

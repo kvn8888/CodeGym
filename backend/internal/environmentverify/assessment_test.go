@@ -666,7 +666,7 @@ func TestCopyWorkspaceTreeRejectsOutsideFileSymlink(t *testing.T) {
 	outside := t.TempDir()
 	writeCopyFixture(t, filepath.Join(outside, "secret.txt"), "outside-secret")
 	if err := os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(src, "evil.py")); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Skipf("symlink creation not permitted: %v", err)
 	}
 	dst := filepath.Join(t.TempDir(), "dst")
 	if err := os.MkdirAll(dst, 0o755); err != nil {
@@ -688,7 +688,7 @@ func TestCopyWorkspaceTreeRejectsOutsideDirSymlink(t *testing.T) {
 	outside := t.TempDir()
 	writeCopyFixture(t, filepath.Join(outside, "sub", "secret.txt"), "outside-secret")
 	if err := os.Symlink(filepath.Join(outside, "sub"), filepath.Join(src, "linked")); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Skipf("symlink creation not permitted: %v", err)
 	}
 	dst := filepath.Join(t.TempDir(), "dst")
 	if err := os.MkdirAll(dst, 0o755); err != nil {
@@ -711,7 +711,7 @@ func TestCopyWorkspaceTreeRejectsDirectoryCycle(t *testing.T) {
 	// A directory symlink pointing back at an ancestor must fail closed
 	// instead of recursing forever.
 	if err := os.Symlink(src, filepath.Join(src, "sub", "loop")); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Skipf("symlink creation not permitted: %v", err)
 	}
 	dst := filepath.Join(t.TempDir(), "dst")
 	if err := os.MkdirAll(dst, 0o755); err != nil {
@@ -728,7 +728,7 @@ func TestCopyWorkspaceTreeMaterializesInternalSymlink(t *testing.T) {
 	src := t.TempDir()
 	writeCopyFixture(t, filepath.Join(src, "solution.py"), "print('ok')")
 	if err := os.Symlink(filepath.Join(src, "solution.py"), filepath.Join(src, "alias.py")); err != nil {
-		t.Fatalf("symlink: %v", err)
+		t.Skipf("symlink creation not permitted: %v", err)
 	}
 	dst := filepath.Join(t.TempDir(), "dst")
 	if err := os.MkdirAll(dst, 0o755); err != nil {

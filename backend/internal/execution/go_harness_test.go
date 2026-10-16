@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,9 @@ func main() {
 func TestGoHarnessProtocolAndCompileError(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 is required for the local supervisor test")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("supervisor.py uses the Unix-only resource module for memory limits")
 	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go is required for the Go harness test")

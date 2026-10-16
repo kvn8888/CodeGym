@@ -314,6 +314,17 @@ func (s *Service) execute(ctx context.Context, snap sessionSnapshot, steps []sta
 			base.Output = runOutput
 			return s.finished(base, category, summary, "", 0), nil
 		}
+		// A passing test command can still carry failing assertions: hidden
+		// tests speak the CODEGYM_TEST protocol and always exit 0 so the
+		// as-built workspace passes its own checks during verification. The
+		// backend evaluates the same protocol lines on Submit and reports
+		// the intended failure instead of a false pass. Only the parsed
+		// verdict tokens surface; hidden-test source never does.
+		if step.stage == environmentverify.StageTest {
+			if failed := environmentverify.FailedOutcomes(environmentverify.ParseTestOutcomes(outcome.Output)); len(failed) > 0 {
+				return s.finished(base, CategoryTestFailure, testFailureSummary(failed), "", 0), nil
+			}
+		}
 		if step.stage == environmentverify.StageRun {
 			var truncated bool
 			runOutput, truncated = s.project(snap.redact, outcome.Output)
@@ -381,6 +392,29 @@ func scrub(redact []string, output string) string {
 		output = strings.ReplaceAll(output, token, "[redacted]")
 	}
 	return reservedPathPattern.ReplaceAllString(output, "[redacted]")
+}
+
+// testFailureSummary reports the intended failure from parsed protocol
+// verdicts: test IDs plus the coded reason with expected/actual tokens.
+// Hidden-test source, paths, and reference material never surface.
+func testFailureSummary(failed []environmentverify.TestOutcome) string {
+	parts := make([]string, 0, len(failed))
+	for _, outcome := range failed {
+		detail := strings.TrimSpace(outcome.TestID)
+		if outcome.Assertion != nil {
+			code := strings.TrimSpace(outcome.Assertion.Code)
+			expected := strings.TrimSpace(outcome.Assertion.Expected)
+			actual := strings.TrimSpace(outcome.Assertion.Actual)
+			switch {
+			case code != "" && expected != "" && actual != "":
+				detail += fmt.Sprintf(" (%s: expected %q, got %q)", code, expected, actual)
+			case code != "":
+				detail += fmt.Sprintf(" (%s)", code)
+			}
+		}
+		parts = append(parts, detail)
+	}
+	return "Tests failed: " + strings.Join(parts, "; ") + "."
 }
 
 // finished completes a terminal non-pass result, keeping recorded steps.

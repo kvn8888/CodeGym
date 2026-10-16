@@ -1,0 +1,21 @@
+{
+  "technologies": {
+    "spring-boot": {
+      "correctSolution": {
+        "src/main/java/dev/codegym/demo/HealthController.java": "package dev.codegym.demo;\n\nimport java.util.Map;\nimport org.springframework.web.bind.annotation.GetMapping;\nimport org.springframework.web.bind.annotation.RestController;\n\n@RestController\npublic class HealthController {\n    @GetMapping(\"/health\")\n    public Map<String, String> health() {\n        return Map.of(\"status\", \"ok\", \"stack\", \"spring\");\n    }\n}\n"
+      },
+      "wrongSolution": {
+        "src/main/java/dev/codegym/demo/HealthController.java": "package dev.codegym.demo;\n\nimport java.util.Map;\nimport org.springframework.web.bind.annotation.GetMapping;\nimport org.springframework.web.bind.annotation.RestController;\n\n@RestController\npublic class HealthController {\n    @GetMapping(\"/health\")\n    public Map<String, String> health() {\n        // TODO: GET /health must return JSON with status=ok and stack=spring.\n        return Map.of(\"status\", \"todo\", \"stack\", \"spring\");\n    }\n}\n"
+      },
+      "expectedFailure": {
+        "testId": "t1",
+        "code": "WRONG_VALUE",
+        "expected": "ok",
+        "actual": "todo",
+        "reason": "stub controller returns status=todo instead of status=ok"
+      },
+      "reviewedBy": "RECONSTRUCTED-PLACEHOLDER-NEEDS-REVIEW",
+      "reviewedReference": "RECONSTRUCTED-NEEDS-REVIEW"
+    }
+  }
+}

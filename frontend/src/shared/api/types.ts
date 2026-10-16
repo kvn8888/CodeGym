@@ -365,6 +365,17 @@ export interface GenAICostAggregate {
   }>;
 }
 
+/** Agent-built environment request (#192): progress toward a practice session. */
+export interface PracticeEnvironmentRequest {
+  id: string;
+  technology: string;
+  objective: string;
+  status: 'pending' | 'ready' | 'failed';
+  stage: string;
+  session_id?: string;
+  error?: string;
+}
+
 /** Browser practice (#191): one learner-visible file. */
 export interface PracticeBrowserFile {
   path: string;

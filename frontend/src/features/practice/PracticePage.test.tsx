@@ -121,6 +121,39 @@ function deferred<T>() {
 }
 
 describe("PracticePage", () => {
+  it("opens an existing session from ?session= on its first code file", async () => {
+    const requests: RecordedRequest[] = [];
+    stubPracticeFetch(async (url, method, body) => {
+      requests.push({ url, method, body });
+      if (url.endsWith("/practice/sessions/practice_sess_built") && method === "GET")
+        return apiResponse({
+          ...sessionView,
+          session_id: "practice_sess_built",
+          technology: "spring-boot",
+          simulated: false,
+          instructions: "Complete WelcomeService with constructor injection.",
+          editable: ["EXERCISE.md", "src/WelcomeService.java"],
+          files: [
+            { path: "EXERCISE.md", content: "# Exercise" },
+            { path: "src/WelcomeService.java", content: "class WelcomeService {}" },
+          ],
+        });
+      if (url.endsWith("/practice/saved") && method === "GET")
+        return apiResponse([]);
+      throw new Error(`unexpected ${method} ${url}`);
+    });
+
+    renderWithProviders(<PracticePage />, {
+      initialEntries: ["/practice?session=practice_sess_built"],
+    });
+    expect(
+      await screen.findByText("Complete WelcomeService with constructor injection."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("practice-editor")).toHaveValue("class WelcomeService {}");
+    expect(screen.queryByText("SIMULATED · DEVELOPMENT ONLY")).not.toBeInTheDocument();
+    expect(requests.some((r) => r.method === "POST" && r.url.endsWith("/practice/sessions"))).toBe(false);
+  });
+
   it("opens the pinned sample with safe instructions and permitted files", async () => {
     const requests: RecordedRequest[] = [];
     stubPracticeFetch(async (url, method, body) => {

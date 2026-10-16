@@ -63,6 +63,23 @@ the shared secret contract. Production Render/Vercel use a single
 `DOPPLER_TOKEN` and `doppler run` — app secrets are not stored in those
 dashboards.
 
+## Agent-built practice environments (#192 demo)
+
+`./scripts/dev-env-demo.sh` starts the API with `CODEGYM_ENV_DEMO=true` under
+Doppler. In the frontend, **Build** (`/practice/new`) takes a technology and
+objective. The agent builds the project and a learner starter on this host,
+the verifier runs setup/build/test and checks that the starter fails while
+the reference passes, the registry promotes it, and the practice page opens
+on the starter. A cold Spring Boot build takes about two minutes; requesting
+the same technology again reuses the promoted environment in seconds.
+Restart the backend for a fresh cold start: the registry is in memory.
+
+Demo-mode verdicts are labelled `unreviewed: agent reference solution (demo
+mode)` because no human reviewed the generated solution. Builds, promotion
+checks, and Run/Submit execute on the host, so network policy is not
+enforced; never enable this outside development. The frontend must run with
+`VITE_USE_MOCK_API=false`.
+
 ## Browser practice sample (durable saves)
 
 `/practice` serves the development-only simulated exercise

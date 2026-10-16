@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kvn8888/codegym/backend/internal/envbuild"
 	"github.com/kvn8888/codegym/backend/internal/environmentregistry"
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
 	"github.com/kvn8888/codegym/backend/internal/practice"
@@ -129,7 +130,9 @@ func (p *ProductionPipeline) Run(ctx context.Context, operation *EnvironmentOper
 	}
 	report("looking for a verified environment")
 	resolution, err := p.Registry.Resolve(withStageReporter(ctx, report), environmentregistry.ResolveRequest{
-		Technology: operation.Technology,
+		// The builder records the canonical key; resolving by the display
+		// name made every fresh build an output mismatch.
+		Technology: envbuild.NormalizeTechnology(operation.Technology),
 		Objective:  operation.Objective,
 		Owner:      operation.Owner,
 	})

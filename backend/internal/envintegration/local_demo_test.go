@@ -67,7 +67,7 @@ func waitForOperation(t *testing.T, store *OperationStore, id string) *Environme
 
 func TestLocalDemoServesStarterAndAssessesSubmissions(t *testing.T) {
 	demo := newTestLocalDemo(t, starterFixtureTurns())
-	started, err := demo.Operations.Start("owner-1", "workspace-1", "shell", "print a greeting")
+	started, err := demo.Operations.Start("owner-1", "workspace-1", "Shell", "print a greeting")
 	if err != nil {
 		t.Fatal(err)
 	}

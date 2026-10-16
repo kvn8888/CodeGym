@@ -7,7 +7,8 @@
 # machine, verifies it, promotes it, and opens a practice session.
 #
 # Requirements on this machine:
-#   - Go, plus Java 17+ and Maven on PATH for Spring Boot builds.
+#   - Go, plus JDK 21 and Maven on PATH for Spring Boot builds (the agent
+#     picks the Java version per project; builds have targeted 17 and 21).
 #   - The pinned opencode binary (fetched below on first run).
 #
 # The registry is in memory: restarting this script gives a cold start, so

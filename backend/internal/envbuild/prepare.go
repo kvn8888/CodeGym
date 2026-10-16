@@ -34,9 +34,11 @@ func preparationInstructions(request BuildRequest) string {
 			"In the working directory, create a complete, working project with source files, assessment tests, and a short learner-facing exercise statement in EXERCISE.md. "+
 			"Build and test the project there until every assessment test passes. "+
 			"Write the setup, build, test, and run commands you used as JSON object fields setup, build, test, and run in .codegym/commands.json, including the runtime base as field base; the run command must finish on its own rather than start a long-running server. "+
+			"The run command must succeed in a fresh copy of the project with no prior command having run: if launching needs built artifacts, the run command must build them first instead of assuming they exist. "+
+			"EXERCISE.md must state the complete contract the hidden tests grade: every class, interface, and method signature the learner must implement or preserve, and the exact expected behavior, so a learner who implements exactly what is written passes. "+
 			"Then write the learner starter: for each source file the learner must complete, write a copy under .codegym/starter/ at the same relative path, with the code the exercise asks the learner to write replaced by minimal stubs that still compile, so the assessment tests fail on the starter. "+
 			"Never edit the working project files while writing the starter. "+
-			"Place hidden assessment tests that learners must never see under .codegym/hidden/. Use only the supplied tools.",
+			"Place hidden assessment tests that learners must never see under .codegym/hidden/. Each hidden test must print one verdict line per assertion to stdout in the form CODEGYM_TEST <id> PASS on success or CODEGYM_TEST <id> FAIL code=<code> expected=<expected> actual=<actual> on failure, with single whitespace-free tokens, in addition to failing the test command on a wrong solution so the verdict is visible both in the exit code and in the output. Use only the supplied tools.",
 		request.Technology, request.Objective,
 	)
 }

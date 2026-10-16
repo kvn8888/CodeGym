@@ -2,14 +2,12 @@ package envintegration
 
 import (
 	"context"
-	"errors"
-	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
+	"github.com/kvn8888/codegym/backend/internal/procgroup"
 )
 
 // DefaultLocalOutputCap bounds captured stage output for local verification.
@@ -62,17 +60,13 @@ func runLocalStageCommand(ctx context.Context, command, workDir string, capBytes
 	if strings.TrimSpace(workDir) != "" {
 		cmd.Dir = workDir
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	procgroup.Setup(cmd)
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
-			return os.ErrProcessDone
-		}
-		return err
+		return procgroup.Kill(cmd)
 	}
 	output, err := cmd.CombinedOutput()
 	if capBytes > 0 && len(output) > capBytes {

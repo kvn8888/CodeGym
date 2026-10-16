@@ -27,7 +27,21 @@ backend_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 repo_dir="$(dirname -- "${backend_dir}")"
 cd "${backend_dir}"
 
-if [[ ! -x "${repo_dir}/spikes/opencode/.bin/opencode" ]]; then
+# The pipeline shells out to Windows java.exe with POSIX-style classpaths,
+# which requires Git Bash's automatic path conversion. A globally exported
+# MSYS_NO_PATHCONV=1 (common for Docker work) makes java receive the literal
+# POSIX path and die with ClassNotFoundException for the Maven launcher.
+# Unset it for the server process tree only; the interactive terminal keeps
+# its setting.
+unset MSYS_NO_PATHCONV
+unset MSYS2_ARG_CONV_EXCL
+
+# Pinned opencode is fetched on first run, unless the caller already points
+# at a working binary (e.g. Windows, where the pinned asset matrix has no
+# entry yet and chmod cannot set the exec bit on noacl mounts). A native
+# opencode.exe next to the pinned path also satisfies the gate; Windows
+# resolves it when the backend invokes the extensionless path.
+if [[ ! -x "${repo_dir}/spikes/opencode/.bin/opencode" && ! -x "${repo_dir}/spikes/opencode/.bin/opencode.exe" && -z "${CODEGYM_OPENCODE_BINARY:-}" ]]; then
   "${repo_dir}/spikes/opencode/download-opencode.sh"
 fi
 for tool in go java mvn doppler; do

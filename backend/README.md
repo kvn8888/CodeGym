@@ -80,6 +80,24 @@ checks, and Run/Submit execute on the host, so network policy is not
 enforced; never enable this outside development. The frontend must run with
 `VITE_USE_MOCK_API=false`.
 
+Hidden tests must print `CODEGYM_TEST <id> PASS` (or `FAIL code=<code>
+expected=<expected> actual=<actual>`) lines in addition to failing the test
+command on wrong solutions; the prompt requires this of the agent. Submit
+evaluates those lines, so a wrong solution fails with its intended reason
+instead of a bare category. The agent is likewise instructed that the `run`
+command must succeed in a fresh copy with no prior command having run, and
+that `EXERCISE.md` must state the complete graded contract (every class,
+interface, and method signature), because the practice workspace only ever
+contains a fresh materialization of the project.
+
+Windows demo-host notes: the pinned opencode matrix has no Windows asset
+yet, so place a matching `opencode.exe` next to `.bin/opencode` (Windows
+resolves it for the extensionless path) and unset `MSYS_NO_PATHCONV` /
+`MSYS2_ARG_CONV_EXCL` for the server process tree, otherwise `java.exe`
+receives POSIX classpaths and Maven fails to launch. `dev-env-demo.sh`
+handles the latter; symlink creation stays best-effort (npm `.bin` shims
+are skipped by the template copy).
+
 ## Browser practice sample (durable saves)
 
 `/practice` serves the development-only simulated exercise

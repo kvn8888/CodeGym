@@ -855,3 +855,41 @@ func (s *errRecordStore) SaveRecord(context.Context, Record) error {
 func (s *errRecordStore) GetRecord(context.Context, string) (Record, error) {
 	return Record{}, errors.New("record store unavailable")
 }
+
+func TestSubmitEvaluatesTestProtocolLines(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		testOutput   string
+		wantCategory Category
+		wantSummary  string
+	}{
+		{
+			name:         "failing assertion fails submit for the intended reason",
+			testOutput:   "setup noise\nCODEGYM_TEST t1 FAIL code=WRONG_VALUE expected=1 actual=2\n",
+			wantCategory: CategoryTestFailure,
+			wantSummary:  `t1 (WRONG_VALUE: expected "1", got "2")`,
+		},
+		{
+			name:         "passing assertions still pass",
+			testOutput:   "CODEGYM_TEST t1 PASS\n",
+			wantCategory: CategoryPassed,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service, _, _, runner := practiceService(t)
+			session := openGreet(t, service, "owner-1")
+			_, test := greetCommands(t)
+			runner.results[test] = RunOutcome{ExitCode: 0, Output: tt.testOutput}
+			result, err := service.Submit(context.Background(), session.ID, "owner-1")
+			if err != nil {
+				t.Fatalf("Submit: %v", err)
+			}
+			if result.Category != tt.wantCategory {
+				t.Fatalf("category = %q, want %q (output %q)", result.Category, tt.wantCategory, result.Output)
+			}
+			if tt.wantSummary != "" && !strings.Contains(result.Summary, tt.wantSummary) {
+				t.Fatalf("summary = %q, want it to contain %q", result.Summary, tt.wantSummary)
+			}
+		})
+	}
+}

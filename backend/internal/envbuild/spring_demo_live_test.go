@@ -126,6 +126,10 @@ func TestSpringBootColdBuildDemo(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("cold build record=%s", reportPath)
+	if os.Getenv("CODEGYM_SPRING_DEMO_KEEP_WORKSPACE") == "1" {
+		t.Logf("kept workspace for inspection: %s", result.Workspace.Root)
+		return
+	}
 	if err := preparer.Provisioner.Destroy(t.Context(), result.Workspace); err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import { api, ApiRequestError } from '../../shared/api/client';
 import { useCodeGymAuthState } from '../../shared/auth/authState';
@@ -29,6 +30,37 @@ const CATEGORY_LABEL: Record<string, string> = {
   'platform-fault': 'PLATFORM FAULT',
 };
 
+const EDITOR_LANGUAGES: Record<string, string> = {
+  py: 'python',
+  java: 'java',
+  kt: 'kotlin',
+  ts: 'typescript',
+  tsx: 'typescript',
+  js: 'javascript',
+  jsx: 'javascript',
+  go: 'go',
+  rs: 'rust',
+  md: 'markdown',
+  json: 'json',
+  xml: 'xml',
+  yml: 'yaml',
+  yaml: 'yaml',
+  html: 'html',
+  css: 'css',
+};
+
+function editorLanguage(path: string | undefined): string {
+  const extension = path?.split('.').pop()?.toLowerCase() ?? '';
+  return EDITOR_LANGUAGES[extension] ?? 'plaintext';
+}
+
+// Open on the first code file; agent-built exercises list EXERCISE.md first,
+// and its text already shows as the instructions.
+function initialFileIndex(files: Array<{ path: string }>): number {
+  const index = files.findIndex((file) => !file.path.toLowerCase().endsWith('.md'));
+  return index >= 0 ? index : 0;
+}
+
 function friendlyError(err: unknown): string {
   if (err instanceof ApiRequestError) return err.message;
   if (err instanceof Error) return err.message;
@@ -38,6 +70,10 @@ function friendlyError(err: unknown): string {
 export function PracticePage() {
   const { configured: authConfigured, isAuthenticated } = useCodeGymAuthState();
   const apiAuthReady = !authConfigured || isAuthenticated;
+  // ?session=<id> opens an existing session, such as one an agent-built
+  // environment request just created; otherwise the sample opens.
+  const [searchParams] = useSearchParams();
+  const requestedSessionId = searchParams.get('session');
   const [session, setSession] = useState<PracticeBrowserSession | null>(null);
   const [files, setFiles] = useState<Array<{ path: string; content: string }>>([]);
   const [activeFile, setActiveFile] = useState(0);
@@ -96,13 +132,18 @@ export function PracticePage() {
     let cancelled = false;
     const load = async () => {
       try {
-        const opened = await api.post<PracticeBrowserSession>('/practice/sessions', {
-          ...SAMPLE_REQUEST,
-        });
+        const opened = requestedSessionId
+          ? await api.get<PracticeBrowserSession>(
+              `/practice/sessions/${encodeURIComponent(requestedSessionId)}`,
+            )
+          : await api.post<PracticeBrowserSession>('/practice/sessions', {
+              ...SAMPLE_REQUEST,
+            });
         if (cancelled) return;
         sessionIdRef.current = opened.session_id;
         setSession(opened);
         setFiles(opened.files);
+        setActiveFile(initialFileIndex(opened.files));
         filesRef.current = opened.files;
         editRevRef.current = 0;
         savedRevRef.current = 0;
@@ -118,7 +159,7 @@ export function PracticePage() {
     return () => {
       cancelled = true;
     };
-  }, [apiAuthReady, refreshSavedList]);
+  }, [apiAuthReady, refreshSavedList, requestedSessionId]);
 
   const handleCodeChange = useCallback(
     (value: string | undefined) => {
@@ -255,7 +296,7 @@ export function PracticePage() {
         filesRef.current = resumed.files;
         editRevRef.current = 0;
         savedRevRef.current = 0;
-        setActiveFile(0);
+        setActiveFile(initialFileIndex(resumed.files));
         setSaveStatus('saved');
       } catch (err: unknown) {
         if (opSeqRef.current !== seq) return;
@@ -367,18 +408,22 @@ export function PracticePage() {
 
       <div className="flex min-w-0 flex-1 flex-col bg-[#1e1e1e]">
         <div className="flex items-center border-b border-[#333] bg-[#252526]">
-          {files.map((file, i) => (
-            <button
-              key={file.path}
-              onClick={() => setActiveFile(i)}
-              className={`border-r border-[#333] px-4 py-2 text-xs transition-colors ${
-                i === activeFile ? 'bg-[#1e1e1e] text-[#ccc]' : 'text-[#666] hover:text-[#ccc]'
-              }`}
-            >
-              {file.path}
-            </button>
-          ))}
-          <div className="flex-1" />
+          {/* Tabs show file names (full path on hover) and scroll on their
+              own, so deep package paths never push the actions off screen. */}
+          <div className="flex min-w-0 flex-1 overflow-x-auto">
+            {files.map((file, i) => (
+              <button
+                key={file.path}
+                onClick={() => setActiveFile(i)}
+                title={file.path}
+                className={`shrink-0 border-r border-[#333] px-4 py-2 text-xs transition-colors ${
+                  i === activeFile ? 'bg-[#1e1e1e] text-[#ccc]' : 'text-[#666] hover:text-[#ccc]'
+                }`}
+              >
+                {file.path.split('/').pop()}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => void handleSave()}
             disabled={running || savingUnavailable}
@@ -407,7 +452,8 @@ export function PracticePage() {
           {files.length > 0 && (
             <Editor
               height="100%"
-              language="python"
+              path={files[activeFile]?.path}
+              language={editorLanguage(files[activeFile]?.path)}
               theme="vs-dark"
               value={files[activeFile]?.content ?? ''}
               onChange={handleCodeChange}
@@ -471,7 +517,7 @@ export function PracticePage() {
           )}
           {!running && !error && !result && (
             <p className="px-4 py-3 font-mono text-[11px] text-[#666]">
-              Edit solution.py, then use RUN for a smoke check or SUBMIT for backend checks.
+              Edit the files, then use RUN for a smoke check or SUBMIT for backend checks.
             </p>
           )}
         </div>

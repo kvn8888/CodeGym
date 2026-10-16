@@ -31,7 +31,14 @@ type Config struct {
 	// It is never enabled in production: sample wiring is blocked unless
 	// this flag is explicitly true in a non-production environment, and
 	// simulated results are labelled.
-	PracticeSample     bool
+	PracticeSample bool
+	// EnvDemo enables the host-local agent-built environment corridor
+	// (#192): requests build, verify, promote, and open practice sessions on
+	// this machine. Development only; see EnvDemoAllowed.
+	EnvDemo            bool
+	EnvDemoTimeout     time.Duration
+	OpenCodeBinary     string
+	OpenCodeTemplate   string
 	CORSAllowedOrigins []string
 	MemoryWorker       WorkerConfig
 	// GenAI is the legacy single-provider view (Gemini / CODEGYM_GENAI_*).
@@ -186,11 +193,15 @@ func Load() Config {
 		DevAuthToken:   os.Getenv("CODEGYM_DEV_AUTH_TOKEN"),
 		DevUserID:      env("CODEGYM_DEV_USER_ID", "dev-user"),
 		// Prefer CODEGYM_DEV_WORKSPACE_ID; fall back to legacy CODEGYM_DEV_TENANT_ID.
-		DevWorkspaceID: firstEnvOr("personal-dev", "CODEGYM_DEV_WORKSPACE_ID", "CODEGYM_DEV_TENANT_ID"),
-		DaytonaAPIKey:  os.Getenv("DAYTONA_API_KEY"),
-		DaytonaAPIURL:  os.Getenv("DAYTONA_API_URL"),
-		SeedDemo:       boolEnv("CODEGYM_SEED_DEMO", false),
-		PracticeSample: boolEnv("CODEGYM_PRACTICE_SAMPLE", false),
+		DevWorkspaceID:   firstEnvOr("personal-dev", "CODEGYM_DEV_WORKSPACE_ID", "CODEGYM_DEV_TENANT_ID"),
+		DaytonaAPIKey:    os.Getenv("DAYTONA_API_KEY"),
+		DaytonaAPIURL:    os.Getenv("DAYTONA_API_URL"),
+		SeedDemo:         boolEnv("CODEGYM_SEED_DEMO", false),
+		PracticeSample:   boolEnv("CODEGYM_PRACTICE_SAMPLE", false),
+		EnvDemo:          boolEnv("CODEGYM_ENV_DEMO", false),
+		EnvDemoTimeout:   positiveDurationEnv("CODEGYM_ENV_DEMO_TIMEOUT", 40*time.Minute),
+		OpenCodeBinary:   env("CODEGYM_OPENCODE_BINARY", "../spikes/opencode/.bin/opencode"),
+		OpenCodeTemplate: env("CODEGYM_OPENCODE_TEMPLATE", "../spikes/opencode/.bin/home-template/.config/opencode"),
 		CORSAllowedOrigins: csvEnv("CODEGYM_CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",
@@ -385,6 +396,26 @@ func (c Config) UseAuth0() bool {
 // production environments positively reject it. Production is any
 // explicit CODEGYM_ENV=production (or GO_ENV=production) or an
 // Auth0-backed authenticator, which is the production auth path.
+// EnvDemoAllowed reports whether the host-local environment corridor may
+// run: explicitly enabled and outside production. Unlike the simulated
+// sample it works under Auth0, since it executes real builds.
+func (c Config) EnvDemoAllowed() bool {
+	if !c.EnvDemo {
+		return false
+	}
+	return !productionEnvironment()
+}
+
+func productionEnvironment() bool {
+	for _, key := range []string{"CODEGYM_ENV", "GO_ENV"} {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+		case "production", "prod":
+			return true
+		}
+	}
+	return false
+}
+
 func (c Config) PracticeSampleAllowed() bool {
 	if !c.PracticeSample {
 		return false

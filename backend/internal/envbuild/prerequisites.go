@@ -37,6 +37,13 @@ var prerequisiteTable = map[string][]prerequisiteSpec{
 	},
 }
 
+// NormalizeTechnology is the canonical technology key the builder records
+// in manifests. Callers resolving or caching by technology must use it so
+// "Spring Boot" requests match "spring-boot" artifacts.
+func NormalizeTechnology(technology string) string {
+	return normalizeTechnology(technology)
+}
+
 // normalizeTechnology folds display variants onto table keys: "Spring Boot"
 // and "spring-boot" address the same row.
 func normalizeTechnology(technology string) string {

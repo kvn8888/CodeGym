@@ -90,6 +90,10 @@ func (s *SnapshotContents) ReadArtifactFile(_ context.Context, snapshotRef, file
 type PracticeLocalRunner struct {
 	Root           string
 	MaxOutputBytes int
+	// Snapshots, when set, seeds each new execution space with the sealed
+	// snapshot so build files and hidden tests are present, matching the
+	// Daytona runner that boots from the snapshot. Learner files overlay it.
+	Snapshots func(reference string) (string, error)
 
 	mu     sync.Mutex
 	spaces map[string]string
@@ -112,6 +116,17 @@ func (r *PracticeLocalRunner) RunCommand(ctx context.Context, spec practice.RunS
 		if err != nil {
 			r.mu.Unlock()
 			return practice.RunOutcome{}, err
+		}
+		if r.Snapshots != nil {
+			snapshotRoot, err := r.Snapshots(spec.SnapshotRef)
+			if err == nil {
+				err = copyTree(snapshotRoot, dir)
+			}
+			if err != nil {
+				r.mu.Unlock()
+				os.RemoveAll(dir)
+				return practice.RunOutcome{}, fmt.Errorf("envintegration: seed execution space: %w", err)
+			}
 		}
 		space = dir
 		r.spaces[spec.ExecutionID] = space

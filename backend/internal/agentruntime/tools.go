@@ -11,8 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/procgroup"
 )
 
 func readBounded(root *os.Root, path string, capBytes int) (string, bool, error) {
@@ -69,17 +70,13 @@ func runShell(ctx context.Context, workingDirectory, command string, environment
 	cmd.Env = append([]string(nil), environment...)
 	cmd.Stdout = buffer
 	cmd.Stderr = buffer
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	procgroup.Setup(cmd)
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
-			return os.ErrProcessDone
-		}
-		return err
+		return procgroup.Kill(cmd)
 	}
 	err := cmd.Run()
 	exitCode := 0
@@ -109,7 +106,13 @@ func safeRuntimeEnvironment(home, tempRoot string) []string {
 		"TMPDIR=" + tempRoot,
 		"CI=true",
 	}
-	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH", "JAVA_HOME"} {
+	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH", "JAVA_HOME",
+		// Windows toolchain essentials: without these the Go toolchain
+		// cannot locate its build cache or temp paths inside the scrubbed
+		// sandbox environment (it falls back to C:\WINDOWS and fails).
+		// Absent on Unix, so no behavior change there.
+		"TEMP", "TMP", "SystemRoot", "LOCALAPPDATA", "USERPROFILE", "PATHEXT",
+	} {
 		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
 			environment = append(environment, name+"="+value)
 		}

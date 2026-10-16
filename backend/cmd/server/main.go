@@ -15,6 +15,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/chat"
 	"github.com/kvn8888/codegym/backend/internal/config"
+	"github.com/kvn8888/codegym/backend/internal/envintegration"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
@@ -280,6 +281,27 @@ func main() {
 		log.Print("CodeGym browser practice disabled; set CODEGYM_PRACTICE_SAMPLE=true in development to enable the simulated sample")
 	}
 
+	// The agent-built environment corridor (#192) replaces the simulated
+	// sample when explicitly enabled outside production: requests build,
+	// verify, promote, and open real practice sessions on this host.
+	var environmentOperations *envintegration.OperationStore
+	if cfg.EnvDemo && !cfg.EnvDemoAllowed() {
+		log.Fatalf("CodeGym environment demo rejected: CODEGYM_ENV_DEMO=true is development-only")
+	}
+	if cfg.EnvDemoAllowed() {
+		var demoSaves practice.SavedExerciseStore
+		if cfg.DatabaseURL != "" {
+			demoSaves = practiceSavedStore
+		}
+		demo, err := buildEnvDemo(ctx, cfg, relayUpstream, demoSaves)
+		if err != nil {
+			log.Fatalf("could not configure CodeGym environment demo: %v", err)
+		}
+		practiceService = demo.Practice
+		environmentOperations = demo.Operations
+		log.Printf("CodeGym environment demo enabled: host-local agent builds via opencode, build timeout %s; not a production configuration", cfg.EnvDemoTimeout)
+	}
+
 	router := api.NewRouter(api.Dependencies{
 		Authenticator:        authenticator,
 		Identity:             identityService,
@@ -293,6 +315,7 @@ func main() {
 		Chat:                 chatService,
 		Workflow:             workflowService,
 		Practice:             practiceService,
+		Environments:         environmentOperations,
 		Generation:           generationOrchestrator,
 		MemoryProfiles:       profileSynthesizer,
 		MemoryRefreshTrigger: cfg.MemoryWorker.Trigger,

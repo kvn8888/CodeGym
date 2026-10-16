@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // Path-resolution convention (proposed — the shared contract does not define
@@ -199,15 +198,6 @@ func findSameFile(haystack []resolvedFile, needle resolvedFile) (resolvedFile, b
 		}
 	}
 	return resolvedFile{}, false
-}
-
-// fileIdentity extracts device-plus-inode identity where supported.
-func fileIdentity(info os.FileInfo) (dev, ino uint64, ok bool) {
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return 0, 0, false
-	}
-	return uint64(stat.Dev), stat.Ino, true
 }
 
 func resolveWorkspaceDir(root, raw string) (string, error) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kvn8888/codegym/backend/internal/envbuild"
 	"github.com/kvn8888/codegym/backend/internal/environmentregistry"
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
 	"github.com/kvn8888/codegym/backend/internal/practice"
@@ -90,7 +91,16 @@ func (v *AssessmentResolvingVerifier) Verify(ctx context.Context, build environm
 	if build.Manifest.Artifact == nil {
 		return inner.withRejection(build, environmentverify.StageManifest, environmentverify.CodeManifestInvalid, "envintegration: builder output names no artifact", true)
 	}
-	spec, assessor, err := v.Assessments.Inputs(ctx, technology, build.Manifest.Artifact.ID, build.Manifest.Artifact.Version, objective)
+	var (
+		spec     *environmentverify.AssessmentSpec
+		assessor environmentverify.AssessmentRunner
+		err      error
+	)
+	if fromBuild, ok := v.Assessments.(BuildAssessmentSource); ok {
+		spec, assessor, err = fromBuild.InputsForBuild(ctx, build)
+	} else {
+		spec, assessor, err = v.Assessments.Inputs(ctx, technology, build.Manifest.Artifact.ID, build.Manifest.Artifact.Version, objective)
+	}
 	if err != nil {
 		return inner.withRejection(build, environmentverify.StageValidation, environmentverify.CodeReviewPending, err.Error(), false)
 	}
@@ -118,9 +128,11 @@ func (p *ProductionPipeline) Run(ctx context.Context, operation *EnvironmentOper
 	if p.Practice == nil {
 		return "", fmt.Errorf("envintegration: practice service is required")
 	}
-	report("resolving")
-	resolution, err := p.Registry.Resolve(ctx, environmentregistry.ResolveRequest{
-		Technology: operation.Technology,
+	report("looking for a verified environment")
+	resolution, err := p.Registry.Resolve(withStageReporter(ctx, report), environmentregistry.ResolveRequest{
+		// The builder records the canonical key; resolving by the display
+		// name made every fresh build an output mismatch.
+		Technology: envbuild.NormalizeTechnology(operation.Technology),
 		Objective:  operation.Objective,
 		Owner:      operation.Owner,
 	})

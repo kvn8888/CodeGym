@@ -63,6 +63,41 @@ the shared secret contract. Production Render/Vercel use a single
 `DOPPLER_TOKEN` and `doppler run` — app secrets are not stored in those
 dashboards.
 
+## Agent-built practice environments (#192 demo)
+
+`./scripts/dev-env-demo.sh` starts the API with `CODEGYM_ENV_DEMO=true` under
+Doppler. In the frontend, **Build** (`/practice/new`) takes a technology and
+objective. The agent builds the project and a learner starter on this host,
+the verifier runs setup/build/test and checks that the starter fails while
+the reference passes, the registry promotes it, and the practice page opens
+on the starter. A cold Spring Boot build takes about two minutes; requesting
+the same technology again reuses the promoted environment in seconds.
+Restart the backend for a fresh cold start: the registry is in memory.
+
+Demo-mode verdicts are labelled `unreviewed: agent reference solution (demo
+mode)` because no human reviewed the generated solution. Builds, promotion
+checks, and Run/Submit execute on the host, so network policy is not
+enforced; never enable this outside development. The frontend must run with
+`VITE_USE_MOCK_API=false`.
+
+Hidden tests must print `CODEGYM_TEST <id> PASS` (or `FAIL code=<code>
+expected=<expected> actual=<actual>`) lines in addition to failing the test
+command on wrong solutions; the prompt requires this of the agent. Submit
+evaluates those lines, so a wrong solution fails with its intended reason
+instead of a bare category. The agent is likewise instructed that the `run`
+command must succeed in a fresh copy with no prior command having run, and
+that `EXERCISE.md` must state the complete graded contract (every class,
+interface, and method signature), because the practice workspace only ever
+contains a fresh materialization of the project.
+
+Windows demo-host notes: the pinned opencode matrix has no Windows asset
+yet, so place a matching `opencode.exe` next to `.bin/opencode` (Windows
+resolves it for the extensionless path) and unset `MSYS_NO_PATHCONV` /
+`MSYS2_ARG_CONV_EXCL` for the server process tree, otherwise `java.exe`
+receives POSIX classpaths and Maven fails to launch. `dev-env-demo.sh`
+handles the latter; symlink creation stays best-effort (npm `.bin` shims
+are skipped by the template copy).
+
 ## Browser practice sample (durable saves)
 
 `/practice` serves the development-only simulated exercise

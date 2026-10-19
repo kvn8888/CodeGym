@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/envbuild"
@@ -25,11 +26,14 @@ const HostTempWorkspaceProvider = "host-temp-workspace"
 // development and CI. Production resolves references through real snapshots;
 // this mapping keeps the handoff testable without one.
 type SnapshotDirectories struct {
+	mu    sync.Mutex
 	roots map[string]string
 }
 
 // Register records a workspace root under a fresh opaque reference.
 func (s *SnapshotDirectories) Register(root string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.roots == nil {
 		s.roots = map[string]string{}
 	}
@@ -44,7 +48,9 @@ func (s *SnapshotDirectories) Register(root string) string {
 
 // Resolve returns the workspace root for a reference.
 func (s *SnapshotDirectories) Resolve(reference string) (string, error) {
+	s.mu.Lock()
 	root, ok := s.roots[reference]
+	s.mu.Unlock()
 	if !ok || strings.TrimSpace(root) == "" {
 		return "", fmt.Errorf("envintegration: unknown snapshot reference %q", reference)
 	}
@@ -76,6 +82,11 @@ func (b *RegistryBuilder) Build(ctx context.Context, req environmentregistry.Bui
 		return environmentregistry.BuildOutput{}, err
 	}
 	if result.ProposedManifest == nil {
+		for _, diagnostic := range result.Diagnostics {
+			if diagnostic.Severity == "error" {
+				return environmentregistry.BuildOutput{}, fmt.Errorf("envintegration: preparation produced no manifest: %s", diagnostic.Message)
+			}
+		}
 		return environmentregistry.BuildOutput{}, fmt.Errorf("envintegration: preparation produced no manifest")
 	}
 	manifestPath, err := WriteManifest(result.Workspace.Root, result.ProposedManifest)
@@ -152,24 +163,8 @@ type RegistryVerifier struct {
 // Verify judges one builder output. It returns a verifier result, never an
 // error: every failure mode becomes a rejected verdict the registry gates on.
 func (v *RegistryVerifier) Verify(ctx context.Context, build environmentregistry.BuildOutput) environmentverify.VerifierResult {
-	verifierRunID := newVerifierRunID()
 	reject := func(stage, code, message string, repairable bool) environmentverify.VerifierResult {
-		failed := stage
-		return environmentverify.VerifierResult{
-			SchemaVersion: environmentverify.VerifierResultSchemaVersion,
-			VerifierRunID: verifierRunID,
-			BuilderRunID:  build.Builder.BuilderRunID,
-			Verdict:       environmentverify.VerdictRejected,
-			FailedStage:   &failed,
-			Repairable:    repairable,
-			Diagnostics: []environmentverify.Diagnostic{{
-				Severity: "error",
-				Stage:    stage,
-				Code:     code,
-				Message:  message,
-			}},
-			Promotion: environmentverify.Promotion{Allowed: false, Reason: message},
-		}
+		return v.withRejection(build, stage, code, message, repairable)
 	}
 	if v == nil || v.Roots == nil {
 		return reject(environmentverify.StagePlatform, environmentverify.CodePlatformFault, "envintegration: snapshot resolver is required", false)
@@ -207,5 +202,27 @@ func (v *RegistryVerifier) Verify(ctx context.Context, build environmentregistry
 		opts.Assessment = v.Assessment
 		opts.Assessor = v.Assessor
 	}
-	return environmentverify.VerifyWithOptions(ctx, v.Runner, build.Builder, root, verifierRunID, opts)
+	return environmentverify.VerifyWithOptions(ctx, v.Runner, build.Builder, root, newVerifierRunID(), opts)
+}
+
+// withRejection builds a rejected verdict for a failure found before the
+// backend checks run. It is nil-safe so wrappers can reject without a
+// configured verifier.
+func (v *RegistryVerifier) withRejection(build environmentregistry.BuildOutput, stage, code, message string, repairable bool) environmentverify.VerifierResult {
+	failed := stage
+	return environmentverify.VerifierResult{
+		SchemaVersion: environmentverify.VerifierResultSchemaVersion,
+		VerifierRunID: newVerifierRunID(),
+		BuilderRunID:  build.Builder.BuilderRunID,
+		Verdict:       environmentverify.VerdictRejected,
+		FailedStage:   &failed,
+		Repairable:    repairable,
+		Diagnostics: []environmentverify.Diagnostic{{
+			Severity: "error",
+			Stage:    stage,
+			Code:     code,
+			Message:  message,
+		}},
+		Promotion: environmentverify.Promotion{Allowed: false, Reason: message},
+	}
 }

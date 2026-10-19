@@ -260,6 +260,54 @@ func TestVerifyManifestSymlinkEscapeNoRunner(t *testing.T) {
 	}
 }
 
+func TestVerifySatisfiedSetupIsRecordedNotRerun(t *testing.T) {
+	builder, root := verifyFixture(t)
+	// Setup would fail loudly if it ran, so a passing verdict proves the
+	// verifier never executed it.
+	runner := &stubRunner{
+		defaultResult: CommandResult{ExitCode: 0},
+		outcomes: map[string]stubOutcome{
+			StageSetup: {result: CommandResult{ExitCode: 1, Output: "would have re-run setup"}},
+		},
+	}
+	opts := DefaultVerifyOptions()
+	opts.SetupAlreadySatisfied = true
+	result := VerifyWithOptions(context.Background(), runner, builder, root, "verify_setup_satisfied", opts)
+	if got := runner.stages(); !equalStrings(got, []string{StageBuild, StageTest}) {
+		t.Fatalf("runner stages = %v, want [build test]", got)
+	}
+	// Setup still appears in the checks, so the evidence accounts for it.
+	if got := evidenceStages(result); !equalStrings(got, []string{StageManifest, StageValidation, StageSetup, StageBuild, StageTest}) {
+		t.Fatalf("evidence stages = %v", got)
+	}
+	setup := result.Evidence.Checks[2]
+	if setup.Stage != StageSetup || setup.Command != nil {
+		t.Fatalf("setup check = %+v, want a command-less setup record", setup)
+	}
+	if !strings.Contains(setup.Summary, "not re-executed") {
+		t.Fatalf("setup summary = %q, want it to explain the skip", setup.Summary)
+	}
+	// Without assessment inputs, verification stops at the assessment gate,
+	// which is only reachable after build and test pass.
+	requireRejected(t, result, StageValidation, CodeAssessmentEvidencePending)
+}
+
+func TestVerifySatisfiedSetupStillFailsWhenBuildFails(t *testing.T) {
+	builder, root := verifyFixture(t)
+	runner := &stubRunner{
+		defaultResult: CommandResult{ExitCode: 0},
+		outcomes: map[string]stubOutcome{
+			StageBuild: {result: CommandResult{ExitCode: 1, Output: "dependency is missing"}},
+		},
+	}
+	opts := DefaultVerifyOptions()
+	opts.SetupAlreadySatisfied = true
+	result := VerifyWithOptions(context.Background(), runner, builder, root, "verify_setup_satisfied_build_fail", opts)
+	// A satisfied setup never masks a broken environment: build still runs
+	// and still gates the verdict.
+	requireRejected(t, result, StageBuild, CodeBuildFailed)
+}
+
 func TestVerifySetupFailureStops(t *testing.T) {
 	builder, root := verifyFixture(t)
 	runner := &stubRunner{

@@ -58,6 +58,20 @@ type VerifyOptions struct {
 	// Assessor evaluates one solution per isolated workspace. Required when
 	// Assessment is set; tests use fakes or the sample-only local executor.
 	Assessor AssessmentRunner
+	// SetupAlreadySatisfied records that the verified filesystem already
+	// contains the result of the manifest's setup command, so the verifier
+	// records setup as satisfied instead of executing it a second time. The
+	// remote builder runs the agent against a base snapshot and promotes the
+	// resulting filesystem, where dependencies are already installed;
+	// re-running setup there reinstalls what is present.
+	//
+	// This reuses evidence, it does not replace it: setup is a means of
+	// making build and test possible, and build and test still run in the
+	// verified filesystem, so missing dependencies still fail verification.
+	// A manifest that declares no setup command is rejected by structural
+	// validation before this option is consulted, so this can never skip an
+	// undeclared stage.
+	SetupAlreadySatisfied bool
 }
 
 // DefaultVerifyOptions returns the standing backend policy.
@@ -205,6 +219,13 @@ func VerifyWithOptions(ctx context.Context, runner CommandRunner, builder Builde
 		{StageTest, strings.TrimSpace(manifest.Commands.Test), CodeTestFailed},
 	}
 	for _, s := range stages {
+		if s.stage == StageSetup && opts.SetupAlreadySatisfied {
+			// Recorded, not omitted: the checks list must still account for
+			// setup, and the summary states why it produced no command.
+			v.appendCheck(EvidenceCheck{Stage: StageSetup,
+				Summary: "Setup satisfied in the verified environment snapshot; not re-executed. Build and test still prove the dependencies resolve."})
+			continue
+		}
 		if outcome := v.runStage(s.stage, s.command, s.code, workspaceDir); outcome != nil {
 			return *outcome
 		}

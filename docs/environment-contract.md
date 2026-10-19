@@ -32,6 +32,15 @@ Required top-level fields:
 | `assessment` | Builder proposes, verifier validates | Visible and hidden assessment artifact references. |
 | `compatibility` | Builder proposes, registry validates later | Request metadata and reuse compatibility tags. |
 
+Setup is a means of making build and test possible, not an assertion in its own
+right. When the verified filesystem already contains the result of the setup
+command — the production corridor boots a base snapshot and promotes the
+filesystem the agent built in — the backend may record setup as satisfied
+instead of executing it again. Build and test still run in that filesystem, so
+dependencies that are actually absent still fail verification. Setup is never
+skipped for a manifest that declares none: structural validation rejects that
+first.
+
 ## Builder Result
 
 The builder result describes what the agent/runtime produced before verification.

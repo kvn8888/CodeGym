@@ -32,10 +32,10 @@ func starterFixtureTurns() []agentruntime.CompletionResponse {
 	}
 }
 
-func newTestLocalDemo(t *testing.T, turns []agentruntime.CompletionResponse) *LocalDemo {
+func newTestLocalCorridor(t *testing.T, turns []agentruntime.CompletionResponse) *LocalCorridor {
 	t.Helper()
 	client := &scriptedAgentClient{turns: turns}
-	demo, err := NewLocalDemo(LocalDemoConfig{
+	demo, err := NewLocalCorridor(LocalCorridorConfig{
 		NewRuntime: func(context.Context) (agentruntime.AgentRuntime, func(), error) {
 			return &agentruntime.PurposeBuiltRuntime{Client: client}, nil, nil
 		},
@@ -65,8 +65,8 @@ func waitForOperation(t *testing.T, store *OperationStore, id string) *Environme
 	return nil
 }
 
-func TestLocalDemoServesStarterAndAssessesSubmissions(t *testing.T) {
-	demo := newTestLocalDemo(t, starterFixtureTurns())
+func TestLocalCorridorServesStarterAndAssessesSubmissions(t *testing.T) {
+	demo := newTestLocalCorridor(t, starterFixtureTurns())
 	started, err := demo.Operations.Start("owner-1", "workspace-1", "Shell", "print a greeting")
 	if err != nil {
 		t.Fatal(err)
@@ -122,8 +122,8 @@ func TestLocalDemoServesStarterAndAssessesSubmissions(t *testing.T) {
 	}
 }
 
-func TestLocalDemoRejectsBuildWithoutStarter(t *testing.T) {
-	demo := newTestLocalDemo(t, demoFixtureTurns())
+func TestLocalCorridorRejectsBuildWithoutStarter(t *testing.T) {
+	demo := newTestLocalCorridor(t, demoFixtureTurns())
 	started, err := demo.Operations.Start("owner-1", "workspace-1", "demo", "learn demo")
 	if err != nil {
 		t.Fatal(err)

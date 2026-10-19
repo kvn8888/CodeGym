@@ -202,21 +202,27 @@ func main() {
 	profileSynthesizer := generation.NewProfileSynthesizer(generationOrchestrator, memoryService)
 	workflowService := workflow.NewService(workflowStore, nil)
 	var relayHTTPHandler *agentrelay.HTTPHandler
+	var relayTokenIssuer *agentrelay.Service
+	// Environment builds authorize their own relay operations; every other
+	// operation keeps going through the workflow checker.
+	var envOperations *envOperationGuard
 	if cfg.Relay.Enabled() {
 		if relayUpstream == nil {
 			log.Print("CodeGym agent relay disabled: token secret is set but no GenAI provider is configured")
 		} else {
+			envOperations = newEnvOperationGuard(workflowService, cfg.Relay.TokenTTL)
 			relayService, err := agentrelay.NewService(relayStore, agentrelay.ServiceConfig{
 				TokenSecret: cfg.Relay.TokenSecret, TokenTTL: cfg.Relay.TokenTTL,
 				DefaultMaxTotalTokens:   cfg.Relay.MaxTotalTokens,
 				DefaultMaxCostUSDMicros: cfg.Relay.MaxCostUSDMicros,
 				DefaultMaxWallClock:     cfg.Relay.MaxWallClock,
-				OperationChecker:        workflowService,
+				OperationChecker:        envOperations,
 			})
 			if err != nil {
 				log.Fatalf("could not configure agent relay tokens: %v", err)
 			}
 			workflowService.WithOperationTokens(relayService)
+			relayTokenIssuer = relayService
 			relayHTTPHandler, err = agentrelay.NewHTTPHandler(
 				relayService, relayUpstream, usageService, cfg.Relay.PublicModel,
 			)
@@ -288,25 +294,35 @@ func main() {
 		log.Print("CodeGym browser practice disabled; set CODEGYM_PRACTICE_SAMPLE=true in development to enable the simulated sample")
 	}
 
-	// The agent-built environment corridor (#192) replaces the simulated
-	// sample when explicitly enabled outside production: requests build,
-	// verify, promote, and open real practice sessions on this host.
+	// The agent-built environment corridor (#192). In production every build,
+	// verification, and practice session runs off-host in a Daytona sandbox;
+	// the host-local corridor is development and CI only.
 	var environmentOperations *envintegration.OperationStore
-	if cfg.EnvDemo && !cfg.EnvDemoAllowed() {
-		log.Fatalf("CodeGym environment demo rejected: CODEGYM_ENV_DEMO=true is development-only")
+	if cfg.EnvLocalBuild && !cfg.EnvLocalBuildAllowed() {
+		log.Fatalf("CodeGym environment builds rejected: CODEGYM_ENV_LOCAL_BUILD=true runs generated code on this host and is development-only")
 	}
-	if cfg.EnvDemoAllowed() {
-		var demoSaves practice.SavedExerciseStore
-		if cfg.DatabaseURL != "" {
-			demoSaves = practiceSavedStore
-		}
-		demo, err := buildEnvDemo(ctx, cfg, relayUpstream, demoSaves, environmentStore)
+	var environmentSaves practice.SavedExerciseStore = practice.NewInMemorySavedExerciseStore()
+	if cfg.DatabaseURL != "" {
+		environmentSaves = practiceSavedStore
+	}
+	switch {
+	case cfg.DaytonaEnvironmentBuildReady():
+		corridor, err := buildProductionEnvironment(cfg, relayUpstream, relayTokenIssuer, envOperations, environmentSaves, environmentStore)
 		if err != nil {
-			log.Fatalf("could not configure CodeGym environment demo: %v", err)
+			logProductionEnvironmentState(cfg, false, err)
+		} else {
+			practiceService = corridor.Practice
+			environmentOperations = corridor.Operations
+			logProductionEnvironmentState(cfg, true, nil)
 		}
-		practiceService = demo.Practice
-		environmentOperations = demo.Operations
-		log.Printf("CodeGym environment demo enabled: host-local agent builds via opencode, build timeout %s; not a production configuration", cfg.EnvDemoTimeout)
+	case cfg.EnvLocalBuildAllowed():
+		corridor, err := buildLocalEnvironmentCorridor(ctx, cfg, relayUpstream, environmentSaves, environmentStore)
+		if err != nil {
+			log.Fatalf("could not configure CodeGym local environment builds: %v", err)
+		}
+		practiceService = corridor.Practice
+		environmentOperations = corridor.Operations
+		log.Printf("CodeGym environment builds: host-local corridor active, build timeout %s; development only, generated code runs on this host", cfg.EnvBuildTimeout)
 	}
 
 	router := api.NewRouter(api.Dependencies{

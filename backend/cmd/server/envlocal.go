@@ -25,23 +25,23 @@ import (
 // Budgets for one cold environment build. A Spring Boot build used ~75k
 // tokens; these leave room for repair-heavy runs while still bounding them.
 const (
-	envDemoMaxTotalTokens   = 2_000_000
-	envDemoMaxCostUSDMicros = 20_000_000
-	envDemoTurnCeiling      = 32
+	envBuildMaxTotalTokens   = 2_000_000
+	envBuildMaxCostUSDMicros = 20_000_000
+	envBuildTurnCeiling      = 32
 )
 
-// envDemoOperations reports every relay operation active: each token is
+// envBuildOperations reports every relay operation active: each token is
 // issued for exactly one build and expires with it.
-type envDemoOperations struct{}
+type envBuildOperations struct{}
 
-func (envDemoOperations) OperationActive(context.Context, string, string, string) (bool, error) {
+func (envBuildOperations) OperationActive(context.Context, string, string, string) (bool, error) {
 	return true, nil
 }
 
-// buildEnvDemo assembles the host-local agent-built environment corridor
-// (#192). The agent reaches the model through a loopback-only relay with
+// buildLocalEnvironmentCorridor assembles the development-only, host-local
+// environment build corridor. The agent reaches the model through a loopback-only relay with
 // per-build tokens, so provider keys never enter the agent's environment.
-func buildEnvDemo(ctx context.Context, cfg config.Config, upstream *openaicompat.Adapter, saved practice.SavedExerciseStore, store environmentregistry.Store) (*envintegration.LocalDemo, error) {
+func buildLocalEnvironmentCorridor(ctx context.Context, cfg config.Config, upstream *openaicompat.Adapter, saved practice.SavedExerciseStore, store environmentregistry.Store) (*envintegration.LocalCorridor, error) {
 	if upstream == nil {
 		return nil, fmt.Errorf("a GenAI provider is required for agent builds")
 	}
@@ -70,11 +70,11 @@ func buildEnvDemo(ctx context.Context, cfg config.Config, upstream *openaicompat
 	}
 	tokens, err := agentrelay.NewService(agentrelay.NewInMemoryStore(), agentrelay.ServiceConfig{
 		TokenSecret:             secret,
-		TokenTTL:                cfg.EnvDemoTimeout + 5*time.Minute,
-		DefaultMaxTotalTokens:   envDemoMaxTotalTokens,
-		DefaultMaxCostUSDMicros: envDemoMaxCostUSDMicros,
-		DefaultMaxWallClock:     cfg.EnvDemoTimeout,
-		OperationChecker:        envDemoOperations{},
+		TokenTTL:                cfg.EnvBuildTimeout + 5*time.Minute,
+		DefaultMaxTotalTokens:   envBuildMaxTotalTokens,
+		DefaultMaxCostUSDMicros: envBuildMaxCostUSDMicros,
+		DefaultMaxWallClock:     cfg.EnvBuildTimeout,
+		OperationChecker:        envBuildOperations{},
 	})
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func buildEnvDemo(ctx context.Context, cfg config.Config, upstream *openaicompat
 	relayServer := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := relayServer.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Printf("CodeGym environment demo relay stopped: %v", err)
+			log.Printf("CodeGym environment build relay stopped: %v", err)
 		}
 	}()
 	go func() {
@@ -109,8 +109,8 @@ func buildEnvDemo(ctx context.Context, cfg config.Config, upstream *openaicompat
 		}
 		issued, err := tokens.Issue(ctx, agentrelay.IssueInput{
 			OperationID: "envbuild_" + hex.EncodeToString(raw),
-			WorkspaceID: "env-demo",
-			UserID:      "env-demo",
+			WorkspaceID: "environment-build",
+			UserID:      "environment-build",
 		})
 		if err != nil {
 			return nil, nil, err
@@ -127,11 +127,11 @@ func buildEnvDemo(ctx context.Context, cfg config.Config, upstream *openaicompat
 		}
 		return runtime, nil, nil
 	}
-	return envintegration.NewLocalDemo(envintegration.LocalDemoConfig{
+	return envintegration.NewLocalCorridor(envintegration.LocalCorridorConfig{
 		NewRuntime:  newRuntime,
 		RuntimeName: "opencode",
-		TurnCeiling: envDemoTurnCeiling,
-		Timeout:     cfg.EnvDemoTimeout,
+		TurnCeiling: envBuildTurnCeiling,
+		Timeout:     cfg.EnvBuildTimeout,
 		Saved:       saved,
 		Store:       store,
 	})

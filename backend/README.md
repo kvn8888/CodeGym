@@ -63,21 +63,30 @@ the shared secret contract. Production Render/Vercel use a single
 `DOPPLER_TOKEN` and `doppler run` — app secrets are not stored in those
 dashboards.
 
-## Agent-built practice environments (#192 demo)
+## Agent-built practice environments (#192)
 
-`./scripts/dev-env-demo.sh` starts the API with `CODEGYM_ENV_DEMO=true` under
-Doppler. In the frontend, **Build** (`/practice/new`) takes a technology and
-objective. The agent builds the project and a learner starter on this host,
-the verifier runs setup/build/test and checks that the starter fails while
-the reference passes, the registry promotes it, and the practice page opens
-on the starter. A cold Spring Boot build takes about two minutes; requesting
-the same technology again reuses the promoted environment in seconds.
-Restart the backend for a fresh cold start: the registry is in memory.
+In production the environment-build corridor runs entirely off-host on
+Daytona: a request from **Build** (`/practice/new`) names a technology and
+objective, an agent builds the project and a learner starter inside a
+sandbox, the verifier runs setup/build/test and the hidden assessments in a
+fresh sandbox booted from the candidate snapshot, the registry promotes it,
+and practice sessions lease sandboxes from that snapshot. The host never
+executes generated code. Production requires `DAYTONA_API_KEY` +
+`DAYTONA_API_URL`, `CODEGYM_BASE_SNAPSHOT` (see `spikes/daytona/base-snapshot`),
+`CODEGYM_RELAY_PUBLIC_URL` (a relay URL build sandboxes can reach), and a
+durable registry store; a production server missing any of these fails fast
+rather than falling back to the host.
 
-Demo-mode verdicts are labelled `unreviewed: agent reference solution (demo
-mode)` because no human reviewed the generated solution. Builds, promotion
-checks, and Run/Submit execute on the host, so network policy is not
-enforced; never enable this outside development. The frontend must run with
+`./scripts/dev-env-local.sh` runs the development-only host-local corridor
+with `CODEGYM_ENV_LOCAL_BUILD=true` under Doppler, useful when Daytona is not
+desired. On this host the agent builds and the verifier runs setup/build/test
+directly, so network policy is not enforced. A cold Spring Boot build takes
+about two minutes; requesting the same technology again reuses the promoted
+environment in seconds. Restart the backend for a fresh cold start: the local
+registry is in memory. Verdicts are labelled `unreviewed: agent reference
+solution (demo mode)` because no human reviewed the generated solution. Never
+enable host-local builds outside development; the server refuses when
+`CODEGYM_ENV_*` marks it as production. The frontend must run with
 `VITE_USE_MOCK_API=false`.
 
 Hidden tests must print `CODEGYM_TEST <id> PASS` (or `FAIL code=<code>
@@ -90,11 +99,11 @@ that `EXERCISE.md` must state the complete graded contract (every class,
 interface, and method signature), because the practice workspace only ever
 contains a fresh materialization of the project.
 
-Windows demo-host notes: the pinned opencode matrix has no Windows asset
+Windows host-local notes: the pinned opencode matrix has no Windows asset
 yet, so place a matching `opencode.exe` next to `.bin/opencode` (Windows
 resolves it for the extensionless path) and unset `MSYS_NO_PATHCONV` /
 `MSYS2_ARG_CONV_EXCL` for the server process tree, otherwise `java.exe`
-receives POSIX classpaths and Maven fails to launch. `dev-env-demo.sh`
+receives POSIX classpaths and Maven fails to launch. `dev-env-local.sh`
 handles the latter; symlink creation stays best-effort (npm `.bin` shims
 are skipped by the template copy).
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Local launcher for the agent-built practice environment demo (#192).
+# Local launcher for host-local agent-built practice environments (development only).
 #
-# Starts the API with CODEGYM_ENV_DEMO=true under Doppler (codegym/dev):
+# Starts the API with CODEGYM_ENV_LOCAL_BUILD=true under Doppler (codegym/dev):
 # a request from /practice/new builds the project with opencode on this
 # machine, verifies it, promotes it, and opens a practice session.
 #
@@ -16,11 +16,11 @@
 # repeated requests reuse the promoted environment.
 #
 # Usage (from the backend directory):
-#   ./scripts/dev-env-demo.sh
+#   ./scripts/dev-env-local.sh
 #
 # Environment overrides:
 #   CODEGYM_PORT              backend listen port (default 8080)
-#   CODEGYM_ENV_DEMO_TIMEOUT  per-build limit (default 40m)
+#   CODEGYM_ENV_BUILD_TIMEOUT  per-build limit (default 40m)
 set -euo pipefail
 
 backend_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -46,12 +46,12 @@ if [[ ! -x "${repo_dir}/spikes/opencode/.bin/opencode" && ! -x "${repo_dir}/spik
 fi
 for tool in go java mvn doppler; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
-    echo "dev-env-demo: ${tool} is required on PATH" >&2
+    echo "dev-env-local: ${tool} is required on PATH" >&2
     exit 2
   fi
 done
 
-export CODEGYM_ENV_DEMO=true
+export CODEGYM_ENV_LOCAL_BUILD=true
 # Spring Boot resolves dependencies from Maven Central during the build
 # instead of requiring a pre-seeded offline cache.
 export CODEGYM_ALLOW_UNCACHED_SETUP=1

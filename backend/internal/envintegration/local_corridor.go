@@ -17,12 +17,13 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/practice"
 )
 
-// This file assembles the request pipeline for a single development host:
-// the agent builds on the host, snapshots are host directories, and
-// promotion and practice commands run on the host. It exists so the full
-// request → build → verify → promote → practice corridor can be
-// demonstrated before sandbox snapshots back the registry. Host execution
-// cannot enforce network policy; it is never a production configuration.
+// This file assembles the request pipeline for local development and CI: the
+// agent builds on the host, snapshots are host directories, and promotion and
+// practice commands run on the host. It keeps the full request → build →
+// verify → promote → practice corridor runnable without cloud credentials, so
+// the pipeline can be exercised locally. Host execution cannot enforce network
+// policy, so this corridor is development-only; production runs the same
+// pipeline against Daytona sandboxes instead (see daytona_builder.go).
 
 type stageReporterKey struct{}
 
@@ -149,8 +150,8 @@ type NoBuildQuota struct{}
 
 func (NoBuildQuota) CheckBuild(context.Context, string) error { return nil }
 
-// LocalDemoConfig configures NewLocalDemo.
-type LocalDemoConfig struct {
+// LocalCorridorConfig configures NewLocalCorridor.
+type LocalCorridorConfig struct {
 	NewRuntime  RuntimeFactory
 	RuntimeName string
 	TurnCeiling int
@@ -161,16 +162,16 @@ type LocalDemoConfig struct {
 	Store environmentregistry.Store
 }
 
-// LocalDemo is the assembled host-only corridor.
-type LocalDemo struct {
+// LocalCorridor is the assembled host-only corridor.
+type LocalCorridor struct {
 	Operations *OperationStore
 	Practice   *practice.Service
 	Registry   *environmentregistry.Service
 }
 
-// NewLocalDemo assembles registry, demo-mode verification, practice, and
+// NewLocalCorridor assembles registry, demo-mode verification, practice, and
 // the operation store around one host snapshot directory set.
-func NewLocalDemo(cfg LocalDemoConfig) (*LocalDemo, error) {
+func NewLocalCorridor(cfg LocalCorridorConfig) (*LocalCorridor, error) {
 	if cfg.NewRuntime == nil {
 		return nil, fmt.Errorf("envintegration: runtime factory is required")
 	}
@@ -203,7 +204,7 @@ func NewLocalDemo(cfg LocalDemoConfig) (*LocalDemo, error) {
 		Saved:     cfg.Saved,
 	}
 	pipeline := &ProductionPipeline{Registry: registryService, Practice: practiceService}
-	return &LocalDemo{
+	return &LocalCorridor{
 		Operations: &OperationStore{Pipeline: pipeline.Pipeline},
 		Practice:   practiceService,
 		Registry:   registryService,

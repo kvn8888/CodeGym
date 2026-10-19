@@ -10,6 +10,7 @@ import (
 
 	"github.com/kvn8888/codegym/backend/internal/environmentregistry"
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
+	"github.com/kvn8888/codegym/backend/internal/practice"
 )
 
 // StarterDirectory holds the learner starter the builder writes beside the
@@ -171,7 +172,7 @@ func tailOutput(output string, limit int) string {
 // every file that has one, so practice sessions open on the exercise rather
 // than its answer. Other files pass through unchanged.
 type StarterContents struct {
-	Inner *SnapshotContents
+	Inner practice.ContentStore
 }
 
 // ReadArtifactFile returns the starter for path when present.

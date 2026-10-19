@@ -32,15 +32,19 @@ type Config struct {
 	// this flag is explicitly true in a non-production environment, and
 	// simulated results are labelled.
 	PracticeSample bool
-	// EnvDemo enables the host-local agent-built environment corridor
-	// (#192): requests build, verify, promote, and open practice sessions on
-	// this machine. Development only; see EnvDemoAllowed.
-	EnvDemo            bool
-	EnvDemoTimeout     time.Duration
-	OpenCodeBinary     string
-	OpenCodeTemplate   string
-	CORSAllowedOrigins []string
-	MemoryWorker       WorkerConfig
+	// EnvLocalBuild enables the host-local agent-built environment corridor:
+	// requests build, verify, promote, and open practice sessions by
+	// executing on this machine. Development and CI only; see
+	// EnvLocalBuildAllowed. Production never executes generated code on the
+	// host and uses the Daytona corridor instead.
+	EnvLocalBuild       bool
+	EnvBuildTimeout     time.Duration
+	OpenCodeBinary      string
+	OpenCodeTemplate    string
+	DaytonaBaseSnapshot string
+	DaytonaWorkspaceDir string
+	CORSAllowedOrigins  []string
+	MemoryWorker        WorkerConfig
 	// GenAI is the legacy single-provider view (Gemini / CODEGYM_GENAI_*).
 	// Prefer GenAIProviders for multi-provider routing.
 	GenAI          GenAIConfig
@@ -59,7 +63,27 @@ type RelayConfig struct {
 	MaxCostUSDMicros int64
 	MaxWallClock     time.Duration
 	PublicModel      string
+	// PublicBaseURL is the externally reachable base for the relay, as a
+	// build sandbox sees it. A sandbox cannot reach the server's loopback
+	// address, so this must be a public origin; the relay path is appended.
+	PublicBaseURL string
 }
+
+// SandboxBaseURL is the relay base URL a sandbox should call, including the
+// relay path prefix.
+func (r RelayConfig) SandboxBaseURL() string {
+	base := strings.TrimRight(strings.TrimSpace(r.PublicBaseURL), "/")
+	if base == "" {
+		return ""
+	}
+	if strings.HasSuffix(base, RelayPathPrefix) {
+		return base
+	}
+	return base + RelayPathPrefix
+}
+
+// RelayPathPrefix is the mounted path of the sandbox-facing relay API.
+const RelayPathPrefix = "/api/v1/agent-relay/v1"
 
 // Enabled reports whether relay token signing is configured.
 func (r RelayConfig) Enabled() bool {
@@ -193,15 +217,17 @@ func Load() Config {
 		DevAuthToken:   os.Getenv("CODEGYM_DEV_AUTH_TOKEN"),
 		DevUserID:      env("CODEGYM_DEV_USER_ID", "dev-user"),
 		// Prefer CODEGYM_DEV_WORKSPACE_ID; fall back to legacy CODEGYM_DEV_TENANT_ID.
-		DevWorkspaceID:   firstEnvOr("personal-dev", "CODEGYM_DEV_WORKSPACE_ID", "CODEGYM_DEV_TENANT_ID"),
-		DaytonaAPIKey:    os.Getenv("DAYTONA_API_KEY"),
-		DaytonaAPIURL:    os.Getenv("DAYTONA_API_URL"),
-		SeedDemo:         boolEnv("CODEGYM_SEED_DEMO", false),
-		PracticeSample:   boolEnv("CODEGYM_PRACTICE_SAMPLE", false),
-		EnvDemo:          boolEnv("CODEGYM_ENV_DEMO", false),
-		EnvDemoTimeout:   positiveDurationEnv("CODEGYM_ENV_DEMO_TIMEOUT", 40*time.Minute),
-		OpenCodeBinary:   env("CODEGYM_OPENCODE_BINARY", "../spikes/opencode/.bin/opencode"),
-		OpenCodeTemplate: env("CODEGYM_OPENCODE_TEMPLATE", "../spikes/opencode/.bin/home-template/.config/opencode"),
+		DevWorkspaceID:      firstEnvOr("personal-dev", "CODEGYM_DEV_WORKSPACE_ID", "CODEGYM_DEV_TENANT_ID"),
+		DaytonaAPIKey:       os.Getenv("DAYTONA_API_KEY"),
+		DaytonaAPIURL:       os.Getenv("DAYTONA_API_URL"),
+		DaytonaBaseSnapshot: os.Getenv("CODEGYM_BASE_SNAPSHOT"),
+		DaytonaWorkspaceDir: env("CODEGYM_SANDBOX_WORKSPACE", "/home/agent/work"),
+		SeedDemo:            boolEnv("CODEGYM_SEED_DEMO", false),
+		PracticeSample:      boolEnv("CODEGYM_PRACTICE_SAMPLE", false),
+		EnvLocalBuild:       boolEnv("CODEGYM_ENV_LOCAL_BUILD", false),
+		EnvBuildTimeout:     positiveDurationEnv("CODEGYM_ENV_BUILD_TIMEOUT", 40*time.Minute),
+		OpenCodeBinary:      env("CODEGYM_OPENCODE_BINARY", "../spikes/opencode/.bin/opencode"),
+		OpenCodeTemplate:    env("CODEGYM_OPENCODE_TEMPLATE", "../spikes/opencode/.bin/home-template/.config/opencode"),
 		CORSAllowedOrigins: csvEnv("CODEGYM_CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",
@@ -226,6 +252,7 @@ func Load() Config {
 			MaxCostUSDMicros: usdMicrosEnv("CODEGYM_RELAY_MAX_COST_USD", 5_000_000),
 			MaxWallClock:     positiveDurationEnv("CODEGYM_RELAY_MAX_WALL_CLOCK", 10*time.Minute),
 			PublicModel:      env("CODEGYM_RELAY_MODEL", "codegym-agent"),
+			PublicBaseURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("CODEGYM_RELAY_PUBLIC_URL")), "/"),
 		},
 	}
 }
@@ -391,20 +418,30 @@ func (c Config) UseAuth0() bool {
 	return c.AuthMode == "" && c.Auth0Audience != "" && (c.Auth0Domain != "" || c.Auth0IssuerURL != "")
 }
 
-// PracticeSampleAllowed reports whether the development/testing-only
-// sample browser exercise may be wired. The flag alone is insufficient:
-// production environments positively reject it. Production is any
-// explicit CODEGYM_ENV=production (or GO_ENV=production) or an
-// Auth0-backed authenticator, which is the production auth path.
-// EnvDemoAllowed reports whether the host-local environment corridor may
-// run: explicitly enabled and outside production. Unlike the simulated
-// sample it works under Auth0, since it executes real builds.
-func (c Config) EnvDemoAllowed() bool {
-	if !c.EnvDemo {
+// EnvLocalBuildAllowed reports whether the host-local environment corridor
+// may run: explicitly enabled and outside production. Unlike the simulated
+// sample it works under Auth0, since it executes real builds. Production
+// never executes generated code on the host.
+func (c Config) EnvLocalBuildAllowed() bool {
+	if !c.EnvLocalBuild {
 		return false
 	}
 	return !productionEnvironment()
 }
+
+// DaytonaEnvironmentBuildReady reports whether the production corridor can be
+// wired: sandbox credentials, a base snapshot to build from, and a relay the
+// sandbox can reach. Each is required — a sandbox without a reachable relay
+// cannot run the agent at all.
+func (c Config) DaytonaEnvironmentBuildReady() bool {
+	return strings.TrimSpace(c.DaytonaAPIKey) != "" &&
+		strings.TrimSpace(c.DaytonaBaseSnapshot) != "" &&
+		c.Relay.SandboxBaseURL() != ""
+}
+
+// ProductionEnvironment reports whether this process is a production
+// deployment, where generated code must never execute on the host.
+func (c Config) ProductionEnvironment() bool { return productionEnvironment() }
 
 func productionEnvironment() bool {
 	for _, key := range []string{"CODEGYM_ENV", "GO_ENV"} {
@@ -416,6 +453,11 @@ func productionEnvironment() bool {
 	return false
 }
 
+// PracticeSampleAllowed reports whether the development/testing-only
+// sample browser exercise may be wired. The flag alone is insufficient:
+// production environments positively reject it. Production is any
+// explicit CODEGYM_ENV=production (or GO_ENV=production) or an
+// Auth0-backed authenticator, which is the production auth path.
 func (c Config) PracticeSampleAllowed() bool {
 	if !c.PracticeSample {
 		return false

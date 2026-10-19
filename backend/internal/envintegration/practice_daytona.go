@@ -21,6 +21,9 @@ const DefaultPracticeSandboxTTL = 10 * time.Minute
 type DaytonaSandbox interface {
 	CreateFolder(ctx context.Context, path string) error
 	UploadFile(ctx context.Context, content []byte, path string) error
+	// DownloadFile reads one file back out of the sandbox, so sealed
+	// snapshot contents can be read without a host copy.
+	DownloadFile(ctx context.Context, path string) ([]byte, error)
 	ExecuteCommand(ctx context.Context, command string, timeout time.Duration) (exitCode int, output string, err error)
 	Delete(ctx context.Context) error
 }
@@ -124,14 +127,102 @@ func (r *DaytonaPracticeRunner) RunCommand(ctx context.Context, spec practice.Ru
 	return practice.RunOutcome{ExitCode: exitCode, Output: output}, nil
 }
 
+// SandboxContents serves sealed snapshot files by reading them out of a
+// sandbox booted from the snapshot. It is the production replacement for
+// SnapshotContents, which needs a host directory: a promoted artifact lives
+// in a Daytona snapshot and has no host path.
+//
+// One sandbox is reused per snapshot and reaped by TTL, so reading the
+// manifest and the starter costs one boot rather than one per file.
+type SandboxContents struct {
+	Factory SandboxFactory
+	// WorkspaceDir is the sandbox directory the snapshot's tree lives in.
+	WorkspaceDir string
+	IdleTTL      time.Duration
+
+	mu     sync.Mutex
+	spaces map[string]*contentsSpace
+}
+
+type contentsSpace struct {
+	sandbox  DaytonaSandbox
+	lastUsed time.Time
+}
+
+func (s *SandboxContents) idleTTL() time.Duration {
+	if s.IdleTTL > 0 {
+		return s.IdleTTL
+	}
+	return DefaultPracticeSandboxTTL
+}
+
+func (s *SandboxContents) workspaceDir() string {
+	if dir := strings.TrimRight(strings.TrimSpace(s.WorkspaceDir), "/"); dir != "" {
+		return dir
+	}
+	return DefaultSandboxWorkspaceDir
+}
+
+func (s *SandboxContents) sandboxFor(ctx context.Context, snapshotRef string) (DaytonaSandbox, error) {
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.spaces == nil {
+		s.spaces = map[string]*contentsSpace{}
+	}
+	for ref, space := range s.spaces {
+		if now.Sub(space.lastUsed) > s.idleTTL() {
+			_ = space.sandbox.Delete(ctx)
+			delete(s.spaces, ref)
+		}
+	}
+	if space, ok := s.spaces[snapshotRef]; ok {
+		space.lastUsed = now
+		return space.sandbox, nil
+	}
+	// Reads boot the artifact exactly as a learner's practice session does:
+	// isolated, so sealed contents cannot depend on network access.
+	sandbox, err := s.Factory.Create(ctx, snapshotRef, true, map[string]string{"codegym": "artifact-read"})
+	if err != nil {
+		return nil, err
+	}
+	s.spaces[snapshotRef] = &contentsSpace{sandbox: sandbox, lastUsed: now}
+	return sandbox, nil
+}
+
+// ReadArtifactFile reads one sealed snapshot file. Paths are confined to the
+// snapshot workspace, matching SnapshotContents.
+func (s *SandboxContents) ReadArtifactFile(ctx context.Context, snapshotRef, filePath string) (string, error) {
+	if s == nil || s.Factory == nil {
+		return "", fmt.Errorf("envintegration: sandbox factory is required")
+	}
+	slashed := strings.ReplaceAll(strings.TrimSpace(filePath), "\\", "/")
+	if strings.HasPrefix(slashed, "/") {
+		return "", fmt.Errorf("envintegration: artifact path escapes the snapshot: %q", filePath)
+	}
+	clean := strings.Trim(slashed, "/")
+	if clean == "" || clean == "." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
+		return "", fmt.Errorf("envintegration: artifact path escapes the snapshot: %q", filePath)
+	}
+	sandbox, err := s.sandboxFor(ctx, snapshotRef)
+	if err != nil {
+		return "", fmt.Errorf("envintegration: boot snapshot for read: %w", err)
+	}
+	payload, err := sandbox.DownloadFile(ctx, s.workspaceDir()+"/"+clean)
+	if err != nil {
+		return "", fmt.Errorf("envintegration: read snapshot file: %w", err)
+	}
+	return string(payload), nil
+}
+
 // ProductionPracticeService assembles the browser practice service from
 // production seams: registry-backed artifacts, snapshot contents, a sandbox
 // runner, and the caller's record, save, and limit configuration. It wires
 // nothing itself; deploy configuration supplies each seam, which keeps this
-// package testable and the demo wiring to one call site.
+// package testable and the wiring to one call site.
 func ProductionPracticeService(
 	artifacts *RegistryArtifactSource,
-	contents *SnapshotContents,
+	contents practice.ContentStore,
 	runner *DaytonaPracticeRunner,
 	records practice.RecordStore,
 	saved practice.SavedExerciseStore,

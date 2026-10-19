@@ -29,8 +29,6 @@ type SnapshottingSandbox interface {
 	// CreateSnapshot promotes the sandbox's current filesystem to a named
 	// snapshot other sandboxes can boot from.
 	CreateSnapshot(ctx context.Context, name string, timeout time.Duration) error
-	// DownloadFile reads one file back out of the sandbox.
-	DownloadFile(ctx context.Context, path string) ([]byte, error)
 	// ListFiles lists one sandbox directory so the build path can read a
 	// whole tree back before verification.
 	ListFiles(ctx context.Context, dir string) ([]agentruntime.SandboxEntry, error)

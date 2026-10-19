@@ -92,6 +92,11 @@ Vite proxies `/api` to `http://localhost:8080`.
 | `CODEGYM_DEV_AUTH_TOKEN` | Optional | Static bearer token for protected routes. |
 | `CODEGYM_DEV_TENANT_ID` | Optional | Default personal tenant for static-token auth. |
 | `DAYTONA_API_KEY` / `DAYTONA_API_URL` | Coding demo | Daytona sandbox access for real hidden-test execution. |
+| `CODEGYM_BASE_SNAPSHOT` | Env builds | Base Daytona snapshot the environment builder boots (see `spikes/daytona/base-snapshot`). |
+| `CODEGYM_SANDBOX_WORKSPACE` | Env builds | Sandbox work directory (default `/home/agent/work`). |
+| `CODEGYM_RELAY_PUBLIC_URL` | Env builds | Relay base URL build sandboxes can reach (tunnel or deployed API). |
+| `CODEGYM_ENV_LOCAL_BUILD` | Dev only | `true` runs the host-local environment-build corridor when Daytona is not configured. Rejected on a production server. |
+| `CODEGYM_ENV_BUILD_TIMEOUT` | Env builds | Per-build limit (default `40m`). |
 | `VERCEL_API_GATEWAY` | Optional | Vercel AI Gateway key (not used by the multi-provider router today). |
 
 ### GenAI multi-provider registry

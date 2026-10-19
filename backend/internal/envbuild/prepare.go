@@ -29,6 +29,14 @@ const (
 // technology name in a branch, a prompt variant, or a template here is a
 // defect against the generic path.
 func preparationInstructions(request BuildRequest) string {
+	return PreparationInstructions(request.Technology, request.Objective)
+}
+
+// PreparationInstructions is the one generic cold-preparation instruction set.
+// It is exported so the sandbox build path sends the agent exactly the same
+// brief as the host path: the environment the sandbox produces must be the
+// environment the host path would have produced.
+func PreparationInstructions(technology, objective string) string {
 	return fmt.Sprintf(
 		"Prepare a coding practice exercise for %s: %s. "+
 			"In the working directory, create a complete, working project with source files, assessment tests, and a short learner-facing exercise statement in EXERCISE.md. "+
@@ -39,7 +47,7 @@ func preparationInstructions(request BuildRequest) string {
 			"Then write the learner starter: for each source file the learner must complete, write a copy under .codegym/starter/ at the same relative path, with the code the exercise asks the learner to write replaced by minimal stubs that still compile, so the assessment tests fail on the starter. "+
 			"Never edit the working project files while writing the starter. "+
 			"Place hidden assessment tests that learners must never see under .codegym/hidden/. Each hidden test must print one verdict line per assertion to stdout in the form CODEGYM_TEST <id> PASS on success or CODEGYM_TEST <id> FAIL code=<code> expected=<expected> actual=<actual> on failure, with single whitespace-free tokens, in addition to failing the test command on a wrong solution so the verdict is visible both in the exit code and in the output. Use only the supplied tools.",
-		request.Technology, request.Objective,
+		technology, objective,
 	)
 }
 

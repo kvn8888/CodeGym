@@ -40,6 +40,10 @@ type BuildAssessmentSource interface {
 // review evidence so they are never mistaken for human-reviewed ones.
 type StarterAssessmentSource struct {
 	Roots func(reference string) (string, error)
+	// Assessor runs each solution's test command. Nil keeps the host
+	// assessor; the sandbox corridor supplies a sandbox assessor so
+	// assessments execute off-host like the rest of verification.
+	Assessor environmentverify.AssessmentRunner
 }
 
 // Inputs satisfies AssessmentSource; demo mode needs the artifact contents,
@@ -104,7 +108,16 @@ func (s *StarterAssessmentSource) InputsForBuild(_ context.Context, build enviro
 		},
 		ReviewedBy:        DemoUnreviewedReviewer,
 		ReviewedReference: DemoReviewedReference,
-	}, &CommandAssessor{}, nil
+	}, s.assessor(), nil
+}
+
+// assessor returns the configured assessor, defaulting to the host one so the
+// host corridor is unchanged.
+func (s *StarterAssessmentSource) assessor() environmentverify.AssessmentRunner {
+	if s != nil && s.Assessor != nil {
+		return s.Assessor
+	}
+	return &CommandAssessor{}
 }
 
 // CommandAssessor runs the manifest test command and reports it as one

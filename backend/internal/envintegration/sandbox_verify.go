@@ -37,6 +37,10 @@ type SandboxTreeMaterializer struct {
 	// MaxBytes bounds one download; zero means no extra bound beyond the
 	// sandbox's own limits.
 	MaxBytes int64
+	// Skip drops paths the caller does not need mirrored, given the path
+	// relative to the remote root. It keeps generated build output out of
+	// the host copy: stage commands still run against the real sandbox tree.
+	Skip func(rel string) bool
 }
 
 // Materialize copies remoteRoot into localRoot, preserving relative layout.
@@ -80,6 +84,9 @@ func (m SandboxTreeMaterializer) copyDir(ctx context.Context, remoteRoot, dir, l
 			return err
 		}
 		if rel == "." || rel == "" {
+			continue
+		}
+		if m.Skip != nil && m.Skip(rel) {
 			continue
 		}
 		localPath := filepath.Join(localRoot, filepath.FromSlash(rel))

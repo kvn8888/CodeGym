@@ -31,6 +31,22 @@ type SnapshottingSandbox interface {
 	CreateSnapshot(ctx context.Context, name string, timeout time.Duration) error
 	// DownloadFile reads one file back out of the sandbox.
 	DownloadFile(ctx context.Context, path string) ([]byte, error)
+	// ListFiles lists one sandbox directory so the build path can read a
+	// whole tree back before verification.
+	ListFiles(ctx context.Context, dir string) ([]agentruntime.SandboxEntry, error)
+}
+
+// sandboxParams builds the SDK create request for one sandbox. It is shared so
+// practice, boot checks, and builds request the same shape.
+func sandboxParams(snapshot string, labels map[string]string, networkBlockAll, ephemeral bool) types.SnapshotParams {
+	return types.SnapshotParams{
+		Snapshot: snapshot,
+		SandboxBaseParams: types.SandboxBaseParams{
+			Labels:          labels,
+			NetworkBlockAll: networkBlockAll,
+			Ephemeral:       ephemeral,
+		},
+	}
 }
 
 // DaytonaClient is the minimal Daytona surface these adapters need. The real
@@ -55,14 +71,7 @@ func (f *DaytonaSandboxFactory) Create(ctx context.Context, snapshotRef string, 
 	if f == nil || f.Client == nil {
 		return nil, fmt.Errorf("envintegration: Daytona client is required")
 	}
-	sandbox, err := f.Client.Create(ctx, types.SnapshotParams{
-		Snapshot: snapshotRef,
-		SandboxBaseParams: types.SandboxBaseParams{
-			Labels:          labels,
-			NetworkBlockAll: networkBlockAll,
-			Ephemeral:       f.Ephemeral,
-		},
-	})
+	sandbox, err := f.Client.Create(ctx, sandboxParams(snapshotRef, labels, networkBlockAll, f.Ephemeral))
 	if err != nil {
 		return nil, fmt.Errorf("envintegration: create practice sandbox: %w", err)
 	}
@@ -94,14 +103,7 @@ func (p *DaytonaSnapshotProvider) BootFresh(ctx context.Context, snapshotRef str
 	for key, value := range p.Labels {
 		labels[key] = value
 	}
-	sandbox, err := p.Client.Create(ctx, types.SnapshotParams{
-		Snapshot: snapshotRef,
-		SandboxBaseParams: types.SandboxBaseParams{
-			Labels:          labels,
-			NetworkBlockAll: policy == environmentregistry.NetworkPolicyIsolated,
-			Ephemeral:       true,
-		},
-	})
+	sandbox, err := p.Client.Create(ctx, sandboxParams(snapshotRef, labels, policy == environmentregistry.NetworkPolicyIsolated, true))
 	if err != nil {
 		return nil, fmt.Errorf("envintegration: boot snapshot %q: %w", snapshotRef, err)
 	}

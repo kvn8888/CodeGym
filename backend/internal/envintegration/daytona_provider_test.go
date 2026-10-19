@@ -84,6 +84,10 @@ func (s *fakeSandbox) DownloadFile(context.Context, string) ([]byte, error) {
 	return []byte("contents"), nil
 }
 
+func (s *fakeSandbox) ListFiles(context.Context, string) ([]agentruntime.SandboxEntry, error) {
+	return nil, nil
+}
+
 func (s *fakeSandbox) ExecuteCommand(_ context.Context, command string, _ time.Duration) (int, string, error) {
 	s.commands = append(s.commands, command)
 	if s.execErr != nil {

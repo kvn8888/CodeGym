@@ -158,6 +158,10 @@ type RegistryVerifier struct {
 	// Timeouts overrides the default stage deadlines when non-zero. Tests
 	// use it to force timeout paths without waiting out production limits.
 	Timeouts environmentverify.StageTimeouts
+	// SetupAlreadySatisfied records setup as satisfied instead of running it,
+	// for corridors whose verified filesystem already contains the setup
+	// result. See environmentverify.VerifyOptions.SetupAlreadySatisfied.
+	SetupAlreadySatisfied bool
 }
 
 // Verify judges one builder output. It returns a verifier result, never an
@@ -202,6 +206,7 @@ func (v *RegistryVerifier) Verify(ctx context.Context, build environmentregistry
 		opts.Assessment = v.Assessment
 		opts.Assessor = v.Assessor
 	}
+	opts.SetupAlreadySatisfied = v.SetupAlreadySatisfied
 	return environmentverify.VerifyWithOptions(ctx, v.Runner, build.Builder, root, newVerifierRunID(), opts)
 }
 

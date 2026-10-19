@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -37,12 +38,25 @@ type TaskSpec struct {
 	OutputCapBytes   int
 }
 
+// Validate checks a task against the runtime contract using host path rules.
 func (s TaskSpec) Validate(now time.Time) error {
+	return s.validate(now, filepath.IsAbs)
+}
+
+// ValidateSandbox checks the same contract for a task whose working directory
+// lives inside a POSIX sandbox, where the host's filepath rules do not apply.
+func (s TaskSpec) ValidateSandbox(now time.Time) error {
+	return s.validate(now, path.IsAbs)
+}
+
+// validate is the one task contract; only the definition of an absolute path
+// differs between the host runtime and a sandbox runtime.
+func (s TaskSpec) validate(now time.Time, isAbs func(string) bool) error {
 	if strings.TrimSpace(s.Goal) == "" {
 		return errors.New("agentruntime: goal is required")
 	}
 	workingDirectory := strings.TrimSpace(s.WorkingDirectory)
-	if workingDirectory == "" || !filepath.IsAbs(workingDirectory) {
+	if workingDirectory == "" || !isAbs(workingDirectory) {
 		return errors.New("agentruntime: working directory must be absolute")
 	}
 	if s.TurnCeiling <= 0 {

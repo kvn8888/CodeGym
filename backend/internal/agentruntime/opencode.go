@@ -177,6 +177,13 @@ func (r *OpenCodeRuntime) verifyVersion(ctx context.Context) error {
 }
 
 func (r *OpenCodeRuntime) buildConfig(task TaskSpec) ([]byte, error) {
+	return openCodeConfigPayload(r.config.Model, r.config.RelayBaseURL, r.config.RelayToken, task.TurnCeiling, task.AllowedTools)
+}
+
+// openCodeConfigPayload is the single opencode configuration builder, shared
+// by the host runtime and the sandbox runtime so both agents run under
+// identical model, permission, and step settings.
+func openCodeConfigPayload(model, relayBaseURL, relayToken string, turnCeiling int, allowedTools []Tool) ([]byte, error) {
 	permissions := map[string]any{
 		"*": "deny",
 		"external_directory": map[string]string{
@@ -184,24 +191,24 @@ func (r *OpenCodeRuntime) buildConfig(task TaskSpec) ([]byte, error) {
 			"~/.local/share/opencode/tool-output/*": "allow",
 		},
 	}
-	for _, allowed := range task.AllowedTools {
+	for _, allowed := range allowedTools {
 		name := openCodeToolName(allowed)
 		permissions[name] = "allow"
 	}
 	config := map[string]any{
 		"$schema": "https://opencode.ai/config.json", "autoupdate": false, "share": "disabled",
-		"model": "codegym-relay/" + r.config.Model,
+		"model": "codegym-relay/" + model,
 		"provider": map[string]any{"codegym-relay": map[string]any{
 			"npm": "@ai-sdk/openai-compatible", "name": "CodeGym operation relay",
-			"options": map[string]any{"baseURL": r.config.RelayBaseURL, "apiKey": r.config.RelayToken},
-			"models": map[string]any{r.config.Model: map[string]any{
+			"options": map[string]any{"baseURL": relayBaseURL, "apiKey": relayToken},
+			"models": map[string]any{model: map[string]any{
 				"name": "CodeGym agent", "limit": map[string]any{"context": 32768, "output": 4096},
 			}},
 		}},
 		"permission": permissions,
 		"agent": map[string]any{"codegym": map[string]any{
 			"description": "Bounded CodeGym coding-agent runtime", "mode": "primary",
-			"model": "codegym-relay/" + r.config.Model, "steps": task.TurnCeiling,
+			"model": "codegym-relay/" + model, "steps": turnCeiling,
 			"permission": permissions,
 		}},
 	}

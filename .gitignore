@@ -44,6 +44,9 @@ backend/internal/store/db/generated/
 __pycache__/
 *.pyc
 
+# Local development state
+/.codegym/
+
 # Test
 coverage/
 *.cover

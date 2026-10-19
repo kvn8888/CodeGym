@@ -16,6 +16,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/chat"
 	"github.com/kvn8888/codegym/backend/internal/config"
 	"github.com/kvn8888/codegym/backend/internal/envintegration"
+	"github.com/kvn8888/codegym/backend/internal/environmentregistry"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
@@ -54,6 +55,7 @@ func main() {
 	var workflowStore workflow.Store = workflow.NewInMemoryStore()
 	var relayStore agentrelay.Store = agentrelay.NewInMemoryStore()
 	var practiceSavedStore practice.SavedExerciseStore = practice.NewInMemorySavedExerciseStore()
+	var environmentStore environmentregistry.Store = environmentregistry.NewInMemoryStore()
 
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -77,6 +79,7 @@ func main() {
 		postgresWorkflowStore := workflow.NewPostgresStore(pool)
 		postgresRelayStore := agentrelay.NewPostgresStore(pool)
 		postgresPracticeSavedStore := practice.NewPostgresSavedExerciseStore(pool)
+		postgresEnvironmentStore := environmentregistry.NewPostgresStore(pool)
 		if err := postgresIdentityStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap identity schema: %v", err)
 		}
@@ -110,6 +113,9 @@ func main() {
 		if err := postgresPracticeSavedStore.EnsureSchema(ctx); err != nil {
 			log.Fatalf("could not bootstrap practice saved exercise schema: %v", err)
 		}
+		if err := postgresEnvironmentStore.EnsureSchema(ctx); err != nil {
+			log.Fatalf("could not bootstrap practice environment registry schema: %v", err)
+		}
 
 		identityStore = postgresIdentityStore
 		memoryStore = postgresMemoryStore
@@ -122,7 +128,8 @@ func main() {
 		workflowStore = postgresWorkflowStore
 		relayStore = postgresRelayStore
 		practiceSavedStore = postgresPracticeSavedStore
-		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, genai usage, execution, problem, and practice saved exercise stores")
+		environmentStore = postgresEnvironmentStore
+		log.Print("CodeGym API using Postgres identity, memory, session, chat, workflow, relay, genai usage, execution, problem, practice saved exercise, and practice environment registry stores")
 	} else {
 		log.Print("CodeGym API using in-memory identity, memory, session, workflow, relay, genai usage, execution, and problem stores; set NEON_CONNECTION_STRING to enable Postgres")
 	}
@@ -293,7 +300,7 @@ func main() {
 		if cfg.DatabaseURL != "" {
 			demoSaves = practiceSavedStore
 		}
-		demo, err := buildEnvDemo(ctx, cfg, relayUpstream, demoSaves)
+		demo, err := buildEnvDemo(ctx, cfg, relayUpstream, demoSaves, environmentStore)
 		if err != nil {
 			log.Fatalf("could not configure CodeGym environment demo: %v", err)
 		}

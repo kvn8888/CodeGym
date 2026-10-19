@@ -86,9 +86,9 @@ type ArtifactRecord struct {
 // ErrArtifactNotFound reports a registry lookup with no matching record.
 var ErrArtifactNotFound = errors.New("environment artifact not found")
 
-// Store persists promoted artifact records. The in-memory implementation
-// below is the standing fake and test double; durable persistence is a
-// production integration limit (see doc.go).
+// Store persists promoted artifact records. InMemoryStore is the standing
+// fake and test double; PostgresStore provides durable persistence behind
+// the same interface (see doc.go).
 type Store interface {
 	SaveArtifact(ctx context.Context, record ArtifactRecord) error
 	ListByTechnology(ctx context.Context, technology string) ([]ArtifactRecord, error)

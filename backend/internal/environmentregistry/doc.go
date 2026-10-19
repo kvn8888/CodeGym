@@ -79,7 +79,10 @@
 //     cleanup) stays with the production runner; fake providers used in
 //     tests prove orchestration and gating, never production
 //     sandbox/network enforcement.
-//   - Durable persistence, real snapshot boot, live builder execution,
-//     practice/UI/resume (#190-#191), live demos (#192), and migration
-//     (#193) are out of scope here.
+//   - Durable record persistence now has a Postgres implementation
+//     (store_postgres.go), selectable through the same Store seam as the
+//     in-memory double, so promoted artifacts outlive a backend restart.
+//     Durable persistence of artifact *contents* and real snapshot boot,
+//     live builder execution, practice/UI/resume (#190-#191), live demos
+//     (#192), and migration (#193) remain out of scope here.
 package environmentregistry

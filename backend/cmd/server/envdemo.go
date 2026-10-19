@@ -16,6 +16,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/agentruntime"
 	"github.com/kvn8888/codegym/backend/internal/config"
 	"github.com/kvn8888/codegym/backend/internal/envintegration"
+	"github.com/kvn8888/codegym/backend/internal/environmentregistry"
 	"github.com/kvn8888/codegym/backend/internal/generation/openaicompat"
 	"github.com/kvn8888/codegym/backend/internal/practice"
 	"github.com/kvn8888/codegym/backend/internal/usage"
@@ -40,7 +41,7 @@ func (envDemoOperations) OperationActive(context.Context, string, string, string
 // buildEnvDemo assembles the host-local agent-built environment corridor
 // (#192). The agent reaches the model through a loopback-only relay with
 // per-build tokens, so provider keys never enter the agent's environment.
-func buildEnvDemo(ctx context.Context, cfg config.Config, upstream *openaicompat.Adapter, saved practice.SavedExerciseStore) (*envintegration.LocalDemo, error) {
+func buildEnvDemo(ctx context.Context, cfg config.Config, upstream *openaicompat.Adapter, saved practice.SavedExerciseStore, store environmentregistry.Store) (*envintegration.LocalDemo, error) {
 	if upstream == nil {
 		return nil, fmt.Errorf("a GenAI provider is required for agent builds")
 	}
@@ -132,5 +133,6 @@ func buildEnvDemo(ctx context.Context, cfg config.Config, upstream *openaicompat
 		TurnCeiling: envDemoTurnCeiling,
 		Timeout:     cfg.EnvDemoTimeout,
 		Saved:       saved,
+		Store:       store,
 	})
 }

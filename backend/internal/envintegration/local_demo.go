@@ -156,6 +156,9 @@ type LocalDemoConfig struct {
 	TurnCeiling int
 	Timeout     time.Duration
 	Saved       practice.SavedExerciseStore
+	// Store persists promoted artifacts. Nil keeps the in-memory store, so
+	// tests and demos need no database; production passes the durable one.
+	Store environmentregistry.Store
 }
 
 // LocalDemo is the assembled host-only corridor.
@@ -172,8 +175,12 @@ func NewLocalDemo(cfg LocalDemoConfig) (*LocalDemo, error) {
 		return nil, fmt.Errorf("envintegration: runtime factory is required")
 	}
 	dirs := &SnapshotDirectories{}
+	store := cfg.Store
+	if store == nil {
+		store = environmentregistry.NewInMemoryStore()
+	}
 	registryService := &environmentregistry.Service{
-		Store:     environmentregistry.NewInMemoryStore(),
+		Store:     store,
 		Snapshots: &LocalSnapshotProvider{Snapshots: dirs},
 		Builder: &AgentBuilder{
 			NewRuntime: cfg.NewRuntime, RuntimeName: cfg.RuntimeName, Snapshots: dirs,

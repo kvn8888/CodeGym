@@ -9,17 +9,26 @@ import (
 	"time"
 
 	"github.com/daytona/clients/sdk-go/pkg/types"
+	"github.com/kvn8888/codegym/backend/internal/agentruntime"
 	"github.com/kvn8888/codegym/backend/internal/environmentregistry"
+	"github.com/kvn8888/codegym/backend/internal/environmentverify"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/practice"
 )
 
 // The adapters must satisfy the seams the rest of the backend consumes.
 var (
-	_ SandboxFactory           = (*DaytonaSandboxFactory)(nil)
-	_ environmentregistry.Boot = (*daytonaBoot)(nil)
-	_ SnapshottingSandbox      = (*fakeSandbox)(nil)
+	_ SandboxFactory                     = (*DaytonaSandboxFactory)(nil)
+	_ environmentregistry.Boot           = (*daytonaBoot)(nil)
+	_ SnapshottingSandbox                = (*fakeSandbox)(nil)
+	_ agentruntime.SandboxExecutor       = (*fakeTreeSandbox)(nil)
+	_ environmentverify.CommandRunner    = (*SandboxCommandRunner)(nil)
+	_ environmentverify.AssessmentRunner = (*SandboxAssessor)(nil)
 )
+
+// The real Daytona adapter is the one production uses, so it must satisfy the
+// executor seam every off-host step is written against.
+var _ agentruntime.SandboxExecutor = daytonaSandboxAdapter{}
 
 // fakeClient records every Create and hands out recording sandboxes.
 type fakeClient struct {

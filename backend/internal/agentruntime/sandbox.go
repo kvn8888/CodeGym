@@ -12,6 +12,15 @@ import (
 	"time"
 )
 
+// SandboxEntry is one directory entry inside a sandbox, in sandbox-native
+// terms. Keeping this neutral lets callers walk a sandbox tree without
+// importing any cloud SDK types.
+type SandboxEntry struct {
+	Path        string
+	IsDirectory bool
+	Size        int64
+}
+
 // SandboxExecutor is the remote execution surface of one build sandbox. It
 // mirrors the sandbox seams the Daytona adapter already implements, so the
 // same agent code runs whether the sandbox is remote or a test fake.
@@ -19,6 +28,7 @@ type SandboxExecutor interface {
 	UploadFile(ctx context.Context, content []byte, path string) error
 	ExecuteCommand(ctx context.Context, command string, timeout time.Duration) (exitCode int, output string, err error)
 	DownloadFile(ctx context.Context, path string) ([]byte, error)
+	ListFiles(ctx context.Context, dir string) ([]SandboxEntry, error)
 }
 
 // SandboxConfig configures one sandbox-backed opencode runtime. The custom

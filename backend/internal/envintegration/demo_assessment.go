@@ -129,13 +129,22 @@ func (a *CommandAssessor) Assess(ctx context.Context, work environmentverify.Ass
 	if timedOut {
 		return environmentverify.AssessmentReport{}, context.DeadlineExceeded
 	}
+	return ReportFromCommandResult(exitCode, output), nil
+}
+
+// ReportFromCommandResult turns one test-command outcome into the single
+// assessed test this corridor reports, whatever ran it. It is
+// technology-neutral: no test-report format is parsed, and exit code alone
+// decides the outcome. Both the host assessor and the sandbox assessor use
+// it so a solution verifies identically on either.
+func ReportFromCommandResult(exitCode int, output string) environmentverify.AssessmentReport {
 	outcome := environmentverify.TestOutcome{TestID: DemoSuiteTestID, Passed: exitCode == 0}
 	if !outcome.Passed {
 		outcome.FailureClass = environmentverify.ClassAssertion
 		outcome.Message = tailOutput(output, 2000)
 		outcome.Assertion = &environmentverify.ObservedAssertion{Code: DemoSuiteFailureCode, Expected: "pass", Actual: "fail"}
 	}
-	return environmentverify.AssessmentReport{Tests: []environmentverify.TestOutcome{outcome}}, nil
+	return environmentverify.AssessmentReport{Tests: []environmentverify.TestOutcome{outcome}}
 }
 
 func tailOutput(output string, limit int) string {

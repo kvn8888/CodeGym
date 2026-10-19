@@ -57,6 +57,36 @@ func (e *fakeExecutor) DownloadFile(_ context.Context, path string) ([]byte, err
 	return nil, errors.New("no such file: " + path)
 }
 
+func (e *fakeExecutor) ListFiles(_ context.Context, dir string) ([]SandboxEntry, error) {
+	prefix := strings.TrimRight(dir, "/") + "/"
+	seen := map[string]struct{}{}
+	var entries []SandboxEntry
+	for _, source := range []map[string][]byte{e.files, e.uploads} {
+		for path := range source {
+			if !strings.HasPrefix(path, prefix) {
+				continue
+			}
+			rest := strings.TrimPrefix(path, prefix)
+			if rest == "" {
+				continue
+			}
+			name := rest
+			isDir := false
+			if idx := strings.Index(rest, "/"); idx >= 0 {
+				name = rest[:idx]
+				isDir = true
+			}
+			child := prefix + name
+			if _, ok := seen[child]; ok {
+				continue
+			}
+			seen[child] = struct{}{}
+			entries = append(entries, SandboxEntry{Path: child, IsDirectory: isDir})
+		}
+	}
+	return entries, nil
+}
+
 func newSandboxRuntimeForTest(t *testing.T, executor SandboxExecutor, progress ProgressReporter) *SandboxRuntime {
 	t.Helper()
 	runtime, err := NewSandboxRuntime(SandboxConfig{

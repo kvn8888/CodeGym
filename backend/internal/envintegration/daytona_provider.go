@@ -10,6 +10,7 @@ import (
 	"github.com/daytona/clients/sdk-go/pkg/daytona"
 	"github.com/daytona/clients/sdk-go/pkg/options"
 	"github.com/daytona/clients/sdk-go/pkg/types"
+	"github.com/kvn8888/codegym/backend/internal/agentruntime"
 	"github.com/kvn8888/codegym/backend/internal/environmentregistry"
 )
 
@@ -214,6 +215,25 @@ func (a daytonaSandboxAdapter) UploadFile(ctx context.Context, content []byte, p
 
 func (a daytonaSandboxAdapter) DownloadFile(ctx context.Context, path string) ([]byte, error) {
 	return a.sandbox.FileSystem.DownloadFile(ctx, path, nil)
+}
+
+func (a daytonaSandboxAdapter) ListFiles(ctx context.Context, dir string) ([]agentruntime.SandboxEntry, error) {
+	entries, err := a.sandbox.FileSystem.ListFiles(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	neutral := make([]agentruntime.SandboxEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		neutral = append(neutral, agentruntime.SandboxEntry{
+			Path:        entry.Path,
+			IsDirectory: entry.IsDirectory,
+			Size:        entry.Size,
+		})
+	}
+	return neutral, nil
 }
 
 func (a daytonaSandboxAdapter) ExecuteCommand(ctx context.Context, command string, timeout time.Duration) (int, string, error) {

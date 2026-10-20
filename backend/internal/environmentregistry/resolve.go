@@ -56,6 +56,9 @@ type ResolveRequest struct {
 	Version   string
 	ReuseTags []string
 	Owner     string
+	// WorkspaceID scopes relay budgets for a fresh build to the requesting
+	// workspace, whose membership row the relay store requires.
+	WorkspaceID string
 	// Objective describes the learning goal for fresh builds. Compatibility
 	// recorded on promoted artifacts comes from the verified manifest.
 	Objective string
@@ -283,11 +286,12 @@ func (s *Service) serveMiss(ctx context.Context, req ResolveRequest, technology 
 		return Resolution{}, err
 	}
 	output, err := s.Builder.Build(ctx, BuildRequest{
-		Technology: technology,
-		Version:    strings.TrimSpace(req.Version),
-		Objective:  strings.TrimSpace(req.Objective),
-		ReuseTags:  req.ReuseTags,
-		Owner:      req.Owner,
+		Technology:  technology,
+		Version:     strings.TrimSpace(req.Version),
+		Objective:   strings.TrimSpace(req.Objective),
+		ReuseTags:   req.ReuseTags,
+		Owner:       req.Owner,
+		WorkspaceID: req.WorkspaceID,
 	})
 	if err != nil {
 		return Resolution{Status: ResolutionBuildFailed, Reason: fmt.Sprintf("Fresh build failed: %v.", err)}, nil

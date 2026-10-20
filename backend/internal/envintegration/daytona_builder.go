@@ -36,7 +36,7 @@ const DefaultSandboxWorkspaceDir = "/home/agent/work"
 // SandboxRuntimeFactory builds an agent runtime bound to one leased sandbox.
 // It is the seam where a per-build relay token is issued: the runtime reaches
 // the model only through the relay, so provider keys never enter the sandbox.
-type SandboxRuntimeFactory func(ctx context.Context, sandbox agentruntime.SandboxExecutor) (agentruntime.AgentRuntime, func(), error)
+type SandboxRuntimeFactory func(ctx context.Context, req environmentregistry.BuildRequest, sandbox agentruntime.SandboxExecutor) (agentruntime.AgentRuntime, func(), error)
 
 // DaytonaBuilder implements the registry Builder by preparing environments
 // inside Daytona sandboxes. Output must still pass verification and promotion
@@ -128,7 +128,7 @@ func (b *DaytonaBuilder) Build(ctx context.Context, req environmentregistry.Buil
 		}
 	}()
 
-	runtime, releaseRuntime, err := b.NewRuntime(ctx, sandbox)
+	runtime, releaseRuntime, err := b.NewRuntime(ctx, req, sandbox)
 	if err != nil {
 		return environmentregistry.BuildOutput{}, fmt.Errorf("envintegration: start sandbox agent runtime: %w", err)
 	}
@@ -156,7 +156,8 @@ func (b *DaytonaBuilder) Build(ctx context.Context, req environmentregistry.Buil
 		return environmentregistry.BuildOutput{}, fmt.Errorf("envintegration: sandbox preparation failed: %w", err)
 	}
 	if runResult.Telemetry.Termination != agentruntime.TerminationCompleted {
-		return environmentregistry.BuildOutput{}, fmt.Errorf("envintegration: sandbox preparation ended: %s", runResult.Telemetry.Termination)
+		return environmentregistry.BuildOutput{}, fmt.Errorf("envintegration: sandbox preparation ended: %s%s",
+			runResult.Telemetry.Termination, failureSuffix(runResult.OutputTail))
 	}
 
 	reportStage(ctx, "promoting the built filesystem to a snapshot")
@@ -301,6 +302,14 @@ func newBuilderRunID() string {
 }
 
 // builderTelemetry maps runtime telemetry onto the shared builder contract.
+// failureSuffix attaches the runtime's bounded output tail to an error.
+func failureSuffix(tail string) string {
+	if strings.TrimSpace(tail) == "" {
+		return ""
+	}
+	return ": " + tail
+}
+
 func builderTelemetry(telemetry agentruntime.Telemetry, wallTime time.Duration) envbuild.BuilderTelemetry {
 	return envbuild.BuilderTelemetry{
 		WallTimeMs:       wallTime.Milliseconds(),

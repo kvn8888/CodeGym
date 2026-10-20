@@ -114,7 +114,7 @@ func newDaytonaBuilderForTest(t *testing.T, client DaytonaClient, runtime agentr
 		BaseSnapshot: "codegym-base",
 		WorkspaceDir: root,
 		Builds:       builds,
-		NewRuntime: func(_ context.Context, sandbox agentruntime.SandboxExecutor) (agentruntime.AgentRuntime, func(), error) {
+		NewRuntime: func(_ context.Context, _ environmentregistry.BuildRequest, sandbox agentruntime.SandboxExecutor) (agentruntime.AgentRuntime, func(), error) {
 			if build, ok := sandbox.(*buildSandbox); ok {
 				seedBuildTree(t, build, root)
 			}

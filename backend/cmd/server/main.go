@@ -210,7 +210,7 @@ func main() {
 		if relayUpstream == nil {
 			log.Print("CodeGym agent relay disabled: token secret is set but no GenAI provider is configured")
 		} else {
-			envOperations = newEnvOperationGuard(workflowService, cfg.Relay.TokenTTL)
+			envOperations = newEnvOperationGuard(workflowService, cfg.EnvBuildTimeout+10*time.Minute)
 			relayService, err := agentrelay.NewService(relayStore, agentrelay.ServiceConfig{
 				TokenSecret: cfg.Relay.TokenSecret, TokenTTL: cfg.Relay.TokenTTL,
 				DefaultMaxTotalTokens:   cfg.Relay.MaxTotalTokens,

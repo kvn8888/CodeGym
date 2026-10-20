@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,7 +123,8 @@ func (r *SandboxRuntime) Run(ctx context.Context, task TaskSpec) (result RunResu
 	}
 	prompt := fmt.Sprintf("%s\n\n%s", task.Goal, resultManifestInstructions())
 	command := r.agentCommand(task, configPath, progressLog, prompt)
-	exitCode, output, executeErr := r.config.Executor.ExecuteCommand(runContext, command, timeout)
+	log.Printf("agentruntime: starting agent command in %s", task.WorkingDirectory)
+	exitCode, output, executeErr := r.runCommand(runContext, command, timeout)
 	result.Telemetry.ExitCode = &exitCode
 	truncated := len(output) > task.EffectiveOutputCap()
 	if truncated {
@@ -131,10 +133,12 @@ func (r *SandboxRuntime) Run(ctx context.Context, task TaskSpec) (result RunResu
 	result.Telemetry.OutputTruncated = truncated
 	parseOpenCodeEvents(output, &result)
 	if progressErr := r.deliverProgress(ctx, progressLog, &result); progressErr != nil {
+		log.Printf("agentruntime: deliver progress failed: %v", progressErr)
 		return result, progressErr
 	}
 	if truncated {
 		result.Telemetry.Termination = TerminationOutputCeiling
+		log.Printf("agentruntime: agent command output ceiling exceeded")
 		return result, nil
 	}
 	if reason, contextErr := contextTermination(ctx, runContext); reason != "" {
@@ -143,10 +147,14 @@ func (r *SandboxRuntime) Run(ctx context.Context, task TaskSpec) (result RunResu
 	}
 	if executeErr != nil {
 		result.Telemetry.Termination = TerminationRuntimeFailure
+		result.OutputTail = failureOutputTail(output)
+		log.Printf("agentruntime: agent command failed: %v output_tail=%q", executeErr, result.OutputTail)
 		return result, executeErr
 	}
 	if exitCode != 0 {
 		result.Telemetry.Termination = TerminationRuntimeFailure
+		result.OutputTail = failureOutputTail(output)
+		log.Printf("agentruntime: agent command exited %d output_tail=%q", exitCode, result.OutputTail)
 		return result, nil
 	}
 	result.Manifest = r.loadManifest(ctx, task)
@@ -155,7 +163,19 @@ func (r *SandboxRuntime) Run(ctx context.Context, task TaskSpec) (result RunResu
 		return result, nil
 	}
 	result.Telemetry.Termination = TerminationCompleted
+	log.Printf("agentruntime: agent command completed (exit=%d, turns=%d, output_tail=%q)", *result.Telemetry.ExitCode, result.Telemetry.Turns, result.OutputTail)
 	return result, nil
+}
+
+// failureOutputTail keeps the end of the agent output, which is where a
+// runtime failure usually explains itself, bounded for logs and telemetry.
+func failureOutputTail(output string) string {
+	const limit = 4000
+	output = strings.TrimSpace(output)
+	if len(output) <= limit {
+		return output
+	}
+	return "..." + output[len(output)-limit:]
 }
 
 // verifyVersion runs the pinned binary's version check inside the sandbox.
@@ -181,8 +201,17 @@ func (r *SandboxRuntime) verifyVersion(ctx context.Context) error {
 // progress log path inside the sandbox.
 func (r *SandboxRuntime) writeSandboxConfig(ctx context.Context, task TaskSpec) (string, string, error) {
 	toolsDir := r.config.ConfigDir + "/tools"
-	if _, _, err := r.config.Executor.ExecuteCommand(ctx, "mkdir -p "+shellQuote(toolsDir)+" "+shellQuote(r.config.ScratchDir), 30*time.Second); err != nil {
-		return "", "", fmt.Errorf("agentruntime: create sandbox config directory: %w", err)
+	progressLog := r.config.ScratchDir + "/progress.jsonl"
+	// The sandbox image only guarantees the home directory exists. Two
+	// Daytona toolbox limits shape this command: an upload rejects a missing
+	// parent, and neither upload nor download works for a zero-byte file.
+	// Create the tool, scratch and working directories and seed the progress
+	// log with one newline, which the reader skips as an empty line. The
+	// working directory must exist because the agent command starts with cd.
+	prepare := "mkdir -p " + shellQuote(toolsDir) + " " + shellQuote(r.config.ScratchDir) + " " + shellQuote(task.WorkingDirectory) +
+		` && printf '\n' > ` + shellQuote(progressLog)
+	if _, _, err := r.config.Executor.ExecuteCommand(ctx, prepare, 30*time.Second); err != nil {
+		return "", "", fmt.Errorf("agentruntime: prepare sandbox config directory: %w", err)
 	}
 	payload, err := openCodeConfigPayload(r.config.Model, r.config.RelayBaseURL, r.config.RelayToken, task.TurnCeiling, task.AllowedTools)
 	if err != nil {
@@ -195,11 +224,66 @@ func (r *SandboxRuntime) writeSandboxConfig(ctx context.Context, task TaskSpec) 
 	if err := r.config.Executor.UploadFile(ctx, []byte(openCodeProgressTool), toolsDir+"/report_progress.ts"); err != nil {
 		return "", "", fmt.Errorf("agentruntime: upload sandbox progress tool: %w", err)
 	}
-	progressLog := r.config.ScratchDir + "/progress.jsonl"
-	if err := r.config.Executor.UploadFile(ctx, nil, progressLog); err != nil {
-		return "", "", fmt.Errorf("agentruntime: initialise sandbox progress log: %w", err)
-	}
 	return configPath, progressLog, nil
+}
+
+// runCommand executes one command by running it in the background inside the
+// sandbox and polling for a completion marker file. Daytona's SDK has a
+// hardcoded 60s HTTP client timeout for synchronous ExecuteCommand, and the
+// session API does not reliably report exit codes for long-running interactive
+// processes like opencode, so background execution is the only reliable path
+// for builds that take longer than a minute.
+func (r *SandboxRuntime) runCommand(ctx context.Context, command string, timeout time.Duration) (int, string, error) {
+	donePath := r.config.ScratchDir + "/agent.done"
+	exitCodePath := r.config.ScratchDir + "/agent.exitcode"
+	outputPath := r.config.ScratchDir + "/agent.output"
+
+	// Background the entire command pipeline: opencode writes its output to
+	// outputPath, its exit code to exitCodePath, and touches donePath when
+	// finished. ExecuteCommand returns immediately after backgrounding.
+	background := "(" + command + " > " + shellQuote(outputPath) + " 2>&1; echo $? > " + shellQuote(exitCodePath) + "; touch " + shellQuote(donePath) + ") &"
+	if _, _, err := r.config.Executor.ExecuteCommand(ctx, background, 30*time.Second); err != nil {
+		return 0, "", fmt.Errorf("agentruntime: start agent command in background: %w", err)
+	}
+
+	deadline := time.Now().Add(timeout)
+	poll := 2 * time.Second
+	for i := 0; ; i++ {
+		if err := ctx.Err(); err != nil {
+			return 0, "", err
+		}
+		if time.Now().After(deadline) {
+			return 0, "", fmt.Errorf("agentruntime: agent command still running after %v", timeout)
+		}
+		_, err := r.config.Executor.DownloadFile(ctx, donePath)
+		if err == nil {
+			break
+		}
+		if i%30 == 0 {
+			log.Printf("agentruntime: agent command still running...")
+		}
+		select {
+		case <-ctx.Done():
+			return 0, "", ctx.Err()
+		case <-time.After(poll):
+		}
+	}
+
+	exitCodeData, err := r.config.Executor.DownloadFile(ctx, exitCodePath)
+	exitCode := 1
+	if err == nil {
+		if n, err := fmt.Sscanf(string(exitCodeData), "%d", &exitCode); err != nil || n != 1 {
+			exitCode = 1
+		}
+	}
+
+	outputData, err := r.config.Executor.DownloadFile(ctx, outputPath)
+	output := ""
+	if err == nil {
+		output = string(outputData)
+	}
+
+	return exitCode, output, nil
 }
 
 // agentCommand builds the shell command that runs the agent inside the

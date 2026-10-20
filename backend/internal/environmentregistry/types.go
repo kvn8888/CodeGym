@@ -169,6 +169,9 @@ type BuildRequest struct {
 	Objective  string
 	ReuseTags  []string
 	Owner      string
+	// WorkspaceID is the workspace the build is charged to. Builds issue
+	// relay budgets under this scope, so it must be a real membership.
+	WorkspaceID string
 }
 
 // BuildOutput is what the builder track produced before verification:

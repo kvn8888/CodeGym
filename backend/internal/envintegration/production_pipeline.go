@@ -132,9 +132,10 @@ func (p *ProductionPipeline) Run(ctx context.Context, operation *EnvironmentOper
 	resolution, err := p.Registry.Resolve(withStageReporter(ctx, report), environmentregistry.ResolveRequest{
 		// The builder records the canonical key; resolving by the display
 		// name made every fresh build an output mismatch.
-		Technology: envbuild.NormalizeTechnology(operation.Technology),
-		Objective:  operation.Objective,
-		Owner:      operation.Owner,
+		Technology:  envbuild.NormalizeTechnology(operation.Technology),
+		Objective:   operation.Objective,
+		Owner:       operation.Owner,
+		WorkspaceID: operation.WorkspaceID,
 	})
 	if err != nil {
 		return "", err

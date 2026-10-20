@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,21 +135,39 @@ func buildProductionEnvironment(
 	// Each build gets its own runtime and its own relay token, so provider
 	// keys never enter a sandbox and one build can never spend another's
 	// budget.
-	newRuntime := func(ctx context.Context, sandbox agentruntime.SandboxExecutor) (agentruntime.AgentRuntime, func(), error) {
+	newRuntime := func(ctx context.Context, req environmentregistry.BuildRequest, sandbox agentruntime.SandboxExecutor) (agentruntime.AgentRuntime, func(), error) {
 		raw := make([]byte, 8)
 		if _, err := rand.Read(raw); err != nil {
 			return nil, nil, err
 		}
+		if strings.TrimSpace(req.Owner) == "" || strings.TrimSpace(req.WorkspaceID) == "" {
+			return nil, nil, fmt.Errorf("environment build requires an owner and workspace")
+		}
 		operationID := envBuildOperationPrefix + hex.EncodeToString(raw)
+		// The build owns this operation for its whole run, so authorize it
+		// before issuing, and give the token and budget the build window:
+		// a token capped at the relay default would expire mid-build.
+		guard.allow(operationID)
+		window := cfg.EnvBuildTimeout
+		if window <= 0 {
+			window = 40 * time.Minute
+		}
+		window += 5 * time.Minute
+		// The relay store requires a real membership row, so the build is
+		// charged to the requesting user and workspace like any other
+		// relay operation.
 		issued, err := tokens.Issue(ctx, agentrelay.IssueInput{
-			OperationID: operationID,
-			WorkspaceID: "environment-build",
-			UserID:      "environment-build",
+			OperationID:      operationID,
+			WorkspaceID:      req.WorkspaceID,
+			UserID:           req.Owner,
+			Deadline:         time.Now().Add(window),
+			MaxTotalTokens:   envBuildMaxTotalTokens,
+			MaxCostUSDMicros: envBuildMaxCostUSDMicros,
+			TokenTTL:         window,
 		})
 		if err != nil {
 			return nil, nil, err
 		}
-		guard.allow(operationID)
 		runtime, err := agentruntime.NewSandboxRuntime(agentruntime.SandboxConfig{
 			Executor:     sandbox,
 			BinaryPath:   "/opt/codegym/bin/opencode",
@@ -163,7 +182,13 @@ func buildProductionEnvironment(
 		if err != nil {
 			return nil, nil, err
 		}
-		return runtime, nil, nil
+		return runtime, func() {
+			revokeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := tokens.Revoke(revokeCtx, req.WorkspaceID, req.Owner, operationID); err != nil {
+				log.Printf("CodeGym environment build: release relay budget: %v", err)
+			}
+		}, nil
 	}
 
 	builder := &envintegration.DaytonaBuilder{

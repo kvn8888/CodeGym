@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,41 @@ func (e *fakeExecutor) UploadFile(_ context.Context, content []byte, path string
 
 func (e *fakeExecutor) ExecuteCommand(_ context.Context, command string, _ time.Duration) (int, string, error) {
 	e.commands = append(e.commands, command)
+	// Model `printf '\n' > 'path'`: the sandbox seeds the progress log
+	// with one newline, so downloads work.
+	if idx := strings.Index(command, "> '"); idx >= 0 {
+		if end := strings.Index(command[idx+len("> '"):], "'"); end >= 0 {
+			if e.files == nil {
+				e.files = map[string][]byte{}
+			}
+			path := command[idx+len("> '") : idx+len("> '")+end]
+			if _, ok := e.files[path]; !ok {
+				e.files[path] = []byte("\n")
+			}
+		}
+	}
+	// Background execution: `... &` starts a command and returns immediately.
+	// The fake simulates the sandbox completing it by writing the done, exit
+	// code, and output files that runCommand polls for.
+	if strings.HasSuffix(strings.TrimSpace(command), "&") {
+		exitCode := 1
+		output := ""
+		for needle, result := range e.results {
+			if strings.Contains(command, needle) {
+				exitCode = result.exitCode
+				output = result.output
+				break
+			}
+		}
+		if e.files == nil {
+			e.files = map[string][]byte{}
+		}
+		e.files["/home/agent/.codegym-scratch/agent.done"] = []byte{}
+		e.files["/home/agent/.codegym-scratch/agent.exitcode"] = []byte(strconv.Itoa(exitCode))
+		e.files["/home/agent/.codegym-scratch/agent.output"] = []byte(output)
+		return 0, "", nil
+	}
+	// Synchronous execution: version check, mkdir, etc.
 	for needle, result := range e.results {
 		if strings.Contains(command, needle) {
 			return result.exitCode, result.output, result.err
@@ -238,6 +274,26 @@ func TestSandboxRuntimeReportsNonZeroExit(t *testing.T) {
 	}
 	if result.Telemetry.Termination != TerminationRuntimeFailure {
 		t.Fatalf("termination = %s", result.Telemetry.Termination)
+	}
+}
+
+// TestSandboxRuntimeKeepsFailureOutput proves a runtime failure carries the
+// tail of the agent output so operators can see why the run failed.
+func TestSandboxRuntimeKeepsFailureOutput(t *testing.T) {
+	executor := &fakeExecutor{results: map[string]commandResult{
+		"--version": {output: OpenCodePinnedVersion},
+		" run ":     {exitCode: 1, output: "error: failed to load plugin"},
+	}}
+	runtime := newSandboxRuntimeForTest(t, executor, nil)
+	result, err := runtime.Run(context.Background(), testTask())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Telemetry.Termination != TerminationRuntimeFailure {
+		t.Fatalf("termination = %s", result.Telemetry.Termination)
+	}
+	if !strings.Contains(result.OutputTail, "failed to load plugin") {
+		t.Fatalf("output tail = %q", result.OutputTail)
 	}
 }
 

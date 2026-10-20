@@ -96,6 +96,36 @@ func TestTokenRejectsExpiryBadSignatureAndTerminalOperation(t *testing.T) {
 	}
 }
 
+func TestIssueHonorsPerOperationTokenTTL(t *testing.T) {
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	checker := &operationChecker{active: map[string]bool{
+		"ws-a\x00user-a\x00op-a": true,
+		"ws-a\x00user-a\x00op-b": true,
+	}}
+	service := newTestService(t, NewInMemoryStore(), checker, &now)
+
+	short, err := service.Issue(context.Background(), IssueInput{
+		OperationID: "op-a", WorkspaceID: "ws-a", UserID: "user-a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := now.Add(5 * time.Minute); !short.ExpiresAt.Equal(want) {
+		t.Fatalf("default expires at %s, want %s", short.ExpiresAt, want)
+	}
+
+	long, err := service.Issue(context.Background(), IssueInput{
+		OperationID: "op-b", WorkspaceID: "ws-a", UserID: "user-a",
+		Deadline: now.Add(2 * time.Hour), TokenTTL: 2 * time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := now.Add(2 * time.Hour); !long.ExpiresAt.Equal(want) {
+		t.Fatalf("override expires at %s, want %s", long.ExpiresAt, want)
+	}
+}
+
 func newTestService(t *testing.T, store Store, checker OperationChecker, now *time.Time) *Service {
 	t.Helper()
 	service, err := NewService(store, ServiceConfig{

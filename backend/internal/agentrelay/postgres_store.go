@@ -61,20 +61,12 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 					ON DELETE CASCADE;
 			END IF;
 		END $$`,
-		`DO $$
-		BEGIN
-			IF to_regclass('public.workflow_operations') IS NOT NULL AND NOT EXISTS (
-				SELECT 1 FROM pg_constraint
-				WHERE conname = 'fk_agent_relay_budget_operation'
-					AND conrelid = 'agent_relay_operation_budgets'::regclass
-			) THEN
-				ALTER TABLE agent_relay_operation_budgets
-					ADD CONSTRAINT fk_agent_relay_budget_operation
-					FOREIGN KEY (operation_id)
-					REFERENCES workflow_operations (id)
-					ON DELETE CASCADE;
-			END IF;
-		END $$`,
+		// Environment builds issue relay budgets for their own operations,
+		// which are not workflow operations. The operation scope and the
+		// relay's operation checker gate those budgets, so the workflow FK
+		// is dropped rather than fabricating a workflow row per build.
+		`ALTER TABLE agent_relay_operation_budgets
+			DROP CONSTRAINT IF EXISTS fk_agent_relay_budget_operation`,
 		`DO $$
 		BEGIN
 			IF NOT EXISTS (

@@ -125,10 +125,14 @@ func (s *Service) Issue(ctx context.Context, input IssueInput) (IssueResult, err
 		return IssueResult{}, err
 	}
 
+	tokenTTL := s.tokenTTL
+	if input.TokenTTL > 0 {
+		tokenTTL = input.TokenTTL
+	}
 	claims := tokenPayload{
 		Version: tokenVersion, TokenID: newID("relay_token"), BudgetID: budget.ID,
 		OperationID: budget.OperationID, WorkspaceID: budget.WorkspaceID,
-		UserID: budget.UserID, IssuedAt: now.Unix(), ExpiresAt: now.Add(s.tokenTTL).Unix(),
+		UserID: budget.UserID, IssuedAt: now.Unix(), ExpiresAt: now.Add(tokenTTL).Unix(),
 	}
 	token, err := s.sign(claims)
 	if err != nil {

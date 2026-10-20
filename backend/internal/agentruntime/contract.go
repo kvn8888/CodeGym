@@ -182,6 +182,9 @@ type RunResult struct {
 	Telemetry Telemetry     `json:"telemetry"`
 	Manifest  ManifestClaim `json:"manifest_claim"`
 	Prose     string        `json:"prose,omitempty"`
+	// OutputTail is a bounded, untrusted tail of the sandbox agent output,
+	// kept only when the run fails so operators can see why.
+	OutputTail string `json:"output_tail,omitempty"`
 }
 
 type Verification struct {

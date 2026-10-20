@@ -37,9 +37,14 @@ const opencodeVersion = "1.18.11"
 // import @opencode-ai/plugin without downloading anything at build time.
 const configDir = "/home/agent/.config/opencode"
 
+// opencodeBin is the exact binary the sandbox runtime invokes. The Daytona
+// image ships its own opencode earlier on PATH, so install to a private path
+// instead of relying on PATH resolution.
+const opencodeBin = "/opt/codegym/bin/opencode"
+
 func main() {
 	name := flag.String("name", "codegym-base", "snapshot name to create")
-	ttl := flag.Duration("ttl", time.Hour, "how long the snapshot stays warm while it is created")
+	ttl := flag.Duration("ttl", time.Hour, "timeout for the snapshot-promote operation")
 	keep := flag.Bool("keep", false, "keep the build sandbox instead of deleting it after promotion")
 	flag.Parse()
 
@@ -71,6 +76,11 @@ func main() {
 		timeout time.Duration
 	}{
 		{
+			name:    "report sandbox identity",
+			timeout: time.Minute,
+			command: "id; echo HOME=$HOME; ls -ld /home /usr/local/bin /home/agent 2>&1 || true; sudo -n true && echo sudo=ok",
+		},
+		{
 			name:    "install JDK, Maven, Node, Python",
 			timeout: 20 * time.Minute,
 			command: "export DEBIAN_FRONTEND=noninteractive && " +
@@ -96,14 +106,19 @@ func main() {
 				"ARCH=$(uname -m); " +
 				"case \"$ARCH\" in x86_64) ASSET=opencode-linux-x64.tar.gz;; aarch64) ASSET=opencode-linux-arm64.tar.gz;; *) echo \"unsupported arch $ARCH\" >&2; exit 1;; esac; " +
 				"curl -fsSL \"https://github.com/sst/opencode/releases/download/v" + opencodeVersion + "/${ASSET}\" -o /tmp/opencode.tar.gz && " +
-				"sudo tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin && rm /tmp/opencode.tar.gz && " +
-				"sudo chmod +x /usr/local/bin/opencode",
+				"sudo mkdir -p /opt/codegym/bin && " +
+				"sudo tar -xzf /tmp/opencode.tar.gz -C /opt/codegym/bin && rm /tmp/opencode.tar.gz && " +
+				"sudo chmod +x " + opencodeBin,
 		},
 		{
 			name:    "install the opencode plugin runtime",
 			timeout: 10 * time.Minute,
+			// /home is root-owned in the Daytona image and the sandbox user
+			// is not root, so the agent home must be created with sudo and
+			// handed to the runtime user before npm can write there.
 			command: "set -e; " +
-				"mkdir -p " + configDir + "/tools && cd " + configDir + " && " +
+				"sudo mkdir -p " + configDir + "/tools && " +
+				"sudo chown -R \"$(id -u):$(id -g)\" /home/agent && cd " + configDir + " && " +
 				"npm init -y >/dev/null 2>&1 && " +
 				"npm install --no-audit --no-fund @opencode-ai/plugin@" + opencodeVersion,
 		},
@@ -135,8 +150,9 @@ func main() {
 		"npm --version; " +
 		"go version; " +
 		"python3 --version; " +
-		"opencode --version; " +
-		"cd " + configDir + " && node -e \"require.resolve('@opencode-ai/plugin'); console.log('plugin-runtime ok')\""
+		"command -v opencode || true; " +
+		opencodeBin + " --version; " +
+		"cd " + configDir + " && node -e \"import('@opencode-ai/plugin').then(function(){console.log('plugin-runtime ok')}).catch(function(e){console.error(e);process.exit(1)})\""
 	if err := run(ctx, sandbox, "verify toolchain", verify, 5*time.Minute); err != nil {
 		log.Fatalf("base-snapshot: verification failed: %v", err)
 	}

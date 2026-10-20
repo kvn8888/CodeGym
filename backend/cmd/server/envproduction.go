@@ -151,7 +151,7 @@ func buildProductionEnvironment(
 		guard.allow(operationID)
 		runtime, err := agentruntime.NewSandboxRuntime(agentruntime.SandboxConfig{
 			Executor:     sandbox,
-			BinaryPath:   "/usr/local/bin/opencode",
+			BinaryPath:   "/opt/codegym/bin/opencode",
 			ConfigDir:    "/home/agent/.config/opencode",
 			HomeDir:      "/home/agent",
 			ScratchDir:   "/home/agent/.codegym-scratch",

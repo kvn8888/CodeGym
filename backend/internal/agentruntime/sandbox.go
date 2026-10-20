@@ -181,7 +181,7 @@ func (r *SandboxRuntime) verifyVersion(ctx context.Context) error {
 // progress log path inside the sandbox.
 func (r *SandboxRuntime) writeSandboxConfig(ctx context.Context, task TaskSpec) (string, string, error) {
 	toolsDir := r.config.ConfigDir + "/tools"
-	if _, _, err := r.config.Executor.ExecuteCommand(ctx, "mkdir -p "+shellQuote(toolsDir), 30*time.Second); err != nil {
+	if _, _, err := r.config.Executor.ExecuteCommand(ctx, "mkdir -p "+shellQuote(toolsDir)+" "+shellQuote(r.config.ScratchDir), 30*time.Second); err != nil {
 		return "", "", fmt.Errorf("agentruntime: create sandbox config directory: %w", err)
 	}
 	payload, err := openCodeConfigPayload(r.config.Model, r.config.RelayBaseURL, r.config.RelayToken, task.TurnCeiling, task.AllowedTools)

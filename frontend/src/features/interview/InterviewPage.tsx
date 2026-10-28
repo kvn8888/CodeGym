@@ -116,13 +116,22 @@ export function InterviewPage() {
   };
 
   const retryMemory = async () => {
+    if (!activeThread) return;
     setFinishing(true);
     setError(null);
     try {
-      await api.post('/memory/profile/refresh', {});
-      setMemoryStatus('synced');
-    } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : 'Memory update is still unavailable.');
+      const result = await api.post<InterviewFinishResult>(
+        `/chat/threads/${encodeURIComponent(activeThread.id)}/finish`,
+        {},
+      );
+      setAssessment(result.assessment);
+      setMemoryStatus(result.memory_update_status);
+      setActiveThread((current) =>
+        current ? { ...current, ...result.thread, messages: current.messages } : current,
+      );
+      setSession((current) => current ? { ...current, status: 'completed' } : current);
+    } catch (finishError) {
+      setError(finishError instanceof Error ? finishError.message : 'Memory update is still unavailable.');
     } finally {
       setFinishing(false);
     }

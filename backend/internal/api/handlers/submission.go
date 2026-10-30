@@ -37,6 +37,10 @@ func (h *SubmissionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusServiceUnavailable, "execution_unavailable", "Code execution is not configured on this server.")
 	case errors.Is(err, submission.ErrInvalidInput):
 		response.Error(w, http.StatusBadRequest, "invalid_submission", err.Error())
+	case errors.Is(err, execution.ErrSubmissionRequestConflict):
+		response.Error(w, http.StatusConflict, "submission_token_conflict", "This submission was already submitted with different content.")
+	case errors.Is(err, execution.ErrSubmissionRequestInProgress):
+		response.Error(w, http.StatusConflict, "submission_in_progress", "This submission is still being processed. Retry shortly with the same request.")
 	case err != nil:
 		response.Error(w, http.StatusInternalServerError, "submission_failed", "Submission could not be started.")
 	default:

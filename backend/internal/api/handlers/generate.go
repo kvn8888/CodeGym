@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -342,8 +343,10 @@ func (h *GenerateHandler) EvaluateFreeResponse(w http.ResponseWriter, r *http.Re
 }
 
 type maintainProfileRequestBody struct {
-	SessionID   string `json:"session_id"`
-	OperationID string `json:"operation_id,omitempty"`
+	SessionID    string `json:"session_id"`
+	ProblemID    string `json:"problem_id,omitempty"`
+	SubmissionID string `json:"submission_id,omitempty"`
+	OperationID  string `json:"operation_id,omitempty"`
 }
 
 // MaintainProfile runs full profile synthesis after a practice set. The
@@ -388,27 +391,58 @@ func (h *GenerateHandler) MaintainProfile(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if strings.TrimSpace(body.SubmissionID) != "" {
+		// Establish pending memory status before maintenance so a concurrent
+		// generation cannot race ahead of an in-flight completion refresh.
+		if err := h.persistMemoryStatus(r.Context(), body.SessionID, body.SubmissionID, "pending"); err != nil {
+			response.Error(w, http.StatusInternalServerError, "memory_status_failed", "Memory was updated, but its session status could not be saved.")
+			return
+		}
+	}
+
 	result, err := h.profiles.RefreshProfile(r.Context(), generation.ProfileRefreshInput{
-		SessionID: body.SessionID,
-		Trigger:   "set-completion",
+		SessionID: body.SessionID, ProblemID: body.ProblemID, SubmissionID: body.SubmissionID,
+		Trigger: "set-completion",
 	})
 	if err != nil {
 		if r.Context().Err() != nil {
 			return
 		}
+		if errors.Is(err, generation.ErrCodingCompletionEvidenceNotFound) {
+			if h.sessions != nil && strings.TrimSpace(body.SessionID) != "" {
+				if err := h.persistMemoryStatus(r.Context(), body.SessionID, body.SubmissionID, "failed"); err != nil {
+					response.Error(w, http.StatusInternalServerError, "memory_status_failed", "Memory was updated, but its session status could not be saved.")
+					return
+				}
+			}
+			response.Error(w, http.StatusConflict, "memory_completion_evidence_missing", "The graded coding completion evidence is not available yet. Retry this update.")
+			return
+		}
 		log.Printf("memory profile synthesis failed: %v", err)
+		if h.sessions != nil && strings.TrimSpace(body.SessionID) != "" {
+			if err := h.persistMemoryStatus(r.Context(), body.SessionID, body.SubmissionID, "failed"); err != nil {
+				response.Error(w, http.StatusInternalServerError, "memory_status_failed", "Memory was updated, but its session status could not be saved.")
+				return
+			}
+		}
 		response.Error(w, http.StatusInternalServerError, "memory_profile_synthesis_failed", "Could not update memory profile.")
 		return
 	}
-	if result.Skipped != "" {
-		log.Printf("memory profile synthesis used fallback: %s", result.Skipped)
-		if result.Skipped == "generation is not configured" ||
-			strings.HasPrefix(result.Skipped, "note generation failed") ||
-			strings.HasPrefix(result.Skipped, "profile generation failed") ||
-			strings.HasPrefix(result.Skipped, "generated profile was invalid") {
-			response.Error(w, http.StatusBadGateway, "memory_profile_synthesis_failed", "The result is saved, but memory could not be updated. Retry this update.")
-			return
+	outcome, _ := generation.CompletionMaintenanceOutcome(result, err)
+	if outcome == generation.CompletionOutcomeFailed {
+		reason := "memory update failed"
+		if result.Skipped != "" {
+			reason = result.Skipped
 		}
+		log.Printf("memory profile synthesis used fallback: %s", reason)
+		if h.sessions != nil && strings.TrimSpace(body.SessionID) != "" {
+			if err := h.persistMemoryStatus(r.Context(), body.SessionID, body.SubmissionID, "failed"); err != nil {
+				response.Error(w, http.StatusInternalServerError, "memory_status_failed", "Memory was updated, but its session status could not be saved.")
+				return
+			}
+		}
+		response.Error(w, http.StatusBadGateway, "memory_profile_synthesis_failed", "The result is saved, but memory could not be updated. Retry this update.")
+		return
 	}
 
 	// Audit trail: one memory event per applied CRUD action so the memory
@@ -436,11 +470,7 @@ func (h *GenerateHandler) MaintainProfile(w http.ResponseWriter, r *http.Request
 		})
 	}
 	if h.sessions != nil && strings.TrimSpace(body.SessionID) != "" {
-		if _, err := h.sessions.SetMemoryUpdateStatus(r.Context(), body.SessionID, "synced"); err != nil {
-			if errors.Is(err, session.ErrNotFound) {
-				response.JSON(w, http.StatusOK, result.Profile)
-				return
-			}
+		if err := h.persistMemoryStatus(r.Context(), body.SessionID, body.SubmissionID, "synced"); err != nil {
 			response.Error(w, http.StatusInternalServerError, "memory_status_failed", "Memory was updated, but its session status could not be saved.")
 			return
 		}
@@ -448,6 +478,27 @@ func (h *GenerateHandler) MaintainProfile(w http.ResponseWriter, r *http.Request
 
 	completeMemoryWorkflow(r, result.Changed)
 	response.JSON(w, http.StatusOK, result.Profile)
+}
+
+// persistMemoryStatus writes one completion memory status transition. The
+// store applies it atomically only while submissionID still owns the session's
+// latest graded completion, so stale completions never clear the pending or
+// failed status owned by a newer one.
+func (h *GenerateHandler) persistMemoryStatus(ctx context.Context, sessionID, submissionID string, status string) error {
+	if h.sessions == nil || strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+	_, applied, err := h.sessions.SetMemoryUpdateStatusIfCurrent(ctx, sessionID, submissionID, status)
+	if err != nil {
+		if errors.Is(err, session.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if !applied {
+		log.Printf("discarded stale %s memory update status for session %s", status, sessionID)
+	}
+	return nil
 }
 
 func (h *GenerateHandler) attachWorkflow(

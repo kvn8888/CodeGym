@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -155,6 +157,65 @@ func TestProfileSynthesizerDedupesReplayedLogicalEvidence(t *testing.T) {
 	}
 }
 
+func TestCodingEvidenceUsesDurableSubmissionIdentityAndAssistance(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	store := memory.NewInMemoryStore()
+	service := memory.NewService(store, func() time.Time { return now })
+	inputs := []memory.RecordEventInput{
+		{Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Summary: "Solved.", OccurredAt: now.Add(-5 * time.Minute), Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"passed":true,"assistance_status":"unknown"}`)},
+		{Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Summary: "Solved replay.", OccurredAt: now.Add(-4 * time.Minute), Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"passed":true,"assistance_status":"used","used_help":true,"hint_count":1}`)},
+		{Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Summary: "Solved again.", OccurredAt: now.Add(-3 * time.Minute), Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-2","graded":true,"passed":true,"assistance_status":"not_used","used_help":false,"hint_count":0,"coaching_used":false}`)},
+		{Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Summary: "Legacy solved event.", OccurredAt: now.Add(-2 * time.Minute), Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","passed":true}`)},
+		{Source: memory.SourceMCQ, Type: memory.TypeQuestionAnswered, Summary: "Answered MCQ.", OccurredAt: now.Add(-time.Minute), Payload: json.RawMessage(`{"session_id":"mcq-1","question_id":"q1","topic":"Queues","correct":true}`)},
+	}
+	var firstEventID string
+	for index, input := range inputs {
+		recorded, err := service.RecordEvent(ctx, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			firstEventID = recorded.ID
+		}
+	}
+	// Reconstruct the service over the same durable store before deduplication.
+	service = memory.NewService(store, func() time.Time { return now })
+	_, events, _, err := service.ProfileInputs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	canonical := profileEvidenceEvents(events)
+	if len(canonical) != 3 {
+		t.Fatalf("canonical evidence = %#v", canonical)
+	}
+	evidence := buildProfileEvidence(canonical, memory.Profile{}, "")
+	if evidence.TotalEvents != 3 || len(evidence.Recent) != 3 {
+		t.Fatalf("evidence = %#v", evidence)
+	}
+	if evidence.Recent[0].Details["submission_id"] != "exec-1" || evidence.Recent[0].Details["assistance_status"] != "unknown" {
+		t.Fatalf("replayed completion rewrote the original assistance snapshot: %#v", evidence.Recent[0])
+	}
+	if _, leaked := evidence.Recent[0].Details["used_help"]; leaked {
+		t.Fatalf("replayed assistance fields leaked into original snapshot: %#v", evidence.Recent[0])
+	}
+	if evidence.Recent[1].Details["submission_id"] != "exec-2" || evidence.Recent[1].Details["assistance_status"] != "not_used" {
+		t.Fatalf("distinct completion was collapsed: %#v", evidence.Recent[1])
+	}
+	if evidence.Recent[2].Source != memory.SourceMCQ || evidence.Recent[2].Details["topic"] != "Queues" {
+		t.Fatalf("MCQ evidence changed: %#v", evidence.Recent[2])
+	}
+
+	sources := profileEvidenceSources(canonical)
+	if sources[0].SubmissionID != "exec-1" || sources[0].ProblemID != "queue-1" || sources[0].EventID != firstEventID {
+		t.Fatalf("coding source provenance = %#v", sources[0])
+	}
+	if sources[1].SubmissionID != "exec-2" || sources[0].Key == sources[1].Key {
+		t.Fatalf("distinct attempt provenance = %#v", sources)
+	}
+}
+
 func TestProfileSynthesizerKeepsDistinctFreeResponseOutcomes(t *testing.T) {
 	ctx := scopedContext()
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
@@ -282,8 +343,12 @@ func TestProfileSynthesizerReportsEvidenceThroughPersistence(t *testing.T) {
 	ctx = workflow.WithReporter(ctx, reporter)
 	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).
 		WithClock(func() time.Time { return now })
-	if _, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{}); err != nil {
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if result.Profile.Provenance == nil || result.Profile.Provenance.OperationID != created.Operation.ID {
+		t.Fatalf("operation provenance=%#v", result.Profile.Provenance)
 	}
 	events, err := progress.Events(ctx, created.Operation.ID, 5)
 	if err != nil {
@@ -544,54 +609,454 @@ func TestProfileSynthesizerRevisesExistingNoteIdentity(t *testing.T) {
 	}
 }
 
-func TestProfileSynthesizerPreservesNotesOutsideCompletedMCQRefresh(t *testing.T) {
+func TestProfileSynthesizerRunsCodingNotesFirstWithNotesOnlyProfileInput(t *testing.T) {
 	ctx := scopedContext()
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
-	seeded, err := service.ReplaceProfile(ctx, memory.Profile{
-		Summary:      "SQL joins remain a useful reminder.",
+	_, err := service.ReplaceProfile(ctx, memory.Profile{
+		Summary:      "Queue practice is beginning.",
 		UpdatedAt:    now.Add(-time.Hour),
 		NextReviewAt: now.Add(time.Hour),
 		Strengths:    []string{},
-		GrowthEdges:  []string{"SQL Joins"},
+		GrowthEdges:  []string{},
 		Skills:       []memory.SkillProficiency{},
-		Notes: []memory.Note{{
-			ID: "note_sql_joins", Title: "SQL joins", Summary: "Review unmatched-row behavior.",
-			Tags: []string{"sql"}, Action: "review", CreatedAt: now.Add(-time.Hour),
-		}},
+		Notes:        []memory.Note{},
 	})
 	if err != nil {
 		t.Fatalf("seed profile: %v", err)
 	}
-	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+	completion, err := service.RecordEvent(ctx, memory.RecordEventInput{
 		Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Summary: "Solved a queue implementation problem.",
-		Payload: json.RawMessage(`{"session_id":"coding_r1","problem_id":"queue-1","topic":"Queues","passed":true}`),
-	}); err != nil {
+		Payload: json.RawMessage(`{"session_id":"coding_r1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"concept":"Queues","passed":true,"total":1,"passed_count":1,"failed_count":0,"assistance_status":"used","used_help":true,"hint_count":1}`),
+	})
+	if err != nil {
 		t.Fatalf("seed event: %v", err)
 	}
-	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{
-		"summary":"Queue implementation is improving.","strengths":["Queues"],"growth_edges":[],
-		"skills":[{"id":"queues","label":"Queues","area":"DSA","level":3,"confidence":65,"trend":"up"}],
-		"notes":[]
-	}`)}}
+	notePayload := json.RawMessage(`{"actions":[{"op":"create","note":{"id":"note_queue_1","problem_id":"queue-1","title":"Queue implementation","summary":"Practice queue boundary handling; the observed success used assistance.","tags":["queues"],"action":"review"}}]}`)
+	profilePayload := json.RawMessage(`{"summary":"Queue implementation has been practiced with assistance, so independent fluency remains uncertain.","strengths":[],"growth_edges":["Queue implementation"],"skills":[],"notes":[]}`)
+	generator := &scriptedGenerator{payloads: []json.RawMessage{notePayload, profilePayload}}
 	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
 
-	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "coding_r1", Trigger: "set-completion"})
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding_r1", ProblemID: "queue-1", SubmissionID: "exec-1", Trigger: "set-completion",
+	})
 	if err != nil {
 		t.Fatalf("RefreshProfile: %v", err)
 	}
 	if result.Skipped != "" {
 		t.Fatalf("unexpected skipped result: %s", result.Skipped)
 	}
-	if len(generator.requests) != 1 || generator.requests[0].Kind != KindProfile {
+	if len(generator.requests) != 2 || generator.requests[0].Kind != KindNotes || generator.requests[1].Kind != KindProfile {
 		t.Fatalf("requests = %#v", generator.requests)
 	}
-	if len(result.AppliedActions) != 0 {
-		t.Fatalf("non-MCQ refresh changed notes: %#v", result.AppliedActions)
+	var noteInput profileEvidence
+	if err := json.Unmarshal(generator.requests[0].Spec, &noteInput); err != nil {
+		t.Fatalf("decode note input: %v", err)
 	}
-	if len(result.Profile.Notes) != 1 || result.Profile.Notes[0].ID != seeded.Notes[0].ID || result.Profile.Notes[0].Summary != seeded.Notes[0].Summary {
-		t.Fatalf("notes were not preserved: %#v", result.Profile.Notes)
+	if noteInput.SessionID != "coding_r1" || noteInput.ProblemID != "queue-1" || noteInput.SubmissionID != "exec-1" || len(noteInput.Recent) != 1 {
+		t.Fatalf("targeted coding note input = %#v", noteInput)
 	}
+	if noteInput.Recent[0].EventID != completion.ID || noteInput.Recent[0].Details["assistance_status"] != "used" || noteInput.Recent[0].Details["submission_id"] != "exec-1" {
+		t.Fatalf("coding source/assistance input = %#v", noteInput.Recent[0])
+	}
+	var profileInput codingProfileInput
+	if err := json.Unmarshal(generator.requests[1].Spec, &profileInput); err != nil {
+		t.Fatalf("decode coding profile input: %v", err)
+	}
+	if profileInput.Version != 1 || len(profileInput.MaintainedNotes) != 1 || profileInput.MaintainedNotes[0].ID != "note_queue_1" {
+		t.Fatalf("coding profile input = %#v", profileInput)
+	}
+	for _, forbidden := range []string{"recent_events", "event_counts", "submission_id", "attempt_solved", "assistance_status", "used_help"} {
+		if strings.Contains(string(generator.requests[1].Spec), forbidden) {
+			t.Fatalf("raw coding evidence %q leaked into profile input: %s", forbidden, generator.requests[1].Spec)
+		}
+	}
+	if len(generator.requests[1].MemoryContext.Notes) != 1 || generator.requests[1].MemoryContext.Notes[0].Summary != profileInput.MaintainedNotes[0].Summary {
+		t.Fatalf("profile memory context did not use maintained notes: %#v", generator.requests[1].MemoryContext)
+	}
+	if len(result.Profile.Notes) != 1 || len(result.MaintainedNotes) != 1 || result.Profile.Notes[0].ID != "note_queue_1" {
+		t.Fatalf("maintained notes = %#v result snapshot=%#v", result.Profile.Notes, result.MaintainedNotes)
+	}
+	provenance := result.Profile.Provenance
+	if provenance == nil || provenance.RefreshID == "" || provenance.RefreshAttempt != 1 ||
+		provenance.InputVersion != 1 || provenance.OutputVersion != 2 || provenance.Completion == nil ||
+		provenance.Completion.EventID != completion.ID || provenance.Completion.SubmissionID != "exec-1" ||
+		provenance.NotesStage == nil || provenance.ProfileStage == nil ||
+		provenance.NotesStage.Provider != "scripted" || provenance.ProfileStage.PromptRevision != codingProfilePromptRevision {
+		t.Fatalf("coding provenance = %#v", provenance)
+	}
+	if !reflect.DeepEqual(profileInput.MaintainedNotes, provenance.MaintainedNotes) {
+		t.Fatalf("profile input snapshot=%#v provenance snapshot=%#v", profileInput.MaintainedNotes, provenance.MaintainedNotes)
+	}
+	result.MaintainedNotes[0].Summary = "mutated result"
+	result.MaintainedNotes[0].Tags[0] = "mutated"
+	persisted, err := service.GetProfile(ctx)
+	if err != nil || persisted.Provenance.MaintainedNotes[0].Summary == "mutated result" || persisted.Provenance.MaintainedNotes[0].Tags[0] == "mutated" {
+		t.Fatalf("persisted snapshot was mutable: profile=%#v err=%v", persisted, err)
+	}
+}
+
+func TestCodingRefreshFeedsNextGenerationMemoryContext(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Summary: "Solved a queue implementation problem.",
+		Payload: json.RawMessage(`{"session_id":"coding_r1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"concept":"Queues","passed":true,"total":1,"passed_count":1,"failed_count":0,"assistance_status":"used","used_help":true,"hint_count":1}`),
+	}); err != nil {
+		t.Fatalf("seed completion: %v", err)
+	}
+
+	refreshGenerator := &scriptedGenerator{payloads: []json.RawMessage{
+		json.RawMessage(`{"actions":[{"op":"create","note":{"id":"note_queue_1","problem_id":"queue-1","title":"Queue implementation","summary":"Practice queue boundary handling; the observed success used assistance.","tags":["queues"],"action":"review"}}]}`),
+		json.RawMessage(`{"summary":"Queue implementation has been practiced with assistance.","strengths":[],"growth_edges":["Queue implementation"],"skills":[],"notes":[]}`),
+	}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, refreshGenerator), service).WithClock(func() time.Time { return now })
+	if _, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding_r1", ProblemID: "queue-1", SubmissionID: "exec-1", Trigger: "set-completion",
+	}); err != nil {
+		t.Fatalf("refresh coding profile: %v", err)
+	}
+
+	nextGenerator := &recordingGenerator{result: GenerateResult{
+		Object: json.RawMessage(`{"title":"Queue practice"}`), Provider: "test", Model: "fake",
+	}}
+	orchestrator := NewOrchestrator(service, nextGenerator)
+	if _, err := orchestrator.Generate(ctx, GenerateInput{
+		Kind: KindProblem, Spec: json.RawMessage(`{"topic":"queues"}`),
+		Schema: Schema{Name: "coding_problem", Version: "v1", JSONSchema: json.RawMessage(`{"type":"object"}`)},
+	}); err != nil {
+		t.Fatalf("generate after refresh: %v", err)
+	}
+
+	notes := nextGenerator.request.MemoryContext.Notes
+	if len(notes) != 1 || notes[0].Title != "Queue implementation" || notes[0].ProblemID != "queue-1" {
+		t.Fatalf("next generation memory notes = %#v", notes)
+	}
+	if notes[0].Summary != "Practice queue boundary handling; the observed success used assistance." {
+		t.Fatalf("next generation note summary = %q", notes[0].Summary)
+	}
+	if nextGenerator.request.MemoryContext.Summary != "Queue implementation has been practiced with assistance." {
+		t.Fatalf("next generation memory summary = %q", nextGenerator.request.MemoryContext.Summary)
+	}
+}
+
+func TestCodingCompletionReplaySurvivesServiceReconstruction(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	store := memory.NewInMemoryStore()
+	service := memory.NewService(store, func() time.Time { return now })
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-1", true, "not_used")
+	firstGenerator := &scriptedGenerator{payloads: codingProfilePayloads("first profile")}
+	first, err := NewProfileSynthesizer(NewOrchestrator(service, firstGenerator), service).WithClock(func() time.Time { return now }).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1", Trigger: "set-completion",
+	})
+	if err != nil || !first.Changed || first.Profile.Version != 1 {
+		t.Fatalf("first refresh=%#v err=%v", first, err)
+	}
+
+	service = memory.NewService(store, func() time.Time { return now.Add(time.Minute) })
+	replayGenerator := &scriptedGenerator{payloads: codingProfilePayloads("must not run")}
+	replay, err := NewProfileSynthesizer(NewOrchestrator(service, replayGenerator), service).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1", Trigger: "set-completion",
+	})
+	if err != nil || replay.Changed || replay.Skipped != "coding completion already processed" || len(replayGenerator.requests) != 0 {
+		t.Fatalf("replay=%#v err=%v requests=%d", replay, err, len(replayGenerator.requests))
+	}
+	if replay.Profile.Version != 1 || replay.Profile.Summary != "first profile" {
+		t.Fatalf("replay profile=%#v", replay.Profile)
+	}
+}
+
+func TestCodingCompletionReplayAfterLaterCompletionIsStillDeduped(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-a", true, "not_used")
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptFailed, "coding-1", "queue-1", "exec-b", false, "unknown")
+	generator := &scriptedGenerator{payloads: append(codingProfilePayloads("profile A"), codingProfilePayloads("profile B")...)}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+	for _, submissionID := range []string{"exec-a", "exec-b"} {
+		if result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: submissionID}); err != nil || !result.Changed {
+			t.Fatalf("refresh %s result=%#v err=%v", submissionID, result, err)
+		}
+	}
+	replay, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-a"})
+	if err != nil || replay.Changed || len(generator.requests) != 4 || replay.Profile.Version != 2 || replay.Profile.Summary != "profile B" {
+		t.Fatalf("A-B-A replay=%#v err=%v requests=%d", replay, err, len(generator.requests))
+	}
+}
+
+func TestConcurrentCodingCompletionRefreshCommitsOnce(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-1", true, "not_used")
+	generator := &synchronizedCodingGenerator{}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+	input := ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1"}
+	results := make(chan ProfileRefreshResult, 2)
+	errs := make(chan error, 2)
+	var wait sync.WaitGroup
+	for range 2 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			result, err := synthesizer.RefreshProfile(ctx, input)
+			results <- result
+			errs <- err
+		}()
+	}
+	wait.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent refresh: %v", err)
+		}
+	}
+	changed := 0
+	for result := range results {
+		if result.Changed {
+			changed++
+		}
+	}
+	if changed != 1 {
+		t.Fatalf("changed results=%d, want one", changed)
+	}
+	persisted, err := service.GetProfile(ctx)
+	if err != nil || persisted.Version != 1 {
+		t.Fatalf("persisted=%#v err=%v", persisted, err)
+	}
+}
+
+func TestProfileSynthesizerRunsCodingNotesFirstForGradedFailure(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: memory.SourceWorkspace, Type: memory.TypeAttemptFailed, Summary: "Queue submission did not pass.",
+		Payload: json.RawMessage(`{"session_id":"coding-fail","problem_id":"queue-1","submission_id":"exec-fail","graded":true,"concept":"Queues","passed":false,"total":1,"passed_count":0,"failed_count":1,"assistance_status":"unknown"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	generator := &scriptedGenerator{payloads: []json.RawMessage{
+		json.RawMessage(`{"actions":[]}`),
+		json.RawMessage(`{"summary":"Queue behavior remains uncertain after one failed graded attempt.","strengths":[],"growth_edges":["Queues"],"skills":[],"notes":[]}`),
+	}}
+	result, err := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now }).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-fail", ProblemID: "queue-1", SubmissionID: "exec-fail", Trigger: "set-completion",
+	})
+	if err != nil || result.Skipped != "" || len(generator.requests) != 2 || generator.requests[0].Kind != KindNotes {
+		t.Fatalf("graded failure result=%#v err=%v requests=%#v", result, err, generator.requests)
+	}
+}
+
+func TestCodingNotesFirstRequiresExactGradedCompletionIdentity(t *testing.T) {
+	valid := memory.Event{
+		ID: "event-valid", Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved,
+		Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"passed":true,"total":1,"passed_count":1,"failed_count":0,"assistance_status":"not_used"}`),
+	}
+	tests := []struct {
+		name   string
+		input  ProfileRefreshInput
+		events []memory.Event
+	}{
+		{name: "missing submission", input: ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1"}, events: []memory.Event{valid}},
+		{name: "wrong submission", input: ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-2"}, events: []memory.Event{valid}},
+		{name: "wrong session", input: ProfileRefreshInput{SessionID: "coding-2", ProblemID: "queue-1", SubmissionID: "exec-1"}, events: []memory.Event{valid}},
+		{name: "wrong problem", input: ProfileRefreshInput{SessionID: "coding-1", ProblemID: "stack-1", SubmissionID: "exec-1"}, events: []memory.Event{valid}},
+		{name: "run only", input: ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1"}, events: []memory.Event{{ID: "run", Source: memory.SourceWorkspace, Type: memory.TypeTestsRun, Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1"}`)}}},
+		{name: "neutral skip", input: ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1"}, events: []memory.Event{{ID: "skip", Source: memory.SourceMCQ, Type: memory.TypeQuestionSkipped, Payload: json.RawMessage(`{"session_id":"coding-1","question_id":"q1","skipped":true}`)}}},
+		{name: "legacy outcome", input: ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1"}, events: []memory.Event{{ID: "legacy", Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","passed":true,"assistance_status":"unknown"}`)}}},
+		{name: "malformed graded result", input: ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1"}, events: []memory.Event{{ID: "malformed", Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"passed":true,"assistance_status":"unknown"}`)}}},
+		{name: "platform failure", input: ProfileRefreshInput{SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1"}, events: []memory.Event{{ID: "platform", Source: memory.SourceWorkspace, Type: memory.TypeAttemptFailed, Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","graded":false,"passed":false,"assistance_status":"unknown"}`)}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := codingCompletionEvidence(test.input, profileEvidenceEvents(test.events))
+			if !errors.Is(err, ErrCodingCompletionEvidenceNotFound) {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
+func TestTargetedCodingRefreshFailsExplicitlyWhenEvidenceIsUnavailable(t *testing.T) {
+	ctx := scopedContext()
+	service := memory.NewService(memory.NewInMemoryStore(), nil)
+	generator := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{"actions":[]}`)}}
+	_, err := NewProfileSynthesizer(NewOrchestrator(service, generator), service).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-missing", Trigger: "set-completion",
+	})
+	if !errors.Is(err, ErrCodingCompletionEvidenceNotFound) || len(generator.requests) != 0 {
+		t.Fatalf("error=%v requests=%#v", err, generator.requests)
+	}
+}
+
+func TestReplayedCodingEvidenceCannotDowngradeAssistance(t *testing.T) {
+	events := []memory.Event{
+		{ID: "first", Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"passed":true,"assistance_status":"used","used_help":true,"hint_count":1}`)},
+		{ID: "replay", Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Payload: json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"passed":true,"assistance_status":"not_used","used_help":false,"hint_count":0,"coaching_used":false}`)},
+	}
+	canonical := profileEvidenceEvents(events)
+	if len(canonical) != 1 || canonical[0].ID != "first" {
+		t.Fatalf("canonical=%#v", canonical)
+	}
+	details := compactEvidencePayload(canonical[0].Payload)
+	if details["assistance_status"] != "used" || details["used_help"] != true || details["hint_count"] != float64(1) {
+		t.Fatalf("assistance snapshot was downgraded: %#v", details)
+	}
+}
+
+func TestCodingInvalidMaintainedNotesStopBeforeProfileAndSave(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	previous, err := service.ReplaceProfile(ctx, memory.Profile{
+		Summary: "Known-good coding profile.", UpdatedAt: now.Add(-time.Hour), NextReviewAt: now.Add(time.Hour),
+		Strengths: []string{}, GrowthEdges: []string{}, Skills: []memory.SkillProficiency{}, Notes: []memory.Note{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-1", true, "unknown")
+	generator := &scriptedGenerator{payloads: []json.RawMessage{
+		json.RawMessage(`{"actions":[{"op":"create","note":{"id":"note_queue","title":"Queues","summary":"Review queue boundaries.","tags":["queues"],"action":"review"}}]}`),
+		json.RawMessage(`{"summary":"must not run","strengths":[],"growth_edges":[],"skills":[],"notes":[]}`),
+	}}
+	result, err := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now }).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1", Trigger: "set-completion",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Skipped, "invalid maintained notes") || len(generator.requests) != 1 {
+		t.Fatalf("result=%#v requests=%#v", result, generator.requests)
+	}
+	persisted, err := service.GetProfile(ctx)
+	if err != nil || persisted.Version != previous.Version || persisted.Summary != previous.Summary || len(persisted.Notes) != 0 {
+		t.Fatalf("persisted=%#v err=%v", persisted, err)
+	}
+	if processed, err := service.IsCompletionProcessed(ctx, "coding-1", "queue-1", "exec-1"); err != nil || processed {
+		t.Fatalf("invalid notes marked completion: processed=%t err=%v", processed, err)
+	}
+}
+
+func TestCodingProfileFailurePreservesProfileAndMaintainedNotes(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	createdAt := now.Add(-time.Hour)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	previous, err := service.ReplaceProfile(ctx, memory.Profile{
+		Summary: "Known-good coding profile.", UpdatedAt: createdAt, NextReviewAt: now.Add(time.Hour),
+		Strengths: []string{}, GrowthEdges: []string{}, Skills: []memory.SkillProficiency{},
+		Notes: []memory.Note{{ID: "note_queue", ProblemID: "queue-1", Title: "Queues", Summary: "Review queue boundaries.", CreatedAt: createdAt, Tags: []string{"queues"}, Action: "review"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-1", true, "not_used")
+	generator := &scriptedGenerator{
+		payloads: []json.RawMessage{
+			json.RawMessage(`{"actions":[{"op":"update","note":{"id":"note_queue","summary":"Queue boundaries improved, but repeat independently.","action":"keep"}}]}`),
+			json.RawMessage(`{}`),
+		},
+		errs: []error{nil, errors.New("profile provider unavailable")},
+	}
+	result, err := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now }).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1", Trigger: "set-completion",
+	})
+	if err != nil || !strings.Contains(result.Skipped, "profile generation failed") || len(generator.requests) != 2 {
+		t.Fatalf("result=%#v err=%v requests=%#v", result, err, generator.requests)
+	}
+	persisted, err := service.GetProfile(ctx)
+	if err != nil || persisted.Version != previous.Version || !reflect.DeepEqual(persisted.Notes, previous.Notes) {
+		t.Fatalf("persisted=%#v err=%v", persisted, err)
+	}
+	if processed, err := service.IsCompletionProcessed(ctx, "coding-1", "queue-1", "exec-1"); err != nil || processed {
+		t.Fatalf("profile failure marked completion: processed=%t err=%v", processed, err)
+	}
+}
+
+func TestCodingMaintainedNotesReuseCarryForwardAndPruneIdentities(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	createdAt := now.Add(-2 * time.Hour)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	_, err := service.ReplaceProfile(ctx, memory.Profile{
+		Summary: "Queues and stacks have both been practiced.", UpdatedAt: createdAt, NextReviewAt: now.Add(time.Hour),
+		Strengths: []string{}, GrowthEdges: []string{}, Skills: []memory.SkillProficiency{},
+		Notes: []memory.Note{
+			{ID: "note_queue_original", ProblemID: "queue-1", Title: "Queues", Summary: "Review queue boundaries.", CreatedAt: createdAt, Tags: []string{"queues"}, Action: "review"},
+			{ID: "note_stack", ProblemID: "stack-1", Title: "Stacks", Summary: "Carry forward stack ordering reminders.", CreatedAt: createdAt.Add(-time.Hour), Tags: []string{"stacks"}, Action: "keep"},
+			{ID: "note_old", ProblemID: "old-1", Title: "Old topic", Summary: "Stale reminder.", CreatedAt: createdAt.Add(-2 * time.Hour), Tags: []string{"old"}, Action: "review"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-1", true, "not_used")
+	generator := &scriptedGenerator{payloads: []json.RawMessage{
+		json.RawMessage(`{"actions":[{"op":"create","note":{"id":"note_queue_duplicate","problem_id":"queue-1","title":"Queues","summary":"Queue boundary handling improved independently.","tags":["queues"],"action":"keep"}},{"op":"prune","note":{"id":"note_old"}}]}`),
+		json.RawMessage(`{"summary":"Queue handling improved while stack knowledge remains useful.","strengths":[],"growth_edges":[],"skills":[],"notes":[]}`),
+	}}
+	result, err := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now }).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1", Trigger: "set-completion",
+	})
+	if err != nil || result.Skipped != "" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if len(result.Profile.Notes) != 2 || result.Profile.Notes[0].ID != "note_queue_original" || result.Profile.Notes[1].ID != "note_stack" {
+		t.Fatalf("notes=%#v", result.Profile.Notes)
+	}
+	if !result.Profile.Notes[0].CreatedAt.Equal(createdAt) || result.Profile.Notes[0].Summary != "Queue boundary handling improved independently." {
+		t.Fatalf("updated queue note=%#v", result.Profile.Notes[0])
+	}
+}
+
+func seedCodingCompletion(t *testing.T, ctx context.Context, service *memory.Service, eventType, sessionID, problemID, submissionID string, passed bool, assistance string) memory.Event {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"session_id": sessionID, "problem_id": problemID, "submission_id": submissionID,
+		"graded": true, "passed": passed, "assistance_status": assistance, "concept": "Queues",
+		"total": 1, "passed_count": map[bool]int{true: 1, false: 0}[passed], "failed_count": map[bool]int{true: 0, false: 1}[passed],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: memory.SourceWorkspace, Type: eventType, Summary: "Finalized graded coding submission.",
+		Payload: payload,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return event
+}
+
+func codingProfilePayloads(summary string) []json.RawMessage {
+	profile, _ := json.Marshal(map[string]any{
+		"summary": summary, "strengths": []string{}, "growth_edges": []string{},
+		"skills": []memory.SkillProficiency{}, "notes": []memory.Note{},
+	})
+	return []json.RawMessage{json.RawMessage(`{"actions":[]}`), profile}
+}
+
+type synchronizedCodingGenerator struct {
+	mu       sync.Mutex
+	requests []GenerateRequest
+}
+
+func (g *synchronizedCodingGenerator) Generate(_ context.Context, request GenerateRequest) (GenerateResult, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.requests = append(g.requests, request)
+	payload := json.RawMessage(`{"actions":[]}`)
+	if request.Kind == KindProfile {
+		payload = json.RawMessage(`{"summary":"concurrent profile","strengths":[],"growth_edges":[],"skills":[],"notes":[]}`)
+	}
+	return GenerateResult{Object: payload, Provider: "synchronized", Model: "fake"}, nil
 }
 
 func TestProfileSynthesizerRequiresMatchingMCQCompletionSessionForNotesFirst(t *testing.T) {
@@ -636,6 +1101,107 @@ func TestProfileSynthesizerRequiresMatchingMCQCompletionSessionForNotesFirst(t *
 type staleOnceProfileStore struct {
 	*memory.InMemoryStore
 	replaceAttempts int
+}
+
+type staleOnceCompletionStore struct {
+	*memory.InMemoryStore
+	replaceAttempts int
+	refreshIDs      []string
+	refreshAttempts []int
+}
+
+func (s *staleOnceCompletionStore) ReplaceProfileAndMarkCompletionIfVersion(ctx context.Context, workspaceID, userID string, profile memory.Profile, expectedVersion int64, completion memory.ProcessedCompletion) error {
+	s.replaceAttempts++
+	s.refreshIDs = append(s.refreshIDs, profile.Provenance.RefreshID)
+	s.refreshAttempts = append(s.refreshAttempts, profile.Provenance.RefreshAttempt)
+	if s.replaceAttempts == 1 {
+		return memory.ErrStaleProfile
+	}
+	return s.InMemoryStore.ReplaceProfileAndMarkCompletionIfVersion(ctx, workspaceID, userID, profile, expectedVersion, completion)
+}
+
+func TestCodingRefreshRetriesStaleSaveWithSameRefreshID(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	store := &staleOnceCompletionStore{InMemoryStore: memory.NewInMemoryStore()}
+	service := memory.NewService(store, func() time.Time { return now })
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-1", true, "not_used")
+	generator := &scriptedGenerator{payloads: append(codingProfilePayloads("first attempt"), codingProfilePayloads("retried attempt")...)}
+	result, err := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now }).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1",
+	})
+	if err != nil || result.Profile.Summary != "retried attempt" || len(generator.requests) != 4 {
+		t.Fatalf("result=%#v err=%v requests=%d", result, err, len(generator.requests))
+	}
+	if store.replaceAttempts != 2 || store.refreshIDs[0] == "" || store.refreshIDs[0] != store.refreshIDs[1] ||
+		!reflect.DeepEqual(store.refreshAttempts, []int{1, 2}) || result.Profile.Provenance.RefreshAttempt != 2 {
+		t.Fatalf("refresh ids=%#v attempts=%#v provenance=%#v", store.refreshIDs, store.refreshAttempts, result.Profile.Provenance)
+	}
+}
+
+type failedCompletionStore struct {
+	*memory.InMemoryStore
+}
+
+func (s *failedCompletionStore) ReplaceProfileAndMarkCompletionIfVersion(context.Context, string, string, memory.Profile, int64, memory.ProcessedCompletion) error {
+	return errors.New("persistence unavailable")
+}
+
+func TestCodingPersistenceFailureCommitsNeitherProfileNorMarker(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	store := &failedCompletionStore{InMemoryStore: memory.NewInMemoryStore()}
+	service := memory.NewService(store, func() time.Time { return now })
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-1", true, "not_used")
+	_, err := NewProfileSynthesizer(NewOrchestrator(service, &scriptedGenerator{payloads: codingProfilePayloads("must not persist")}), service).WithClock(func() time.Time { return now }).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "persistence unavailable") {
+		t.Fatalf("error=%v", err)
+	}
+	processed, markerErr := service.IsCompletionProcessed(ctx, "coding-1", "queue-1", "exec-1")
+	if markerErr != nil || processed {
+		t.Fatalf("processed=%t err=%v", processed, markerErr)
+	}
+	if _, getErr := store.GetProfile(ctx, "personal-kevin", "kevin"); !errors.Is(getErr, memory.ErrProfileNotFound) {
+		t.Fatalf("profile persisted after failure: %v", getErr)
+	}
+}
+
+type lostCompletionResponseStore struct {
+	*memory.InMemoryStore
+	lost bool
+}
+
+func (s *lostCompletionResponseStore) ReplaceProfileAndMarkCompletionIfVersion(ctx context.Context, workspaceID, userID string, profile memory.Profile, expectedVersion int64, completion memory.ProcessedCompletion) error {
+	err := s.InMemoryStore.ReplaceProfileAndMarkCompletionIfVersion(ctx, workspaceID, userID, profile, expectedVersion, completion)
+	if err == nil && !s.lost {
+		s.lost = true
+		return errors.New("connection lost after commit")
+	}
+	return err
+}
+
+func TestCodingRetryAfterUncertainCommitDoesNotRegenerate(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	store := &lostCompletionResponseStore{InMemoryStore: memory.NewInMemoryStore()}
+	service := memory.NewService(store, func() time.Time { return now })
+	seedCodingCompletion(t, ctx, service, memory.TypeAttemptSolved, "coding-1", "queue-1", "exec-1", true, "not_used")
+	firstGenerator := &scriptedGenerator{payloads: codingProfilePayloads("committed profile")}
+	_, err := NewProfileSynthesizer(NewOrchestrator(service, firstGenerator), service).WithClock(func() time.Time { return now }).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "connection lost after commit") {
+		t.Fatalf("error=%v", err)
+	}
+	replayGenerator := &scriptedGenerator{payloads: codingProfilePayloads("must not run")}
+	result, err := NewProfileSynthesizer(NewOrchestrator(memory.NewService(store, nil), replayGenerator), memory.NewService(store, nil)).RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1",
+	})
+	if err != nil || result.Changed || len(replayGenerator.requests) != 0 || result.Profile.Summary != "committed profile" {
+		t.Fatalf("retry=%#v err=%v requests=%d", result, err, len(replayGenerator.requests))
+	}
 }
 
 func (s *staleOnceProfileStore) ReplaceProfileIfVersion(ctx context.Context, workspaceID, userID string, profile memory.Profile, expectedVersion int64) error {

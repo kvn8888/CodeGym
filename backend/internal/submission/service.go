@@ -2,11 +2,14 @@ package submission
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kvn8888/codegym/backend/internal/execution"
@@ -21,11 +24,19 @@ var ErrInvalidInput = errors.New("invalid submission input")
 const MaxRevealedFailureBytes = 2048
 
 type Service struct {
-	problems   *problems.Service
-	executions *execution.Service
-	sessions   *session.Service
-	memory     *memory.Service
-	profiles   *generation.ProfileSynthesizer
+	problems    *problems.Service
+	executions  *execution.Service
+	sessions    *session.Service
+	memory      *memory.Service
+	profiles    *generation.ProfileSynthesizer
+	coaching    CoachingUsageLookup
+	bindTimeout time.Duration
+}
+
+// CoachingUsageLookup reports whether the scoped learner used coding coaching
+// for a session by the supplied cutoff. It must not return message contents.
+type CoachingUsageLookup interface {
+	CodingCoachUsed(context.Context, string, time.Time) (bool, error)
 }
 
 func NewService(
@@ -36,12 +47,33 @@ func NewService(
 	profiles *generation.ProfileSynthesizer,
 ) *Service {
 	return &Service{
-		problems:   problemService,
-		executions: executionService,
-		sessions:   sessionService,
-		memory:     memoryService,
-		profiles:   profiles,
+		problems:    problemService,
+		executions:  executionService,
+		sessions:    sessionService,
+		memory:      memoryService,
+		profiles:    profiles,
+		bindTimeout: defaultSubmissionRequestBindTimeout,
 	}
+}
+
+func (s *Service) WithCoachingUsageLookup(lookup CoachingUsageLookup) *Service {
+	if s != nil {
+		s.coaching = lookup
+	}
+	return s
+}
+
+// WithSubmissionRequestBindTimeout overrides how long a duplicate submit waits
+// for the original request to bind its run before returning a retryable
+// conflict. Non-positive values restore the default.
+func (s *Service) WithSubmissionRequestBindTimeout(timeout time.Duration) *Service {
+	if s != nil {
+		if timeout <= 0 {
+			timeout = defaultSubmissionRequestBindTimeout
+		}
+		s.bindTimeout = timeout
+	}
+	return s
 }
 
 func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, error) {
@@ -60,16 +92,12 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 	}
 
 	sessionID := strings.TrimSpace(input.SessionID)
+	var practiceSession session.Session
 	if sessionID != "" {
-		if err := s.validateSession(ctx, sessionID, problemID); err != nil {
+		practiceSession, err = s.submissionSession(ctx, sessionID, problemID)
+		if err != nil {
 			return Accepted{}, err
 		}
-	}
-
-	if mode == ModeSubmit {
-		s.recordEvent(ctx, memory.TypeAttemptStarted, "Started a coding attempt.", definition, sessionID, map[string]any{
-			"file_count": len(input.Files),
-		})
 	}
 
 	testFiles := definition.HiddenTestFiles
@@ -83,24 +111,76 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 	if err != nil {
 		return Accepted{}, err
 	}
-	if mode == ModeSubmit {
-		s.recordEvent(ctx, memory.TypeAttemptSubmitted, "Submitted a coding attempt.", definition, sessionID, nil)
+
+	var run execution.Run
+	runID := ""
+	replayed := false
+	reservedInProgress := false
+	token := strings.TrimSpace(input.ClientToken)
+	if token != "" {
+		reservation, reserveErr := s.executions.ReserveSubmissionRequest(ctx, token, submissionRequestFingerprint(input, string(mode)))
+		if reserveErr != nil {
+			return Accepted{}, reserveErr
+		}
+		if !reservation.Created {
+			if reservation.Status == execution.SubmissionRequestStatusCompleted && reservation.SubmissionID != "" {
+				// An uncertain-response retry of one logical submit returns the
+				// original submission identity and does not start another run.
+				replayed = true
+				runID = reservation.SubmissionID
+				fetched, fetchErr := s.executions.GetRun(ctx, reservation.SubmissionID)
+				if fetchErr != nil {
+					return Accepted{}, fetchErr
+				}
+				run = fetched
+			} else if reservation.Status == execution.SubmissionRequestStatusInProgress {
+				reservedInProgress = true
+				// Another request owns this logical submission's execution and
+				// learning evidence; wait for its run instead of starting a
+				// second execution.
+				replayed = true
+				bound, bindErr := s.awaitSubmissionRequestRun(ctx, token, reservation)
+				if bindErr != nil {
+					return Accepted{}, bindErr
+				}
+				reservedRun, waitErr := s.waitForSubmissionRun(ctx, bound.RunID)
+				if waitErr != nil {
+					return Accepted{}, waitErr
+				}
+				runID = reservedRun.ID
+				run = reservedRun
+				if err := s.executions.CompleteSubmissionRequest(ctx, token, run.ID); err != nil {
+					return Accepted{}, err
+				}
+			}
+		}
 	}
-	run, err := s.executions.SubmitRun(ctx, execution.SubmitRunInput{
-		ProblemID:  problemID,
-		Language:   definition.Language,
-		Entrypoint: definition.Entrypoint,
-		Strategy:   string(definition.TestConfig.Strategy),
-		Mode:       string(mode),
-		Files:      files,
-		Limits: execution.Limits{
-			TimeoutSeconds: definition.Runtime.TimeoutSeconds,
-			MemoryMB:       definition.Runtime.MemoryMB,
-			NetworkMode:    definition.Runtime.NetworkMode,
-		},
-	})
-	if err != nil {
-		return Accepted{}, err
+	if !reservedInProgress && !replayed {
+		run, err = s.executions.SubmitRun(ctx, execution.SubmitRunInput{
+			ProblemID:  problemID,
+			Language:   definition.Language,
+			Entrypoint: definition.Entrypoint,
+			Strategy:   string(definition.TestConfig.Strategy),
+			Mode:       string(mode),
+			Files:      files,
+			Limits: execution.Limits{
+				TimeoutSeconds: definition.Runtime.TimeoutSeconds,
+				MemoryMB:       definition.Runtime.MemoryMB,
+				NetworkMode:    definition.Runtime.NetworkMode,
+			},
+		})
+		if err != nil {
+			return Accepted{}, err
+		}
+		runID = run.ID
+		if token != "" {
+			if err := s.executions.BindSubmissionRequestRun(ctx, token, runID); err != nil {
+				return Accepted{}, err
+			}
+			if err := s.executions.CompleteSubmissionRequest(ctx, token, runID); err != nil {
+				return Accepted{}, err
+			}
+		}
 	}
 
 	memoryStatus := ""
@@ -117,35 +197,47 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (Accepted, erro
 		}
 
 		view := viewFromRun(run)
-		memoryEventsSaved := true
-		if view.Result != nil {
-			memoryEventsSaved = s.recordEvent(ctx, memory.TypeTestsRun, "Ran coding problem tests.", definition, sessionID, map[string]any{
-				"total": view.Result.Total, "passed_count": view.Result.Passed,
-				"failed_count": view.Result.Failed, "duration_ms": view.Result.DurationMs,
-			})
-			outcomeType := memory.TypeAttemptFailed
-			summary := "Coding attempt did not pass."
+		if isGradedAssessment(view) {
+			memoryEventsSaved := true
+			if !replayed {
+				assistance := s.assistanceEvidence(ctx, practiceSession, run.CreatedAt)
+				started := map[string]any{"submission_id": run.ID, "file_count": len(input.Files)}
+				addAssistanceEvidence(started, assistance)
+				memoryEventsSaved = s.recordEvent(ctx, memory.TypeAttemptStarted, "Started a coding attempt.", definition, sessionID, started)
+				memoryEventsSaved = s.recordEvent(ctx, memory.TypeAttemptSubmitted, "Submitted a coding attempt.", definition, sessionID, map[string]any{
+					"submission_id": run.ID,
+				}) && memoryEventsSaved
+				memoryEventsSaved = s.recordEvent(ctx, memory.TypeTestsRun, "Ran coding problem tests.", definition, sessionID, map[string]any{
+					"submission_id": run.ID,
+					"total":         view.Result.Total, "passed_count": view.Result.Passed,
+					"failed_count": view.Result.Failed, "duration_ms": view.Result.DurationMs,
+				}) && memoryEventsSaved
+				outcomeType := memory.TypeAttemptFailed
+				summary := "Coding attempt did not pass."
+				if view.Result.Status == "pass" {
+					outcomeType, summary = memory.TypeAttemptSolved, "Solved a coding problem."
+				}
+				outcome := map[string]any{
+					"submission_id": run.ID, "graded": true,
+					"passed": view.Result.Status == "pass", "total": view.Result.Total,
+					"passed_count": view.Result.Passed, "failed_count": view.Result.Failed,
+					"duration_ms": view.Result.DurationMs,
+				}
+				addAssistanceEvidence(outcome, assistance)
+				memoryEventsSaved = s.recordEvent(ctx, outcomeType, summary, definition, sessionID, outcome) && memoryEventsSaved
+			}
 			if view.Result.Status == "pass" {
-				outcomeType, summary = memory.TypeAttemptSolved, "Solved a coding problem."
+				completed := session.StatusCompleted
+				if _, err := s.sessions.Update(ctx, sessionID, session.UpdateInput{Status: &completed}); err != nil {
+					return Accepted{}, fmt.Errorf("complete passed session: %w", err)
+				}
 			}
-			memoryEventsSaved = s.recordEvent(ctx, outcomeType, summary, definition, sessionID, map[string]any{
-				"passed": view.Result.Status == "pass", "total": view.Result.Total,
-				"passed_count": view.Result.Passed, "failed_count": view.Result.Failed,
-				"duration_ms": view.Result.DurationMs,
-			}) && memoryEventsSaved
-		} else {
-			memoryEventsSaved = s.recordEvent(ctx, memory.TypeAttemptFailed, "Coding attempt could not produce test results.", definition, sessionID, map[string]any{
-				"passed": false, "total": 0, "passed_count": 0, "failed_count": 0,
-				"duration_ms": run.DurationMs,
-			})
-		}
-		if view.Result != nil && view.Result.Status == "pass" {
-			completed := session.StatusCompleted
-			if _, err := s.sessions.Update(ctx, sessionID, session.UpdateInput{Status: &completed}); err != nil {
-				return Accepted{}, fmt.Errorf("complete passed session: %w", err)
+			if replayed {
+				memoryStatus = s.settledMemoryStatus(ctx, sessionID)
+			} else {
+				memoryStatus = s.refreshMemory(ctx, sessionID, problemID, run.ID, memoryEventsSaved)
 			}
 		}
-		memoryStatus = s.refreshMemory(ctx, sessionID, run.ID, memoryEventsSaved)
 	}
 
 	return Accepted{SubmissionID: run.ID, MemoryUpdateStatus: memoryStatus}, nil
@@ -184,57 +276,149 @@ func (s *Service) recordEvent(ctx context.Context, eventType, summary string, de
 	return true
 }
 
-func (s *Service) refreshMemory(ctx context.Context, sessionID, submissionID string, eventsSaved bool) string {
+// defaultSubmissionRequestBindTimeout bounds how long a duplicate submit waits
+// for the original request to bind its run before surfacing a retryable
+// conflict.
+const defaultSubmissionRequestBindTimeout = 2 * time.Second
+
+// awaitSubmissionRequestRun waits until the reservation records the run it
+// bound, so a duplicate submit never starts a second execution.
+func (s *Service) awaitSubmissionRequestRun(ctx context.Context, token string, reservation execution.SubmissionRequestReservation) (execution.SubmissionRequestReservation, error) {
+	if strings.TrimSpace(reservation.RunID) != "" {
+		return reservation, nil
+	}
+	timeout := s.bindTimeout
+	if timeout <= 0 {
+		timeout = defaultSubmissionRequestBindTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		current, err := s.executions.GetSubmissionRequest(ctx, token)
+		if err != nil {
+			if errors.Is(err, execution.ErrSubmissionRequestNotFound) {
+				return execution.SubmissionRequestReservation{}, execution.ErrSubmissionRequestInProgress
+			}
+			return execution.SubmissionRequestReservation{}, err
+		}
+		if strings.TrimSpace(current.RunID) != "" || (current.Status == execution.SubmissionRequestStatusCompleted && current.SubmissionID != "") {
+			return current, nil
+		}
+		if time.Now().After(deadline) {
+			return execution.SubmissionRequestReservation{}, execution.ErrSubmissionRequestInProgress
+		}
+		select {
+		case <-ctx.Done():
+			return execution.SubmissionRequestReservation{}, execution.ErrSubmissionRequestInProgress
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func (s *Service) waitForSubmissionRun(ctx context.Context, runID string) (execution.Run, error) {
+	if strings.TrimSpace(runID) == "" {
+		return execution.Run{}, execution.ErrSubmissionRequestInProgress
+	}
+	for {
+		run, err := s.executions.GetRun(ctx, runID)
+		if err == nil && isTerminal(run.Status) {
+			return run, nil
+		}
+		if err != nil && !errors.Is(err, execution.ErrRunNotFound) {
+			return execution.Run{}, err
+		}
+		if ctx.Err() != nil {
+			return execution.Run{}, ctx.Err()
+		}
+		select {
+		case <-ctx.Done():
+			return execution.Run{}, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func submissionRequestFingerprint(input SubmitInput, mode string) string {
+	filesJSON, err := json.Marshal(input.Files)
+	if err != nil {
+		filesJSON = json.RawMessage(`null`)
+	}
+	hashed := sha256.Sum256([]byte(strings.TrimSpace(mode) + "\x00" + strings.TrimSpace(input.ProblemID) + "\x00" + strings.TrimSpace(input.SessionID) + "\x00" + string(filesJSON)))
+	return hex.EncodeToString(hashed[:])
+}
+
+func (s *Service) refreshMemory(ctx context.Context, sessionID, problemID, submissionID string, eventsSaved bool) string {
 	if s.profiles == nil {
 		_ = s.setMemoryUpdateStatus(ctx, sessionID, submissionID, "idle")
 		return ""
 	}
-	_ = s.setMemoryUpdateStatus(ctx, sessionID, submissionID, "pending")
+	if err := s.setMemoryUpdateStatus(ctx, sessionID, submissionID, "pending"); err != nil {
+		log.Printf("could not claim memory update status for session %s: %v", sessionID, err)
+	}
 	if !eventsSaved {
-		_ = s.setMemoryUpdateStatus(ctx, sessionID, submissionID, "failed")
+		if applied, err := s.applyMemoryUpdateStatus(ctx, sessionID, submissionID, "failed"); err != nil {
+			log.Printf("could not persist failed memory update status for session %s: %v", sessionID, err)
+		} else if !applied {
+			return ""
+		}
 		return "failed"
 	}
 	result, err := s.profiles.RefreshProfile(ctx, generation.ProfileRefreshInput{
-		SessionID: sessionID, Trigger: "set-completion",
+		SessionID: sessionID, ProblemID: problemID, SubmissionID: submissionID, Trigger: "set-completion",
 	})
 	status := "synced"
-	if err != nil || strings.HasPrefix(result.Skipped, "profile generation failed") ||
-		strings.HasPrefix(result.Skipped, "generated profile was invalid") ||
-		result.Skipped == "generation is not configured" {
+	outcome, _ := generation.CompletionMaintenanceOutcome(result, err)
+	if outcome == generation.CompletionOutcomeFailed {
 		status = "failed"
-		if err != nil {
-			log.Printf("coding result saved but memory update failed: %v", err)
-		} else {
-			log.Printf("coding result saved but memory update used failure fallback: %s", result.Skipped)
+		reason := "memory update failed"
+		if err == nil && result.Skipped != "" {
+			reason = result.Skipped
 		}
+		log.Printf("coding result saved but memory update failed: %s", reason)
 	}
-	if updateErr := s.setMemoryUpdateStatus(ctx, sessionID, submissionID, status); updateErr != nil {
+	if applied, updateErr := s.applyMemoryUpdateStatus(ctx, sessionID, submissionID, status); updateErr != nil {
 		log.Printf("could not persist memory update status for session %s: %v", sessionID, updateErr)
 		if status == "synced" {
 			return "failed"
 		}
+	} else if !applied {
+		// A newer completion already owns the session status. Do not report a
+		// status that was not stored for this submission.
+		log.Printf("discarded stale %s memory update status for session %s", status, sessionID)
+		return ""
 	}
 	return status
 }
 
-func (s *Service) setMemoryUpdateStatus(ctx context.Context, sessionID, submissionID, status string) error {
+// settledMemoryStatus reports a memory status that has already been decided by
+// the request that owns the completion. Joined/duplicated submits never
+// report a status for a refresh that is still running.
+func (s *Service) settledMemoryStatus(ctx context.Context, sessionID string) string {
+	if strings.TrimSpace(sessionID) == "" || s.sessions == nil {
+		return ""
+	}
 	current, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return err
+		return ""
 	}
 	state := map[string]any{}
-	if len(current.State) > 0 {
-		_ = json.Unmarshal(current.State, &state)
+	if len(current.State) == 0 || json.Unmarshal(current.State, &state) != nil {
+		return ""
 	}
-	state["memory_update_status"] = status
-	state["last_submission_id"] = submissionID
-	encodedJSON, err := json.Marshal(state)
-	if err != nil {
-		return err
+	status, _ := state["memory_update_status"].(string)
+	if status == "synced" || status == "failed" {
+		return status
 	}
-	encoded := json.RawMessage(encodedJSON)
-	_, err = s.sessions.Update(ctx, sessionID, session.UpdateInput{State: &encoded})
+	return ""
+}
+
+func (s *Service) setMemoryUpdateStatus(ctx context.Context, sessionID, submissionID, status string) error {
+	_, err := s.sessions.SetMemoryUpdateStatusForSubmission(ctx, sessionID, submissionID, status)
 	return err
+}
+
+func (s *Service) applyMemoryUpdateStatus(ctx context.Context, sessionID, submissionID, status string) (bool, error) {
+	_, applied, err := s.sessions.SetMemoryUpdateStatusIfCurrent(ctx, sessionID, submissionID, status)
+	return applied, err
 }
 
 func (s *Service) Get(ctx context.Context, id string) (View, error) {
@@ -245,18 +429,86 @@ func (s *Service) Get(ctx context.Context, id string) (View, error) {
 	return viewFromRun(run), nil
 }
 
-func (s *Service) validateSession(ctx context.Context, sessionID, problemID string) error {
+func (s *Service) submissionSession(ctx context.Context, sessionID, problemID string) (session.Session, error) {
 	found, err := s.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return err
+		return session.Session{}, err
 	}
 	if found.Kind != session.KindWorkspace {
-		return fmt.Errorf("%w: session_id must identify a workspace session", ErrInvalidInput)
+		return session.Session{}, fmt.Errorf("%w: session_id must identify a workspace session", ErrInvalidInput)
 	}
 	if found.ProblemID != problemID {
-		return fmt.Errorf("%w: session problem_id does not match submission problem_id", ErrInvalidInput)
+		return session.Session{}, fmt.Errorf("%w: session problem_id does not match submission problem_id", ErrInvalidInput)
 	}
-	return nil
+	return found, nil
+}
+
+type assistanceEvidence struct {
+	status        string
+	hintCount     int
+	hintsKnown    bool
+	coachingUsed  bool
+	coachingKnown bool
+}
+
+func (s *Service) assistanceEvidence(ctx context.Context, practiceSession session.Session, cutoff time.Time) assistanceEvidence {
+	evidence := assistanceEvidence{status: "unknown"}
+	var state map[string]any
+	if len(practiceSession.State) > 0 && json.Unmarshal(practiceSession.State, &state) == nil {
+		if count, ok := nonNegativeInt(state["hints_revealed"]); ok {
+			evidence.hintCount = min(count, 100)
+			evidence.hintsKnown = true
+		}
+	}
+	if s.coaching != nil {
+		used, err := s.coaching.CodingCoachUsed(ctx, practiceSession.ID, cutoff)
+		if err == nil {
+			evidence.coachingUsed = used
+			evidence.coachingKnown = true
+		}
+	}
+	if (evidence.hintsKnown && evidence.hintCount > 0) || (evidence.coachingKnown && evidence.coachingUsed) {
+		evidence.status = "used"
+	} else if evidence.hintsKnown && evidence.coachingKnown {
+		evidence.status = "not_used"
+	}
+	return evidence
+}
+
+func addAssistanceEvidence(payload map[string]any, evidence assistanceEvidence) {
+	payload["assistance_status"] = evidence.status
+	if evidence.hintsKnown {
+		payload["hints_used"] = evidence.hintCount > 0
+		payload["hint_count"] = evidence.hintCount
+	}
+	if evidence.coachingKnown {
+		payload["coaching_used"] = evidence.coachingUsed
+	}
+	if evidence.status != "unknown" {
+		payload["used_help"] = evidence.status == "used"
+	}
+}
+
+func nonNegativeInt(value any) (int, bool) {
+	switch typed := value.(type) {
+	case float64:
+		if typed < 0 || typed != float64(int(typed)) {
+			return 0, false
+		}
+		return int(typed), true
+	case int:
+		if typed < 0 {
+			return 0, false
+		}
+		return typed, true
+	default:
+		return 0, false
+	}
+}
+
+func isGradedAssessment(view View) bool {
+	return view.Status == StatusCompleted && view.Result != nil &&
+		(view.Result.Status == "pass" || view.Result.Status == "fail")
 }
 
 // AssembleFiles merges learner files with the selected server-owned judge

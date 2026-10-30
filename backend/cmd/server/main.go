@@ -217,7 +217,6 @@ func main() {
 		log.Print("CodeGym agent relay disabled; set CODEGYM_RELAY_TOKEN_SECRET to enable")
 	}
 	intakeService := intake.NewService(intakeStore, memoryService, generationOrchestrator, nil)
-	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, profileSynthesizer)
 	chatService := chat.NewService(
 		chatStore,
 		sessionService,
@@ -228,6 +227,8 @@ func main() {
 		profileSynthesizer,
 		nil,
 	)
+	submissionService := submission.NewService(problemService, executionService, sessionService, memoryService, profileSynthesizer).
+		WithCoachingUsageLookup(chatService)
 
 	if cfg.MemoryWorker.DailyEnabled() {
 		worker := memory.NewWorker(profileSynthesizer, cfg.MemoryWorker.Interval)

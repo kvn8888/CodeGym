@@ -22,10 +22,11 @@ const (
 )
 
 type SubmitInput struct {
-	ProblemID string           `json:"problem_id"`
-	SessionID string           `json:"session_id,omitempty"`
-	Files     []execution.File `json:"files"`
-	Mode      Mode             `json:"mode,omitempty"`
+	ProblemID   string           `json:"problem_id"`
+	SessionID   string           `json:"session_id,omitempty"`
+	Files       []execution.File `json:"files"`
+	Mode        Mode             `json:"mode,omitempty"`
+	ClientToken string           `json:"client_token,omitempty"`
 }
 
 type Accepted struct {

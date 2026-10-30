@@ -9,16 +9,18 @@ import (
 
 // InMemoryStore is a process-local memory store used for local development.
 type InMemoryStore struct {
-	mu       sync.RWMutex
-	profiles map[string]Profile
-	events   map[string][]Event
+	mu          sync.RWMutex
+	profiles    map[string]Profile
+	events      map[string][]Event
+	completions map[string]ProcessedCompletion
 }
 
 // NewInMemoryStore creates an empty in-memory memory store.
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
-		profiles: map[string]Profile{},
-		events:   map[string][]Event{},
+		profiles:    map[string]Profile{},
+		events:      map[string][]Event{},
+		completions: map[string]ProcessedCompletion{},
 	}
 }
 
@@ -30,7 +32,7 @@ func (s *InMemoryStore) GetProfile(_ context.Context, workspaceID, userID string
 	if !ok {
 		return Profile{}, ErrProfileNotFound
 	}
-	return profile, nil
+	return cloneProfile(profile), nil
 }
 
 func (s *InMemoryStore) UpsertProfile(_ context.Context, workspaceID, userID string, profile Profile) error {
@@ -44,7 +46,7 @@ func (s *InMemoryStore) UpsertProfile(_ context.Context, workspaceID, userID str
 	} else if profile.Version == 0 {
 		profile.Version = 1
 	}
-	s.profiles[k] = profile
+	s.profiles[k] = cloneProfile(profile)
 	return nil
 }
 
@@ -59,15 +61,48 @@ func (s *InMemoryStore) ReplaceProfileIfVersion(_ context.Context, workspaceID, 
 			return ErrProfileNotFound
 		}
 		profile.Version = 1
-		s.profiles[k] = profile
+		s.profiles[k] = cloneProfile(profile)
 		return nil
 	}
 	if current.Version != expectedVersion {
 		return ErrStaleProfile
 	}
 	profile.Version = expectedVersion + 1
-	s.profiles[k] = profile
+	s.profiles[k] = cloneProfile(profile)
 	return nil
+}
+
+func (s *InMemoryStore) ReplaceProfileAndMarkCompletionIfVersion(_ context.Context, workspaceID, userID string, profile Profile, expectedVersion int64, completion ProcessedCompletion) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	completionKey := completionKey(workspaceID, userID, completion.SessionID, completion.ProblemID, completion.SubmissionID)
+	if _, exists := s.completions[completionKey]; exists {
+		return ErrCompletionAlreadyProcessed
+	}
+	profileKey := key(workspaceID, userID)
+	current, exists := s.profiles[profileKey]
+	if !exists {
+		if expectedVersion != 0 {
+			return ErrProfileNotFound
+		}
+		profile.Version = 1
+	} else {
+		if current.Version != expectedVersion {
+			return ErrStaleProfile
+		}
+		profile.Version = expectedVersion + 1
+	}
+	s.profiles[profileKey] = cloneProfile(profile)
+	s.completions[completionKey] = completion
+	return nil
+}
+
+func (s *InMemoryStore) IsCompletionProcessed(_ context.Context, workspaceID, userID, sessionID, problemID, submissionID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists := s.completions[completionKey(workspaceID, userID, sessionID, problemID, submissionID)]
+	return exists, nil
 }
 
 func (s *InMemoryStore) AppendEvent(_ context.Context, event Event) error {
@@ -115,6 +150,10 @@ func (s *InMemoryStore) ListEventScopes(_ context.Context) ([]Scope, error) {
 
 func key(workspaceID, userID string) string {
 	return workspaceID + "\x00" + userID
+}
+
+func completionKey(workspaceID, userID, sessionID, problemID, submissionID string) string {
+	return key(workspaceID, userID) + "\x00" + sessionID + "\x00" + problemID + "\x00" + submissionID
 }
 
 func splitKey(value string) (string, string, bool) {

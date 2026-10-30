@@ -203,6 +203,70 @@ func TestServiceReplaceProfileIfVersionCreatesFirstProfileAtVersionOne(t *testin
 	}
 }
 
+func TestServiceAtomicallyMarksExactCompletionIdentity(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	service := NewService(NewInMemoryStore(), func() time.Time { return now })
+	ctx := scopedContext()
+	profile := Profile{Summary: "coding profile", UpdatedAt: now, NextReviewAt: now.Add(time.Hour)}
+	completion := ProcessedCompletion{
+		SessionID: "session-1", ProblemID: "problem-1", SubmissionID: "submission-1",
+		SourceEventID: "event-1", RefreshID: "refresh-1", ProfileVersion: 1, ProcessedAt: now,
+	}
+
+	updated, err := service.ReplaceProfileAndMarkCompletionIfVersion(ctx, profile, 0, completion)
+	if err != nil || updated.Version != 1 {
+		t.Fatalf("atomic replace: profile=%#v err=%v", updated, err)
+	}
+	processed, err := service.IsCompletionProcessed(ctx, "session-1", "problem-1", "submission-1")
+	if err != nil || !processed {
+		t.Fatalf("processed=%t err=%v", processed, err)
+	}
+	processed, err = service.IsCompletionProcessed(ctx, "session-2", "problem-1", "submission-1")
+	if err != nil || processed {
+		t.Fatalf("different tuple processed=%t err=%v", processed, err)
+	}
+	distinct := completion
+	distinct.SessionID = "session-2"
+	distinct.RefreshID = "refresh-2"
+	distinct.SourceEventID = "event-2"
+	if _, err := service.ReplaceProfileAndMarkCompletionIfVersion(ctx, Profile{Summary: "second tuple"}, updated.Version, distinct); err != nil {
+		t.Fatalf("same submission in distinct tuple: %v", err)
+	}
+	processed, err = service.IsCompletionProcessed(ctx, "session-2", "problem-1", "submission-1")
+	if err != nil || !processed {
+		t.Fatalf("distinct tuple processed=%t err=%v", processed, err)
+	}
+
+	_, err = service.ReplaceProfileAndMarkCompletionIfVersion(ctx, Profile{Summary: "must not replace"}, 2, completion)
+	if !errors.Is(err, ErrCompletionAlreadyProcessed) {
+		t.Fatalf("duplicate error=%v", err)
+	}
+	persisted, err := service.GetProfile(ctx)
+	if err != nil || persisted.Summary != "second tuple" || persisted.Version != 2 {
+		t.Fatalf("duplicate changed profile=%#v err=%v", persisted, err)
+	}
+}
+
+func TestCompletionMarkersAreScopeIsolated(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	service := NewService(NewInMemoryStore(), func() time.Time { return now })
+	completion := ProcessedCompletion{
+		SessionID: "session-1", ProblemID: "problem-1", SubmissionID: "submission-1",
+		SourceEventID: "event-1", RefreshID: "refresh-1", ProfileVersion: 1, ProcessedAt: now,
+	}
+	if _, err := service.ReplaceProfileAndMarkCompletionIfVersion(scopedContext(), Profile{Summary: "first scope"}, 0, completion); err != nil {
+		t.Fatal(err)
+	}
+	other := auth.WithPrincipal(context.Background(), auth.Principal{
+		UserID: "user-2", DefaultWorkspaceID: "tenant-2", WorkspaceIDs: []string{"tenant-2"},
+	})
+	other = workspace.WithScope(other, workspace.Scope{WorkspaceID: "tenant-2"})
+	processed, err := service.IsCompletionProcessed(other, "session-1", "problem-1", "submission-1")
+	if err != nil || processed {
+		t.Fatalf("other scope processed=%t err=%v", processed, err)
+	}
+}
+
 func TestServiceRefreshAllProfilesUsesEventScopes(t *testing.T) {
 	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 	store := NewInMemoryStore()

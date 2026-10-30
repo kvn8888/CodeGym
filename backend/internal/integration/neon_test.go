@@ -243,6 +243,49 @@ func TestNeonMemoryReplaceProfileIfVersionRejectsStaleWrites(t *testing.T) {
 	if persisted.Version != 2 || persisted.Summary != "version two" {
 		t.Fatalf("stale write overwrote current profile: %#v", persisted)
 	}
+
+	completionEvent := memory.Event{
+		ID: "mem_evt_completion_" + suffix, WorkspaceID: workspaceID, UserID: userID,
+		Source: memory.SourceWorkspace, Type: memory.TypeAttemptSolved, Summary: "Finalized graded completion.",
+		Payload:    json.RawMessage(`{"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-1","graded":true,"passed":true}`),
+		OccurredAt: now, CreatedAt: now,
+	}
+	if err := memoryStore.AppendEvent(ctx, completionEvent); err != nil {
+		t.Fatalf("append completion event: %v", err)
+	}
+	atomic := second
+	atomic.Summary = "atomic completion profile"
+	if err := memoryStore.ReplaceProfileAndMarkCompletionIfVersion(ctx, workspaceID, userID, atomic, 2, memory.ProcessedCompletion{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-1", SourceEventID: completionEvent.ID,
+		RefreshID: "refresh-1", ProfileVersion: 3, ProcessedAt: now,
+	}); err != nil {
+		t.Fatalf("atomic profile completion: %v", err)
+	}
+	processed, err := memoryStore.IsCompletionProcessed(ctx, workspaceID, userID, "coding-1", "queue-1", "exec-1")
+	if err != nil || !processed {
+		t.Fatalf("processed=%t err=%v", processed, err)
+	}
+
+	rollbackEvent := completionEvent
+	rollbackEvent.ID = "mem_evt_rollback_" + suffix
+	if err := memoryStore.AppendEvent(ctx, rollbackEvent); err != nil {
+		t.Fatalf("append rollback event: %v", err)
+	}
+	err = memoryStore.ReplaceProfileAndMarkCompletionIfVersion(ctx, workspaceID, userID, stale, 2, memory.ProcessedCompletion{
+		SessionID: "coding-1", ProblemID: "queue-1", SubmissionID: "exec-rollback", SourceEventID: rollbackEvent.ID,
+		RefreshID: "refresh-rollback", ProfileVersion: 3, ProcessedAt: now,
+	})
+	if !errors.Is(err, memory.ErrStaleProfile) {
+		t.Fatalf("atomic stale error=%v", err)
+	}
+	processed, err = memoryStore.IsCompletionProcessed(ctx, workspaceID, userID, "coding-1", "queue-1", "exec-rollback")
+	if err != nil || processed {
+		t.Fatalf("rolled-back marker processed=%t err=%v", processed, err)
+	}
+	persisted, err = memoryStore.GetProfile(ctx, workspaceID, userID)
+	if err != nil || persisted.Version != 3 || persisted.Summary != "atomic completion profile" {
+		t.Fatalf("atomic rollback profile=%#v err=%v", persisted, err)
+	}
 }
 
 func assertConstraints(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
@@ -257,6 +300,7 @@ func assertConstraints(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 		{name: "chk_workspace_memberships_role", table: "workspace_memberships"},
 		{name: "fk_user_memory_profiles_membership", table: "user_memory_profiles"},
 		{name: "fk_memory_events_membership", table: "memory_events"},
+		{name: "fk_memory_profile_completions_membership", table: "memory_profile_completions"},
 		{name: "fk_workflow_operations_membership", table: "workflow_operations"},
 	} {
 		var exists bool

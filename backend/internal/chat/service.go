@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	maxTurnLength        = 8000
-	maxHistory           = 40
+	maxTurnLength         = 8000
+	maxHistory            = 40
 	maxWorkspaceFileBytes = 24_000
 	maxWorkspaceFiles     = 8
 )
@@ -171,6 +171,36 @@ func (s *Service) List(ctx context.Context, filter ThreadFilter) ([]Thread, erro
 	filter.Status = Status(strings.ToLower(strings.TrimSpace(string(filter.Status))))
 	filter.SessionID = strings.TrimSpace(filter.SessionID)
 	return s.store.ListThreads(ctx, scope.workspaceID, scope.userID, filter)
+}
+
+// CodingCoachUsed reports whether a scoped coding session had a learner coach
+// message at or before cutoff. It deliberately exposes no transcript content.
+func (s *Service) CodingCoachUsed(ctx context.Context, sessionID string, cutoff time.Time) (bool, error) {
+	scope, err := identityFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+	threads, err := s.store.ListThreads(ctx, scope.workspaceID, scope.userID, ThreadFilter{
+		Kind: KindCoach, SessionID: strings.TrimSpace(sessionID), Limit: 100,
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, thread := range threads {
+		messages, err := s.store.ListMessages(ctx, scope.workspaceID, scope.userID, thread.ID)
+		if err != nil {
+			return false, err
+		}
+		for _, message := range messages {
+			if message.Role == "user" && !message.CreatedAt.After(cutoff) {
+				return true, nil
+			}
+		}
+	}
+	if len(threads) == 100 {
+		return false, errors.New("coding coach history exceeds bounded lookup")
+	}
+	return false, nil
 }
 
 func (s *Service) Messages(ctx context.Context, threadID string) ([]Message, error) {

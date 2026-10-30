@@ -823,6 +823,16 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The client_token was reused with different content
+            (submission_token_conflict) or its logical submission is still being
+            processed (submission_in_progress). Retry the in-progress case with
+            the same token and content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           description: Daytona execution is not configured.
           content:
@@ -1122,7 +1132,13 @@ paths:
     post:
       operationId: maintainMemoryProfile
       summary: Run structured LLM profile synthesis after a completed practice set.
-      description: Interprets bounded deterministic event evidence into the summary, strengths, growth edges, skills, and durable notes used by subsequent generation.
+      description: >
+        Interprets bounded deterministic event evidence into the summary,
+        strengths, growth edges, skills, and durable notes used by subsequent
+        generation. Completed coding submissions run maintained-note CRUD
+        before profile synthesis and save validated notes with the profile in
+        one version-guarded update. A repeated call for the same
+        (session_id, problem_id, submission_id) completion is idempotent.
       parameters:
         - $ref: "#/components/parameters/WorkspaceHeader"
       requestBody:
@@ -1144,8 +1160,26 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/WorkspaceForbidden"
+        "409":
+          description: >
+            The referenced graded coding completion evidence is not available
+            yet (memory_completion_evidence_missing). Retry with the same
+            session_id, problem_id, and submission_id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           $ref: "#/components/responses/InternalError"
+        "502":
+          description: >
+            The result is durable but the memory refresh failed
+            (memory_profile_synthesis_failed). The previous valid profile is
+            preserved; retry the same completion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 
   /api/v1/memory/notes/maintain:
     post:
@@ -2463,6 +2497,12 @@ components:
             - $ref: "#/components/schemas/SubmissionMode"
           default: submit
           description: Run uses public cases without attempt side effects; submit grades the full suite.
+        client_token:
+          type: string
+          description: >
+            Optional durable request token scoped to the authenticated user and
+            workspace. Replaying one logical submit with the same token returns the
+            original submission identity; reusing it with different content conflicts.
         files:
           type: array
           minItems: 1
@@ -2860,6 +2900,12 @@ components:
           type: string
           description: Highlights the just-completed practice set inside the bounded cross-session evidence digest.
           example: mcq_abc123_r2
+        problem_id:
+          type: string
+          description: Coding problem identity for a targeted graded completion.
+        submission_id:
+          type: string
+          description: Durable coding submission identity. When present, session_id and problem_id must identify the same graded completion.
         operation_id:
           type: string
           description: Optional scoped memory_reflection or mcq_next_round workflow operation.

@@ -1,43 +1,48 @@
 # Memory Profile Maintenance
 
 This document describes how CodeGym maintains the durable memory profile from
-append-only learning events. It covers the notes-first MCQ flow, shared profile
-refresh paths, deduplication, and stale-write protection.
+append-only learning events. It covers notes-first MCQ and coding refreshes,
+shared profile-refresh paths, durable deduplication, submit-token semantics, and
+stale-write protection.
 
 ## Scope
 
 The profile is synthesized from deterministic memory events into the summary,
 focus areas, skills, notes, and provenance used by the Memory page and future
-generation. Completed MCQ rounds use notes-first maintenance: note CRUD is
-computed before profile synthesis, then notes and profile are saved together.
+generation. Completed MCQ rounds and finalized graded coding submissions use
+notes-first maintenance: note CRUD is computed before profile synthesis, then
+notes and profile are saved together in one version-guarded write.
 
-This story does not introduce note CRUD for daily, coding, or interview refreshes.
-Those paths may refresh the profile summary, skills, and focus areas, but they
-preserve existing notes.
+Daily and interview refreshes use the shared profile synthesizer, but they do not
+run notes-first CRUD. They preserve existing notes while using the same bounded
+evidence and stale-write protections.
 
 ## Caller Paths
 
-MCQ completion is the supported notes-first path. The frontend records MCQ
-outcome events, records `session_completed`, flushes pending memory events, then
-calls `POST /api/v1/memory/profile/maintain` with the completed round
-`session_id`.
+- **MCQ completion.** The frontend records MCQ outcome events, records
+  `session_completed`, flushes pending memory events, then calls
+  `POST /api/v1/memory/profile/maintain` with the completed round `session_id`.
+- **Coding completion.** A `mode:"submit"` submission that is graded pass or fail
+  records attempt evidence and calls the profile synthesizer with
+  `session_id`, `problem_id`, and `submission_id`. Run mode, sandbox/platform
+  faults, and non-terminal submissions never trigger maintenance.
+- **Coding retry.** The client retries the same completion by calling
+  `POST /api/v1/memory/profile/maintain` with the exact
+  `session_id` + `problem_id` + `submission_id`. Retries are idempotent and never
+  re-execute learner code.
+- **Daily refresh.** Runs through the profile synthesizer with trigger `daily`
+  and no focused `session_id`. It skips model work when the durable evidence
+  digest is unchanged.
+- **Interview refresh.** Uses the shared synthesizer without note CRUD.
 
-Daily refresh runs through the same profile synthesizer with trigger `daily`, but
-without a focused completed MCQ `session_id`. It does not run note CRUD and skips
-model work when the durable evidence digest is unchanged.
+`POST /api/v1/memory/notes/maintain` is a deprecated compatibility alias for
+full profile maintenance.
 
-Coding and interview refreshes share the profile synthesizer so they benefit from
-source tracking, bounded evidence, and stale-write protection. They do not run
-notes-first CRUD in this story, and existing notes are preserved even when the
-profile model returns a different `notes` array.
+## Completion Gates
 
-`POST /api/v1/memory/notes/maintain` is a compatibility alias for full profile
-maintenance. It does not guarantee standalone note maintenance; note CRUD still
-requires the completed MCQ gate below.
+Notes-first maintenance runs only when a completed assessment is present.
 
-## Completed MCQ Gate
-
-Notes-first maintenance runs only when all of these are true:
+MCQ gate:
 
 - The maintain request includes a non-empty `session_id`.
 - The evidence contains an MCQ `session_completed` event whose payload
@@ -45,54 +50,139 @@ Notes-first maintenance runs only when all of these are true:
 - The evidence contains at least one matching MCQ outcome event for the same
   `session_id`.
 
-This prevents unrelated MCQ sessions, partially flushed rounds, daily refreshes,
-coding refreshes, and interview refreshes from mutating notes through the new
-MCQ note CRUD path.
+Coding gate (`submission_id` present):
+
+- The request includes non-empty `session_id` and `problem_id`.
+- Evidence contains a `workspace` attempt event for the same `submission_id`
+  whose `session_id` and `problem_id` also match.
+- There is exactly one graded outcome event (`attempt_solved` or
+  `attempt_failed`) with `graded=true`, consistent pass/fail counts, and a valid
+  `assistance_status` (`used`, `not_used`, or `unknown`).
+
+Missing or ambiguous evidence returns `409 memory_completion_evidence_missing`
+and leaves the previous profile intact.
 
 ## Notes-First Save Flow
 
-For a completed MCQ round, the profile synthesizer runs two model stages:
+Both notes-first paths run two model stages:
 
 1. The note stage receives bounded event evidence and the current profile, then
    returns note actions: `create`, `update`, or `prune`.
-2. The server applies those actions to candidate notes in memory only.
-3. The profile stage receives the same bounded event evidence plus the profile
-   context containing candidate notes.
+2. The server validates the actions and applies them to candidate notes in
+   memory only. Coding notes must carry a `problem_id` matching the completed
+   problem; maintained note identities are updated, carried forward, or pruned
+   rather than duplicated.
+3. The summary/profile stage runs.
+   - MCQ: the profile stage receives the bounded event evidence plus the profile
+     context containing candidate notes.
+   - Coding: the profile stage receives only `{version, maintained_notes}`. Raw
+     event evidence is not sent to the coding summary model.
 4. The server validates the complete profile candidate.
-5. The server saves summary, focus areas, skills, notes, and provenance in one
-   version-checked profile write.
+5. The server saves summary, focus areas, skills, notes, and provenance (including
+   the maintained-note snapshot) in one version-checked profile write.
 
 If note generation, profile generation, or validation fails, the existing saved
-profile remains unchanged. Candidate notes are not persisted before the final
-validated profile save.
+profile remains unchanged. Candidate notes are never persisted alone.
+Sandbox or provider failures are not recorded as learner misconceptions.
 
-## Evidence Dedupe And Source Tracking
+## Provenance And Snapshots
 
-Profile synthesis uses canonical evidence before building prompts or provenance.
-Replaying the same logical MCQ question outcome or the same round completion does
-not count evidence twice. Exact replays keep the original event identity for
-stable source tracking.
+Each successful refresh stores provenance with the refresh identifier and
+attempt, trigger, input/output profile versions, provider/model, timestamps,
+event references, evidence digest, stage prompt/schema revisions, completion
+identity, workflow operation ID when available, and the exact maintained-note
+snapshot supplied to the summary stage.
 
-Evidence source keys distinguish replayed evidence from genuinely new evidence.
-Distinct attempts, distinct outcomes, and skip-vs-answer evidence remain separate
-so retries of the same event do not erase meaningful later practice.
+Provenance and saved notes are scoped to the authenticated workspace/user. Raw
+code, hidden tests, session secrets, and raw coaching/chat text are never part of
+note-stage or coding profile-stage model input, saved profiles, or provenance.
 
-Memory and system audit events are excluded from learning evidence. Note-created,
-note-updated, and profile-refresh audit events should not become self-reinforcing
-signals for future profile conclusions.
+## Durable Deduplication
+
+Coding completions are deduplicated by the durable completion identity
+`(workspace_id, user_id, session_id, problem_id, submission_id)` in
+`memory_profile_completions`. The completion marker is written in the same
+transaction as the profile update.
+
+- Delivering the same logical completion again does not count evidence twice and
+  does not call the model again.
+- A genuinely new submission has a new `submission_id`, so it remains distinct
+  even with the same outcome.
+- An uncertain retry of the same logical submission reuses the same
+  `submission_id` and is therefore deduplicated.
+- If the marker write fails, the profile save rolls back with it.
+
+Postgres is the durable source of this dedupe; the in-memory store mirrors the
+same contract for tests.
+
+## Submit Tokens
+
+Clients may send `client_token` on `POST /api/v1/submissions`. The backend
+reserves the token under the authenticated workspace/user scope with a
+fingerprint of `mode`, `problem_id`, `session_id`, and submitted files.
+
+- Replaying the same token and fingerprint returns the original
+  `submission_id`; it never starts a second execution.
+- Reusing the token with different content returns `409
+  submission_token_conflict`.
+- If the original request still owns an unbound/in-flight execution, a duplicate
+  waits briefly for the run to bind. If it still has not bound, the duplicate
+  returns `409 submission_in_progress` and the client retries later with the same
+  token and content.
+- A joined or replayed request never reports a memory status for a refresh that
+  is still running. It reports only an already-settled `synced`/`failed` status,
+  or omits the field.
+- On acceptance the request that owns the completion claims the session's memory
+  status (`pending`) and later settles it (`synced`/`failed`) with an atomic
+  conditional write.
+- On an uncertain failure (timeout, `TypeError`, `submission_in_progress`, 5xx)
+  the frontend keeps the token intent in `sessionStorage` and retries; on
+  acceptance or definitive rejection it clears it.
+
+Limitations:
+
+- Token reservations are not garbage-collected automatically.
+- Tokens are scoped to workspace/user, not across devices.
+- A client that keeps its token intent can safely retry; a client that loses it
+  before a response may start a new logical submission.
+
+## Session Memory Status
+
+Session state tracks `memory_update_status` (`idle`, `pending`, `synced`,
+`failed`) and `last_submission_id`. Status writes are atomic:
+
+- The request that finalized the completion claims the status
+  unconditionally.
+- All later status writes (final settle, retry, maintain endpoint) apply only
+  while `last_submission_id` is empty or still matches that submission.
+- A stale completion cannot overwrite the status owned by a newer graded
+  submission.
 
 ## Retry And Stale-Write Protection
 
 Every profile save is conditional on the profile version read at the start of the
 refresh. A refresh based on an older profile cannot overwrite a newer saved
-profile.
+profile. When a save fails because the profile is stale, the synthesizer retries
+once with fresh inputs; if the retry also fails, the caller gets a retryable
+failure instead of silently overwriting newer memory.
 
-When a save fails because the profile is stale, the synthesizer retries once with
-fresh inputs. If the retry also cannot save, the caller gets a retryable failure
-instead of silently overwriting newer memory.
+Duplicate evidence is deduped, stale saves are rejected, and stale completion
+status writes are dropped, so uncertain responses are safe to retry.
 
-This makes uncertain responses safe to retry: duplicate evidence is deduped, and
-stale saves are rejected rather than replacing newer profile or note state.
+## Schema And Migration Notes
+
+- `memory_profile_completions` (Postgres) stores durable coding completion
+  markers keyed by workspace, user, session, problem, and submission, with the
+  source event, refresh ID, and profile version. It is created by
+  `memory.PostgresStore.EnsureSchema` and references `memory_events`.
+- `submission_request_tokens` stores token reservations keyed by workspace, user,
+  and token with fingerprint, run ID, nullable submission ID, and status. It is
+  created by `execution.PostgresStore.EnsureSchema`.
+- Session state is JSONB; `memory_update_status` and `last_submission_id` are
+  additive keys with no backfill required.
+- Profile provenance `schema_version` and stage revisions are recorded per
+  refresh; `maintained_notes_snapshot` is additive to the existing provenance
+  object.
 
 ## Evidence Interpretation
 
@@ -100,28 +190,19 @@ Events are evidence, not conclusions. The model may revise prior summary, focus,
 skill confidence, or note disposition when new evidence conflicts with earlier
 memory, but conclusions should stay proportional to the available evidence.
 
-A single incorrect answer is limited evidence. It can justify uncertainty or a
-broad review need, but it should not become a precise misconception unless event
-details support that conclusion.
-
-Assisted success, including `used_help=true`, is evidence of exposure or progress
-rather than independent mastery. It should not by itself raise mastery level,
-promote a concept to a strength, or prune a review note.
-
-Skips are neutral coverage signals. The UI may reveal the correct answer after a
-skip, but that reveal is not learner performance. Skip-only evidence should not
-create or retain review notes, and later correct evidence can resolve skip-only
-uncertainty unless actual incorrect evidence remains.
+- A single incorrect answer is limited evidence. It can justify uncertainty or a
+  broad review need, but not a precise misconception unless details support it.
+- Assisted success (`used_help=true`, hints, or coaching) is evidence of exposure
+  or progress, not independent mastery. It should not by itself raise mastery or
+  prune review notes.
+- Skips are neutral coverage signals. Skip-only evidence should not create or
+  retain review notes.
+- When help history is incomplete (`assistance_status=unknown`), uncertainty is
+  retained rather than assuming independent work.
 
 ## Non-Goals
 
 This maintenance flow is not an adaptive-difficulty algorithm. It updates memory
 used by later generation, but it does not choose the next difficulty or replace
-generation strategy.
-
-This story does not add a new UI. Existing Memory and generation surfaces are
-reused, and MCQ loading-stage wording is owned separately by issue #113.
-
-This story does not add note CRUD for daily, coding, or interview refreshes.
-Those paths continue to preserve existing notes while using the shared profile
-refresh protections.
+generation strategy. It does not add a new UI; existing Memory and generation
+surfaces are reused.

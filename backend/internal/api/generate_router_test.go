@@ -268,6 +268,26 @@ func TestMaintainProfileRouteReturnsRetryableFailureWhenNoteStageFails(t *testin
 	}
 }
 
+func TestMaintainProfileRouteReturnsRetryableFailureWhenCodingCompletionIsMissing(t *testing.T) {
+	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
+	generator := &sequencedGenerator{payloads: []string{`{"actions":[]}`}}
+	router := newGenerateTestRouter(t, generation.NewOrchestrator(memoryService, generator), memoryService)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/memory/profile/maintain", strings.NewReader(`{
+		"session_id":"coding-1","problem_id":"queue-1","submission_id":"exec-missing"
+	}`))
+	request.Header.Set("Authorization", "Bearer dev:kevin:personal-kevin")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "memory_completion_evidence_missing") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if len(generator.requests) != 0 {
+		t.Fatalf("model was called without targeted completion evidence: %#v", generator.requests)
+	}
+}
+
 func TestMaintainProfileCompatibilityRouteWorksWithoutOrchestrator(t *testing.T) {
 	memoryService := memory.NewService(memory.NewInMemoryStore(), nil)
 	router := newGenerateTestRouter(t, nil, memoryService)

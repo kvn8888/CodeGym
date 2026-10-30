@@ -8,7 +8,16 @@ import {
 } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
-import { api, createMemoryEvent } from '../../shared/api/client';
+import {
+  api,
+  clearSubmitIntent,
+  createMemoryEvent,
+  generateSubmitToken,
+  isUncertainSubmitFailure,
+  readSubmitIntent,
+  submitIntentFingerprint,
+  writeSubmitIntent,
+} from '../../shared/api/client';
 import { buildWorkspaceEvent, memoryEventTypes } from '../../shared/api/memoryEvents';
 import { useCodeGymAuthState } from '../../shared/auth/authState';
 import { MarkdownContent } from '../../shared/components/MarkdownContent';
@@ -20,6 +29,7 @@ import type {
   SubmissionFile,
   SubmissionStatus,
   TestCaseResult,
+  TestResult,
 } from '../../shared/api/types';
 import { GridSpinner } from '../../shared/components/GridSpinner';
 
@@ -97,6 +107,10 @@ const terminalFailurePresentation: Record<
   },
 };
 
+function isGradedSubmission(submission: Submission | null): submission is Submission & { result: TestResult } {
+  return Boolean(submission?.result && (submission.result.status === 'pass' || submission.result.status === 'fail'));
+}
+
 function isTerminalFailureSubmission(
   submission: Submission,
 ): submission is Submission & { status: TerminalFailureStatus } {
@@ -136,6 +150,7 @@ export function ProblemDetailPage({
   const sessionStateRef = useRef<Record<string, unknown>>({ schema_version: 1 });
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runRequestRef = useRef(0);
+  const submitTokenRef = useRef<string>(readSubmitIntent()?.token ?? '');
   const [problem, setProblem] = useState<Problem | null>(null);
   const [files, setFiles] = useState<SubmissionFile[]>([]);
   const [activeFile, setActiveFile] = useState(0);
@@ -512,18 +527,34 @@ export function ProblemDetailPage({
     setSubmitting(true);
     setSubmission(null);
     setError(null);
+    let attempted = false;
     try {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       await persistDraft(submittedFiles, hintsRef.current);
       setMemoryUpdateStatus('pending');
-      const res = await api.post<{
-        submission_id: string;
-        memory_update_status?: 'synced' | 'failed';
-      }>('/submissions', {
+      // Reuse the stored token only for an unchanged retry of a submit whose
+      // outcome was uncertain; a deliberate new submit gets a fresh token.
+      const fingerprint = submitIntentFingerprint(submittedFiles);
+      const storedIntent = readSubmitIntent();
+      const reuseStoredToken =
+        storedIntent !== null &&
+        storedIntent.fingerprint === fingerprint &&
+        storedIntent.sessionId === sessionId &&
+        storedIntent.problemId === problem.id;
+      const clientToken = reuseStoredToken ? storedIntent.token : generateSubmitToken();
+      writeSubmitIntent({ token: clientToken, fingerprint, sessionId, problemId: problem.id });
+      submitTokenRef.current = clientToken;
+      attempted = true;
+      const res = await api.submissions.submit({
         problem_id: problem.id,
         session_id: sessionId,
         files: submittedFiles,
+        mode: 'submit',
+        client_token: clientToken,
       });
+      // A definitive accepted response commits this logical submission.
+      clearSubmitIntent();
+      submitTokenRef.current = '';
       sessionStateRef.current = {
         ...sessionStateRef.current,
         last_submission_id: res.submission_id,
@@ -534,6 +565,11 @@ export function ProblemDetailPage({
       if (res.memory_update_status) {
         setMemoryUpdateStatus(res.memory_update_status);
       }
+      // Persist the completion identity immediately so a reload can retry
+      // memory maintenance even if result polling fails.
+      void api
+        .patch<PracticeSession>(`/sessions/${sessionId}`, { state: sessionStateRef.current })
+        .catch(() => {});
 
       while (runRequestRef.current === requestID) {
         const sub = await api.get<Submission>(
@@ -551,6 +587,11 @@ export function ProblemDetailPage({
         break;
       }
     } catch (err) {
+      if (attempted && !isUncertainSubmitFailure(err)) {
+        // Definitive rejection: the stored token must not be reused.
+        clearSubmitIntent();
+        submitTokenRef.current = '';
+      }
       if (runRequestRef.current === requestID) {
         setError(err instanceof Error ? err.message : 'Submission failed.');
       }
@@ -561,17 +602,24 @@ export function ProblemDetailPage({
 
   const retryMemoryUpdate = async () => {
     if (!sessionId) return;
+    const submissionID =
+      typeof sessionStateRef.current.last_submission_id === 'string'
+        ? sessionStateRef.current.last_submission_id
+        : '';
+    if (!submissionID) return;
     setMemoryUpdateStatus('pending');
     try {
-      await api.post('/memory/profile/maintain', { session_id: sessionId });
-      const state = { ...sessionStateRef.current, memory_update_status: 'synced' };
-      sessionStateRef.current = state;
-      await api.patch<PracticeSession>(`/sessions/${sessionId}`, { state });
+      await api.memory.maintainProfile({
+        session_id: sessionId,
+        problem_id: problem?.id ?? '',
+        submission_id: submissionID,
+      });
+      // The backend settles the session status atomically only while this
+      // submission still owns it, so the client must not PATCH its own copy.
+      sessionStateRef.current = { ...sessionStateRef.current, memory_update_status: 'synced' };
       setMemoryUpdateStatus('synced');
     } catch {
-      const state = { ...sessionStateRef.current, memory_update_status: 'failed' };
-      sessionStateRef.current = state;
-      void api.patch<PracticeSession>(`/sessions/${sessionId}`, { state }).catch(() => {});
+      sessionStateRef.current = { ...sessionStateRef.current, memory_update_status: 'failed' };
       setMemoryUpdateStatus('failed');
     }
   };
@@ -718,7 +766,7 @@ export function ProblemDetailPage({
             className="m-1.5 rounded-md bg-background-100 px-4 py-1.5 text-sm font-medium text-gray-1000 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background-100 disabled:opacity-40"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
           >
-            {submitting ? 'RUNNING' : 'RUN'}
+            {submitting ? 'SUBMITTING' : 'SUBMIT'}
           </button>
         </div>
 
@@ -796,17 +844,17 @@ export function ProblemDetailPage({
                     <span className="text-[10px] text-[#666]">
                       {result.passed}/{result.total} {'\u2014'} {result.duration_ms}ms
                     </span>
-                    {memoryUpdateStatus === 'pending' && (
+                    {memoryUpdateStatus === 'pending' && isGradedSubmission(submission) && (
                       <span className="ml-auto text-[10px] text-[#dcdcaa]">
                         UPDATING MEMORY
                       </span>
                     )}
-                    {memoryUpdateStatus === 'synced' && (
+                    {memoryUpdateStatus === 'synced' && isGradedSubmission(submission) && (
                       <span className="ml-auto text-[10px] text-[#4ec9b0]">
                         MEMORY UPDATED
                       </span>
                     )}
-                    {memoryUpdateStatus === 'failed' && (
+                    {memoryUpdateStatus === 'failed' && isGradedSubmission(submission) && (
                       <button
                         type="button"
                         onClick={() => void retryMemoryUpdate()}

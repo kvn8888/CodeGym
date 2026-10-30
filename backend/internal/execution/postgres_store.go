@@ -59,6 +59,18 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 		`ALTER TABLE execution_runs ADD COLUMN IF NOT EXISTS judge_result jsonb`,
 		`ALTER TABLE execution_runs ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'submit'`,
 		`CREATE INDEX IF NOT EXISTS idx_execution_runs_scope_created_at ON execution_runs (workspace_id, user_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS submission_request_tokens (
+			workspace_id text NOT NULL,
+			user_id text NOT NULL,
+			token text NOT NULL,
+			fingerprint text NOT NULL,
+			run_id text NOT NULL DEFAULT '',
+			submission_id text,
+			status text NOT NULL,
+			created_at timestamptz NOT NULL,
+			updated_at timestamptz NOT NULL,
+			PRIMARY KEY (workspace_id, user_id, token)
+		)`,
 		`CREATE TABLE IF NOT EXISTS execution_run_timings (
 			id text PRIMARY KEY,
 			run_id text NOT NULL,
@@ -149,6 +161,89 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *PostgresStore) ReserveSubmissionRequest(ctx context.Context, workspaceID, userID, token, fingerprint string) (SubmissionRequestReservation, error) {
+	now := time.Now().UTC()
+	reservation := SubmissionRequestReservation{
+		Token: token, Fingerprint: fingerprint, Status: SubmissionRequestStatusInProgress,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO submission_request_tokens (
+			workspace_id, user_id, token, fingerprint, status, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7)
+		ON CONFLICT (workspace_id, user_id, token) DO NOTHING
+	`, workspaceID, userID, token, fingerprint, SubmissionRequestStatusInProgress, now, now)
+	if err != nil {
+		return SubmissionRequestReservation{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		found, getErr := s.GetSubmissionRequest(ctx, workspaceID, userID, token)
+		if getErr != nil {
+			return SubmissionRequestReservation{}, getErr
+		}
+		if found.Fingerprint != fingerprint {
+			return SubmissionRequestReservation{}, ErrSubmissionRequestConflict
+		}
+		return found, nil
+	}
+	reservation.Created = true
+	return reservation, nil
+}
+
+func (s *PostgresStore) BindSubmissionRequestRun(ctx context.Context, workspaceID, userID, token, runID string) error {
+	result, err := s.pool.Exec(ctx, `
+		UPDATE submission_request_tokens
+		SET run_id = $4, updated_at = $5
+		WHERE workspace_id = $1 AND user_id = $2 AND token = $3
+	`, workspaceID, userID, token, runID, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrSubmissionRequestNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) CompleteSubmissionRequest(ctx context.Context, workspaceID, userID, token, runID string) error {
+	result, err := s.pool.Exec(ctx, `
+		UPDATE submission_request_tokens
+		SET status = $4, submission_id = $5, run_id = $6, updated_at = $7
+		WHERE workspace_id = $1 AND user_id = $2 AND token = $3
+	`, workspaceID, userID, token, SubmissionRequestStatusCompleted, runID, runID, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrSubmissionRequestNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetSubmissionRequest(ctx context.Context, workspaceID, userID, token string) (SubmissionRequestReservation, error) {
+	var reservation SubmissionRequestReservation
+	err := s.pool.QueryRow(ctx, `
+		SELECT token, fingerprint, run_id, COALESCE(submission_id, ''), status, created_at, updated_at
+		FROM submission_request_tokens
+		WHERE workspace_id = $1 AND user_id = $2 AND token = $3
+	`, workspaceID, userID, token).Scan(
+		&reservation.Token,
+		&reservation.Fingerprint,
+		&reservation.RunID,
+		&reservation.SubmissionID,
+		&reservation.Status,
+		&reservation.CreatedAt,
+		&reservation.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return SubmissionRequestReservation{}, ErrSubmissionRequestNotFound
+		}
+		return SubmissionRequestReservation{}, err
+	}
+	return reservation, nil
 }
 
 func (s *PostgresStore) CreateRun(ctx context.Context, run Run) error {

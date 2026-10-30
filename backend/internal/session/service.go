@@ -166,26 +166,64 @@ func (s *Service) HasPendingMemoryUpdate(ctx context.Context) (bool, error) {
 }
 
 func (s *Service) SetMemoryUpdateStatus(ctx context.Context, sessionID, status string) (Session, error) {
-	switch status {
-	case "idle", "pending", "synced", "failed":
-	default:
-		return Session{}, errors.New("invalid memory update status")
-	}
+	return s.SetMemoryUpdateStatusForSubmission(ctx, sessionID, "", status)
+}
+
+// CompletionMemoryStatusCurrent reports whether the session's latest graded
+// submission matches the completion being refreshed.
+func (s *Service) CompletionMemoryStatusCurrent(ctx context.Context, sessionID, submissionID string) (bool, error) {
 	current, err := s.Get(ctx, sessionID)
 	if err != nil {
-		return Session{}, err
+		return false, err
+	}
+	if strings.TrimSpace(submissionID) == "" {
+		return true, nil
 	}
 	state := map[string]any{}
 	if len(current.State) > 0 {
 		_ = json.Unmarshal(current.State, &state)
 	}
-	state["memory_update_status"] = status
-	encoded, err := json.Marshal(state)
+	lastSubmissionID, _ := state["last_submission_id"].(string)
+	return strings.TrimSpace(lastSubmissionID) == "" ||
+		strings.TrimSpace(lastSubmissionID) == strings.TrimSpace(submissionID), nil
+}
+
+// SetMemoryUpdateStatusForSubmission claims the memory maintenance status for
+// one graded submission, replacing any previous owner. An empty submissionID
+// only updates the status itself.
+func (s *Service) SetMemoryUpdateStatusForSubmission(ctx context.Context, sessionID, submissionID string, status string) (Session, error) {
+	if err := validateMemoryUpdateStatus(status); err != nil {
+		return Session{}, err
+	}
+	id, err := identityFromContext(ctx)
 	if err != nil {
 		return Session{}, err
 	}
-	raw := json.RawMessage(encoded)
-	return s.Update(ctx, sessionID, UpdateInput{State: &raw})
+	return s.store.SetMemoryUpdateStatus(ctx, id.workspaceID, id.userID, sessionID, submissionID, status)
+}
+
+// SetMemoryUpdateStatusIfCurrent writes the memory status only when
+// submissionID still owns the session's latest graded completion. It returns
+// applied=false when a newer completion has claimed the status, so stale
+// refreshes cannot overwrite newer progress.
+func (s *Service) SetMemoryUpdateStatusIfCurrent(ctx context.Context, sessionID, submissionID string, status string) (Session, bool, error) {
+	if err := validateMemoryUpdateStatus(status); err != nil {
+		return Session{}, false, err
+	}
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return Session{}, false, err
+	}
+	return s.store.SetMemoryUpdateStatusIfCurrent(ctx, id.workspaceID, id.userID, sessionID, submissionID, status)
+}
+
+func validateMemoryUpdateStatus(status string) error {
+	switch status {
+	case "idle", "pending", "synced", "failed":
+		return nil
+	default:
+		return errors.New("invalid memory update status")
+	}
 }
 
 type identity struct {

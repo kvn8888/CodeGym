@@ -61,6 +61,18 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			occurred_at timestamptz NOT NULL,
 			created_at timestamptz NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS memory_profile_completions (
+			workspace_id text NOT NULL,
+			user_id text NOT NULL,
+			submission_id text NOT NULL,
+			session_id text NOT NULL,
+			problem_id text NOT NULL,
+			source_event_id text NOT NULL REFERENCES memory_events (id) ON DELETE CASCADE,
+			refresh_id text NOT NULL,
+			profile_version bigint NOT NULL,
+			processed_at timestamptz NOT NULL,
+			PRIMARY KEY (workspace_id, user_id, session_id, problem_id, submission_id)
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_created_at ON memory_events (workspace_id, user_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_occurred_at ON memory_events (workspace_id, user_id, occurred_at DESC)`,
 		`DO $$
@@ -73,6 +85,22 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 			) THEN
 				ALTER TABLE user_memory_profiles
 				ADD CONSTRAINT fk_user_memory_profiles_membership
+				FOREIGN KEY (workspace_id, user_id)
+				REFERENCES workspace_memberships (workspace_id, user_id)
+				ON DELETE CASCADE
+				NOT VALID;
+			END IF;
+		END $$`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1
+				FROM pg_constraint
+				WHERE conname = 'fk_memory_profile_completions_membership'
+					AND conrelid = 'memory_profile_completions'::regclass
+			) THEN
+				ALTER TABLE memory_profile_completions
+				ADD CONSTRAINT fk_memory_profile_completions_membership
 				FOREIGN KEY (workspace_id, user_id)
 				REFERENCES workspace_memberships (workspace_id, user_id)
 				ON DELETE CASCADE
@@ -206,6 +234,78 @@ func (s *PostgresStore) ReplaceProfileIfVersion(ctx context.Context, workspaceID
 		return ErrStaleProfile
 	}
 	return nil
+}
+
+func (s *PostgresStore) ReplaceProfileAndMarkCompletionIfVersion(ctx context.Context, workspaceID, userID string, profile Profile, expectedVersion int64, completion ProcessedCompletion) error {
+	profile.Version = expectedVersion + 1
+	profile.UpdatedAt = profile.UpdatedAt.UTC()
+	profile.NextReviewAt = profile.NextReviewAt.UTC()
+	profileJSON, err := json.Marshal(profile)
+	if err != nil {
+		return fmt.Errorf("encode memory profile: %w", err)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	markerTag, err := tx.Exec(ctx, `
+		INSERT INTO memory_profile_completions (
+			workspace_id, user_id, submission_id, session_id, problem_id,
+			source_event_id, refresh_id, profile_version, processed_at
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		ON CONFLICT (workspace_id, user_id, session_id, problem_id, submission_id) DO NOTHING
+	`, workspaceID, userID, completion.SubmissionID, completion.SessionID, completion.ProblemID,
+		completion.SourceEventID, completion.RefreshID, completion.ProfileVersion, completion.ProcessedAt.UTC())
+	if err != nil {
+		return err
+	}
+	if markerTag.RowsAffected() == 0 {
+		return ErrCompletionAlreadyProcessed
+	}
+
+	var profileTag pgconn.CommandTag
+	if expectedVersion == 0 {
+		profileTag, err = tx.Exec(ctx, `
+			INSERT INTO user_memory_profiles (workspace_id, user_id, profile, updated_at, next_review_at)
+			VALUES ($1, $2, $3::jsonb, $4, $5)
+			ON CONFLICT (workspace_id, user_id) DO NOTHING
+		`, workspaceID, userID, string(profileJSON), profile.UpdatedAt, profile.NextReviewAt)
+	} else {
+		profileTag, err = tx.Exec(ctx, `
+			UPDATE user_memory_profiles
+			SET profile = $3::jsonb, updated_at = $4, next_review_at = $5
+			WHERE workspace_id = $1 AND user_id = $2
+				AND COALESCE((profile->>'version')::bigint, 0) = $6
+		`, workspaceID, userID, string(profileJSON), profile.UpdatedAt, profile.NextReviewAt, expectedVersion)
+	}
+	if err != nil {
+		return err
+	}
+	if profileTag.RowsAffected() == 0 {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM user_memory_profiles WHERE workspace_id=$1 AND user_id=$2
+		)`, workspaceID, userID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrProfileNotFound
+		}
+		return ErrStaleProfile
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *PostgresStore) IsCompletionProcessed(ctx context.Context, workspaceID, userID, sessionID, problemID, submissionID string) (bool, error) {
+	var processed bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM memory_profile_completions
+		WHERE workspace_id=$1 AND user_id=$2 AND session_id=$3 AND problem_id=$4 AND submission_id=$5
+	)`, workspaceID, userID, sessionID, problemID, submissionID).Scan(&processed)
+	return processed, err
 }
 
 func (s *PostgresStore) AppendEvent(ctx context.Context, event Event) error {

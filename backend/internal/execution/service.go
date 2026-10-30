@@ -191,6 +191,45 @@ func validateLimits(limits Limits) error {
 	return nil
 }
 
+// ReserveSubmissionRequest claims a logical coding submission request inside
+// the caller's authenticated workspace/user scope.
+func (s *Service) ReserveSubmissionRequest(ctx context.Context, token, fingerprint string) (SubmissionRequestReservation, error) {
+	identity, err := identityFromContext(ctx)
+	if err != nil {
+		return SubmissionRequestReservation{}, err
+	}
+	return s.store.ReserveSubmissionRequest(ctx, identity.workspaceID, identity.userID, token, fingerprint)
+}
+
+// BindSubmissionRequestRun records the run bound to an in-progress submission
+// request token.
+func (s *Service) BindSubmissionRequestRun(ctx context.Context, token, runID string) error {
+	identity, err := identityFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return s.store.BindSubmissionRequestRun(ctx, identity.workspaceID, identity.userID, token, runID)
+}
+
+// CompleteSubmissionRequest marks a submitted logical request completed against
+// the run that produced its terminal outcome.
+func (s *Service) CompleteSubmissionRequest(ctx context.Context, token, runID string) error {
+	identity, err := identityFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return s.store.CompleteSubmissionRequest(ctx, identity.workspaceID, identity.userID, token, runID)
+}
+
+// GetSubmissionRequest returns the reservation for one token inside scope.
+func (s *Service) GetSubmissionRequest(ctx context.Context, token string) (SubmissionRequestReservation, error) {
+	identity, err := identityFromContext(ctx)
+	if err != nil {
+		return SubmissionRequestReservation{}, err
+	}
+	return s.store.GetSubmissionRequest(ctx, identity.workspaceID, identity.userID, token)
+}
+
 func (s *Service) GetRun(ctx context.Context, id string) (Run, error) {
 	identity, err := identityFromContext(ctx)
 	if err != nil {

@@ -198,6 +198,19 @@ func TestParseNoteActionsSanitizes(t *testing.T) {
 	}
 }
 
+func TestParseNoteActionsStrictRejectsAnyMalformedAction(t *testing.T) {
+	for _, raw := range []string{
+		`{"actions":[{"op":"create","note":{"title":"","summary":"missing title","action":"review"}}]}`,
+		`{"actions":[{"op":"update","note":{"id":"","summary":"missing id"}}]}`,
+		`{"actions":[{"op":"explode","note":{"id":"note_x"}}]}`,
+		`{"reason":"missing actions"}`,
+	} {
+		if _, err := ParseNoteActionsStrict(json.RawMessage(raw)); err == nil {
+			t.Fatalf("expected strict validation error for %s", raw)
+		}
+	}
+}
+
 func TestApplyNoteActionsCRUDAndCap(t *testing.T) {
 	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 	existing := []memory.Note{

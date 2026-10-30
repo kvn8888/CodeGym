@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -208,6 +209,59 @@ func TestChatScopePreventsCrossWorkspaceTranscriptAccess(t *testing.T) {
 	other := scopedContext("workspace-b", "user-b")
 	if _, err := service.Messages(other, thread.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-scope access error = %v", err)
+	}
+}
+
+func TestCodingCoachUsedIsScopedAndHonorsSubmissionCutoff(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	ctx := scopedContext("workspace-a", "user-a")
+	sessionService := session.NewService(session.NewInMemoryStore(), func() time.Time { return now })
+	memoryService := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	practiceSession, _ := sessionService.Create(ctx, session.CreateInput{Kind: session.KindWorkspace})
+	service := NewService(
+		NewInMemoryStore(), sessionService, problems.NewService(problems.NewInMemoryStore()),
+		memoryService, &testStreamer{}, nil, nil, func() time.Time { return now },
+	)
+	thread, err := service.CreateOrResume(ctx, CreateThreadInput{Kind: KindCoach, SessionID: practiceSession.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeMessage := now.Add(-time.Minute)
+	if err := service.Turn(ctx, thread.ID, TurnInput{ClientMessageID: "coach-1", Message: "Give me a hint"}, func(SSEEvent) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	used, err := service.CodingCoachUsed(ctx, practiceSession.ID, beforeMessage)
+	if err != nil || used {
+		t.Fatalf("coaching before cutoff: used=%v err=%v", used, err)
+	}
+	used, err = service.CodingCoachUsed(ctx, practiceSession.ID, now)
+	if err != nil || !used {
+		t.Fatalf("coaching at cutoff: used=%v err=%v", used, err)
+	}
+	used, err = service.CodingCoachUsed(scopedContext("workspace-b", "user-b"), practiceSession.ID, now)
+	if err != nil || used {
+		t.Fatalf("cross-scope coaching: used=%v err=%v", used, err)
+	}
+}
+
+func TestCodingCoachUsedDoesNotInferAbsenceFromCappedHistory(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	ctx := scopedContext("workspace-a", "user-a")
+	store := NewInMemoryStore()
+	for index := 0; index < 100; index++ {
+		_, err := store.CreateThread(ctx, Thread{
+			ID: fmt.Sprintf("thread-%03d", index), WorkspaceID: "workspace-a", UserID: "user-a",
+			SessionID: "coding-1", Kind: KindCoach, Status: StatusClosed,
+			CreatedAt: now, UpdatedAt: now,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := NewService(store, nil, nil, nil, nil, nil, nil, nil)
+	used, err := service.CodingCoachUsed(ctx, "coding-1", now)
+	if err == nil || used {
+		t.Fatalf("capped history must remain unknown: used=%v err=%v", used, err)
 	}
 }
 

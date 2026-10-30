@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -137,6 +138,56 @@ func (s *InMemoryStore) UpsertFiles(_ context.Context, workspaceID, userID, sess
 	s.sessions[sessionID] = copySession(session)
 	session.Files = s.filesFor(sessionID)
 	return copySession(session), nil
+}
+
+func (s *InMemoryStore) SetMemoryUpdateStatus(_ context.Context, workspaceID, userID, sessionID, submissionID, status string) (Session, error) {
+	session, _, err := s.setMemoryUpdateStatus(workspaceID, userID, sessionID, submissionID, status, false)
+	return session, err
+}
+
+func (s *InMemoryStore) SetMemoryUpdateStatusIfCurrent(_ context.Context, workspaceID, userID, sessionID, submissionID, status string) (Session, bool, error) {
+	session, applied, err := s.setMemoryUpdateStatus(workspaceID, userID, sessionID, submissionID, status, true)
+	return session, applied, err
+}
+
+func (s *InMemoryStore) setMemoryUpdateStatus(workspaceID, userID, sessionID, submissionID, status string, conditional bool) (Session, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.sessions[sessionID]
+	if !ok || current.WorkspaceID != workspaceID || current.UserID != userID {
+		return Session{}, false, ErrNotFound
+	}
+	state := map[string]any{}
+	if len(current.State) > 0 {
+		if err := json.Unmarshal(current.State, &state); err != nil {
+			return Session{}, false, err
+		}
+	}
+	trimmed := strings.TrimSpace(submissionID)
+	if conditional && trimmed != "" {
+		last, _ := state["last_submission_id"].(string)
+		if owner := strings.TrimSpace(last); owner != "" && owner != trimmed {
+			session := copySession(current)
+			session.Files = s.filesFor(sessionID)
+			return session, false, nil
+		}
+	}
+	state["memory_update_status"] = status
+	if trimmed != "" {
+		state["last_submission_id"] = trimmed
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		return Session{}, false, err
+	}
+	current.State = encoded
+	current.UpdatedAt = time.Now().UTC()
+	current.LastActivityAt = current.UpdatedAt
+	s.sessions[sessionID] = copySession(current)
+	session := copySession(current)
+	session.Files = s.filesFor(sessionID)
+	return session, true, nil
 }
 
 func (s *InMemoryStore) filesFor(sessionID string) []File {

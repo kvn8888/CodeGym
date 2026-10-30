@@ -56,6 +56,20 @@ func TestViewFromRunTruncatesRevealedFailureValues(t *testing.T) {
 	}
 }
 
+func TestSandboxFailureIsNotGradedAssessment(t *testing.T) {
+	// Sandbox/platform failures are terminal but never graded, so they must
+	// not trigger coding memory refresh or be recorded as learner evidence.
+	for _, status := range []execution.Status{
+		execution.StatusTimeout, execution.StatusOutOfMemory,
+		execution.StatusCrashed, execution.StatusError,
+	} {
+		view := viewFromRun(execution.Run{Status: status})
+		if isGradedAssessment(view) {
+			t.Fatalf("sandbox failure %q incorrectly treated as graded assessment", status)
+		}
+	}
+}
+
 func TestViewFromRunUsesStructuredCompletedVerdict(t *testing.T) {
 	exitCode := 0
 	view := viewFromRun(execution.Run{

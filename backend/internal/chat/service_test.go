@@ -25,6 +25,10 @@ func (testGenerator) Generate(_ context.Context, request generation.GenerateRequ
 		return generation.GenerateResult{Object: json.RawMessage(`{"question":"Tell me how you would approach this problem."}`)}, nil
 	case generation.KindInterviewAssessment:
 		return generation.GenerateResult{Object: json.RawMessage(`{"strengths":["Clear decomposition"],"growth_edges":["Tradeoff depth"],"topic":"Algorithms"}`)}, nil
+	case generation.KindNotes:
+		return generation.GenerateResult{Object: json.RawMessage(`{"actions":[]}`)}, nil
+	case generation.KindProfile:
+		return generation.GenerateResult{Object: json.RawMessage(`{"summary":"","strengths":[],"growth_edges":[],"skills":[],"notes":[]}`)}, nil
 	default:
 		return generation.GenerateResult{}, errors.New("unsupported test generation kind")
 	}
@@ -431,4 +435,95 @@ func eventTypes(events []SSEEvent) []string {
 		out = append(out, event.Type)
 	}
 	return out
+}
+
+// failingAppendStore wraps an InMemoryStore and fails AppendEvent for the first
+// failCount interview-completed events, simulating a memory event save failure.
+type failingAppendStore struct {
+	*memory.InMemoryStore
+	failCount int
+	calls     int
+}
+
+func (f *failingAppendStore) AppendEvent(ctx context.Context, event memory.Event) error {
+	if event.Type == memory.TypeInterviewCompleted {
+		f.calls++
+		if f.calls <= f.failCount {
+			return errors.New("simulated append failure")
+		}
+	}
+	return f.InMemoryStore.AppendEvent(ctx, event)
+}
+
+func TestInterviewFinishRetriesMemoryOnSecondCall(t *testing.T) {
+	now := time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC)
+	ctx := scopedContext("workspace-a", "user-a")
+	baseStore := memory.NewInMemoryStore()
+	failingStore := &failingAppendStore{InMemoryStore: baseStore, failCount: 1}
+	memoryService := memory.NewService(failingStore, func() time.Time { return now })
+	sessionService := session.NewService(session.NewInMemoryStore(), func() time.Time { return now })
+	problemService := problems.NewService(problems.NewInMemoryStore())
+	orchestrator := generation.NewOrchestrator(memoryService, testGenerator{})
+	streamer := &testStreamer{}
+	service := NewService(
+		NewInMemoryStore(), sessionService, problemService, memoryService,
+		streamer, orchestrator, generation.NewProfileSynthesizer(orchestrator, memoryService),
+		func() time.Time { return now },
+	)
+	practiceSession, err := sessionService.Create(ctx, session.CreateInput{
+		Kind:  session.KindInterview,
+		Title: "Algorithms interview",
+		State: json.RawMessage(`{"topic":"Arrays"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateOrResume(ctx, CreateThreadInput{
+		Kind: KindInterview, Mode: "coding", SessionID: practiceSession.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := TurnInput{ClientMessageID: "client-1", Message: "I would start with a map."}
+	if err := service.Turn(ctx, created.ID, turn, func(SSEEvent) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := service.Finish(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.MemoryUpdateStatus != "failed" {
+		t.Fatalf("first finish status = %q, want failed", first.MemoryUpdateStatus)
+	}
+	if first.Thread.Status != StatusCompleted {
+		t.Fatalf("thread should be completed after first finish")
+	}
+	countEvents := func() int {
+		events, err := memoryService.ListEvents(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, e := range events {
+			if e.Type == memory.TypeInterviewCompleted {
+				n++
+			}
+		}
+		return n
+	}
+	if got := countEvents(); got != 0 {
+		t.Fatalf("interview completed events after first finish = %d, want 0", got)
+	}
+
+	second, err := service.Finish(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.MemoryUpdateStatus != "synced" {
+		t.Fatalf("second finish status = %q, want synced", second.MemoryUpdateStatus)
+	}
+	if got := countEvents(); got != 1 {
+		t.Fatalf("interview completed events after second finish = %d, want 1", got)
+	}
 }

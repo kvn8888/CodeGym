@@ -360,7 +360,19 @@ func (s *Service) Finish(ctx context.Context, threadID string) (FinishResult, er
 		return FinishResult{}, errors.New("only interview threads can be finished")
 	}
 	if thread.Status == StatusCompleted {
-		return FinishResult{Thread: thread, MemoryUpdateStatus: "synced"}, nil
+		// Determine whether memory was actually saved. If it failed (or is
+		// unknown), retry the event save + profile refresh instead of
+		// reporting "synced".
+		persistedSession, _ := s.sessions.Get(ctx, thread.SessionID)
+		sessionState := map[string]any{}
+		if len(persistedSession.State) > 0 {
+			_ = json.Unmarshal(persistedSession.State, &sessionState)
+		}
+		memoryStatus, _ := sessionState["memory_update_status"].(string)
+		if memoryStatus == "synced" {
+			return FinishResult{Thread: thread, MemoryUpdateStatus: "synced"}, nil
+		}
+		// Fall through to retry the memory event save + profile refresh.
 	}
 	messages, err := s.store.ListMessages(ctx, scope.workspaceID, scope.userID, thread.ID)
 	if err != nil {
@@ -410,11 +422,30 @@ func (s *Service) Finish(ctx context.Context, threadID string) (FinishResult, er
 		"duration_seconds": assessment.DurationSeconds, "schema_version": 1,
 	})
 	eventSaved := true
-	if _, err := s.memory.RecordEvent(ctx, memory.RecordEventInput{
-		Source: memory.SourceChat, Type: memory.TypeInterviewCompleted,
-		Summary: "Completed a conversational interview.", Payload: payload,
-	}); err != nil {
-		eventSaved = false
+	// Avoid recording a duplicate event if a previous attempt already saved it
+	// (e.g. event saved but profile refresh failed).
+	alreadyRecorded := false
+	if events, err := s.memory.ListEvents(ctx); err == nil {
+		for _, e := range events {
+			if e.Type != memory.TypeInterviewCompleted {
+				continue
+			}
+			var p map[string]any
+			if json.Unmarshal(e.Payload, &p) == nil {
+				if tid, _ := p["thread_id"].(string); tid == thread.ID {
+					alreadyRecorded = true
+					break
+				}
+			}
+		}
+	}
+	if !alreadyRecorded {
+		if _, err := s.memory.RecordEvent(ctx, memory.RecordEventInput{
+			Source: memory.SourceChat, Type: memory.TypeInterviewCompleted,
+			Summary: "Completed a conversational interview.", Payload: payload,
+		}); err != nil {
+			eventSaved = false
+		}
 	}
 	memoryStatus := "synced"
 	if !eventSaved || s.profiles == nil {

@@ -601,7 +601,7 @@ export function ProblemDetailPage({
   };
 
   const retryMemoryUpdate = async () => {
-    if (!sessionId) return;
+    if (!sessionId || !problem?.id) return;
     const submissionID =
       typeof sessionStateRef.current.last_submission_id === 'string'
         ? sessionStateRef.current.last_submission_id
@@ -611,7 +611,7 @@ export function ProblemDetailPage({
     try {
       await api.memory.maintainProfile({
         session_id: sessionId,
-        problem_id: problem?.id ?? '',
+        problem_id: problem.id,
         submission_id: submissionID,
       });
       // The backend settles the session status atomically only while this
@@ -854,7 +854,7 @@ export function ProblemDetailPage({
                         MEMORY UPDATED
                       </span>
                     )}
-                    {memoryUpdateStatus === 'failed' && isGradedSubmission(submission) && (
+                    {memoryUpdateStatus === 'failed' && isGradedSubmission(submission) && Boolean(problem?.id) && (
                       <button
                         type="button"
                         onClick={() => void retryMemoryUpdate()}

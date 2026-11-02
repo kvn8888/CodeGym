@@ -76,7 +76,7 @@ func (s *InMemoryStore) ReplaceProfileAndMarkCompletionIfVersion(_ context.Conte
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	completionKey := completionKey(workspaceID, userID, completion.SessionID, completion.ProblemID, completion.SubmissionID)
+	completionKey := completionKey(workspaceID, userID, completion.SessionID, completion.ProblemID, completion.SubmissionID, completion.ThreadID)
 	if _, exists := s.completions[completionKey]; exists {
 		return ErrCompletionAlreadyProcessed
 	}
@@ -101,7 +101,14 @@ func (s *InMemoryStore) ReplaceProfileAndMarkCompletionIfVersion(_ context.Conte
 func (s *InMemoryStore) IsCompletionProcessed(_ context.Context, workspaceID, userID, sessionID, problemID, submissionID string) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, exists := s.completions[completionKey(workspaceID, userID, sessionID, problemID, submissionID)]
+	_, exists := s.completions[completionKey(workspaceID, userID, sessionID, problemID, submissionID, "")]
+	return exists, nil
+}
+
+func (s *InMemoryStore) IsInterviewCompletionProcessed(_ context.Context, workspaceID, userID, sessionID, threadID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists := s.completions[completionKey(workspaceID, userID, sessionID, "", "", threadID)]
 	return exists, nil
 }
 
@@ -152,8 +159,8 @@ func key(workspaceID, userID string) string {
 	return workspaceID + "\x00" + userID
 }
 
-func completionKey(workspaceID, userID, sessionID, problemID, submissionID string) string {
-	return key(workspaceID, userID) + "\x00" + sessionID + "\x00" + problemID + "\x00" + submissionID
+func completionKey(workspaceID, userID, sessionID, problemID, submissionID, threadID string) string {
+	return key(workspaceID, userID) + "\x00" + sessionID + "\x00" + problemID + "\x00" + submissionID + "\x00" + threadID
 }
 
 func splitKey(value string) (string, string, bool) {

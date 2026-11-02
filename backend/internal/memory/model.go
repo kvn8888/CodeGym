@@ -59,11 +59,16 @@ type ProfileStageProvenance struct {
 }
 
 // ProcessedCompletion is the durable idempotency marker committed with the
-// profile update that applied one graded coding submission.
+// profile update that applied one graded coding submission or finished
+// interview. Coding completions populate ProblemID and SubmissionID;
+// finished interviews populate ThreadID. Kind distinguishes the two so a
+// single marker table can serve both slices without a new architecture.
 type ProcessedCompletion struct {
+	Kind           string // "coding" or "interview"
 	SubmissionID   string
 	SessionID      string
 	ProblemID      string
+	ThreadID       string
 	SourceEventID  string
 	RefreshID      string
 	ProfileVersion int64

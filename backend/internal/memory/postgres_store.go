@@ -64,15 +64,17 @@ func (s *PostgresStore) EnsureSchema(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS memory_profile_completions (
 			workspace_id text NOT NULL,
 			user_id text NOT NULL,
-			submission_id text NOT NULL,
+			submission_id text NOT NULL DEFAULT '',
 			session_id text NOT NULL,
-			problem_id text NOT NULL,
+			problem_id text NOT NULL DEFAULT '',
+			thread_id text NOT NULL DEFAULT '',
 			source_event_id text NOT NULL REFERENCES memory_events (id) ON DELETE CASCADE,
 			refresh_id text NOT NULL,
 			profile_version bigint NOT NULL,
 			processed_at timestamptz NOT NULL,
-			PRIMARY KEY (workspace_id, user_id, session_id, problem_id, submission_id)
+			PRIMARY KEY (workspace_id, user_id, session_id, problem_id, submission_id, thread_id)
 		)`,
+		`ALTER TABLE memory_profile_completions ADD COLUMN IF NOT EXISTS thread_id text NOT NULL DEFAULT ''`,
 		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_created_at ON memory_events (workspace_id, user_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_memory_events_scope_occurred_at ON memory_events (workspace_id, user_id, occurred_at DESC)`,
 		`DO $$
@@ -252,12 +254,12 @@ func (s *PostgresStore) ReplaceProfileAndMarkCompletionIfVersion(ctx context.Con
 
 	markerTag, err := tx.Exec(ctx, `
 		INSERT INTO memory_profile_completions (
-			workspace_id, user_id, submission_id, session_id, problem_id,
+			workspace_id, user_id, submission_id, session_id, problem_id, thread_id,
 			source_event_id, refresh_id, profile_version, processed_at
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-		ON CONFLICT (workspace_id, user_id, session_id, problem_id, submission_id) DO NOTHING
-	`, workspaceID, userID, completion.SubmissionID, completion.SessionID, completion.ProblemID,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		ON CONFLICT (workspace_id, user_id, session_id, problem_id, submission_id, thread_id) DO NOTHING
+	`, workspaceID, userID, completion.SubmissionID, completion.SessionID, completion.ProblemID, completion.ThreadID,
 		completion.SourceEventID, completion.RefreshID, completion.ProfileVersion, completion.ProcessedAt.UTC())
 	if err != nil {
 		return err
@@ -303,8 +305,17 @@ func (s *PostgresStore) IsCompletionProcessed(ctx context.Context, workspaceID, 
 	var processed bool
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
 		SELECT 1 FROM memory_profile_completions
-		WHERE workspace_id=$1 AND user_id=$2 AND session_id=$3 AND problem_id=$4 AND submission_id=$5
+		WHERE workspace_id=$1 AND user_id=$2 AND session_id=$3 AND problem_id=$4 AND submission_id=$5 AND thread_id=''
 	)`, workspaceID, userID, sessionID, problemID, submissionID).Scan(&processed)
+	return processed, err
+}
+
+func (s *PostgresStore) IsInterviewCompletionProcessed(ctx context.Context, workspaceID, userID, sessionID, threadID string) (bool, error) {
+	var processed bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM memory_profile_completions
+		WHERE workspace_id=$1 AND user_id=$2 AND session_id=$3 AND problem_id='' AND submission_id='' AND thread_id=$4
+	)`, workspaceID, userID, sessionID, threadID).Scan(&processed)
 	return processed, err
 }
 

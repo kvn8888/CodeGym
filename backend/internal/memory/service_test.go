@@ -247,6 +247,50 @@ func TestServiceAtomicallyMarksExactCompletionIdentity(t *testing.T) {
 	}
 }
 
+func TestInterviewCompletionMarkerIsThreadScoped(t *testing.T) {
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	service := NewService(NewInMemoryStore(), func() time.Time { return now })
+	ctx := scopedContext()
+	profile := Profile{Summary: "interview profile", UpdatedAt: now, NextReviewAt: now.Add(time.Hour)}
+	completion := ProcessedCompletion{
+		Kind: "interview", SessionID: "session-1", ThreadID: "thread-1",
+		SourceEventID: "event-1", RefreshID: "refresh-1", ProfileVersion: 1, ProcessedAt: now,
+	}
+
+	updated, err := service.ReplaceProfileAndMarkCompletionIfVersion(ctx, profile, 0, completion)
+	if err != nil || updated.Version != 1 {
+		t.Fatalf("atomic replace: profile=%#v err=%v", updated, err)
+	}
+	processed, err := service.IsInterviewCompletionProcessed(ctx, "session-1", "thread-1")
+	if err != nil || !processed {
+		t.Fatalf("processed=%t err=%v", processed, err)
+	}
+	processed, err = service.IsInterviewCompletionProcessed(ctx, "session-1", "thread-2")
+	if err != nil || processed {
+		t.Fatalf("different thread processed=%t err=%v", processed, err)
+	}
+	distinct := completion
+	distinct.ThreadID = "thread-2"
+	distinct.RefreshID = "refresh-2"
+	distinct.SourceEventID = "event-2"
+	if _, err := service.ReplaceProfileAndMarkCompletionIfVersion(ctx, Profile{Summary: "second interview"}, updated.Version, distinct); err != nil {
+		t.Fatalf("distinct thread: %v", err)
+	}
+	processed, err = service.IsInterviewCompletionProcessed(ctx, "session-1", "thread-2")
+	if err != nil || !processed {
+		t.Fatalf("distinct thread processed=%t err=%v", processed, err)
+	}
+
+	_, err = service.ReplaceProfileAndMarkCompletionIfVersion(ctx, Profile{Summary: "must not replace"}, 2, completion)
+	if !errors.Is(err, ErrCompletionAlreadyProcessed) {
+		t.Fatalf("duplicate error=%v", err)
+	}
+	persisted, err := service.GetProfile(ctx)
+	if err != nil || persisted.Summary != "second interview" || persisted.Version != 2 {
+		t.Fatalf("duplicate changed profile=%#v err=%v", persisted, err)
+	}
+}
+
 func TestCompletionMarkersAreScopeIsolated(t *testing.T) {
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	service := NewService(NewInMemoryStore(), func() time.Time { return now })

@@ -27,6 +27,7 @@ type Store interface {
 	ReplaceProfileIfVersion(ctx context.Context, workspaceID, userID string, profile Profile, expectedVersion int64) error
 	ReplaceProfileAndMarkCompletionIfVersion(ctx context.Context, workspaceID, userID string, profile Profile, expectedVersion int64, completion ProcessedCompletion) error
 	IsCompletionProcessed(ctx context.Context, workspaceID, userID, sessionID, problemID, submissionID string) (bool, error)
+	IsInterviewCompletionProcessed(ctx context.Context, workspaceID, userID, sessionID, threadID string) (bool, error)
 	AppendEvent(ctx context.Context, event Event) error
 	ListEvents(ctx context.Context, workspaceID, userID string) ([]Event, error)
 	ListEventScopes(ctx context.Context) ([]Scope, error)

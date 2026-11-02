@@ -452,7 +452,7 @@ func (s *Service) Finish(ctx context.Context, threadID string) (FinishResult, er
 		memoryStatus = "failed"
 	} else {
 		result, refreshErr := s.profiles.RefreshProfile(ctx, generation.ProfileRefreshInput{
-			SessionID: thread.SessionID, Trigger: "set-completion",
+			SessionID: thread.SessionID, ThreadID: thread.ID, Trigger: "set-completion",
 		})
 		if refreshErr != nil || strings.Contains(result.Skipped, "failed") ||
 			result.Skipped == "generation is not configured" {

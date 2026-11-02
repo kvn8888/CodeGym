@@ -1503,3 +1503,107 @@ func TestCompactEvidencePayloadKeepsOnlyCoarseInterviewAssessment(t *testing.T) 
 		t.Fatal("code survived compact evidence hygiene")
 	}
 }
+
+func TestProfileSynthesizerRunsInterviewNotesFirstWithNotesOnlyProfileInput(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	_, err := service.ReplaceProfile(ctx, memory.Profile{
+		Summary:      "Interview practice is beginning.",
+		UpdatedAt:    now.Add(-time.Hour),
+		NextReviewAt: now.Add(time.Hour),
+		Strengths:    []string{},
+		GrowthEdges:  []string{},
+		Skills:       []memory.SkillProficiency{},
+		Notes:        []memory.Note{},
+	})
+	if err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	completion, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: memory.SourceChat, Type: memory.TypeInterviewCompleted, Summary: "Completed a conversational interview.",
+		Payload: json.RawMessage(`{"thread_id":"thread-1","session_id":"interview_r1","mode":"coding","topic":"Queues","strengths":["Clear decomposition"],"growth_edges":["Tradeoff depth"],"turn_count":3,"duration_seconds":120,"schema_version":1}`),
+	})
+	if err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+	notePayload := json.RawMessage(`{"actions":[{"op":"create","note":{"id":"note_interview_1","title":"Interview: queues","summary":"Practiced queue tradeoffs; strength in decomposition, gap in tradeoff depth.","tags":["queues","interview"],"action":"review"}}]}`)
+	profilePayload := json.RawMessage(`{"summary":"Interview practice on queues shows decomposition strength but tradeoff depth gap.","strengths":["Clear decomposition"],"growth_edges":["Tradeoff depth"],"skills":[],"notes":[]}`)
+	generator := &scriptedGenerator{payloads: []json.RawMessage{notePayload, profilePayload}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	result, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "interview_r1", ThreadID: "thread-1", Trigger: "set-completion",
+	})
+	if err != nil {
+		t.Fatalf("RefreshProfile: %v", err)
+	}
+	if result.Skipped != "" {
+		t.Fatalf("unexpected skipped result: %s", result.Skipped)
+	}
+	if len(generator.requests) != 2 || generator.requests[0].Kind != KindNotes || generator.requests[1].Kind != KindProfile {
+		t.Fatalf("requests = %#v", generator.requests)
+	}
+	var profileInput codingProfileInput
+	if err := json.Unmarshal(generator.requests[1].Spec, &profileInput); err != nil {
+		t.Fatalf("decode interview profile input: %v", err)
+	}
+	if profileInput.Version != 1 || len(profileInput.MaintainedNotes) != 1 || profileInput.MaintainedNotes[0].ID != "note_interview_1" {
+		t.Fatalf("interview profile input = %#v", profileInput)
+	}
+	for _, forbidden := range []string{"recent_events", "event_counts", "thread_id", "interview_completed", "strengths"} {
+		// strengths may appear in maintained notes summary but not as raw evidence key
+		if forbidden == "strengths" {
+			continue
+		}
+		if strings.Contains(string(generator.requests[1].Spec), forbidden) {
+			t.Fatalf("raw interview evidence %q leaked into profile input: %s", forbidden, generator.requests[1].Spec)
+		}
+	}
+	if len(result.Profile.Notes) != 1 || len(result.MaintainedNotes) != 1 || result.Profile.Notes[0].ID != "note_interview_1" {
+		t.Fatalf("maintained notes = %#v result snapshot=%#v", result.Profile.Notes, result.MaintainedNotes)
+	}
+	provenance := result.Profile.Provenance
+	if provenance == nil || provenance.RefreshID == "" || provenance.RefreshAttempt != 1 ||
+		provenance.InputVersion != 1 || provenance.OutputVersion != 2 || provenance.Completion == nil ||
+		provenance.Completion.EventID != completion.ID || provenance.Completion.ThreadID != "thread-1" ||
+		provenance.NotesStage == nil || provenance.ProfileStage == nil ||
+		provenance.ProfileStage.PromptRevision != interviewProfilePromptRevision {
+		t.Fatalf("interview provenance = %#v", provenance)
+	}
+	if !reflect.DeepEqual(profileInput.MaintainedNotes, provenance.MaintainedNotes) {
+		t.Fatalf("profile input snapshot=%#v provenance snapshot=%#v", profileInput.MaintainedNotes, provenance.MaintainedNotes)
+	}
+}
+
+func TestInterviewCompletionReplayIsIdempotent(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	_, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: memory.SourceChat, Type: memory.TypeInterviewCompleted, Summary: "Completed.",
+		Payload: json.RawMessage(`{"thread_id":"thread-1","session_id":"interview_r1","mode":"coding","topic":"Queues","strengths":["Clear"],"growth_edges":["Depth"],"turn_count":2,"duration_seconds":60,"schema_version":1}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notePayload := json.RawMessage(`{"actions":[{"op":"create","note":{"id":"note_iv","title":"IV","summary":"IV note.","tags":["iv"],"action":"review"}}]}`)
+	profilePayload := json.RawMessage(`{"summary":"IV summary.","strengths":[],"growth_edges":[],"skills":[],"notes":[]}`)
+	generator := &scriptedGenerator{payloads: []json.RawMessage{notePayload, profilePayload}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, generator), service).WithClock(func() time.Time { return now })
+
+	first, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "interview_r1", ThreadID: "thread-1", Trigger: "set-completion",
+	})
+	if err != nil || first.Skipped != "" {
+		t.Fatalf("first refresh: skipped=%q err=%v", first.Skipped, err)
+	}
+	replayGen := &scriptedGenerator{payloads: []json.RawMessage{json.RawMessage(`{"actions":[]}`), json.RawMessage(`{"summary":"should not run"}`)}}
+	replaySynth := NewProfileSynthesizer(NewOrchestrator(service, replayGen), service).WithClock(func() time.Time { return now })
+	replay, err := replaySynth.RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "interview_r1", ThreadID: "thread-1", Trigger: "set-completion",
+	})
+	if err != nil || replay.Skipped != "interview completion already processed" || len(replayGen.requests) != 0 {
+		t.Fatalf("replay: skipped=%q err=%v requests=%d", replay.Skipped, err, len(replayGen.requests))
+	}
+}

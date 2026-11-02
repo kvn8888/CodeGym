@@ -46,6 +46,7 @@ type ProfileCompletionSource struct {
 	SessionID    string `json:"session_id"`
 	ProblemID    string `json:"problem_id"`
 	SubmissionID string `json:"submission_id"`
+	ThreadID     string `json:"thread_id,omitempty"`
 }
 
 type ProfileStageProvenance struct {

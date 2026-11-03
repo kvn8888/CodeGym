@@ -1607,3 +1607,45 @@ func TestInterviewCompletionReplayIsIdempotent(t *testing.T) {
 		t.Fatalf("replay: skipped=%q err=%v requests=%d", replay.Skipped, err, len(replayGen.requests))
 	}
 }
+
+func TestInterviewRefreshFeedsNextGenerationMemoryContext(t *testing.T) {
+	ctx := scopedContext()
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	service := memory.NewService(memory.NewInMemoryStore(), func() time.Time { return now })
+	if _, err := service.RecordEvent(ctx, memory.RecordEventInput{
+		Source: memory.SourceChat, Type: memory.TypeInterviewCompleted, Summary: "Completed a conversational interview.",
+		Payload: json.RawMessage(`{"thread_id":"thread-1","session_id":"interview_r1","mode":"coding","topic":"Queues","strengths":["Clear decomposition"],"growth_edges":["Tradeoff depth"],"turn_count":3,"duration_seconds":120,"assistance_status":"not_used","schema_version":1}`),
+	}); err != nil {
+		t.Fatalf("seed completion: %v", err)
+	}
+
+	refreshGenerator := &scriptedGenerator{payloads: []json.RawMessage{
+		json.RawMessage(`{"actions":[{"op":"create","note":{"id":"note_interview_1","title":"Interview: queues","summary":"Practiced queue tradeoffs in an interview; decomposition strength, tradeoff depth gap.","tags":["queues","interview"],"action":"review"}}]}`),
+		json.RawMessage(`{"summary":"Interview practice on queues shows decomposition strength but tradeoff depth gap.","strengths":["Clear decomposition"],"growth_edges":["Tradeoff depth"],"skills":[],"notes":[]}`),
+	}}
+	synthesizer := NewProfileSynthesizer(NewOrchestrator(service, refreshGenerator), service).WithClock(func() time.Time { return now })
+	if _, err := synthesizer.RefreshProfile(ctx, ProfileRefreshInput{
+		SessionID: "interview_r1", ThreadID: "thread-1", Trigger: "set-completion",
+	}); err != nil {
+		t.Fatalf("refresh interview profile: %v", err)
+	}
+
+	nextGenerator := &recordingGenerator{result: GenerateResult{
+		Object: json.RawMessage(`{"title":"Queue practice"}`), Provider: "test", Model: "fake",
+	}}
+	orchestrator := NewOrchestrator(service, nextGenerator)
+	if _, err := orchestrator.Generate(ctx, GenerateInput{
+		Kind: KindProblem, Spec: json.RawMessage(`{"topic":"queues"}`),
+		Schema: Schema{Name: "coding_problem", Version: "v1", JSONSchema: json.RawMessage(`{"type":"object"}`)},
+	}); err != nil {
+		t.Fatalf("generate after refresh: %v", err)
+	}
+
+	notes := nextGenerator.request.MemoryContext.Notes
+	if len(notes) != 1 || notes[0].Title != "Interview: queues" {
+		t.Fatalf("next generation memory notes = %#v", notes)
+	}
+	if nextGenerator.request.MemoryContext.Summary != "Interview practice on queues shows decomposition strength but tradeoff depth gap." {
+		t.Fatalf("next generation memory summary = %q", nextGenerator.request.MemoryContext.Summary)
+	}
+}

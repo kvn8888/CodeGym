@@ -13,9 +13,11 @@ generation. Completed MCQ rounds and finalized graded coding submissions use
 notes-first maintenance: note CRUD is computed before profile synthesis, then
 notes and profile are saved together in one version-guarded write.
 
-Daily and interview refreshes use the shared profile synthesizer, but they do not
-run notes-first CRUD. They preserve existing notes while using the same bounded
-evidence and stale-write protections.
+Daily refreshes use the shared profile synthesizer without notes-first CRUD.
+Finished interviews use notes-first maintenance: note CRUD is computed before
+profile synthesis, then notes and profile are saved together, mirroring the
+coding completion path. Unfinished or abandoned interviews never enter the
+pipeline and do not mutate notes.
 
 ## Caller Paths
 
@@ -33,7 +35,10 @@ evidence and stale-write protections.
 - **Daily refresh.** Runs through the profile synthesizer with trigger `daily`
   and no focused `session_id`. It skips model work when the durable evidence
   digest is unchanged.
-- **Interview refresh.** Uses the shared synthesizer without note CRUD.
+- **Interview refresh.** A finished interview (explicit Finish or Save & exit
+  with a valid assessment and actual learner participation) records
+  `interview_completed` and runs notes-first maintenance with the interview
+  assessment as evidence. Exit or inactivity never triggers maintenance.
 
 `POST /api/v1/memory/notes/maintain` is a deprecated compatibility alias for
 full profile maintenance.
@@ -58,6 +63,12 @@ Coding gate (`submission_id` present):
 - There is exactly one graded outcome event (`attempt_solved` or
   `attempt_failed`) with `graded=true`, consistent pass/fail counts, and a valid
   `assistance_status` (`used`, `not_used`, or `unknown`).
+
+Interview gate (`thread_id` present):
+- The request includes a non-empty `session_id` and `thread_id`.
+- Evidence contains a `chat` `interview_completed` event whose payload
+  `thread_id` and `session_id` match.
+- The event carries a valid assessment (strengths/growth_edges and turn count).
 
 Missing or ambiguous evidence returns `409 memory_completion_evidence_missing`
 and leaves the previous profile intact.

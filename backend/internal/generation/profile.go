@@ -574,10 +574,22 @@ func interviewCompletionEvidence(input ProfileRefreshInput, events []memory.Even
 		strengths, _ := payload["strengths"].([]any)
 		growthEdges, _ := payload["growth_edges"].([]any)
 		turnCount, turnOK := nonNegativeEvidenceInt(payload["turn_count"])
+		if !turnOK {
+			turnCount = 0
+		}
+		duration, durationOK := nonNegativeEvidenceInt(payload["duration_seconds"])
+		if !durationOK {
+			duration = 0
+		}
+		assistance, _ := payload["assistance_status"].(string)
+		validAssistance := assistance == "" || assistance == "used" || assistance == "not_used" || assistance == "unknown"
+		if !validAssistance {
+			continue
+		}
 		_ = strengths
 		_ = growthEdges
 		_ = turnCount
-		_ = turnOK
+		_ = duration
 		outcomeCount++
 	}
 	if outcomeCount == 0 {

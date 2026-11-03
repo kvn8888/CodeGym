@@ -415,11 +415,22 @@ func (s *Service) Finish(ctx context.Context, threadID string) (FinishResult, er
 	if _, err := s.sessions.Update(ctx, thread.SessionID, session.UpdateInput{Status: &completed}); err != nil {
 		return FinishResult{}, err
 	}
+	assistanceStatus := "unknown"
+	coachingUsed := false
+	if used, err := s.CodingCoachUsed(ctx, thread.SessionID, now); err == nil {
+		if used {
+			coachingUsed = true
+			assistanceStatus = "used"
+		} else {
+			assistanceStatus = "not_used"
+		}
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"thread_id": thread.ID, "session_id": thread.SessionID, "mode": assessment.Mode,
 		"topic": assessment.Topic, "strengths": assessment.Strengths,
 		"growth_edges": assessment.GrowthEdges, "turn_count": assessment.TurnCount,
 		"duration_seconds": assessment.DurationSeconds, "schema_version": 1,
+		"assistance_status": assistanceStatus, "coaching_used": coachingUsed,
 	})
 	eventSaved := true
 	// Avoid recording a duplicate event if a previous attempt already saved it

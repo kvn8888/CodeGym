@@ -527,3 +527,53 @@ func TestInterviewFinishRetriesMemoryOnSecondCall(t *testing.T) {
 		t.Fatalf("interview completed events after second finish = %d, want 1", got)
 	}
 }
+
+func TestInterviewExitDoesNotRecordCompletedAssessment(t *testing.T) {
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	ctx := scopedContext("workspace-a", "user-a")
+	memoryStore := memory.NewInMemoryStore()
+	memoryService := memory.NewService(memoryStore, func() time.Time { return now })
+	sessionService := session.NewService(session.NewInMemoryStore(), func() time.Time { return now })
+	problemService := problems.NewService(problems.NewInMemoryStore())
+	orchestrator := generation.NewOrchestrator(memoryService, testGenerator{})
+	streamer := &testStreamer{}
+	service := NewService(
+		NewInMemoryStore(), sessionService, problemService, memoryService,
+		streamer, orchestrator, generation.NewProfileSynthesizer(orchestrator, memoryService),
+		func() time.Time { return now },
+	)
+	practiceSession, err := sessionService.Create(ctx, session.CreateInput{
+		Kind: session.KindInterview, Title: "Algorithms interview",
+		State: json.RawMessage(`{"topic":"Arrays"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateOrResume(ctx, CreateThreadInput{
+		Kind: KindInterview, Mode: "coding", SessionID: practiceSession.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Exit(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	events, err := memoryService.ListEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		if e.Type == memory.TypeInterviewCompleted {
+			t.Fatalf("exited interview recorded a completed assessment event: %#v", e)
+		}
+	}
+	var exited bool
+	for _, e := range events {
+		if e.Type == memory.TypeInterviewExited {
+			exited = true
+		}
+	}
+	if !exited {
+		t.Fatalf("exit did not record an exited event")
+	}
+}

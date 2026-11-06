@@ -14,6 +14,7 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/memory"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
+	"github.com/kvn8888/codegym/backend/internal/settings"
 	"github.com/kvn8888/codegym/backend/internal/submission"
 	"github.com/kvn8888/codegym/backend/internal/usage"
 	"github.com/kvn8888/codegym/backend/internal/workflow"
@@ -39,6 +40,7 @@ type Dependencies struct {
 	MemoryProfiles       *generation.ProfileSynthesizer
 	MemoryRefreshTrigger string
 	Usage                *usage.Service
+	Settings             *settings.Service
 	CORSAllowedOrigins   []string
 	DatabaseURL          string
 	AgentRelay           *agentrelay.HTTPHandler
@@ -100,6 +102,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/memory/notes/maintain", generateHandler.MaintainProfile)
 	costHandler := handlers.NewCostHandler(deps.Usage)
 	protected.HandleFunc("GET /api/v1/cost", costHandler.Cost)
+	settingsHandler := handlers.NewSettingsHandler(deps.Settings)
+	protected.HandleFunc("GET /api/v1/settings/{key}", settingsHandler.Get)
+	protected.HandleFunc("PUT /api/v1/settings/{key}", settingsHandler.Put)
 	executionHandler := handlers.NewExecutionHandler(deps.Execution)
 	protected.HandleFunc("POST /api/v1/executions", executionHandler.Submit)
 	protected.HandleFunc("GET /api/v1/executions", executionHandler.List)

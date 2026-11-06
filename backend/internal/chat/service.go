@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	maxTurnLength        = 8000
-	maxHistory           = 40
+	maxTurnLength         = 8000
+	maxHistory            = 40
 	maxWorkspaceFileBytes = 24_000
 	maxWorkspaceFiles     = 8
 )
@@ -171,6 +171,36 @@ func (s *Service) List(ctx context.Context, filter ThreadFilter) ([]Thread, erro
 	filter.Status = Status(strings.ToLower(strings.TrimSpace(string(filter.Status))))
 	filter.SessionID = strings.TrimSpace(filter.SessionID)
 	return s.store.ListThreads(ctx, scope.workspaceID, scope.userID, filter)
+}
+
+// CodingCoachUsed reports whether a scoped coding session had a learner coach
+// message at or before cutoff. It deliberately exposes no transcript content.
+func (s *Service) CodingCoachUsed(ctx context.Context, sessionID string, cutoff time.Time) (bool, error) {
+	scope, err := identityFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+	threads, err := s.store.ListThreads(ctx, scope.workspaceID, scope.userID, ThreadFilter{
+		Kind: KindCoach, SessionID: strings.TrimSpace(sessionID), Limit: 100,
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, thread := range threads {
+		messages, err := s.store.ListMessages(ctx, scope.workspaceID, scope.userID, thread.ID)
+		if err != nil {
+			return false, err
+		}
+		for _, message := range messages {
+			if message.Role == "user" && !message.CreatedAt.After(cutoff) {
+				return true, nil
+			}
+		}
+	}
+	if len(threads) == 100 {
+		return false, errors.New("coding coach history exceeds bounded lookup")
+	}
+	return false, nil
 }
 
 func (s *Service) Messages(ctx context.Context, threadID string) ([]Message, error) {
@@ -330,7 +360,19 @@ func (s *Service) Finish(ctx context.Context, threadID string) (FinishResult, er
 		return FinishResult{}, errors.New("only interview threads can be finished")
 	}
 	if thread.Status == StatusCompleted {
-		return FinishResult{Thread: thread, MemoryUpdateStatus: "synced"}, nil
+		// Determine whether memory was actually saved. If it failed (or is
+		// unknown), retry the event save + profile refresh instead of
+		// reporting "synced".
+		persistedSession, _ := s.sessions.Get(ctx, thread.SessionID)
+		sessionState := map[string]any{}
+		if len(persistedSession.State) > 0 {
+			_ = json.Unmarshal(persistedSession.State, &sessionState)
+		}
+		memoryStatus, _ := sessionState["memory_update_status"].(string)
+		if memoryStatus == "synced" {
+			return FinishResult{Thread: thread, MemoryUpdateStatus: "synced"}, nil
+		}
+		// Fall through to retry the memory event save + profile refresh.
 	}
 	messages, err := s.store.ListMessages(ctx, scope.workspaceID, scope.userID, thread.ID)
 	if err != nil {
@@ -373,25 +415,55 @@ func (s *Service) Finish(ctx context.Context, threadID string) (FinishResult, er
 	if _, err := s.sessions.Update(ctx, thread.SessionID, session.UpdateInput{Status: &completed}); err != nil {
 		return FinishResult{}, err
 	}
+	assistanceStatus := "unknown"
+	coachingUsed := false
+	if used, err := s.CodingCoachUsed(ctx, thread.SessionID, now); err == nil {
+		if used {
+			coachingUsed = true
+			assistanceStatus = "used"
+		} else {
+			assistanceStatus = "not_used"
+		}
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"thread_id": thread.ID, "session_id": thread.SessionID, "mode": assessment.Mode,
 		"topic": assessment.Topic, "strengths": assessment.Strengths,
 		"growth_edges": assessment.GrowthEdges, "turn_count": assessment.TurnCount,
 		"duration_seconds": assessment.DurationSeconds, "schema_version": 1,
+		"assistance_status": assistanceStatus, "coaching_used": coachingUsed,
 	})
 	eventSaved := true
-	if _, err := s.memory.RecordEvent(ctx, memory.RecordEventInput{
-		Source: memory.SourceChat, Type: memory.TypeInterviewCompleted,
-		Summary: "Completed a conversational interview.", Payload: payload,
-	}); err != nil {
-		eventSaved = false
+	// Avoid recording a duplicate event if a previous attempt already saved it
+	// (e.g. event saved but profile refresh failed).
+	alreadyRecorded := false
+	if events, err := s.memory.ListEvents(ctx); err == nil {
+		for _, e := range events {
+			if e.Type != memory.TypeInterviewCompleted {
+				continue
+			}
+			var p map[string]any
+			if json.Unmarshal(e.Payload, &p) == nil {
+				if tid, _ := p["thread_id"].(string); tid == thread.ID {
+					alreadyRecorded = true
+					break
+				}
+			}
+		}
+	}
+	if !alreadyRecorded {
+		if _, err := s.memory.RecordEvent(ctx, memory.RecordEventInput{
+			Source: memory.SourceChat, Type: memory.TypeInterviewCompleted,
+			Summary: "Completed a conversational interview.", Payload: payload,
+		}); err != nil {
+			eventSaved = false
+		}
 	}
 	memoryStatus := "synced"
 	if !eventSaved || s.profiles == nil {
 		memoryStatus = "failed"
 	} else {
 		result, refreshErr := s.profiles.RefreshProfile(ctx, generation.ProfileRefreshInput{
-			SessionID: thread.SessionID, Trigger: "set-completion",
+			SessionID: thread.SessionID, ThreadID: thread.ID, Trigger: "set-completion",
 		})
 		if refreshErr != nil || strings.Contains(result.Skipped, "failed") ||
 			result.Skipped == "generation is not configured" {

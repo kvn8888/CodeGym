@@ -199,6 +199,69 @@ func (s *Service) ReplaceProfileIfVersion(ctx context.Context, profile Profile, 
 	return normalizeProfileCollections(updated), nil
 }
 
+// ReplaceProfileAndMarkCompletionIfVersion atomically commits a coding profile
+// update and the durable marker that makes the completion idempotent.
+func (s *Service) ReplaceProfileAndMarkCompletionIfVersion(ctx context.Context, profile Profile, expectedVersion int64, completion ProcessedCompletion) (Profile, error) {
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+	completion.SubmissionID = strings.TrimSpace(completion.SubmissionID)
+	completion.SessionID = strings.TrimSpace(completion.SessionID)
+	completion.ProblemID = strings.TrimSpace(completion.ProblemID)
+	completion.ThreadID = strings.TrimSpace(completion.ThreadID)
+	completion.SourceEventID = strings.TrimSpace(completion.SourceEventID)
+	completion.RefreshID = strings.TrimSpace(completion.RefreshID)
+	isInterview := strings.TrimSpace(completion.ThreadID) != ""
+	if completion.SessionID == "" || completion.SourceEventID == "" || completion.RefreshID == "" {
+		return Profile{}, errors.New("processed completion identity is incomplete")
+	}
+	if isInterview {
+		// Interview completions are identified by thread; problem/submission are not applicable.
+		completion.ProblemID = ""
+		completion.SubmissionID = ""
+	} else if completion.SubmissionID == "" || completion.ProblemID == "" {
+		return Profile{}, errors.New("processed completion identity is incomplete")
+	}
+	completion.ProfileVersion = expectedVersion + 1
+	profile = normalizeProfileCollections(cloneProfile(profile))
+	if err := s.store.ReplaceProfileAndMarkCompletionIfVersion(ctx, id.workspaceID, id.userID, profile, expectedVersion, completion); err != nil {
+		return Profile{}, err
+	}
+	updated, err := s.store.GetProfile(ctx, id.workspaceID, id.userID)
+	if err != nil {
+		return Profile{}, err
+	}
+	return normalizeProfileCollections(updated), nil
+}
+
+func (s *Service) IsCompletionProcessed(ctx context.Context, sessionID, problemID, submissionID string) (bool, error) {
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	problemID = strings.TrimSpace(problemID)
+	submissionID = strings.TrimSpace(submissionID)
+	if sessionID == "" || problemID == "" || submissionID == "" {
+		return false, errors.New("completion identity is incomplete")
+	}
+	return s.store.IsCompletionProcessed(ctx, id.workspaceID, id.userID, sessionID, problemID, submissionID)
+}
+
+func (s *Service) IsInterviewCompletionProcessed(ctx context.Context, sessionID, threadID string) (bool, error) {
+	id, err := identityFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	threadID = strings.TrimSpace(threadID)
+	if sessionID == "" || threadID == "" {
+		return false, errors.New("interview completion identity is incomplete")
+	}
+	return s.store.IsInterviewCompletionProcessed(ctx, id.workspaceID, id.userID, sessionID, threadID)
+}
+
 // RefreshProfileFor is the explicit-scope version of RefreshProfile. Use this
 // outside HTTP request handling — workers, smoke tests, or GenAI orchestration
 // code should not have to fabricate auth/workspace middleware context just to

@@ -1,5 +1,11 @@
 import { mockApiFetch } from '../../mocks/apiProxy';
 import type { components, paths } from './openapi';
+import type {
+  MaintainProfileInput,
+  SubmissionAccepted,
+  SubmissionFile,
+  SubmitProblemInput,
+} from './types';
 
 const DEFAULT_API_BASE = '/api/v1';
 // The relative fallback is for local Vite development, where /api is proxied to
@@ -304,6 +310,98 @@ export async function refreshMemoryProfile() {
   return request<RefreshMemoryProfile>('/memory/profile/refresh', { method: 'POST' });
 }
 
+export async function maintainMemoryProfile(input: MaintainProfileInput) {
+  return request<MemoryProfile>('/memory/profile/maintain', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+const SUBMIT_TOKEN_STORAGE_KEY = 'codegym:submit-token';
+
+export interface SubmitIntent {
+  token: string;
+  fingerprint: string;
+  sessionId: string;
+  problemId: string;
+}
+
+// submitIntentFingerprint identifies the exact content of a submit so a retry
+// after an uncertain failure reuses its token only while the files are
+// unchanged. Any edit produces a new intent (and therefore a new token).
+export function submitIntentFingerprint(files: SubmissionFile[]): string {
+  return JSON.stringify(files.map((file) => [file.path, file.content]));
+}
+
+export function readSubmitIntent(): SubmitIntent | null {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(SUBMIT_TOKEN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SubmitIntent> | null;
+    if (!parsed || typeof parsed.token !== 'string' || !parsed.token) return null;
+    return {
+      token: parsed.token,
+      fingerprint: typeof parsed.fingerprint === 'string' ? parsed.fingerprint : '',
+      sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : '',
+      problemId: typeof parsed.problemId === 'string' ? parsed.problemId : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function writeSubmitIntent(intent: SubmitIntent) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(SUBMIT_TOKEN_STORAGE_KEY, JSON.stringify(intent));
+  } catch {
+    // Intent persistence is best-effort; in-memory use still works.
+  }
+}
+
+export function clearSubmitIntent() {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.removeItem(SUBMIT_TOKEN_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+// isUncertainSubmitFailure reports whether a submit outcome cannot be known
+// from the response. Only then is it safe to retry with the same token.
+export function isUncertainSubmitFailure(error: unknown): boolean {
+  if (error instanceof ApiRequestError) {
+    if (error.code === 'submission_in_progress') return true;
+    return error.status >= 500;
+  }
+  const name = (error as { name?: string } | null)?.name;
+  if (name === 'AbortError' || name === 'TimeoutError') return true;
+  return error instanceof TypeError;
+}
+
+export function generateSubmitToken(): string {
+  const cryptoRef = globalThis.crypto as Crypto | undefined;
+  if (cryptoRef?.randomUUID) {
+    return cryptoRef.randomUUID();
+  }
+  return `codegym-submit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export async function submitCodingSubmission(input: SubmitProblemInput & { client_token?: string }) {
+  return request<SubmissionAccepted>('/submissions', {
+    method: 'POST',
+    body: JSON.stringify({
+      problem_id: input.problem_id,
+      session_id: input.session_id,
+      files: input.files,
+      mode: input.mode ?? 'submit',
+      ...(input.client_token ? { client_token: input.client_token } : {}),
+    }),
+  });
+}
+
 export async function listMemoryEvents() {
   return request<MemoryEvents>('/memory/events');
 }
@@ -328,8 +426,12 @@ export const api = {
   memory: {
     getProfile: getMemoryProfile,
     refreshProfile: refreshMemoryProfile,
+    maintainProfile: maintainMemoryProfile,
     listEvents: listMemoryEvents,
     createEvent: createMemoryEvent,
+  },
+  submissions: {
+    submit: submitCodingSubmission,
   },
 };
 

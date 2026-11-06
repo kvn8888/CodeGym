@@ -3,16 +3,18 @@ package execution
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 type InMemoryStore struct {
-	mu      sync.RWMutex
-	runs    map[string][]Run
-	timings []RunTiming
+	mu       sync.RWMutex
+	runs     map[string][]Run
+	timings  []RunTiming
+	requests map[string]SubmissionRequestReservation
 }
 
 func NewInMemoryStore() *InMemoryStore {
-	return &InMemoryStore{runs: map[string][]Run{}, timings: make([]RunTiming, 0, 64)}
+	return &InMemoryStore{runs: map[string][]Run{}, timings: make([]RunTiming, 0, 64), requests: map[string]SubmissionRequestReservation{}}
 }
 
 func (s *InMemoryStore) EnsureSchema(context.Context) error { return nil }
@@ -81,6 +83,76 @@ func (s *InMemoryStore) ListRunTimings(_ context.Context, workspaceID, userID st
 		}
 	}
 	return out, nil
+}
+
+func (s *InMemoryStore) ReserveSubmissionRequest(_ context.Context, workspaceID, userID, token, fingerprint string) (SubmissionRequestReservation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := submissionRequestKey(workspaceID, userID, token)
+	existing, exists := s.requests[key]
+	if exists {
+		if existing.Fingerprint != fingerprint {
+			return SubmissionRequestReservation{}, ErrSubmissionRequestConflict
+		}
+		existing.Created = false
+		return existing, nil
+	}
+	now := time.Now().UTC()
+	reservation := SubmissionRequestReservation{
+		Token: token, Fingerprint: fingerprint, Status: SubmissionRequestStatusInProgress, Created: true,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	s.requests[key] = reservation
+	return reservation, nil
+}
+
+func (s *InMemoryStore) BindSubmissionRequestRun(_ context.Context, workspaceID, userID, token, runID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := submissionRequestKey(workspaceID, userID, token)
+	existing, exists := s.requests[key]
+	if !exists {
+		return ErrSubmissionRequestNotFound
+	}
+	existing.RunID = runID
+	existing.UpdatedAt = time.Now().UTC()
+	s.requests[key] = existing
+	return nil
+}
+
+func (s *InMemoryStore) CompleteSubmissionRequest(_ context.Context, workspaceID, userID, token, runID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := submissionRequestKey(workspaceID, userID, token)
+	existing, exists := s.requests[key]
+	if !exists {
+		return ErrSubmissionRequestNotFound
+	}
+	existing.Status = SubmissionRequestStatusCompleted
+	existing.SubmissionID = runID
+	existing.RunID = runID
+	existing.UpdatedAt = time.Now().UTC()
+	s.requests[key] = existing
+	return nil
+}
+
+func (s *InMemoryStore) GetSubmissionRequest(_ context.Context, workspaceID, userID, token string) (SubmissionRequestReservation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	reservation, exists := s.requests[submissionRequestKey(workspaceID, userID, token)]
+	if !exists {
+		return SubmissionRequestReservation{}, ErrSubmissionRequestNotFound
+	}
+	reservation.Created = false
+	return reservation, nil
+}
+
+func submissionRequestKey(workspaceID, userID, token string) string {
+	return workspaceID + "\x00" + userID + "\x00" + token
 }
 
 func key(workspaceID, userID string) string {

@@ -87,6 +87,19 @@ export interface SubmitProblemInput {
   session_id?: string;
   files: SubmissionFile[];
   mode?: SubmissionMode;
+  client_token?: string;
+}
+
+export interface SubmissionAccepted {
+  submission_id: string;
+  memory_update_status?: 'synced' | 'failed';
+}
+
+export interface MaintainProfileInput {
+  session_id?: string;
+  problem_id?: string;
+  submission_id?: string;
+  operation_id?: string;
 }
 
 export interface TestResult {

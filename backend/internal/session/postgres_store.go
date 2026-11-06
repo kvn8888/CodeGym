@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -292,6 +293,81 @@ func (s *PostgresStore) HasPendingMemoryUpdate(ctx context.Context, workspaceID,
 		)
 	`, workspaceID, userID).Scan(&exists)
 	return exists, err
+}
+
+func (s *PostgresStore) SetMemoryUpdateStatus(ctx context.Context, workspaceID, userID, sessionID, submissionID, status string) (Session, error) {
+	session, _, err := s.setMemoryUpdateStatus(ctx, workspaceID, userID, sessionID, submissionID, status, false)
+	return session, err
+}
+
+func (s *PostgresStore) SetMemoryUpdateStatusIfCurrent(ctx context.Context, workspaceID, userID, sessionID, submissionID, status string) (Session, bool, error) {
+	return s.setMemoryUpdateStatus(ctx, workspaceID, userID, sessionID, submissionID, status, true)
+}
+
+func (s *PostgresStore) setMemoryUpdateStatus(ctx context.Context, workspaceID, userID, sessionID, submissionID, status string, conditional bool) (Session, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Session{}, false, err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	var raw string
+	err = tx.QueryRow(ctx, `
+		SELECT state::text
+		FROM practice_sessions
+		WHERE id = $1 AND workspace_id = $2 AND user_id = $3
+		FOR UPDATE
+	`, sessionID, workspaceID, userID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Session{}, false, ErrNotFound
+	}
+	if err != nil {
+		return Session{}, false, err
+	}
+
+	state := map[string]any{}
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		return Session{}, false, err
+	}
+	trimmed := strings.TrimSpace(submissionID)
+	if conditional && trimmed != "" {
+		last, _ := state["last_submission_id"].(string)
+		if owner := strings.TrimSpace(last); owner != "" && owner != trimmed {
+			if err := tx.Commit(ctx); err != nil {
+				return Session{}, false, err
+			}
+			current, getErr := s.Get(ctx, workspaceID, userID, sessionID)
+			return current, false, getErr
+		}
+	}
+	state["memory_update_status"] = status
+	if trimmed != "" {
+		state["last_submission_id"] = trimmed
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		return Session{}, false, err
+	}
+	now := timeNowUTC()
+	if _, err := tx.Exec(ctx, `
+		UPDATE practice_sessions
+		SET state = $4::jsonb,
+			updated_at = $5,
+			last_activity_at = $5
+		WHERE id = $1 AND workspace_id = $2 AND user_id = $3
+	`, sessionID, workspaceID, userID, string(encoded), now); err != nil {
+		return Session{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Session{}, false, err
+	}
+	current, err := s.Get(ctx, workspaceID, userID, sessionID)
+	if err != nil {
+		return Session{}, false, err
+	}
+	return current, true, nil
 }
 
 type scanner interface {

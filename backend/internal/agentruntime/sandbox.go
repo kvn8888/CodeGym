@@ -237,12 +237,31 @@ func (r *SandboxRuntime) runCommand(ctx context.Context, command string, timeout
 	donePath := r.config.ScratchDir + "/agent.done"
 	exitCodePath := r.config.ScratchDir + "/agent.exitcode"
 	outputPath := r.config.ScratchDir + "/agent.output"
+	scriptPath := r.config.ScratchDir + "/agent-run.sh"
+	launchLogPath := r.config.ScratchDir + "/agent.launch.log"
 
-	// Background the entire command pipeline: opencode writes its output to
-	// outputPath, its exit code to exitCodePath, and touches donePath when
-	// finished. ExecuteCommand returns immediately after backgrounding.
-	background := "(" + command + " > " + shellQuote(outputPath) + " 2>&1; echo $? > " + shellQuote(exitCodePath) + "; touch " + shellQuote(donePath) + ") &"
-	if _, _, err := r.config.Executor.ExecuteCommand(ctx, background, 30*time.Second); err != nil {
+	// Write the command pipeline to a script: the command writes its output
+	// to outputPath, its exit code to exitCodePath, and touches donePath
+	// when finished. The poll loop below watches for donePath.
+	script := command + " > " + shellQuote(outputPath) + " 2>&1\n" +
+		"echo $? > " + shellQuote(exitCodePath) + "\n" +
+		"touch " + shellQuote(donePath) + "\n"
+	if err := r.config.Executor.UploadFile(ctx, []byte(script), scriptPath); err != nil {
+		return 0, "", fmt.Errorf("agentruntime: upload agent run script: %w", err)
+	}
+
+	// Launch the script fully detached from the command session. A plain
+	// `... &` is not enough on Daytona: the background job inherits the
+	// session's stdout and stderr pipes, the toolbox waits for every writer
+	// of those pipes to exit, and the launch call dies at the server-side
+	// command timeout (Daytona error 408). setsid puts the script in its
+	// own session, nohup ignores the hangup when the launching shell
+	// exits, and redirecting all three streams means nothing the script
+	// spawns holds the session's pipes open, so ExecuteCommand returns
+	// immediately after backgrounding.
+	launch := "setsid nohup /bin/sh " + shellQuote(scriptPath) +
+		" < /dev/null > " + shellQuote(launchLogPath) + " 2>&1 &"
+	if _, _, err := r.config.Executor.ExecuteCommand(ctx, launch, 30*time.Second); err != nil {
 		return 0, "", fmt.Errorf("agentruntime: start agent command in background: %w", err)
 	}
 

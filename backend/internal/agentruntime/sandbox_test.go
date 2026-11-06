@@ -54,12 +54,18 @@ func (e *fakeExecutor) ExecuteCommand(_ context.Context, command string, _ time.
 	}
 	// Background execution: `... &` starts a command and returns immediately.
 	// The fake simulates the sandbox completing it by writing the done, exit
-	// code, and output files that runCommand polls for.
+	// code, and output files that runCommand polls for. The launched command
+	// itself lives in an uploaded script, so needles are matched against the
+	// launch line plus every uploaded file.
 	if strings.HasSuffix(strings.TrimSpace(command), "&") {
+		haystack := command
+		for _, payload := range e.uploads {
+			haystack += "\n" + string(payload)
+		}
 		exitCode := 1
 		output := ""
 		for needle, result := range e.results {
-			if strings.Contains(command, needle) {
+			if strings.Contains(haystack, needle) {
 				exitCode = result.exitCode
 				output = result.output
 				break
@@ -226,7 +232,13 @@ func TestSandboxRuntimeRunsAgentInSandbox(t *testing.T) {
 		t.Fatal("progress tool was not uploaded")
 	}
 
-	agentCommand := executor.commands[len(executor.commands)-1]
+	// The agent invocation travels as an uploaded run script, launched
+	// detached; assert the fragments in the script and the launch shape in
+	// the executed commands.
+	agentCommand := string(executor.uploads["/home/agent/.codegym-scratch/agent-run.sh"])
+	if agentCommand == "" {
+		t.Fatal("agent run script was not uploaded")
+	}
 	for _, fragment := range []string{
 		"cd '/home/agent/work'", "HOME='/home/agent'",
 		"OPENCODE_CONFIG='/home/agent/.config/opencode/opencode.json'",
@@ -236,6 +248,15 @@ func TestSandboxRuntimeRunsAgentInSandbox(t *testing.T) {
 		if !strings.Contains(agentCommand, fragment) {
 			t.Fatalf("agent command missing %q: %s", fragment, agentCommand)
 		}
+	}
+	launched := false
+	for _, executed := range executor.commands {
+		if strings.Contains(executed, "setsid nohup") && strings.Contains(executed, "agent-run.sh") {
+			launched = true
+		}
+	}
+	if !launched {
+		t.Fatalf("agent script was not launched detached: %v", executor.commands)
 	}
 }
 

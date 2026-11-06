@@ -17,7 +17,7 @@ on:
       - '.gitignore'
       - 'docs/**'
   pull_request:
-    branches: [codegym-v2]
+    branches: [codegym-v2, "feat/**", "fix/**", "perf/**", "ui/**"]
     paths-ignore:
       - '.agents/**'
       - '.claude/**'

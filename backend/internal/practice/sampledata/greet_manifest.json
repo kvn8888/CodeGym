@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "environment.manifest.v1",
+  "artifact": {
+    "id": "greet-basics-2026-10-01",
+    "technology": "python",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "base": "python-3.13",
+    "network": "none",
+    "dependencyFiles": [],
+    "lockfiles": []
+  },
+  "workspace": {
+    "root": ".",
+    "learnerEditable": ["solution.py"],
+    "protected": ["protected/test_greet.py"]
+  },
+  "commands": {
+    "setup": "python3 --version",
+    "build": "python3 -m py_compile solution.py protected/test_greet.py",
+    "test": "python3 protected/test_greet.py"
+  },
+  "assessment": {
+    "type": "unit-tests",
+    "visibleTests": [],
+    "hiddenTests": ["protected/test_greet.py"]
+  },
+  "compatibility": {
+    "requestedTechnology": "Python",
+    "requestedObjective": "Practice string handling with functions",
+    "reuseTags": []
+  }
+}

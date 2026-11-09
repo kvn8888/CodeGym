@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "environment.builder-result.v1",
+  "builderRunId": "buildrun_missing_manifest",
+  "runtime": {
+    "name": "purpose-built-loop",
+    "version": "0.1.0"
+  },
+  "sandboxRef": {
+    "provider": "daytona",
+    "id": "sandbox_missing_manifest"
+  },
+  "artifactRef": null,
+  "proposedManifestPath": null,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "stage": "prepare",
+      "code": "MANIFEST_NOT_PRODUCED",
+      "message": "The builder completed without producing an environment manifest."
+    }
+  ],
+  "telemetry": {
+    "wallTimeMs": 41000,
+    "tokensIn": 8000,
+    "tokensOut": 1500,
+    "estimatedCostUsd": 0.1,
+    "repairIterations": 0
+  }
+}

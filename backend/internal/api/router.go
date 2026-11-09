@@ -7,11 +7,13 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/api/handlers"
 	"github.com/kvn8888/codegym/backend/internal/auth"
 	"github.com/kvn8888/codegym/backend/internal/chat"
+	"github.com/kvn8888/codegym/backend/internal/envintegration"
 	"github.com/kvn8888/codegym/backend/internal/execution"
 	"github.com/kvn8888/codegym/backend/internal/generation"
 	"github.com/kvn8888/codegym/backend/internal/identity"
 	"github.com/kvn8888/codegym/backend/internal/intake"
 	"github.com/kvn8888/codegym/backend/internal/memory"
+	"github.com/kvn8888/codegym/backend/internal/practice"
 	"github.com/kvn8888/codegym/backend/internal/problems"
 	"github.com/kvn8888/codegym/backend/internal/session"
 	"github.com/kvn8888/codegym/backend/internal/submission"
@@ -33,6 +35,10 @@ type Dependencies struct {
 	Intakes         *intake.Service
 	Chat            *chat.Service
 	Workflow        *workflow.Service
+	Practice        *practice.Service
+	// Environments is nil unless environment requests are configured; the
+	// route stays registered and answers 503 so clients can fall back.
+	Environments *envintegration.OperationStore
 	// Generation is nil when no GenAI provider is configured; the generate
 	// route stays registered and answers 503 so clients can fall back.
 	Generation           *generation.Orchestrator
@@ -123,6 +129,18 @@ func NewRouter(deps Dependencies) http.Handler {
 	protected.HandleFunc("POST /api/v1/workflow-operations", workflowHandler.Create)
 	protected.HandleFunc("GET /api/v1/workflow-operations/{id}/events", workflowHandler.Events)
 	protected.HandleFunc("POST /api/v1/workflow-operations/{id}/cancel", workflowHandler.Cancel)
+	practiceHandler := handlers.NewPracticeHandler(deps.Practice)
+	protected.HandleFunc("POST /api/v1/practice/sessions", practiceHandler.Open)
+	protected.HandleFunc("GET /api/v1/practice/sessions/{id}", practiceHandler.Get)
+	protected.HandleFunc("PUT /api/v1/practice/sessions/{id}/files", practiceHandler.WriteFiles)
+	protected.HandleFunc("POST /api/v1/practice/sessions/{id}/run", practiceHandler.Run)
+	protected.HandleFunc("POST /api/v1/practice/sessions/{id}/submit", practiceHandler.Submit)
+	protected.HandleFunc("POST /api/v1/practice/sessions/{id}/save", practiceHandler.Save)
+	protected.HandleFunc("GET /api/v1/practice/saved", practiceHandler.ListSaved)
+	protected.HandleFunc("POST /api/v1/practice/saved/{id}/resume", practiceHandler.Resume)
+	environmentsHandler := handlers.NewEnvironmentsHandler(deps.Environments)
+	protected.HandleFunc("POST /api/v1/practice-environments/requests", environmentsHandler.Request)
+	protected.HandleFunc("GET /api/v1/practice-environments/requests/{id}", environmentsHandler.Status)
 
 	protectedChain := chain(
 		protected,

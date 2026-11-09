@@ -51,6 +51,10 @@ type IssueInput struct {
 	Deadline         time.Time
 	MaxTotalTokens   int64
 	MaxCostUSDMicros int64
+	// TokenTTL overrides the service token lifetime for one operation. Long
+	// builds outlive the default token TTL and would otherwise lose relay
+	// access mid-build; zero keeps the service default.
+	TokenTTL time.Duration
 }
 
 // IssueResult returns the opaque bearer token and its server-owned limits.

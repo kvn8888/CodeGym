@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "environment.manifest.v1",
+  "artifact": {
+    "id": "spring-boot-di-intro-2026-09-29",
+    "technology": "spring-boot",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "base": "java-21",
+    "network": "setup-only",
+    "dependencyFiles": ["pom.xml"],
+    "lockfiles": []
+  },
+  "workspace": {
+    "root": ".",
+    "learnerEditable": [
+      "src/main/java/com/codegym/exercise/GreetingService.java"
+    ],
+    "protected": [
+      "src/test/java/com/codegym/exercise/GreetingServiceTest.java",
+      ".codegym/reference/GreetingServiceReference.java",
+      ".codegym/hidden/GreetingServiceHiddenTest.java"
+    ]
+  },
+  "commands": {
+    "setup": "mvn -q dependency:go-offline",
+    "build": "mvn -q test-compile",
+    "test": "mvn -q test",
+    "run": "mvn -q spring-boot:run"
+  },
+  "assessment": {
+    "type": "unit-tests",
+    "visibleTests": [
+      "src/test/java/com/codegym/exercise/GreetingServiceTest.java"
+    ],
+    "hiddenTests": [
+      ".codegym/hidden/GreetingServiceHiddenTest.java"
+    ]
+  },
+  "compatibility": {
+    "requestedTechnology": "Spring Boot",
+    "requestedObjective": "Practice dependency injection with services",
+    "reuseTags": ["spring-boot", "dependency-injection", "java-21"]
+  }
+}

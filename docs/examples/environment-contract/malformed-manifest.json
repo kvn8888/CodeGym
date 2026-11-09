@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "environment.manifest.v1",
+  "artifact": {
+    "technology": "spring-boot"
+  },
+  "commands": {
+    "test": "mvn test"
+  }
+}

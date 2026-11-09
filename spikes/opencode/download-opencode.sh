@@ -7,6 +7,7 @@ RELEASE_BASE="https://github.com/sst/opencode/releases/download/${VERSION}"
 
 os="$(uname -s)"
 arch="$(uname -m)"
+binary="opencode"
 case "${os}/${arch}" in
   Darwin/arm64)
     asset="opencode-darwin-arm64.zip"
@@ -15,6 +16,16 @@ case "${os}/${arch}" in
   Darwin/x86_64)
     asset="opencode-darwin-x64.zip"
     sha256="95953ab2aca4322b90690bf34697cc9b47b6a7c72f78e7c469056fb589124d31"
+    ;;
+  Linux/x86_64)
+    asset="opencode-linux-x64.tar.gz"
+    sha256="a4dffcc00a5a93256c6bd06aa0c984320528f564db52a1f4becd5c7de9fb59a1"
+    binary="opencode"
+    ;;
+  MINGW*/x86_64|MSYS*/x86_64|CYGWIN*/x86_64)
+    asset="opencode-windows-x64.zip"
+    sha256="f3a5ea814aecc692a4e04259d9005283f364225b38456c90f9a47b7a9d83c0e9"
+    binary="opencode.exe"
     ;;
   *)
     echo "Unsupported platform: ${os}/${arch}. Add the pinned ${VERSION} asset and checksum to this script." >&2
@@ -33,16 +44,23 @@ if [[ ! -f "${archive}" ]]; then
   curl --fail --location --proto '=https' --tlsv1.2 --output "${archive}" "${url}"
 fi
 
-actual="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "${archive}" | awk '{print $1}')"
+else
+  actual="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+fi
 if [[ "${actual}" != "${sha256}" ]]; then
   echo "Checksum mismatch: expected ${sha256}, got ${actual}" >&2
   exit 1
 fi
 
-unzip -oq "${archive}" -d "${bin_dir}"
-chmod 0755 "${bin_dir}/opencode"
+case "${archive}" in
+  *.zip) unzip -oq "${archive}" -d "${bin_dir}" ;;
+  *.tar.gz) tar -xzf "${archive}" -C "${bin_dir}" ;;
+esac
+chmod 0755 "${bin_dir}/${binary}" 2>/dev/null || true
 echo "Verified SHA-256: ${sha256}"
-"${bin_dir}/opencode" --version
+"${bin_dir}/${binary}" --version
 
 # OpenCode initializes its TypeScript custom-tool runtime by installing the
 # matching @opencode-ai/plugin package. Do that explicitly during setup so the

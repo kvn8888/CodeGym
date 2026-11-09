@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "environment.verifier-result.v1",
+  "verifierRunId": "verify_01JABCDE",
+  "builderRunId": "buildrun_01JABCDE",
+  "verdict": "verified",
+  "failedStage": null,
+  "repairable": false,
+  "diagnostics": [],
+  "evidence": {
+    "checks": [
+      {
+        "stage": "manifest",
+        "command": null,
+        "exitCode": 0,
+        "summary": "Manifest schema and protected file rules passed."
+      },
+      {
+        "stage": "build",
+        "command": "mvn -q test-compile",
+        "exitCode": 0,
+        "summary": "Build completed successfully."
+      },
+      {
+        "stage": "test",
+        "command": "mvn -q test",
+        "exitCode": 0,
+        "summary": "Visible and hidden assessment tests passed."
+      }
+    ]
+  },
+  "promotion": {
+    "allowed": true,
+    "reason": "Manifest valid and backend-controlled checks passed."
+  }
+}

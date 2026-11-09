@@ -63,6 +63,91 @@ the shared secret contract. Production Render/Vercel use a single
 `DOPPLER_TOKEN` and `doppler run` — app secrets are not stored in those
 dashboards.
 
+## Agent-built practice environments (#192)
+
+In production the environment-build corridor runs entirely off-host on
+Daytona: a request from **Build** (`/practice/new`) names a technology and
+objective, an agent builds the project and a learner starter inside a
+sandbox, the verifier runs setup/build/test and the hidden assessments in a
+fresh sandbox booted from the candidate snapshot, the registry promotes it,
+and practice sessions lease sandboxes from that snapshot. The host never
+executes generated code. Production requires `DAYTONA_API_KEY` +
+`DAYTONA_API_URL`, `CODEGYM_BASE_SNAPSHOT` (see `spikes/daytona/base-snapshot`),
+`CODEGYM_RELAY_PUBLIC_URL` (a relay URL build sandboxes can reach), and a
+durable registry store; a production server missing any of these fails fast
+rather than falling back to the host.
+
+`./scripts/dev-env-local.sh` runs the development-only host-local corridor
+with `CODEGYM_ENV_LOCAL_BUILD=true` under Doppler, useful when Daytona is not
+desired. On this host the agent builds and the verifier runs setup/build/test
+directly, so network policy is not enforced. A cold Spring Boot build takes
+about two minutes; requesting the same technology again reuses the promoted
+environment in seconds. Restart the backend for a fresh cold start: the local
+registry is in memory. Verdicts are labelled `unreviewed: agent reference
+solution (demo mode)` because no human reviewed the generated solution. Never
+enable host-local builds outside development; the server refuses when
+`CODEGYM_ENV_*` marks it as production. The frontend must run with
+`VITE_USE_MOCK_API=false`.
+
+Hidden tests must print `CODEGYM_TEST <id> PASS` (or `FAIL code=<code>
+expected=<expected> actual=<actual>`) lines in addition to failing the test
+command on wrong solutions; the prompt requires this of the agent. Submit
+evaluates those lines, so a wrong solution fails with its intended reason
+instead of a bare category. The agent is likewise instructed that the `run`
+command must succeed in a fresh copy with no prior command having run, and
+that `EXERCISE.md` must state the complete graded contract (every class,
+interface, and method signature), because the practice workspace only ever
+contains a fresh materialization of the project.
+
+Windows host-local notes: the pinned opencode matrix has no Windows asset
+yet, so place a matching `opencode.exe` next to `.bin/opencode` (Windows
+resolves it for the extensionless path) and unset `MSYS_NO_PATHCONV` /
+`MSYS2_ARG_CONV_EXCL` for the server process tree, otherwise `java.exe`
+receives POSIX classpaths and Maven fails to launch. `dev-env-local.sh`
+handles the latter; symlink creation stays best-effort (npm `.bin` shims
+are skipped by the template copy).
+
+## Browser practice sample (durable saves)
+
+`/practice` serves the development-only simulated exercise
+(`greet-basics-2026-10-01`). Saved exercises survive backend restarts
+**only** when the backend runs against Postgres. Without a database URL the
+server still opens sessions and runs checks, but Save/List/Resume answer
+`503 practice_saved_unavailable` and the UI shows "Saving is unavailable" —
+a restart would otherwise silently discard a reported Save.
+
+Repeatable local launch with a dedicated persistent database (reused across
+restarts; never touches :5432, Neon, or existing auth settings):
+
+```bash
+cd backend
+./scripts/dev-practice-sample.sh
+```
+
+This provisions `$HOME/.codegym-dev/pg-practice` (override with
+`CODEGYM_DEV_DATA_DIR`), starts dedicated Postgres on `127.0.0.1:55434`
+(override with `CODEGYM_DEV_PG_PORT`), creates `codegym_practice_dev`, and
+starts the backend on `127.0.0.1:8080` (override with `CODEGYM_PORT`) with
+durable saves enabled. The database keeps running after the backend exits
+so the next launch resumes the same data; stop it with:
+
+```bash
+pg_ctl -D ~/.codegym-dev/pg-practice stop
+```
+
+Frontend (mock-free, in another terminal):
+
+```bash
+cd frontend
+VITE_API_BASE_URL=http://127.0.0.1:8080/api/v1 VITE_USE_MOCK_API=false npm run dev
+```
+
+Then open `http://127.0.0.1:5173/practice`, edit `solution.py`, Run, Submit,
+Save, stop the backend process completely, start it again with the same
+`./scripts/dev-practice-sample.sh` command, reload, and Resume the saved
+exercise. Startup logs name the active persistence mode without secrets
+(`practice saves: durable Postgres…` vs `saves unavailable…`).
+
 ## GenAI multi-provider routing
 
 `POST /api/v1/generate` goes through an in-process **provider router**. Each

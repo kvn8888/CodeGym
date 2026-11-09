@@ -35,6 +35,42 @@ let sessions: PracticeSession[] = structuredClone(mockSessions);
 let practiceIntakes: PracticeIntake[] = [];
 let chatThreads: ChatThreadWithMessages[] = [];
 
+interface MockPracticeFile {
+  path: string;
+  content: string;
+}
+
+interface MockPracticeSession {
+  session_id: string;
+  owner: string;
+  workspace_id: string;
+  artifact_id: string;
+  artifact_version: string;
+  technology: string;
+  environment_base: string;
+  network_policy: string;
+  simulated: boolean;
+  instructions: string;
+  editable: string[];
+  files: MockPracticeFile[];
+}
+
+interface MockPracticeSaved {
+  id: string;
+  owner: string;
+  workspace_id: string;
+  artifact_id: string;
+  artifact_version: string;
+  technology: string;
+  environment_base: string;
+  network_policy: string;
+  files: Record<string, string>;
+  updated_at: string;
+}
+
+const mockPracticeSessions = new Map<string, MockPracticeSession>();
+const mockPracticeSaved = new Map<string, MockPracticeSaved>();
+
 const mockIntakeQuestions = [
   {
     id: 'q1',
@@ -738,6 +774,162 @@ export async function mockApiFetch(
       provider: 'mock',
       model: 'mock-evaluator',
     });
+  }
+
+  // Browser practice (#191): development sample with simulated safe results.
+  if (method === 'POST' && path === '/practice/sessions') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as { artifact_id?: string; technology?: string; version?: string };
+    if (!body.artifact_id?.trim()) {
+      return error('practice_invalid_request', 'practice open browser session requires an artifact_id pin; technology/version alone can select another exercise', 400);
+    }
+    if (body.artifact_id !== 'greet-basics-2026-10-01') {
+      return error('practice_not_found', `practice load artifact: environment artifact not found: requested "${body.artifact_id}"`, 404);
+    }
+    if (body.version && body.version !== '0.1.0') {
+      return error('practice_artifact_mismatch', `practice requested version "${body.version}" but verified artifact is version "0.1.0"; versions are never substituted`, 409);
+    }
+    const now = new Date().toISOString();
+    const view = {
+      session_id: `practice_sess_mock_${Date.now()}`,
+      owner: mockUserProfile.user_id,
+      workspace_id: mockUserProfile.default_workspace_id,
+      artifact_id: 'greet-basics-2026-10-01',
+      artifact_version: '0.1.0',
+      technology: 'python',
+      environment_base: 'python-3.13',
+      network_policy: 'block-all',
+      simulated: true,
+      instructions: 'Implement `greet(name)` in `solution.py`. Use Run for program output and Submit for backend checks.',
+      editable: ['solution.py'],
+      files: [{ path: 'solution.py', content: 'def greet(name):\n    raise NotImplementedError\n' }],
+      created_at: now,
+    };
+    mockPracticeSessions.set(view.session_id, view);
+    return json(view, { status: 201 });
+  }
+
+  const practiceSessionMatch = path.match(/^\/practice\/sessions\/([^/]+)$/);
+  if (method === 'GET' && practiceSessionMatch) {
+    const view = mockPracticeSessions.get(practiceSessionMatch[1]);
+    return view ? json(view) : error('practice_not_found', 'practice session not found', 404);
+  }
+
+  const practiceFilesMatch = path.match(/^\/practice\/sessions\/([^/]+)\/files$/);
+  if (method === 'PUT' && practiceFilesMatch) {
+    const view = mockPracticeSessions.get(practiceFilesMatch[1]);
+    if (!view) return error('practice_not_found', 'practice session not found', 404);
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(rawBody) as { files?: Array<{ path: string; content: string }> };
+    for (const file of body.files ?? []) {
+      if (file.path !== 'solution.py') {
+        return error('practice_invalid_request', `practice file "${file.path}" is not learner-editable`, 400);
+      }
+    }
+    const updated = { ...view, files: (body.files ?? view.files).map((file) => ({ ...file })) };
+    mockPracticeSessions.set(view.session_id, updated);
+    return json(updated);
+  }
+
+  const practiceRunMatch = path.match(/^\/practice\/sessions\/([^/]+)\/(run|submit)$/);
+  if (method === 'POST' && practiceRunMatch) {
+    const view = mockPracticeSessions.get(practiceRunMatch[1]);
+    if (!view) return error('practice_not_found', 'practice session not found', 404);
+    const content = view.files.find((file) => file.path === 'solution.py')?.content ?? '';
+    const looksComplete = /def greet/.test(content) && !/NotImplementedError/.test(content);
+    const category = looksComplete ? 'test-failure' : 'build-error';
+    const summary = looksComplete ? 'Tests failed.' : 'The build command failed.';
+    return json({
+      category,
+      summary,
+      output: practiceRunMatch[2] === 'run' ? 'Hello, Ada!\n' : '',
+      output_truncated: false,
+      steps:
+        practiceRunMatch[2] === 'run'
+          ? [{ stage: 'test', exit_code: 1 }]
+          : [
+              { stage: 'build', exit_code: 0 },
+              { stage: 'test', exit_code: 1 },
+            ],
+      simulated: true,
+      session_id: view.session_id,
+      artifact_id: view.artifact_id,
+      artifact_version: view.artifact_version,
+      technology: view.technology,
+      environment_base: view.environment_base,
+      network_policy: view.network_policy,
+      record_id: `practice_rec_mock_${Date.now()}`,
+    });
+  }
+
+  const practiceSaveMatch = path.match(/^\/practice\/sessions\/([^/]+)\/save$/);
+  if (method === 'POST' && practiceSaveMatch) {
+    const view = mockPracticeSessions.get(practiceSaveMatch[1]);
+    if (!view) return error('practice_not_found', 'practice session not found', 404);
+    const now = new Date().toISOString();
+    const saved: MockPracticeSaved = {
+      id: `practice_saved_mock_${Date.now()}`,
+      owner: view.owner,
+      workspace_id: view.workspace_id,
+      artifact_id: view.artifact_id,
+      artifact_version: view.artifact_version,
+      technology: view.technology,
+      environment_base: view.environment_base,
+      network_policy: view.network_policy,
+      files: Object.fromEntries(view.files.map((file) => [file.path, file.content])),
+      updated_at: now,
+    };
+    mockPracticeSaved.set(saved.id, saved);
+    // Public receipt only: no file contents on the wire.
+    return json(
+      {
+        id: saved.id,
+        artifact_id: saved.artifact_id,
+        artifact_version: saved.artifact_version,
+        technology: saved.technology,
+        environment_base: saved.environment_base,
+        updated_at: saved.updated_at,
+      },
+      { status: 201 },
+    );
+  }
+
+  if (method === 'GET' && path === '/practice/saved') {
+    return json(
+      [...mockPracticeSaved.values()].map((saved) => ({
+        id: saved.id,
+        artifact_id: saved.artifact_id,
+        artifact_version: saved.artifact_version,
+        technology: saved.technology,
+        environment_base: saved.environment_base,
+        updated_at: saved.updated_at,
+      })),
+    );
+  }
+
+  const practiceResumeMatch = path.match(/^\/practice\/saved\/([^/]+)\/resume$/);
+  if (method === 'POST' && practiceResumeMatch) {
+    const saved = mockPracticeSaved.get(practiceResumeMatch[1]);
+    if (!saved) return error('practice_not_found', 'practice saved exercise not found', 404);
+    const view: MockPracticeSession = {
+      session_id: `practice_sess_mock_${Date.now()}`,
+      owner: saved.owner,
+      workspace_id: saved.workspace_id,
+      artifact_id: saved.artifact_id,
+      artifact_version: saved.artifact_version,
+      technology: saved.technology,
+      environment_base: saved.environment_base,
+      network_policy: saved.network_policy,
+      simulated: true,
+      instructions: 'Implement `greet(name)` in `solution.py`. Use Run for program output and Submit for backend checks.',
+      editable: ['solution.py'],
+      files: Object.entries(saved.files).map(([filePath, content]) => ({
+        path: filePath,
+        content: String(content),
+      })),
+    };
+    mockPracticeSessions.set(view.session_id, view);
+    return json(view, { status: 201 });
   }
 
   return error('mock_route_missing', `No mock API handler registered for ${method} ${path}`, 501);

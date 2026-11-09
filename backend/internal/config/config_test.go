@@ -153,6 +153,37 @@ func TestLoadExecutionAndDemoConfig(t *testing.T) {
 	}
 }
 
+func TestPracticeSampleAllowedGatesProduction(t *testing.T) {
+	clearConfigEnv(t)
+
+	if Load().PracticeSampleAllowed() {
+		t.Fatal("sample must be disabled by default")
+	}
+
+	t.Setenv("CODEGYM_PRACTICE_SAMPLE", "true")
+	if !Load().PracticeSampleAllowed() {
+		t.Fatal("sample must be allowed in plain development")
+	}
+
+	t.Setenv("CODEGYM_ENV", "production")
+	if Load().PracticeSampleAllowed() {
+		t.Fatal("sample must be rejected with CODEGYM_ENV=production")
+	}
+	t.Setenv("CODEGYM_ENV", "")
+
+	t.Setenv("GO_ENV", "production")
+	if Load().PracticeSampleAllowed() {
+		t.Fatal("sample must be rejected with GO_ENV=production")
+	}
+	t.Setenv("GO_ENV", "")
+
+	t.Setenv("CODEGYM_AUTH0_AUDIENCE", "https://api.codegym.test")
+	t.Setenv("CODEGYM_AUTH0_DOMAIN", "codegym.us.auth0.com")
+	if Load().PracticeSampleAllowed() {
+		t.Fatal("sample must be rejected with Auth0 production auth")
+	}
+}
+
 func TestLoadRelayConfig(t *testing.T) {
 	clearConfigEnv(t)
 

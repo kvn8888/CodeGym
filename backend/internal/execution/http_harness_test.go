@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,9 +10,10 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/procgroup"
 )
 
 type localHTTPHarnessConfig struct {
@@ -341,12 +341,11 @@ func assertRecordedProcessesStopped(t *testing.T, path string) {
 		}
 		deadline := time.Now().Add(2 * time.Second)
 		for {
-			err = syscall.Kill(pid, 0)
-			if errors.Is(err, syscall.ESRCH) {
+			if !procgroup.Alive(pid) {
 				break
 			}
 			if time.Now().After(deadline) {
-				t.Fatalf("process %d still exists after harness cleanup (kill check: %v)", pid, err)
+				t.Fatalf("process %d still exists after harness cleanup", pid)
 			}
 			time.Sleep(20 * time.Millisecond)
 		}

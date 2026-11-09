@@ -10,7 +10,7 @@ on:
       - 'api/**'
       - '.github/workflows/openapi-lint.yml'
   pull_request:
-    branches: [codegym-v2]
+    branches: [codegym-v2, "feat/**", "fix/**", "perf/**", "ui/**"]
     paths:
       - 'api/**'
       - '.github/workflows/openapi-lint.yml'

@@ -1,0 +1,78 @@
+case_id: python-sum-even-numbers
+version: 1.0.0
+technology: python
+objective: Implement a function that returns the sum of all even integers in a list.
+
+environment_manifest: environment/manifest.json
+
+build_test_run:
+  strategy: unit
+  entrypoint: solution.py
+  commands:
+    test: python -m pytest -q
+  limits:
+    timeout_seconds: 30
+    memory_mb: 256
+    network_mode: none
+
+spec:
+  path_or_inline: spec.json
+  ambiguity_resolutions_required: true
+
+correct_alternatives:
+  - id: alt-01
+    files:
+      solution.py: correct/alt-01/solution.py
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+
+wrong_solutions:
+  - id: sum-odd-numbers
+    files:
+      solution.py: wrong/sum-odd-numbers/solution.py
+    intended_failure:
+      test_id: hidden-mixed-values
+      code: WRONG_SUM
+      expected: "6"
+      actual: "4"
+      reason: "The implementation sums odd numbers instead of even numbers."
+    learning_objective_rationale: "A learner may confuse the parity condition while filtering values."
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+    denominator_decision: meaningful
+  - id: ignore-negative-evens
+    files:
+      solution.py: wrong/ignore-negative-evens/solution.py
+    intended_failure:
+      test_id: hidden-negative-values
+      code: WRONG_SUM
+      expected: "0"
+      actual: "2"
+      reason: "The implementation ignores negative even numbers."
+    learning_objective_rationale: "A learner may incorrectly treat evenness as requiring a positive value."
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+    denominator_decision: meaningful
+
+comparator_expectations:
+  default:
+    kind: exact
+  case_overrides_allowed: true
+  notes: "Exact integer equality for the summed result."
+
+expected_outcomes:
+  generation:
+    blind_agreement: null
+    reconciliation_count: null
+    reconciliation_direction: null
+    non_convergence: null
+    status: not_applicable
+  assessment:
+    correct_alternatives_pass: true
+    wrong_solutions_rejected: true
+
+review:
+  reviewed_by: reviewer
+  reviewed_at: "2026-11-10T00:00:00Z"
+  ambiguous_spec: false
+  notes: "Regression case for even-number summation."

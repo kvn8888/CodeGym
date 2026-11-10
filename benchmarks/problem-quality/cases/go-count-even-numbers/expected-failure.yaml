@@ -1,0 +1,13 @@
+wrong_solutions:
+  - id: count-odd-numbers
+    test_id: hidden-mixed-values
+    code: WRONG_COUNT
+    expected: "2"
+    actual: "3"
+    reason: "The implementation counts odd numbers instead of even numbers."
+  - id: count-positive-evens-only
+    test_id: hidden-negative-values
+    code: WRONG_COUNT
+    expected: "2"
+    actual: "1"
+    reason: "The implementation ignores negative even numbers."

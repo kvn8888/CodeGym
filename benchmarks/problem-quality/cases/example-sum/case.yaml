@@ -1,0 +1,65 @@
+case_id: example-sum
+version: 1.0.0
+technology: python
+objective: Implement a function that returns the sum of two integers.
+
+environment_manifest: environment/manifest.json
+
+build_test_run:
+  strategy: unit
+  entrypoint: solution.py
+  commands:
+    test: python -m pytest -q
+  limits:
+    timeout_seconds: 30
+    memory_mb: 256
+    network_mode: none
+
+spec:
+  path_or_inline: spec.json
+  ambiguity_resolutions_required: true
+
+correct_alternatives:
+  - id: alt-01
+    files:
+      solution.py: correct/alt-01/solution.py
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+
+wrong_solutions:
+  - id: off-by-one
+    files:
+      solution.py: wrong/off-by-one/solution.py
+    intended_failure:
+      test_id: hidden-large-values
+      code: WRONG_SUM
+      expected: "7"
+      actual: "6"
+      reason: "The implementation subtracts one from the result."
+    learning_objective_rationale: "A learner may confuse inclusive and exclusive bounds while summing."
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+    denominator_decision: meaningful
+
+comparator_expectations:
+  default:
+    kind: exact
+  case_overrides_allowed: true
+  notes: "Exact integer equality."
+
+expected_outcomes:
+  generation:
+    blind_agreement: null
+    reconciliation_count: null
+    reconciliation_direction: null
+    non_convergence: null
+    status: not_applicable
+  assessment:
+    correct_alternatives_pass: true
+    wrong_solutions_rejected: true
+
+review:
+  reviewed_by: reviewer
+  reviewed_at: "2026-11-10T00:00:00Z"
+  ambiguous_spec: false
+  notes: "Example case only."

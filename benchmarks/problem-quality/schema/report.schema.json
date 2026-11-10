@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codegym.dev/schemas/problem-quality/report.v1.json",
+  "title": "ProblemQualityReport",
+  "type": "object",
+  "required": [
+    "run_id",
+    "started_at",
+    "completed_at",
+    "tested_commit",
+    "baseline_kind",
+    "runtime_config",
+    "generation_config",
+    "summary",
+    "cases",
+    "recommendations"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": "string", "format": "date-time" },
+    "tested_commit": { "type": "string", "minLength": 1 },
+    "branch": { "type": "string" },
+    "prompt_revision": { "type": "string" },
+    "model_revision": { "type": "string" },
+    "baseline_kind": {
+      "type": "string",
+      "enum": ["independent", "current", "agent-built", "other"]
+    },
+    "runtime_config": { "type": "object" },
+    "generation_config": { "type": "object" },
+    "cost_cap_usd": { "type": "number", "minimum": 0 },
+    "total_cost_usd": { "type": "number", "minimum": 0 },
+    "total_tokens_in": { "type": "integer", "minimum": 0 },
+    "total_tokens_out": { "type": "integer", "minimum": 0 },
+    "elapsed_ms": { "type": "integer", "minimum": 0 },
+    "preliminary": { "type": "boolean", "default": true },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "blind_agreement_rate": { "type": ["number", "string"] },
+        "reconciliation_frequency": { "type": ["number", "string"] },
+        "non_convergence_rate": { "type": ["number", "string"] },
+        "correct_alternative_acceptance_rate": { "type": "number" },
+        "wrong_solution_rejection_rate": { "type": "number" },
+        "discrimination_score": { "type": "number" },
+        "ambiguous_specification_rate": { "type": "number" },
+        "generation_failures": { "type": "integer", "minimum": 0 },
+        "setup_failures": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["case_id", "technology", "status"],
+        "properties": {
+          "case_id": { "type": "string" },
+          "technology": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "error", "not_run"]
+          },
+          "generation": {
+            "type": "object",
+            "properties": {
+              "blind_agreement": { "type": ["boolean", "null"] },
+              "reconciliation_count": { "type": ["integer", "null"], "minimum": 0 },
+              "reconciliation_direction": {
+                "type": ["string", "null"],
+                "enum": ["reference", "tests", "both", null]
+              },
+              "non_convergence": { "type": ["boolean", "null"] },
+              "status": {
+                "type": "string",
+                "enum": ["measured", "not_applicable"]
+              }
+            },
+            "additionalProperties": false
+          },
+          "correct_alternatives": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "accepted"],
+              "properties": {
+                "id": { "type": "string" },
+                "accepted": { "type": "boolean" },
+                "failure": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "wrong_solutions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "rejected"],
+              "properties": {
+                "id": { "type": "string" },
+                "rejected": { "type": "boolean" },
+                "intended_failure_matched": { "type": "boolean" },
+                "surviving": { "type": "boolean" },
+                "failure": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "comparator_result": { "type": "string" },
+          "ambiguous_spec": { "type": "boolean" },
+          "failure_category": { "type": "string" },
+          "failure_details": { "type": "string" },
+          "elapsed_ms": { "type": "integer", "minimum": 0 },
+          "cost_usd": { "type": "number", "minimum": 0 },
+          "tokens_in": { "type": "integer", "minimum": 0 },
+          "tokens_out": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

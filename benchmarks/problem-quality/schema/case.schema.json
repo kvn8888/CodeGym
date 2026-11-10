@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codegym.dev/schemas/problem-quality/case.v1.json",
+  "title": "ProblemQualityCase",
+  "type": "object",
+  "required": [
+    "case_id",
+    "version",
+    "technology",
+    "objective",
+    "environment_manifest",
+    "build_test_run",
+    "spec",
+    "correct_alternatives",
+    "wrong_solutions",
+    "comparator_expectations",
+    "expected_outcomes",
+    "review"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "technology": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "environment_manifest": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path or reference to the generated environment artifact. Technology-specific details live here, not in benchmark code."
+    },
+    "build_test_run": {
+      "type": "object",
+      "required": ["strategy", "commands"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["unit", "http", "output", "custom"]
+        },
+        "entrypoint": {
+          "type": "string"
+        },
+        "commands": {
+          "type": "object",
+          "required": ["test"],
+          "properties": {
+            "setup": { "type": "string" },
+            "build": { "type": "string" },
+            "test": { "type": "string" },
+            "run": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_seconds": { "type": "integer", "minimum": 1 },
+            "memory_mb": { "type": "integer", "minimum": 1 },
+            "network_mode": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "spec": {
+      "type": "object",
+      "required": ["path_or_inline"],
+      "properties": {
+        "path_or_inline": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ambiguity_resolutions_required": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "correct_alternatives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "files", "reviewed_by", "reviewed_at"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "files": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "reviewed_by": { "type": "string", "minLength": 1 },
+          "reviewed_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "wrong_solutions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "files",
+          "intended_failure",
+          "learning_objective_rationale",
+          "reviewed_by",
+          "reviewed_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "files": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "intended_failure": {
+            "type": "object",
+            "required": ["test_id", "code", "expected", "actual", "reason"],
+            "properties": {
+              "test_id": { "type": "string", "minLength": 1 },
+              "code": { "type": "string", "minLength": 1 },
+              "expected": { "type": "string" },
+              "actual": { "type": "string" },
+              "reason": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          },
+          "learning_objective_rationale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reviewed_by": { "type": "string", "minLength": 1 },
+          "reviewed_at": { "type": "string", "format": "date-time" },
+          "denominator_decision": {
+            "type": "string",
+            "enum": ["meaningful", "equivalent", "invalid"],
+            "default": "meaningful"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "comparator_expectations": {
+      "type": "object",
+      "required": ["default"],
+      "properties": {
+        "default": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["exact", "set", "multiset", "sorted", "float", "checker"]
+            },
+            "epsilon": { "type": "number", "exclusiveMinimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "case_overrides_allowed": {
+          "type": "boolean",
+          "default": true
+        },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "expected_outcomes": {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "type": "object",
+          "properties": {
+            "blind_agreement": { "type": ["boolean", "null"] },
+            "reconciliation_count": { "type": ["integer", "null"], "minimum": 0 },
+            "reconciliation_direction": {
+              "type": ["string", "null"],
+              "enum": ["reference", "tests", "both", null]
+            },
+            "non_convergence": { "type": ["boolean", "null"] },
+            "status": {
+              "type": "string",
+              "enum": ["measured", "not_applicable"]
+            }
+          },
+          "additionalProperties": false
+        },
+        "assessment": {
+          "type": "object",
+          "properties": {
+            "correct_alternatives_pass": { "type": "boolean" },
+            "wrong_solutions_rejected": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "review": {
+      "type": "object",
+      "required": ["reviewed_by", "reviewed_at"],
+      "properties": {
+        "reviewed_by": { "type": "string", "minLength": 1 },
+        "reviewed_at": { "type": "string", "format": "date-time" },
+        "ambiguous_spec": { "type": "boolean", "default": false },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

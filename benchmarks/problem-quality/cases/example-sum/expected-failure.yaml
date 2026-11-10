@@ -1,0 +1,5 @@
+test_id: hidden-large-values
+code: WRONG_SUM
+expected: "7"
+actual: "6"
+reason: "The implementation subtracts one from the result."

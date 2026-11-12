@@ -2,3 +2,8 @@ reviewed_by: reviewer
 reviewed_at: "2026-11-10T00:00:00Z"
 ambiguous_spec: false
 notes: "Example case only; not a benchmark result."
+denominator_decisions:
+  - id: off-by-one
+    decision: meaningful
+  - id: subtract-instead-of-add
+    decision: meaningful

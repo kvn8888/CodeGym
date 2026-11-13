@@ -1,0 +1,12 @@
+{
+  "title": "Normalize Order-Insensitive Tags",
+  "description": "Return unique normalized tags. Lowercase and strip each tag, remove duplicates, and treat the result as order-insensitive.",
+  "entrypoint": "solution.py",
+  "function_name": "normalize_tags",
+  "signature": "def normalize_tags(tags)",
+  "comparator": { "kind": "set" },
+  "ambiguity_resolutions": [
+    "The result order is not significant.",
+    "Tags are compared after lowercasing and stripping surrounding whitespace."
+  ]
+}

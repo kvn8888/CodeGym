@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "environment.manifest.v1",
+  "artifact": {
+    "id": "development-order-tools-artifact",
+    "technology": "python",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "base": "python-3.13",
+    "network": "none",
+    "dependencyFiles": [],
+    "lockfiles": []
+  },
+  "workspace": {
+    "root": ".",
+    "learnerEditable": ["solution.py"],
+    "protected": ["protected/test_order_tools.py"]
+  },
+  "commands": {
+    "setup": "python3 --version",
+    "build": "python3 -m py_compile solution.py protected/test_order_tools.py",
+    "test": "python3 protected/test_order_tools.py"
+  },
+  "assessment": {
+    "type": "unit-tests",
+    "visibleTests": [],
+    "hiddenTests": ["protected/test_order_tools.py"]
+  },
+  "compatibility": {
+    "requestedTechnology": "Python",
+    "requestedObjective": "Normalize an order-insensitive collection of tags",
+    "reuseTags": []
+  }
+}

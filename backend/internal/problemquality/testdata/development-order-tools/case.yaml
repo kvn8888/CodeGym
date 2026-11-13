@@ -1,0 +1,88 @@
+case_id: development-order-tools
+version: 1.0.0
+technology: python
+objective: Return unique normalized tags in any order.
+environment_manifest: artifact/manifest.json
+build_test_run:
+  strategy: unit
+  entrypoint: solution.py
+  commands:
+    test: python3 protected/test_order_tools.py
+  limits:
+    timeout_seconds: 20
+    memory_mb: 128
+    network_mode: none
+spec:
+  path_or_inline: spec.json
+  ambiguity_resolutions_required: true
+correct_alternatives:
+  - id: alt-01
+    files:
+      solution.py: correct/alt-01/solution.py
+    reviewed_by: development-fixture
+    reviewed_at: "2026-11-13T00:00:00Z"
+  - id: alt-02
+    files:
+      solution.py: correct/alt-02/solution.py
+    reviewed_by: development-fixture
+    reviewed_at: "2026-11-13T00:00:00Z"
+wrong_solutions:
+  - id: no-dedupe
+    files:
+      solution.py: wrong/no-dedupe/solution.py
+    intended_failure:
+      test_id: deduplicates
+      code: DEDUPE
+      expected: "2"
+      actual: "3"
+      reason: "Duplicate tags are not removed."
+    learning_objective_rationale: "A learner may sort without removing duplicates."
+    reviewed_by: development-fixture
+    reviewed_at: "2026-11-13T00:00:00Z"
+    denominator_decision: meaningful
+  - id: wrong-empty
+    files:
+      solution.py: wrong/wrong-empty/solution.py
+    intended_failure:
+      test_id: empty-input
+      code: EMPTY
+      expected: "0"
+      actual: "1"
+      reason: "The empty collection is replaced with one empty tag."
+    learning_objective_rationale: "A learner may assume at least one tag is always present."
+    reviewed_by: development-fixture
+    reviewed_at: "2026-11-13T00:00:00Z"
+    denominator_decision: meaningful
+  - id: case-sensitive
+    files:
+      solution.py: wrong/case-sensitive/solution.py
+    intended_failure:
+      test_id: normalization
+      code: CASE
+      expected: "alpha"
+      actual: "Alpha"
+      reason: "Uppercase input is not lowercased; the weak fixture omits uppercase coverage."
+    learning_objective_rationale: "A learner may deduplicate without normalizing case."
+    reviewed_by: development-fixture
+    reviewed_at: "2026-11-13T00:00:00Z"
+    denominator_decision: meaningful
+comparator_expectations:
+  default:
+    kind: set
+  case_overrides_allowed: true
+  notes: "Set equality for tags; result order is not significant."
+expected_outcomes:
+  generation:
+    blind_agreement: null
+    reconciliation_count: null
+    reconciliation_direction: null
+    non_convergence: null
+    status: not_applicable
+  assessment:
+    correct_alternatives_pass: true
+    wrong_solutions_rejected: false
+review:
+  reviewed_by: development-fixture
+  reviewed_at: "2026-11-13T00:00:00Z"
+  ambiguous_spec: false
+  notes: "Development fixture only. Not human approval and not benchmark eligibility evidence."

@@ -1,0 +1,9 @@
+reviewed_by: reviewer
+reviewed_at: "2026-11-11T00:00:00Z"
+ambiguous_spec: false
+notes: "HTTP regression case for Express request handling and JSON response shape."
+denominator_decisions:
+  - id: missing-name-validation
+    decision: meaningful
+  - id: wrong-response-field
+    decision: meaningful

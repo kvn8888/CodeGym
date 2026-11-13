@@ -1,0 +1,13 @@
+wrong_solutions:
+  - id: missing-name-validation
+    test_id: hidden-missing-name
+    code: HTTP_STATUS
+    expected: "400"
+    actual: "200"
+    reason: "The route does not reject a missing or blank name."
+  - id: wrong-response-field
+    test_id: hidden-response-shape
+    code: JSON_FIELD
+    expected: "message"
+    actual: "greeting"
+    reason: "The response uses the wrong JSON field name."

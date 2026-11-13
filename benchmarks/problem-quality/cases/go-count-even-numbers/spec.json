@@ -1,0 +1,27 @@
+{
+  "language": "go",
+  "strategy": "unit",
+  "title": "Count Even Numbers",
+  "description": "Given a slice of integers, return the number of even integers in the slice.",
+  "category": "basics",
+  "subcategory": "filtering-and-aggregation",
+  "tags": ["slices", "integers", "even", "count"],
+  "difficulty": 1,
+  "estimated_minutes": 10,
+  "hints": ["Check whether each number is divisible by 2.", "An empty slice has count 0."],
+  "entrypoint": "solution.go",
+  "signature": "func CountEven(numbers []int) int",
+  "io_contract": "CountEven(numbers) returns the number of integers in numbers that are divisible by 2. Negative even integers are included. An empty slice returns 0.",
+  "comparator": { "kind": "exact" },
+  "ambiguity_resolutions": [
+    "Zero is an even integer and is included in the count.",
+    "Negative even integers are included.",
+    "An empty slice returns 0, not an error.",
+    "The input order does not affect the result."
+  ],
+  "function_name": "CountEven",
+  "parameters": [
+    { "name": "numbers", "type": "[]int" }
+  ],
+  "return_type": "int"
+}

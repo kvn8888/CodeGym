@@ -1,0 +1,78 @@
+case_id: go-count-even-numbers
+version: 1.0.0
+technology: go
+objective: Implement a function that returns the number of even integers in a slice.
+
+environment_manifest: environment/manifest.json
+
+build_test_run:
+  strategy: unit
+  entrypoint: solution.go
+  commands:
+    test: go test ./...
+  limits:
+    timeout_seconds: 60
+    memory_mb: 256
+    network_mode: none
+
+spec:
+  path_or_inline: spec.json
+  ambiguity_resolutions_required: true
+
+correct_alternatives:
+  - id: alt-01
+    files:
+      solution.go: correct/alt-01/solution.go
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+
+wrong_solutions:
+  - id: count-odd-numbers
+    files:
+      solution.go: wrong/count-odd-numbers/solution.go
+    intended_failure:
+      test_id: hidden-mixed-values
+      code: WRONG_COUNT
+      expected: "2"
+      actual: "3"
+      reason: "The implementation counts odd numbers instead of even numbers."
+    learning_objective_rationale: "A learner may confuse the parity condition while counting values."
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+    denominator_decision: meaningful
+  - id: count-positive-evens-only
+    files:
+      solution.go: wrong/count-positive-evens-only/solution.go
+    intended_failure:
+      test_id: hidden-negative-values
+      code: WRONG_COUNT
+      expected: "2"
+      actual: "1"
+      reason: "The implementation ignores negative even numbers."
+    learning_objective_rationale: "A learner may incorrectly treat evenness as requiring a positive value."
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+    denominator_decision: meaningful
+
+comparator_expectations:
+  default:
+    kind: exact
+  case_overrides_allowed: true
+  notes: "Exact integer equality for the counted result."
+
+expected_outcomes:
+  generation:
+    blind_agreement: null
+    reconciliation_count: null
+    reconciliation_direction: null
+    non_convergence: null
+    status: not_applicable
+  assessment:
+    correct_alternatives_pass: true
+    wrong_solutions_rejected: true
+
+review:
+  reviewed_by: reviewer
+  reviewed_at: "2026-11-10T00:00:00Z"
+  ambiguous_spec: false
+  notes: "Regression case for even-number counting."

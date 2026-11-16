@@ -40,6 +40,19 @@ wrong_solutions:
     reviewed_by: reviewer
     reviewed_at: "2026-11-10T00:00:00Z"
     denominator_decision: meaningful
+  - id: subtract-instead-of-add
+    files:
+      solution.py: wrong/subtract-instead-of-add/solution.py
+    intended_failure:
+      test_id: hidden-basic-values
+      code: WRONG_SUM
+      expected: "7"
+      actual: "-1"
+      reason: "The implementation subtracts the second value instead of adding it."
+    learning_objective_rationale: "A learner may use the wrong arithmetic operator."
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-10T00:00:00Z"
+    denominator_decision: meaningful
 
 comparator_expectations:
   default:

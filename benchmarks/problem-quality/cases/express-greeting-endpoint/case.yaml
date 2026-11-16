@@ -1,0 +1,81 @@
+case_id: express-greeting-endpoint
+version: 1.0.0
+technology: express
+objective: Implement an Express route that accepts a name query parameter and returns a JSON greeting.
+
+environment_manifest: environment/manifest.json
+
+build_test_run:
+  strategy: http
+  entrypoint: src/app.js
+  commands:
+    setup: npm install
+    build: ""
+    test: npm test
+    run: node src/app.js
+  limits:
+    timeout_seconds: 120
+    memory_mb: 256
+    network_mode: setup-only
+
+spec:
+  path_or_inline: spec.json
+  ambiguity_resolutions_required: true
+
+correct_alternatives:
+  - id: alt-01
+    files:
+      src/app.js: correct/alt-01/app.js
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-11T00:00:00Z"
+
+wrong_solutions:
+  - id: missing-name-validation
+    files:
+      src/app.js: wrong/missing-name-validation/app.js
+    intended_failure:
+      test_id: hidden-missing-name
+      code: HTTP_STATUS
+      expected: "400"
+      actual: "200"
+      reason: "The route does not reject a missing or blank name."
+    learning_objective_rationale: "A learner may forget to validate required request input."
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-11T00:00:00Z"
+    denominator_decision: meaningful
+  - id: wrong-response-field
+    files:
+      src/app.js: wrong/wrong-response-field/app.js
+    intended_failure:
+      test_id: hidden-response-shape
+      code: JSON_FIELD
+      expected: "message"
+      actual: "greeting"
+      reason: "The response uses the wrong JSON field name."
+    learning_objective_rationale: "A learner may return a plausible but non-contract field name."
+    reviewed_by: reviewer
+    reviewed_at: "2026-11-11T00:00:00Z"
+    denominator_decision: meaningful
+
+comparator_expectations:
+  default:
+    kind: exact
+  case_overrides_allowed: true
+  notes: "Exact status code and exact JSON field/value comparison for the greeting response."
+
+expected_outcomes:
+  generation:
+    blind_agreement: null
+    reconciliation_count: null
+    reconciliation_direction: null
+    non_convergence: null
+    status: not_applicable
+  assessment:
+    correct_alternatives_pass: true
+    wrong_solutions_rejected: true
+
+review:
+  reviewed_by: reviewer
+  reviewed_at: "2026-11-11T00:00:00Z"
+  ambiguous_spec: false
+  notes: "HTTP regression case for Express request handling and JSON response shape."

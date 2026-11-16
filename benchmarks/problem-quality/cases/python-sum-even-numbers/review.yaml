@@ -1,0 +1,9 @@
+reviewed_by: reviewer
+reviewed_at: "2026-11-10T00:00:00Z"
+ambiguous_spec: false
+notes: "Regression case for even-number summation."
+denominator_decisions:
+  - id: sum-odd-numbers
+    decision: meaningful
+  - id: ignore-negative-evens
+    decision: meaningful

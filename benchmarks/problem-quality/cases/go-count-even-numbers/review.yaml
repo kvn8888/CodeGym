@@ -1,0 +1,9 @@
+reviewed_by: reviewer
+reviewed_at: "2026-11-10T00:00:00Z"
+ambiguous_spec: false
+notes: "Regression case for even-number counting."
+denominator_decisions:
+  - id: count-odd-numbers
+    decision: meaningful
+  - id: count-positive-evens-only
+    decision: meaningful

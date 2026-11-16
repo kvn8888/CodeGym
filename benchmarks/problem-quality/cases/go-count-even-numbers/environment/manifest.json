@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "environment.manifest.v1",
+  "artifact": {
+    "id": "go-count-even-numbers",
+    "technology": "go",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "base": "go",
+    "network": "none",
+    "dependencyFiles": [],
+    "lockfiles": []
+  },
+  "workspace": {
+    "root": ".",
+    "learnerEditable": [
+      "solution.go"
+    ],
+    "protected": []
+  },
+  "commands": {
+    "setup": "",
+    "build": "go build ./...",
+    "test": "go test ./...",
+    "run": ""
+  },
+  "assessment": {
+    "type": "unit-tests",
+    "visibleTests": [],
+    "hiddenTests": []
+  },
+  "compatibility": {
+    "requestedTechnology": "Go",
+    "requestedObjective": "Count even numbers in a slice",
+    "reuseTags": ["go", "slices", "filtering", "aggregation"]
+  }
+}

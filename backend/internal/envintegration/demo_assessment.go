@@ -158,7 +158,7 @@ func ReportFromCommandResult(exitCode int, output string) environmentverify.Asse
 		outcome.Message = tailOutput(output, 2000)
 		outcome.Assertion = &environmentverify.ObservedAssertion{Code: DemoSuiteFailureCode, Expected: "pass", Actual: "fail"}
 	}
-	return environmentverify.AssessmentReport{Tests: []environmentverify.TestOutcome{outcome}}
+	return environmentverify.AssessmentReport{Tests: []environmentverify.TestOutcome{outcome}, ExitCode: &exitCode}
 }
 
 func tailOutput(output string, limit int) string {

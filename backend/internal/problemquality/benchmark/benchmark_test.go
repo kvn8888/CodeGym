@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kvn8888/codegym/backend/internal/benchmarkbudget"
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
 	"github.com/kvn8888/codegym/backend/internal/problemquality"
 )
@@ -154,8 +155,15 @@ func TestExecuteDevelopmentFixtureWritesDeliberateQualityFailure(t *testing.T) {
 	if result.Report.Execution.ModelOperations || result.Report.Execution.PaidOperations || result.Report.Execution.Sandbox {
 		t.Fatalf("execution claims operations that did not happen: %+v", result.Report.Execution)
 	}
-	if result.Report.Summary.WrongSolutionRejection == nil || *result.Report.Summary.WrongSolutionRejection >= 1 {
-		t.Fatalf("wrong-solution rejection rate = %v, want an observed survival below 1", result.Report.Summary.WrongSolutionRejection)
+	if result.Report.Summary.WrongSolutionRejection != nil || result.Report.Summary.CorrectAlternativeAcceptance != nil {
+		t.Fatalf("quality rates = %v/%v, want unset because the fixture is not benchmark-eligible",
+			result.Report.Summary.CorrectAlternativeAcceptance, result.Report.Summary.WrongSolutionRejection)
+	}
+	if result.Report.Summary.EligibleCases != 0 || result.Report.Summary.UnresolvedEligibilityCases != 1 {
+		t.Fatalf("summary eligibility = %+v, want fixture excluded as unresolved", result.Report.Summary)
+	}
+	if !hasRecommendation(result.Report.Recommendations, "no benchmark-eligible") {
+		t.Fatalf("recommendations = %v, want an explanation for unset quality rates", result.Report.Recommendations)
 	}
 	if result.Report.Summary.BlindAgreementRate != "not_applicable" {
 		t.Fatalf("blind agreement = %v, want not_applicable", result.Report.Summary.BlindAgreementRate)
@@ -272,6 +280,46 @@ func mustRead(t *testing.T, path string) []byte {
 	return data
 }
 
+func TestBuildReportIndependentGenerationMetricsAreUnavailable(t *testing.T) {
+	blindAgreement := true
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:        "pqb-independent",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "independent",
+		Timeout:      time.Second,
+	}, []CaseRun{{
+		Case: &problemquality.Case{
+			CaseID:     "independent-case",
+			Technology: "python",
+			ExpectedOutcomes: &problemquality.ExpectedOutcomes{
+				Generation: &problemquality.GenerationExpectations{
+					BlindAgreement: &blindAgreement,
+					Status:         "measured",
+				},
+			},
+		},
+	}})
+	if report.Summary.BlindAgreementRate != GenerationUnavailable ||
+		report.Summary.ReconciliationFrequency != GenerationUnavailable ||
+		report.Summary.NonConvergenceRate != GenerationUnavailable {
+		t.Fatalf("generation rates = %v/%v/%v, want unavailable for an applicable independent baseline",
+			report.Summary.BlindAgreementRate, report.Summary.ReconciliationFrequency, report.Summary.NonConvergenceRate)
+	}
+	if report.GenerationConfig["status"] != GenerationUnavailable {
+		t.Fatalf("generation status = %v, want unavailable", report.GenerationConfig["status"])
+	}
+	generation := report.Cases[0].Generation
+	if generation.Status != GenerationUnavailable || generation.BlindAgreement != nil ||
+		generation.ReconciliationCount != nil || generation.ReconciliationDirection != nil ||
+		generation.NonConvergence != nil {
+		t.Fatalf("generation = %+v, want unavailable with no copied expected observations", generation)
+	}
+	validateReportSchema(t, report)
+}
+
 func TestBuildReportDoesNotCopyExpectedOutcomesIntoObservedFields(t *testing.T) {
 	blindAgreement := true
 	wrongRejected := false
@@ -354,5 +402,310 @@ func TestBuildReportRecordsBlockedCaseErrorWithoutAborting(t *testing.T) {
 	}
 	if err := ValidateReportJSON(data, schema); err != nil {
 		t.Fatalf("blocked-case report does not validate: %v", err)
+	}
+}
+
+func TestBuildReportExcludesFixtureAndUnresolvedCasesFromQualityRates(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	fixture := testCaseRun("fixture-case", true, false, environmentverify.BenchmarkEligibilityUnresolved, environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("fixture-alternative", true)},
+		WrongSolutions:      []environmentverify.AssessmentOutcome{completedWrong("fixture-wrong", true, environmentverify.DenominatorMeaningful)},
+	})
+	unresolved := testCaseRun("unresolved-case", false, false, environmentverify.BenchmarkEligibilityUnresolved, environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("unresolved-alternative", true)},
+		WrongSolutions:      []environmentverify.AssessmentOutcome{completedWrong("unresolved-wrong", true, environmentverify.DenominatorMeaningful)},
+	})
+	report := BuildReport(Meta{
+		RunID:        "pqb-ineligible",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{fixture, unresolved})
+	if report.Summary.CorrectAlternativeAcceptance != nil || report.Summary.WrongSolutionRejection != nil {
+		t.Fatalf("quality rates = %v/%v, want unset for ineligible samples",
+			report.Summary.CorrectAlternativeAcceptance, report.Summary.WrongSolutionRejection)
+	}
+	if report.Summary.EligibleCases != 0 || report.Summary.DevelopmentFixtureCases != 1 ||
+		report.Summary.UnresolvedEligibilityCases != 2 {
+		t.Fatalf("summary = %+v, want execution and eligibility counts preserved", report.Summary)
+	}
+	if len(report.Cases) != 2 || len(report.Cases[0].CorrectAlternatives) != 1 || len(report.Cases[1].WrongSolutions) != 1 {
+		t.Fatalf("cases = %+v, want per-solution evidence preserved", report.Cases)
+	}
+	if !hasRecommendation(report.Recommendations, "no benchmark-eligible") {
+		t.Fatalf("recommendations = %v, want an explanation for unset quality rates", report.Recommendations)
+	}
+}
+
+func TestBuildReportIncludesOnlyEligibleCasesInQualityDenominators(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	eligible := testCaseRun("eligible-case", false, true, "eligible", environmentverify.AssessmentCollection{
+		Reference: completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{
+			completedCorrect("accepted", true),
+			completedCorrect("rejected", false),
+			{
+				ID:              "timed-out-alternative",
+				Role:            environmentverify.RoleCorrectAlternative,
+				ExecutionStatus: environmentverify.ExecutionTimeout,
+				FailureCategory: environmentverify.FailureCategoryTimeout,
+			},
+		},
+		WrongSolutions: []environmentverify.AssessmentOutcome{
+			completedWrong("rejected-wrong", true, environmentverify.DenominatorMeaningful),
+			completedWrong("surviving-wrong", false, environmentverify.DenominatorMeaningful),
+			{
+				ID:                  "timed-out-wrong",
+				Role:                environmentverify.RoleWrongSolution,
+				DenominatorDecision: environmentverify.DenominatorMeaningful,
+				ExecutionStatus:     environmentverify.ExecutionTimeout,
+				FailureCategory:     environmentverify.FailureCategoryTimeout,
+			},
+			completedWrong("equivalent-wrong", true, environmentverify.DenominatorEquivalent),
+		},
+	})
+	eligible.Collection.WrongSolutions[3].ExecutionStatus = environmentverify.ExecutionExcluded
+	ineligible := testCaseRun("ineligible-case", false, false, environmentverify.BenchmarkEligibilityUnresolved, environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("ineligible-accepted", true)},
+		WrongSolutions:      []environmentverify.AssessmentOutcome{completedWrong("ineligible-rejected", true, environmentverify.DenominatorMeaningful)},
+	})
+	report := BuildReport(Meta{
+		RunID:        "pqb-eligible",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{eligible, ineligible})
+	if report.Summary.EligibleCases != 1 || report.Summary.UnresolvedEligibilityCases != 1 {
+		t.Fatalf("summary eligibility = %+v", report.Summary)
+	}
+	if report.Summary.CorrectAlternativeAcceptance == nil || *report.Summary.CorrectAlternativeAcceptance != 0.5 {
+		t.Fatalf("correct alternative acceptance = %v, want 1/2", report.Summary.CorrectAlternativeAcceptance)
+	}
+	if report.Summary.WrongSolutionRejection == nil || *report.Summary.WrongSolutionRejection != 0.5 {
+		t.Fatalf("wrong solution rejection = %v, want 1/2", report.Summary.WrongSolutionRejection)
+	}
+}
+
+func TestBuildReportLeavesRatesUnsetWithZeroEligibleCases(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:        "pqb-no-eligible",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{testCaseRun("unresolved-only", false, false, environmentverify.BenchmarkEligibilityUnresolved, environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("alternative", true)},
+		WrongSolutions:      []environmentverify.AssessmentOutcome{completedWrong("wrong", true, environmentverify.DenominatorMeaningful)},
+	})})
+	if report.Summary.CorrectAlternativeAcceptance != nil || report.Summary.WrongSolutionRejection != nil {
+		t.Fatalf("quality rates = %v/%v, want unset without eligible samples",
+			report.Summary.CorrectAlternativeAcceptance, report.Summary.WrongSolutionRejection)
+	}
+	if !hasRecommendation(report.Recommendations, "unresolved benchmark eligibility") {
+		t.Fatalf("recommendations = %v, want the unset-rate reason", report.Recommendations)
+	}
+}
+
+func TestAssessCaseStatusSeparatesExecutionErrorsFromQualityFailures(t *testing.T) {
+	tests := []struct {
+		name         string
+		collection   environmentverify.AssessmentCollection
+		wantCategory string
+	}{
+		{
+			name: "reference timeout",
+			collection: environmentverify.AssessmentCollection{
+				Reference: &environmentverify.AssessmentOutcome{
+					ID:              "reference",
+					Role:            environmentverify.RoleGeneratedReference,
+					ExecutionStatus: environmentverify.ExecutionTimeout,
+					FailureCategory: environmentverify.FailureCategoryTimeout,
+					Message:         "assessment timed out",
+				},
+				Blocked: true,
+			},
+			wantCategory: environmentverify.FailureCategoryTimeout,
+		},
+		{
+			name: "reference platform error",
+			collection: environmentverify.AssessmentCollection{
+				Reference: &environmentverify.AssessmentOutcome{
+					ID:              "reference",
+					Role:            environmentverify.RoleGeneratedReference,
+					ExecutionStatus: environmentverify.ExecutionPlatformError,
+					FailureCategory: environmentverify.FailureCategoryPlatform,
+					Message:         "platform fault",
+				},
+				Blocked: true,
+			},
+			wantCategory: environmentverify.FailureCategoryPlatform,
+		},
+		{
+			name: "blocked not-run assessment",
+			collection: environmentverify.AssessmentCollection{
+				Reference: &environmentverify.AssessmentOutcome{
+					ID:              "reference",
+					Role:            environmentverify.RoleGeneratedReference,
+					ExecutionStatus: environmentverify.ExecutionNotRun,
+					Message:         "not run: assessment plan is invalid",
+				},
+				Blocked:     true,
+				BlockReason: "assessment plan is invalid",
+			},
+			wantCategory: "setup_failure",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			run := testCaseRun("execution-error", false, false, environmentverify.BenchmarkEligibilityUnresolved, test.collection)
+			status, category, details := assessCaseStatus(run)
+			if status != CaseStatusError || category != test.wantCategory || strings.TrimSpace(details) == "" {
+				t.Fatalf("assessCaseStatus = %q/%q/%q, want execution error %q", status, category, details, test.wantCategory)
+			}
+		})
+	}
+}
+
+func TestAssessCaseStatusKeepsCompletedSurvivingWrongSolutionAsQualityFailure(t *testing.T) {
+	collection := environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("alternative", true)},
+		WrongSolutions: []environmentverify.AssessmentOutcome{{
+			ID:                  "survivor",
+			Role:                environmentverify.RoleWrongSolution,
+			DenominatorDecision: environmentverify.DenominatorMeaningful,
+			ExecutionStatus:     environmentverify.ExecutionCompleted,
+			Passed:              false,
+			FailureCategory:     environmentverify.FailureCategoryTest,
+			DiagnosticCode:      environmentverify.CodeWrongSolutionPassed,
+			Message:             "wrong solution passed its intended rejection test",
+		}},
+	}
+	run := testCaseRun("quality-failure", false, false, environmentverify.BenchmarkEligibilityUnresolved, collection)
+	status, category, details := assessCaseStatus(run)
+	if status != CaseStatusFailed || category != environmentverify.FailureCategoryTest || strings.TrimSpace(details) == "" {
+		t.Fatalf("assessCaseStatus = %q/%q/%q, want completed quality failure", status, category, details)
+	}
+	report := BuildReport(Meta{
+		RunID:        "pqb-quality",
+		StartedAt:    time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC),
+		CompletedAt:  time.Date(2026, 11, 13, 12, 0, 1, 0, time.UTC),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{run})
+	if report.Cases[0].Status != CaseStatusFailed || len(report.Cases[0].WrongSolutions) != 1 ||
+		!report.Cases[0].WrongSolutions[0].Surviving {
+		t.Fatalf("case report = %+v, want surviving wrong solution preserved as quality failure", report.Cases[0])
+	}
+}
+
+func testCaseRun(id string, fixture, eligible bool, eligibility string, collection environmentverify.AssessmentCollection) CaseRun {
+	collection.BenchmarkEligible = eligible
+	collection.BenchmarkEligibility = eligibility
+	return CaseRun{
+		Dir:        filepath.Join("/tmp", id),
+		Case:       &problemquality.Case{CaseID: id, Technology: "python", Version: "test"},
+		Config:     &RunConfig{DevelopmentFixture: fixture},
+		Collection: collection,
+	}
+}
+
+func completedReference(passed bool) *environmentverify.AssessmentOutcome {
+	outcome := completedOutcome("reference", environmentverify.RoleGeneratedReference, passed)
+	return &outcome
+}
+
+func completedCorrect(id string, passed bool) environmentverify.AssessmentOutcome {
+	return completedOutcome(id, environmentverify.RoleCorrectAlternative, passed)
+}
+
+func completedOutcome(id, role string, passed bool) environmentverify.AssessmentOutcome {
+	return environmentverify.AssessmentOutcome{
+		ID:              id,
+		Role:            role,
+		ExecutionStatus: environmentverify.ExecutionCompleted,
+		Passed:          passed,
+	}
+}
+
+func completedWrong(id string, passed bool, decision string) environmentverify.AssessmentOutcome {
+	outcome := completedOutcome(id, environmentverify.RoleWrongSolution, passed)
+	outcome.DenominatorDecision = decision
+	if !passed {
+		outcome.DiagnosticCode = environmentverify.CodeWrongSolutionPassed
+		outcome.FailureCategory = environmentverify.FailureCategoryTest
+		outcome.Message = "wrong solution survived"
+	}
+	return outcome
+}
+
+func hasRecommendation(recommendations []string, fragment string) bool {
+	for _, recommendation := range recommendations {
+		if strings.Contains(recommendation, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildReportCarriesBudgetSnapshotAndPaidAdapterCaveat(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	actual := int64(2_000_000)
+	snapshot := benchmarkbudget.Snapshot{
+		Currency:         benchmarkbudget.Currency,
+		LimitMicros:      benchmarkbudget.MilestoneLimitMicros,
+		PriorSpendMicros: 1_000_000,
+		ReservedMicros:   3_000_000,
+		SettledMicros:    actual,
+		CommittedMicros:  6_000_000,
+		RemainingMicros:  benchmarkbudget.MilestoneLimitMicros - 6_000_000,
+		Reservations: []benchmarkbudget.Reservation{
+			{
+				OperationID:      "settled-operation",
+				MaxCostMicros:    3_000_000,
+				ActualCostMicros: &actual,
+				Status:           benchmarkbudget.ReservationSettled,
+			},
+			{
+				OperationID:   "unknown-operation",
+				MaxCostMicros: 3_000_000,
+				Status:        benchmarkbudget.ReservationUnknown,
+			},
+		},
+	}
+	report := BuildReport(Meta{
+		RunID:          "pqb-budget",
+		StartedAt:      now,
+		CompletedAt:    now.Add(time.Second),
+		TestedCommit:   "abc123",
+		BaselineKind:   "other",
+		Timeout:        time.Second,
+		BudgetSnapshot: &snapshot,
+	}, nil)
+	if report.Budget == nil || report.Budget.CommittedMicros != 6_000_000 ||
+		report.Budget.RemainingMicros != benchmarkbudget.MilestoneLimitMicros-6_000_000 {
+		t.Fatalf("report budget = %+v", report.Budget)
+	}
+	if !hasRecommendation(report.Recommendations, "no paid adapter is connected") {
+		t.Fatalf("recommendations = %v, want paid-adapter distinction", report.Recommendations)
+	}
+	schema := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "schema", "report.schema.json")
+	data, err := MarshalReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateReportJSON(data, schema); err != nil {
+		t.Fatalf("budget report does not validate: %v", err)
 	}
 }

@@ -8,15 +8,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kvn8888/codegym/backend/internal/benchmarkbudget"
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
 	"github.com/kvn8888/codegym/backend/internal/problemquality"
 )
 
 const (
-	CaseStatusPassed = "passed"
-	CaseStatusFailed = "failed"
-	CaseStatusError  = "error"
-	CaseStatusNotRun = "not_run"
+	CaseStatusPassed        = "passed"
+	CaseStatusFailed        = "failed"
+	CaseStatusError         = "error"
+	CaseStatusNotRun        = "not_run"
+	GenerationUnavailable   = "unavailable"
+	GenerationNotApplicable = "not_applicable"
 )
 
 type Meta struct {
@@ -34,6 +37,7 @@ type Meta struct {
 	SelectedCaseIDs    []string
 	Timeout            time.Duration
 	DevelopmentFixture bool
+	BudgetSnapshot     *benchmarkbudget.Snapshot
 }
 
 // CaseRun is one case's collected verification and assessment evidence.
@@ -53,26 +57,27 @@ type CaseRun struct {
 }
 
 type Report struct {
-	RunID              string          `json:"run_id"`
-	StartedAt          string          `json:"started_at"`
-	CompletedAt        string          `json:"completed_at"`
-	TestedCommit       string          `json:"tested_commit"`
-	Branch             string          `json:"branch,omitempty"`
-	TestedDirty        bool            `json:"tested_dirty"`
-	PromptRevision     string          `json:"prompt_revision,omitempty"`
-	ModelRevision      string          `json:"model_revision,omitempty"`
-	BaselineKind       string          `json:"baseline_kind"`
-	RuntimeConfig      map[string]any  `json:"runtime_config"`
-	GenerationConfig   map[string]any  `json:"generation_config"`
-	ElapsedMS          int64           `json:"elapsed_ms"`
-	Preliminary        bool            `json:"preliminary"`
-	DevelopmentFixture bool            `json:"development_fixture"`
-	Corpus             *CorpusReport   `json:"corpus,omitempty"`
-	SelectedCaseIDs    []string        `json:"selected_case_ids,omitempty"`
-	Execution          ExecutionReport `json:"execution"`
-	Summary            Summary         `json:"summary"`
-	Cases              []CaseReport    `json:"cases"`
-	Recommendations    []string        `json:"recommendations"`
+	RunID              string                    `json:"run_id"`
+	StartedAt          string                    `json:"started_at"`
+	CompletedAt        string                    `json:"completed_at"`
+	TestedCommit       string                    `json:"tested_commit"`
+	Branch             string                    `json:"branch,omitempty"`
+	TestedDirty        bool                      `json:"tested_dirty"`
+	PromptRevision     string                    `json:"prompt_revision,omitempty"`
+	ModelRevision      string                    `json:"model_revision,omitempty"`
+	BaselineKind       string                    `json:"baseline_kind"`
+	RuntimeConfig      map[string]any            `json:"runtime_config"`
+	GenerationConfig   map[string]any            `json:"generation_config"`
+	ElapsedMS          int64                     `json:"elapsed_ms"`
+	Preliminary        bool                      `json:"preliminary"`
+	DevelopmentFixture bool                      `json:"development_fixture"`
+	Corpus             *CorpusReport             `json:"corpus,omitempty"`
+	SelectedCaseIDs    []string                  `json:"selected_case_ids,omitempty"`
+	Budget             *benchmarkbudget.Snapshot `json:"budget,omitempty"`
+	Execution          ExecutionReport           `json:"execution"`
+	Summary            Summary                   `json:"summary"`
+	Cases              []CaseReport              `json:"cases"`
+	Recommendations    []string                  `json:"recommendations"`
 }
 
 type CorpusReport struct {
@@ -159,6 +164,8 @@ type CaseProvenance struct {
 	PromptRevision             string         `json:"prompt_revision"`
 	PromptRevisionStatus       string         `json:"prompt_revision_status"`
 	GenerationConfig           map[string]any `json:"generation_config,omitempty"`
+	SavedExerciseUsage         UsageFact      `json:"saved_exercise_usage"`
+	AssessmentRunUsage         UsageFact      `json:"assessment_run_usage"`
 }
 
 type ArtifactBinding struct {
@@ -280,6 +287,7 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 		Preliminary:        true,
 		DevelopmentFixture: meta.DevelopmentFixture,
 		SelectedCaseIDs:    append([]string(nil), meta.SelectedCaseIDs...),
+		Budget:             meta.BudgetSnapshot,
 		RuntimeConfig: map[string]any{
 			"execution":           "local-shell",
 			"sandbox":             "none",
@@ -290,15 +298,17 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 			"timeout_seconds":     int(meta.Timeout.Seconds()),
 		},
 		GenerationConfig: map[string]any{
-			"status":                             "not_applicable",
+			"status":                             generationMetricStatus(meta.BaselineKind, meta.DevelopmentFixture),
 			"usage":                              "not_applicable",
+			"assessment_run_usage":               UsageStatusNotApplicable,
 			"model_operations":                   false,
 			"paid_operations":                    false,
 			"baseline_kind":                      meta.BaselineKind,
 			"assessment_run_generation_occurred": false,
 			"saved_exercise_provenance":          savedProvenanceFor(rawModelRevision, rawPromptRevision, meta.DevelopmentFixture),
 			"note": "No generation, model calls, token usage, or paid sandboxes were invoked by this " +
-				"assessment run. That describes this run only; it is not evidence that the paid-budget milestone was met.",
+				"assessment run. Saved-exercise usage is reported separately per case, is not charged to the " +
+				"budget ledger, and is not evidence that paid enforcement occurred.",
 		},
 		Execution: ExecutionReport{
 			Mode:            "local-development",
@@ -318,10 +328,18 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 		"Benchmark eligibility remains unresolved until the shared per-solution review policy is agreed; execution success alone is not eligibility.",
 		"This local run does not establish sandbox network or memory isolation and does not satisfy the paid-budget milestone.",
 	}
+	if meta.BudgetSnapshot != nil {
+		recommendations = append(recommendations,
+			"The budget snapshot shows persisted accounting only: no paid adapter is connected to reserve, settle, or reconcile paid operations, so this run does not demonstrate paid-budget enforcement.")
+	}
 	for _, run := range runs {
 		caseReport, recs := buildCaseReport(run, meta)
 		report.Cases = append(report.Cases, caseReport)
 		recommendations = append(recommendations, recs...)
+	}
+	if hasKnownSavedExerciseUsage(report.Cases) {
+		recommendations = append(recommendations,
+			"Saved exercise generation usage is historical evidence only; it is not charged to the benchmark budget and does not demonstrate paid-operation enforcement.")
 	}
 	report.Recommendations = append(report.Recommendations, recommendations...)
 	finalizeSummary(&report)
@@ -335,7 +353,7 @@ func buildCaseReport(run CaseRun, meta Meta) (CaseReport, []string) {
 		CaseID:                     caseIDForRun(run),
 		Technology:                 "unknown",
 		Status:                     CaseStatusError,
-		Generation:                 Generation{Status: "not_applicable"},
+		Generation:                 Generation{Status: generationMetricStatus(meta.BaselineKind, fixture)},
 		Provenance:                 caseProvenance(fixture, config, meta.ModelRevision, meta.PromptRevision),
 		ContentIdentity:            run.Identity,
 		DevelopmentFixture:         fixture,
@@ -472,6 +490,13 @@ func unavailableReason(fixture bool) string {
 	return "unavailable"
 }
 
+func generationMetricStatus(baselineKind string, fixture bool) string {
+	if fixture || strings.TrimSpace(baselineKind) != "independent" {
+		return GenerationNotApplicable
+	}
+	return GenerationUnavailable
+}
+
 func savedProvenanceFor(model, prompt string, fixture bool) string {
 	known := strings.TrimSpace(model) != "" && strings.TrimSpace(prompt) != ""
 	switch {
@@ -525,6 +550,8 @@ func caseProvenance(fixture bool, config *RunConfig, runModel, runPrompt string)
 		PromptRevision:             promptValue,
 		PromptRevisionStatus:       promptStatus,
 		GenerationConfig:           generationConfig,
+		SavedExerciseUsage:         savedExerciseUsageFact(config, fixture),
+		AssessmentRunUsage:         assessmentRunUsageFact(),
 	}
 }
 
@@ -652,31 +679,70 @@ func testEvidence(tests []environmentverify.TestOutcome) []TestEvidence {
 
 func assessCaseStatus(run CaseRun) (string, string, string) {
 	collection := run.Collection
-	if collection.Reference != nil {
-		if !collection.Reference.Passed {
-			return CaseStatusFailed, firstCategory(collection.Reference.FailureCategory), collection.Reference.Message
+	var executionError, qualityFailure *statusFinding
+	consider := func(outcome *environmentverify.AssessmentOutcome) {
+		if outcome == nil || outcome.ExecutionStatus == environmentverify.ExecutionExcluded {
+			return
+		}
+		if outcome.ExecutionStatus != environmentverify.ExecutionCompleted {
+			if executionError == nil {
+				executionError = executionStatusFinding(outcome)
+			}
+			return
+		}
+		if !outcome.Passed && qualityFailure == nil {
+			qualityFailure = &statusFinding{
+				category: firstCategory(outcome.FailureCategory),
+				details:  outcome.Message,
+			}
 		}
 	}
+	consider(collection.Reference)
 	for i := range collection.CorrectAlternatives {
-		outcome := &collection.CorrectAlternatives[i]
-		if !outcome.Passed {
-			return CaseStatusFailed, firstCategory(outcome.FailureCategory), outcome.Message
-		}
+		consider(&collection.CorrectAlternatives[i])
 	}
 	for i := range collection.WrongSolutions {
-		outcome := &collection.WrongSolutions[i]
-		if outcome.ExecutionStatus == environmentverify.ExecutionExcluded {
-			continue
-		}
-		if !outcome.Passed {
-			return CaseStatusFailed, firstCategory(outcome.FailureCategory), outcome.Message
-		}
+		consider(&collection.WrongSolutions[i])
+	}
+	if executionError != nil {
+		return CaseStatusError, executionError.category, executionError.details
+	}
+	if qualityFailure != nil {
+		return CaseStatusFailed, qualityFailure.category, qualityFailure.details
 	}
 	if collection.Blocked || (collection.Reference == nil && len(collection.CorrectAlternatives) == 0 && len(collection.WrongSolutions) == 0) {
 		category, details := verifierFailure(run.Verifier)
 		return CaseStatusError, category, details
 	}
 	return CaseStatusPassed, "", ""
+}
+
+type statusFinding struct {
+	category string
+	details  string
+}
+
+func executionStatusFinding(outcome *environmentverify.AssessmentOutcome) *statusFinding {
+	category := strings.TrimSpace(outcome.FailureCategory)
+	if category == "" {
+		switch outcome.ExecutionStatus {
+		case environmentverify.ExecutionTimeout:
+			category = environmentverify.FailureCategoryTimeout
+		case environmentverify.ExecutionPlatformError:
+			category = environmentverify.FailureCategoryPlatform
+		case environmentverify.ExecutionCompileError:
+			category = environmentverify.FailureCategoryCompile
+		case environmentverify.ExecutionMalformed:
+			category = environmentverify.FailureCategoryMalformed
+		default:
+			category = "setup_failure"
+		}
+	}
+	details := strings.TrimSpace(outcome.Message)
+	if details == "" {
+		details = fmt.Sprintf("assessment %q did not run to completion (%s)", outcome.ID, outcome.ExecutionStatus)
+	}
+	return &statusFinding{category: category, details: details}
 }
 
 func firstCategory(category string) string {
@@ -737,14 +803,21 @@ func finalizeSummary(report *Report) {
 		if caseReport.BenchmarkEligibility == environmentverify.BenchmarkEligibilityUnresolved {
 			report.Summary.UnresolvedEligibilityCases++
 		}
+		if caseReport.DevelopmentFixture || !caseReport.BenchmarkEligible {
+			continue
+		}
 		for _, alternative := range caseReport.CorrectAlternatives {
+			if alternative.ExecutionStatus != string(environmentverify.ExecutionCompleted) {
+				continue
+			}
 			correctTotal++
 			if alternative.Accepted {
 				correctAccepted++
 			}
 		}
 		for _, wrong := range caseReport.WrongSolutions {
-			if wrong.Excluded || strings.TrimSpace(wrong.DenominatorDecision) != environmentverify.DenominatorMeaningful {
+			if wrong.Excluded || wrong.ExecutionStatus != string(environmentverify.ExecutionCompleted) ||
+				strings.TrimSpace(wrong.DenominatorDecision) != environmentverify.DenominatorMeaningful {
 				continue
 			}
 			wrongTotal++
@@ -753,9 +826,10 @@ func finalizeSummary(report *Report) {
 			}
 		}
 	}
-	report.Summary.BlindAgreementRate = "not_applicable"
-	report.Summary.ReconciliationFrequency = "not_applicable"
-	report.Summary.NonConvergenceRate = "not_applicable"
+	generationStatus := generationMetricStatus(report.BaselineKind, report.DevelopmentFixture)
+	report.Summary.BlindAgreementRate = generationStatus
+	report.Summary.ReconciliationFrequency = generationStatus
+	report.Summary.NonConvergenceRate = generationStatus
 	if correctTotal > 0 {
 		value := float64(correctAccepted) / float64(correctTotal)
 		report.Summary.CorrectAlternativeAcceptance = &value
@@ -763,6 +837,11 @@ func finalizeSummary(report *Report) {
 	if wrongTotal > 0 {
 		value := float64(wrongRejected) / float64(wrongTotal)
 		report.Summary.WrongSolutionRejection = &value
+	}
+	if correctTotal == 0 && wrongTotal == 0 {
+		report.Recommendations = append(report.Recommendations,
+			"Quality rates are unset because no benchmark-eligible, non-development-fixture case produced a completed sample; "+
+				"development fixtures, cases with unresolved benchmark eligibility, and non-completed execution outcomes are excluded from quality denominators.")
 	}
 }
 

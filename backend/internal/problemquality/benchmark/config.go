@@ -50,9 +50,10 @@ type ReferenceConfig struct {
 // generation provenance. The harness never fabricates these values: when the
 // field is absent, saved generated exercises report unavailable revisions.
 type GenerationProvenanceConfig struct {
-	ModelRevision  string         `json:"model_revision,omitempty"`
-	PromptRevision string         `json:"prompt_revision,omitempty"`
-	Config         map[string]any `json:"config,omitempty"`
+	ModelRevision  string           `json:"model_revision,omitempty"`
+	PromptRevision string           `json:"prompt_revision,omitempty"`
+	Config         map[string]any   `json:"config,omitempty"`
+	Usage          *GenerationUsage `json:"usage,omitempty"`
 }
 
 func (r *RunConfig) ArtifactManifestPath() string {
@@ -72,6 +73,24 @@ func (r *RunConfig) ReferenceTargets() []string {
 	return targets
 }
 
+func decodeRunConfig(data []byte) (*RunConfig, error) {
+	var config RunConfig
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, errors.New("must contain exactly one JSON object")
+	}
+	if config.GenerationProvenance != nil {
+		if err := validateGenerationUsage(config.GenerationProvenance.Usage); err != nil {
+			return nil, fmt.Errorf("generation_provenance.usage: %w", err)
+		}
+	}
+	return &config, nil
+}
+
 // LoadRunConfig reads and validates the per-case run configuration. The
 // artifact's own manifest remains the identity authority; the config only
 // states where that artifact and its explicit reference inputs live.
@@ -87,14 +106,9 @@ func LoadRunConfig(path string, c *problemquality.Case) (*RunConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("benchmark run config %q: %w", abs, err)
 	}
-	var config RunConfig
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&config); err != nil {
+	config, err := decodeRunConfig(data)
+	if err != nil {
 		return nil, fmt.Errorf("benchmark run config %q: %w", abs, err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("benchmark run config %q: must contain exactly one JSON object", abs)
 	}
 	config.Path = abs
 	config.Dir = filepath.Dir(abs)
@@ -188,7 +202,7 @@ func LoadRunConfig(path string, c *problemquality.Case) (*RunConfig, error) {
 		ReviewedAt:        strings.TrimSpace(config.Reference.ReviewedAt),
 		ReviewedReference: strings.TrimSpace(config.Reference.ReviewedReference),
 	}
-	return &config, nil
+	return config, nil
 }
 
 func commandsMatchCase(manifest environmentverify.Manifest, c *problemquality.Case) error {

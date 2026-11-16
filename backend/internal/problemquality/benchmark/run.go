@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kvn8888/codegym/backend/internal/benchmarkbudget"
 	"github.com/kvn8888/codegym/backend/internal/envintegration"
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
 	"github.com/kvn8888/codegym/backend/internal/problemquality"
@@ -27,6 +28,7 @@ type Options struct {
 	PromptRevision     string
 	DevelopmentFixture bool
 	ExecuteLocal       bool
+	BudgetSnapshot     *benchmarkbudget.Snapshot
 
 	now func() time.Time
 }
@@ -148,6 +150,7 @@ func Execute(ctx context.Context, opts Options) (Result, error) {
 		SelectedCaseIDs:    selectedIDs,
 		Timeout:            opts.Timeout,
 		DevelopmentFixture: opts.DevelopmentFixture,
+		BudgetSnapshot:     opts.BudgetSnapshot,
 	}, runs)
 	if err := WriteReport(opts.OutputPath, report, opts.SchemaPath); err != nil {
 		return Result{Report: report, ReportPath: opts.OutputPath}, err

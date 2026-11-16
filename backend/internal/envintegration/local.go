@@ -2,6 +2,7 @@ package envintegration
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"strings"
 	"time"
@@ -12,6 +13,11 @@ import (
 
 // DefaultLocalOutputCap bounds captured stage output for local verification.
 const DefaultLocalOutputCap = 64 * 1024
+
+// ErrLocalOutputExceeded marks a stage command that produced more output than
+// the configured ceiling. The process group is terminated and the caller
+// treats the run as an execution failure rather than a normal stage exit.
+var ErrLocalOutputExceeded = errors.New("envintegration: local command output exceeded the configured ceiling")
 
 // LocalCommandRunner executes stage commands on the host for development and
 // CI verification. Production verification runs inside sandboxes through the
@@ -33,8 +39,9 @@ func (r *LocalCommandRunner) outputCap() int {
 }
 
 // Run executes one stage command. A nonzero exit is a normal stage failure
-// reported in the result; only infrastructure faults return errors, and a
-// context deadline reports a timeout rather than failing the stage silently.
+// reported in the result; infrastructure faults and output-ceiling exhaustion
+// return errors, and a context deadline reports a timeout rather than failing
+// the stage silently.
 // The command runs in its own process group so cancellation kills orphaned
 // children too: without this, a killed shell's surviving children hold the
 // output pipes open and the call outlives its own timeout. This is Unix-only,
@@ -56,10 +63,18 @@ func (r *LocalCommandRunner) Run(ctx context.Context, spec environmentverify.Com
 // termination so cancellation kills orphaned children too. A nonzero exit is
 // a normal result; only infrastructure faults return errors.
 func runLocalStageCommand(ctx context.Context, command, workDir string, capBytes int) (int, string, bool, error) {
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	if capBytes <= 0 {
+		capBytes = DefaultLocalOutputCap
+	}
+	commandCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	buffer := procgroup.NewCappedBuffer(capBytes, cancel)
+	cmd := exec.CommandContext(commandCtx, "sh", "-c", command)
 	if strings.TrimSpace(workDir) != "" {
 		cmd.Dir = workDir
 	}
+	cmd.Stdout = buffer
+	cmd.Stderr = buffer
 	procgroup.Setup(cmd)
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Cancel = func() error {
@@ -68,21 +83,22 @@ func runLocalStageCommand(ctx context.Context, command, workDir string, capBytes
 		}
 		return procgroup.Kill(cmd)
 	}
-	output, err := cmd.CombinedOutput()
-	if capBytes > 0 && len(output) > capBytes {
-		output = output[:capBytes]
+	err := cmd.Run()
+	output := buffer.String()
+	if buffer.Truncated() {
+		return -1, output, false, ErrLocalOutputExceeded
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return -1, string(output), true, nil
+		return -1, output, true, nil
 	}
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
-			return exitError.ExitCode(), string(output), false, nil
+			return exitError.ExitCode(), output, false, nil
 		}
 		if ctx.Err() != nil {
-			return -1, string(output), true, nil
+			return -1, output, true, nil
 		}
 		return 0, "", false, err
 	}
-	return 0, string(output), false, nil
+	return 0, output, false, nil
 }

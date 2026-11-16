@@ -231,6 +231,7 @@
                 "type": "string",
                 "enum": [
                   "measured",
+                  "unavailable",
                   "not_applicable"
                 ]
               }
@@ -283,6 +284,12 @@
               },
               "generation_config": {
                 "type": "object"
+              },
+              "saved_exercise_usage": {
+                "$ref": "#/$defs/generationUsage"
+              },
+              "assessment_run_usage": {
+                "$ref": "#/$defs/generationUsage"
               }
             },
             "additionalProperties": false
@@ -889,6 +896,9 @@
         "type": "string"
       }
     },
+    "budget": {
+      "$ref": "#/$defs/budget"
+    },
     "execution": {
       "type": "object",
       "required": [
@@ -924,6 +934,133 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "budget": {
+      "type": "object",
+      "required": [
+        "currency",
+        "limit_micros",
+        "prior_spend_micros",
+        "reserved_micros",
+        "settled_micros",
+        "committed_micros",
+        "remaining_micros",
+        "reservations"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "limit_micros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prior_spend_micros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reserved_micros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "settled_micros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "committed_micros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining_micros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reservations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "operation_id",
+              "max_cost_micros",
+              "status"
+            ],
+            "properties": {
+              "operation_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "max_cost_micros": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "actual_cost_micros": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "reserved",
+                  "unknown",
+                  "settled"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "generationUsage": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "known",
+            "unavailable",
+            "not_applicable"
+          ]
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_micros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "currency": {
+          "type": "string",
+          "enum": [
+            "USD"
+          ]
+        },
+        "cost_status": {
+          "type": "string",
+          "enum": [
+            "provider_reported",
+            "estimated"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pricing_basis": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
     "contentFile": {
       "type": "object",
       "required": [

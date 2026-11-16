@@ -47,8 +47,10 @@ Metrics 1-4 exist only for independent-generation baselines:
 3. Reconciliation direction
 4. Non-convergence rate
 
-For all other baselines, report these as `not_applicable`. Never report them as
-zero.
+For an independent-generation baseline with no observed generation evidence,
+report these as `unavailable` with null observed fields; never copy expected
+outcomes into them. For all other baselines, report them as `not_applicable`.
+Never report them as zero.
 
 ## Failure categories
 
@@ -86,11 +88,14 @@ go build -o /tmp/problem-quality-benchmark ./cmd/problem-quality-benchmark
   -execution local \
   -case ./internal/problemquality/testdata/development-order-tools \
   -development-fixture \
+  -budget-state /tmp/problem-quality-budget.json \
   -output /tmp/problem-quality-report.json
 ```
 
 The report is written to `/tmp/problem-quality-report.json`; the command exits
-`1` because the fixture deliberately exposes a surviving wrong solution.
+`1` because the fixture deliberately exposes a surviving wrong solution. Budget
+state is written to `/tmp/problem-quality-budget.json` and reused by later runs
+when the same path is supplied.
 
 Local execution must be selected explicitly with `-execution local`. Model,
 paid, and sandbox execution modes are rejected before any work runs.
@@ -126,17 +131,32 @@ case; the config cannot infer or override them. Reference files are explicit
 replacements for declared learner-editable paths and are never inferred from
 the first correct alternative.
 
-A saved generated exercise may optionally supply known generation provenance.
-Omit the block when the provenance is unknown; the report then says
-`unavailable`, never `not_applicable`:
+A saved generated exercise may optionally supply known generation provenance
+and historical usage. Omit unknown fields; the report says `unavailable`, never
+`not_applicable`:
 
 ```json
 "generation_provenance": {
   "model_revision": "model-revision-id",
   "prompt_revision": "prompt-revision-id",
-  "config": { "temperature": 0.2 }
+  "config": { "temperature": 0.2 },
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 340,
+    "cost_micros": 4500,
+    "currency": "USD",
+    "cost_status": "provider_reported",
+    "source": "provider usage export 2026-11-12"
+  }
 }
 ```
+
+Omit a token or cost field only when that value is unknown; `0` means measured
+zero. Omit `usage` entirely when no historical record exists. `cost_micros` is
+integer micro-USD. `cost_status` is `provider_reported` or `estimated`;
+estimated cost requires `pricing_basis`. `source` identifies the usage record.
+Negative values, unsupported currencies, and inconsistent cost fields are
+rejected.
 
 ### Input content identity
 
@@ -162,20 +182,25 @@ changes the corresponding digest; adding an undeclared cache file does not.
 
 ### Provenance status
 
-The report keeps two provenance facts separate:
+The report keeps saved-exercise and assessment-run facts separate:
 
 - `generation_during_assessment` is `false`: the assessment run itself made no
   model calls and generated nothing.
 - `saved_exercise_provenance` is `known`, `unavailable`, or `not_applicable`
   for the saved exercise. Fixtures are `not_applicable`; a saved generated
   exercise with missing model or prompt revisions is `unavailable`.
+- `saved_exercise_usage` contains imported historical usage when supplied;
+  otherwise it is `unavailable` or `not_applicable` for fixtures.
+- `assessment_run_usage` is `not_applicable` for the local assessment, which
+  makes no model calls.
 
-Known revisions and generation configuration supplied by the command or run
-config are preserved. Top-level `model_revision` and `prompt_revision` describe
-the requested baseline comparison (the command flags); each case's `provenance`
-describes that saved exercise and may override them with explicit
-`generation_provenance`. Tokens and costs are never fabricated, and a zero-paid
-local run is not evidence that the `$30` milestone was satisfied.
+Known revisions, generation configuration, and usage supplied by the command or
+run config are preserved. Top-level `model_revision` and `prompt_revision`
+describe the requested baseline comparison (the command flags); each case's
+`provenance` describes that saved exercise and may override them with explicit
+`generation_provenance`. Tokens and costs are never fabricated. Imported usage
+is not charged to the budget ledger and does not demonstrate paid enforcement;
+a zero-paid local run is not evidence that the `$30` milestone was satisfied.
 
 ### Report and exit status
 
@@ -183,8 +208,10 @@ The report is written to `-output` (default `problem-quality-report.json`) and
 validated against `schema/report.schema.json`. A report is written for completed
 quality failures and for per-case configuration/execution failures. It marks
 `preliminary: true`, labels fixture results, and records that no model or
-sandbox operations occurred. Generation metrics are `not_applicable`, never
-zero.
+sandbox operations occurred. Generation metrics are `unavailable` when the
+baseline supports them but this run has no observations, and `not_applicable`
+when the mechanism is unsupported; they are never zero or copied from
+expectations.
 
 - Exit `0`: every selected case completed and met benchmark expectations.
 - Exit `1`: the benchmark completed but exposed quality failures, such as a
@@ -196,6 +223,30 @@ The checked-in fixture deliberately exits `1`: its `case-sensitive` wrong
 solution survives because the fixture's `normalization` assertion only exercises
 lowercase input. Do not strengthen that test until the intentional survivor has
 served its purpose.
+
+### Budget accounting
+
+The CLI persists a cumulative milestone budget in `-budget-state` (default
+`problem-quality-budget.json`). Money is integer micro-USD and the fixed
+milestone ceiling is `$30` (`30000000` micro-USD). `-prior-spend-micros`
+records explicit prior spending when the state file is first created; later
+runs preserve that persisted amount.
+
+Paid adapters must reserve a bounded maximum before work, settle the actual
+cost afterward, and mark unknown costs so they stay reserved until reconciled.
+Reservations and settlements are keyed by operation ID, so repeating the same
+request is idempotent and never double charges; a different reserved maximum
+is rejected without changing state. Concurrent reservations are serialized
+across processes through the persistent state file on platforms with file
+locking. Windows builds explicitly reject persistent enforcement rather than
+claim weaker process-local locking. The report's `budget` snapshot records the
+accounting state.
+
+This is only the accounting and enforcement primitive. No paid generation,
+model, or sandbox adapter is connected to it yet, so local runs do not exercise
+reservations or demonstrate paid-budget compliance. The paid-budget assessment
+below records the exact missing integration; do not add speculative wiring just
+to exercise the budget.
 
 ### Reviewed-case eligibility proposal
 
@@ -232,25 +283,46 @@ reviewed totals and the report must not present execution success as trust.
 
 ### Paid-budget assessment
 
-The `$30` paid milestone is not implemented. Existing infrastructure is useful
-but not sufficient:
+The `$30` paid milestone is not implemented. `internal/benchmarkbudget` supplies
+the accounting and enforcement primitive: a persistent cumulative ceiling,
+bounded reservations, idempotent settlement, unknown-cost retention, atomic
+cross-process locking, and a reportable snapshot. The CLI opens and snapshots
+that state, but this benchmark has no paid operation to enforce against it.
+
+Existing infrastructure is useful but not sufficient:
 
 - `internal/usage` records scoped token categories and estimated cost from a
   static rate card, with in-memory and Postgres stores. Its `RecordScoped` path
   can serve a server-owned caller, and `Aggregate` exposes per-user/workspace
-  totals. It does not enforce a cap, reconcile provider invoices, or scope a
-  budget to one benchmark run or case.
+  totals. It does not reconcile provider invoices or provide a benchmark-run
+  reservation boundary.
 - `internal/agentrelay` has operation-scoped token and cost budgets, deadlines,
   atomic usage accumulation, and revocation. It is designed for relayed model
   calls and depends on an active workflow operation; it does not account for
   paid sandbox compute or the benchmark's multi-case run envelope.
+- `internal/problemquality/benchmark` only loads saved artifacts and invokes
+  `environmentverify.VerifyAssessmentPlanWithOptions` through
+  `envintegration.LocalCommandRunner` and `environmentverify.LocalProtocolAssessor`.
+  It never constructs a model client, agent runtime, sandbox, or paid operation
+  ID, and `runCase` never receives the budget store.
 
-A paid benchmark therefore still needs: an explicit `$30` run envelope; a
-per-case reservation or cap policy; preflight rejection when budget or quota is
-unavailable; accounting for failed, timed-out, and cancelled calls; enforcement
-before each additional paid call; a final cost/token/cap record in the report;
-and cancellation when the envelope is exhausted. The local fixture makes no
-paid calls and does not satisfy any part of this milestone.
+The exact missing integration is a benchmark-reachable paid operation that can
+reserve before work and settle after it:
+
+1. a generation, repair, or assessment step that actually calls a paid provider;
+2. a deterministic operation ID and preflight maximum-cost estimate for each
+   paid call;
+3. usage/cost observation after success, failure, timeout, or cancellation,
+   followed by `Settle` or `MarkUnknown`;
+4. enforcement before each additional paid call and cancellation when the
+   envelope is exhausted;
+5. paid cost, token, reservation, and cap evidence in the final report.
+
+No suitable existing path is connected to this benchmark. The local benchmark
+intentionally evaluates fixed artifacts, while the agent-runtime benchmark is a
+separate runtime-selection harness. The local fixture makes no paid calls and
+does not satisfy any part of this milestone; adding speculative paid execution
+here would change benchmark scope.
 
 ### Limitations and remaining work
 
@@ -258,7 +330,7 @@ This is local development evidence only. It does not establish sandbox network,
 memory, or filesystem isolation, and it does not prove production safety or
 broad trust in generated problems. Benchmark eligibility remains unresolved
 until the shared per-solution review policy exists; successful execution is not
-eligibility. The `$30` paid milestone remains unfinished until paid adapters
-have enforceable usage and quota accounting; a zero-cost local run does not
-satisfy that budget. Metrics and recommendation work beyond this preliminary
+eligibility. The `$30` paid milestone remains unfinished until a
+benchmark-reachable paid operation reserves and settles against the budget; a
+zero-cost local run does not satisfy that budget. Metrics and recommendation work beyond this preliminary
 report remain future work.

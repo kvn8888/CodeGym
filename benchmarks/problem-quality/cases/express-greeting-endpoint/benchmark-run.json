@@ -1,0 +1,17 @@
+{
+  "case_id": "express-greeting-endpoint",
+  "artifact_id": "express-greeting-endpoint",
+  "artifact_version": "0.1.0",
+  "artifact_root": "artifact",
+  "manifest_path": "manifest.json",
+  "development_fixture": true,
+  "reference": {
+    "id": "development-reference",
+    "files": {
+      "src/app.js": "reference/app.js"
+    },
+    "reviewed_by": "development-fixture",
+    "reviewed_at": "2026-11-17T00:00:00Z",
+    "reviewed_reference": "development fixture only; not human approval"
+  }
+}

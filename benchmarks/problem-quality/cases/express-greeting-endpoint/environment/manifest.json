@@ -8,30 +8,48 @@
   "environment": {
     "base": "node",
     "network": "setup-only",
-    "dependencyFiles": ["package.json"],
-    "lockfiles": []
+    "dependencyFiles": [
+      "package.json"
+    ],
+    "lockfiles": [
+      "package-lock.json"
+    ]
   },
   "workspace": {
     "root": ".",
     "learnerEditable": [
       "src/app.js"
     ],
-    "protected": []
+    "protected": [
+      "test/greeting.test.js",
+      "test/capture.js",
+      "test/capture.test.js",
+      "package.json",
+      "package-lock.json"
+    ]
   },
   "commands": {
-    "setup": "npm install",
-    "build": "",
+    "setup": "npm ci",
+    "build": "node --check src/app.js && node --check test/greeting.test.js && node --check test/capture.js && node --check test/capture.test.js",
     "test": "npm test",
     "run": "node src/app.js"
   },
   "assessment": {
     "type": "http-tests",
     "visibleTests": [],
-    "hiddenTests": []
+    "hiddenTests": [
+      "test/greeting.test.js"
+    ]
   },
   "compatibility": {
     "requestedTechnology": "Express",
     "requestedObjective": "Implement a greeting HTTP route",
-    "reuseTags": ["express", "node", "rest", "http", "json"]
+    "reuseTags": [
+      "express",
+      "node",
+      "rest",
+      "http",
+      "json"
+    ]
   }
 }

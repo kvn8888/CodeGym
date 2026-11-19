@@ -3,6 +3,7 @@ package benchmark
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -243,4 +244,19 @@ func addArtifactPaths(paths map[string]struct{}, values []string) {
 		}
 		paths[filepath.ToSlash(filepath.Clean(filepath.FromSlash(trimmed)))] = struct{}{}
 	}
+}
+
+// SHA256 returns the canonical digest used to bind an explicit review
+// approval to the governed case content. It covers the case definition,
+// specification, run config, reference, alternatives, wrong solutions, and
+// manifest-declared artifact inputs.
+func (i *ContentIdentity) SHA256() (string, error) {
+	if i == nil {
+		return "", errors.New("content identity is nil")
+	}
+	data, err := json.Marshal(i)
+	if err != nil {
+		return "", fmt.Errorf("marshal content identity: %w", err)
+	}
+	return digestBytes(data), nil
 }

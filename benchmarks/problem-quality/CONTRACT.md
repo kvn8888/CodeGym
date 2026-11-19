@@ -145,13 +145,16 @@ Non-exact grading must be explicitly covered where relevant:
 Each case must record expected outcomes:
 
 - generation status: `measured` or `not_applicable`
-- blind agreement, if applicable
-- reconciliation count, if applicable
-- reconciliation direction, if applicable
-- non-convergence, if applicable
+- expected blind agreement, if applicable
+- expected reconciliation count, if applicable
+- expected reconciliation direction, if applicable
+- expected non-convergence, if applicable
 - correct alternatives pass
 - wrong solutions rejected
 
+These generation values are corpus expectations, not observations. The report
+never copies them into observed generation fields. Observed generation metrics
+come only from separately supplied, identity-bound historical observations.
 Generation metrics are `not_applicable` for baselines without independent
 generation. They are never reported as zero.
 
@@ -218,19 +221,118 @@ When the corpus is ready, provide the harness lane with:
    task are recorded with `denominator_decision: equivalent` or `invalid` and
    excluded from the meaningful wrong-solution denominator.
 
+## Quality metrics
+
+Report version `2.0.0` carries structured `summary.metrics`. Legacy scalar
+summary fields remain for compatibility, but the structured metric is
+authoritative because it records the numerator, denominator, exclusions, and
+unavailability reason.
+
+Quality denominators include benchmark-eligible, non-development-fixture cases
+only:
+
+- Correct-alternative acceptance: completed correct alternatives that passed
+  every protected test divided by completed correct alternatives. Non-completed
+  alternatives are excluded with `non_completed`.
+- Wrong-solution rejection: completed meaningful wrong solutions rejected by
+  any assessment assertion divided by completed meaningful wrong solutions.
+  Equivalent, invalid, unknown-denominator, and non-completed samples are
+  excluded with their reason preserved.
+- Discrimination (mutation) score: completed meaningful wrong solutions whose
+  observed failure matched the declared intended test ID, assertion code,
+  expected value, and actual value, divided by the same completed meaningful
+  wrong-solution denominator. This measures whether the intended assertion
+  caught the mutation, not merely whether some assertion did.
+- Ambiguous-specification rate: eligible cases marked `ambiguous_spec=true`
+  divided by eligible cases with a recorded reviewed ambiguity decision.
+  Missing decisions are excluded from the denominator, not treated as false.
+
+Each metric is `measured`, `unavailable`, or `not_applicable`. A measured zero
+is `value: 0`, not `unavailable`. With zero eligible cases, quality metrics are
+`unavailable` with an explicit insufficient-evidence reason; development
+fixtures and cases with unresolved eligibility are counted in the case basis
+but excluded from quality denominators. Do not convert unavailable rates into
+zero or use them as a release threshold.
+
+## Findings
+
+Case and top-level `findings` explain actionable evidence. Each finding has a
+stable ID, case ID, kind, summary, cause flag, evidence records, and follow-ups
+with an owner. Kinds include:
+
+- `surviving_wrong_solution`: includes the solution, intended test/assertion,
+  comparator context, review action, and a hypothesis. Survival is established;
+  the cause is not. Never strengthen checked-in expectations merely to remove a
+  fixture survivor.
+- `setup_failure`: identifies a stage or prerequisite failure and repair
+  follow-ups. It is not a quality failure and must not count as a passed or
+  failed quality sample.
+- `case_not_run`: preserves cancellation or partial evidence.
+- `ambiguous_specification`: points to the review and ambiguity resolutions.
+- `first_attempt_disagreement`, `reconciliation`, `non_convergence`, and
+  `generation_failure`: historical generation observations with evidence source
+  and review follow-ups. A generation failure is emitted only from an explicit
+  `generation_failed: true` observation; it is never inferred from disagreement
+  or non-convergence.
+
+Each finding also records the affected artifact and its quality-metric
+treatment:
+
+- `scope` distinguishes `assessment_quality` findings from
+  `historical_generation` findings. Historical generation findings do not imply
+  membership in assessment-quality denominators.
+- `artifact_identity_status` is `available` with `artifact_id` and
+  `artifact_version` when the affected artifact identity was established. If
+  loading failed before that identity existed, status is `unavailable` with an
+  explicit reason; identity values are never fabricated.
+- `quality_metric_treatment` is `included`, `excluded`, or `not_applicable`,
+  with a reason. Survivor findings are included only for eligible, meaningful,
+  completed wrong solutions. Fixtures, unresolved eligibility, equivalent or
+  invalid wrong solutions, and incomplete execution are excluded. Setup
+  failures and not-run cases are excluded as incomplete samples. Historical
+  generation findings are `not_applicable` to assessment-quality metrics.
+
 ## Generation metrics
 
-Metrics 1-4 exist only for independent-generation baselines:
+Observed generation metrics exist only for independent-generation baselines:
 
-1. Blind agreement rate
+1. First-attempt agreement rate
 2. Reconciliation frequency
 3. Reconciliation direction
 4. Non-convergence rate
 
-For an independent-generation baseline with no observed generation evidence,
-report these as `unavailable` with null observed fields; never copy expected
-outcomes into them. For all other baselines, report them as `not_applicable`.
-Never report them as zero.
+Observed values come only from `generation_provenance.observations`, not from
+`expected_outcomes`. An observation record requires a non-empty `source`, an
+`artifact_sha256`, an `input_sha256`, and at least one observation field. The
+digests must be 64-character SHA-256 hex values and must match the saved
+artifact and reference-input content identity exactly. Reconciliation counts and
+directions must agree: a positive `reconciliation_count` requires
+`reconciliation_direction` to be `reference`, `tests`, or `both`; a direction
+with a missing or zero count is invalid; and a zero count without a direction is
+valid. Whitespace-only directions are treated as missing. Fixtures cannot supply
+observations, and observations are rejected for non-independent baselines.
+
+An explicit historical failure is recorded with `generation_failed: true` and
+non-empty `generation_failure_details`; `generation_failed: false` records an
+explicit non-failure and must not include details. Omitting `generation_failed`
+means unavailable, not success or failure. Details without the boolean, or a
+true failure without details, are rejected. A recorded failure emits a
+`generation_failure` finding with the available artifact/reference identity,
+recorded details, and a generation-review follow-up. Disagreement and
+non-convergence do not imply failure.
+
+Because historical observations require matching artifact and reference-input
+SHA-256 digests, this capability cannot represent a failure that produced no
+saved artifact or reference. Fabricating identity digests is forbidden. Such
+failure evidence needs a separate future identity path; it is outside this
+reporting capability and does not imply a new generation pipeline.
+
+If an independent-generation baseline has applicable cases but no observed
+generation evidence, report these metrics as `unavailable` with null observed
+fields. Use `not_applicable` for unsupported mechanisms. Never report unavailable
+observations as zero and never infer them from expectations. The legacy
+`summary.blind_agreement_rate` is retained for compatibility and is derived from
+the structured first-attempt-agreement metric.
 
 ## Failure categories
 
@@ -246,11 +348,23 @@ Use one of:
 - test_failure
 - assertion_evidence_mismatch
 
-## Preliminary results
+## Preliminary results and evidence limits
 
 Any report based on the initial small sample must set `preliminary: true` and
 must not claim that generated problems are broadly trustworthy.
-```
+
+The report demonstrates only what the captured local assessment evidence shows:
+
+- No model calls or generation occur during assessment.
+- The local run does not establish sandbox network or memory isolation and does
+  not satisfy the paid-budget milestone.
+- Survivor findings establish that a wrong solution survived, not the cause.
+- Historical generation observations are evidence supplied about saved content;
+  they are not new measurements and do not prove generation behavior.
+- Zero eligible cases means insufficient evidence, not zero quality.
+- Synthetic example reports must be labeled as synthetic and must not be counted
+  as reviewed corpus evidence.
+
 ## Local development benchmark
 
 The local benchmark command executes real artifact setup/build/test commands and
@@ -417,10 +531,11 @@ The report is written to `-output` (default `problem-quality-report.json`) and
 validated against `schema/report.schema.json`. A report is written for completed
 quality failures and for per-case configuration/execution failures. It marks
 `preliminary: true`, labels fixture results, and records that no model or
-sandbox operations occurred. Generation metrics are `unavailable` when the
-baseline supports them but this run has no observations, and `not_applicable`
-when the mechanism is unsupported; they are never zero or copied from
-expectations.
+sandbox operations occurred. Reports carry `report_version: "2.0.0"`,
+structured quality/generation metrics, and actionable findings. Generation
+metrics are `unavailable` when the baseline supports them but this run has no
+matching historical observations, and `not_applicable` when the mechanism is
+unsupported; they are never zero or copied from expectations.
 
 - Exit `0`: every selected case completed and met benchmark expectations.
 - Exit `1`: the benchmark completed but exposed quality failures, such as a
@@ -457,11 +572,14 @@ reservations or demonstrate paid-budget compliance. The paid-budget assessment
 below records the exact missing integration; do not add speculative wiring just
 to exercise the budget.
 
-### Reviewed-case eligibility proposal
+### Reviewed-case eligibility policy
 
-This proposal is not adopted policy. Every run must continue to report
-`benchmark_eligibility: unresolved` until the owner accepts it and the
-implementation can verify the required evidence.
+The harness implements support for this policy, but no owner-approved policy text
+or authorized reviewer roles are recorded locally. Runs without
+`-review-authority` and cases without complete `review.yaml` approval evidence
+continue to report `benchmark_eligibility: unresolved`. The owner must still
+approve the policy, name roles, and define revocation/re-review triggers before
+the corpus can claim reviewed eligibility.
 
 The minimum decision set is:
 
@@ -484,11 +602,27 @@ The minimum decision set is:
    or a green report never promotes a case to the reviewed denominator.
 7. **Revocation and re-review**: define who can withdraw approval and which
    content, artifact, or policy changes force re-review.
-8. **Reporting states**: distinguish `eligible`, `ineligible`, and `unresolved`;
-   a boolean alone loses why evidence was rejected.
+8. **Reporting states**: report `eligible` only when all checks pass and
+   `unresolved` otherwise with an explicit reason. The current report schema and
+   eligible/unresolved counters are unchanged; adding a separate `ineligible`
+   state would require a schema and summary update.
 
 Until those decisions land, fixtures and all other cases remain excluded from
 reviewed totals and the report must not present execution success as trust.
+
+Implementation support:
+
+- `problemquality.LoadReviewRecord` strictly reads `review.yaml`.
+- `benchmark.EvaluateReviewEligibility` requires a configured
+  `-review-authority`, a non-placeholder human reviewer, a resolvable
+  `review_reference`, `approval_scope: case`, consistent `case.yaml` review
+  metadata, matching denominator decisions, no revocation, and an
+  `approved_content_sha256` equal to canonical `ContentIdentity.SHA256()`.
+- Fixtures, missing records, stale digests, unauthorized roles, placeholders,
+  and revoked approvals remain unresolved.
+- `benchmark.ValidateSavedCaseReadiness` and the CLI `-readiness` mode validate
+  saved inputs and report missing generation-provenance fields without
+  executing commands or mutating the budget.
 
 ### Paid-budget assessment
 

@@ -56,6 +56,217 @@ func TestLoadRunConfigBindsArtifactAndExplicitReference(t *testing.T) {
 	}
 }
 
+func TestPythonSumEvenNumbersCaseBindsReferenceAndPlan(t *testing.T) {
+	caseDir := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "cases", "python-sum-even-numbers")
+	c, err := problemquality.LoadCase(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.DevelopmentFixture {
+		t.Fatal("development_fixture = false, want explicit fixture label")
+	}
+	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
+		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
+	}
+	if got := config.ReferenceData.Files["solution.py"]; !strings.Contains(got, "filter") {
+		t.Fatalf("reference content = %q", got)
+	}
+	plan, err := c.AssessmentPlan(&config.ReferenceData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reference == nil || len(plan.CorrectAlternatives) != 1 || len(plan.WrongSolutions) != 2 {
+		t.Fatalf("plan = %+v, want one reference, one alternative, and two wrong solutions", plan)
+	}
+	if plan.CorrectAlternatives[0].ID != "alt-01" {
+		t.Fatalf("correct alternatives = %+v", plan.CorrectAlternatives)
+	}
+	expected := map[string]string{
+		"sum-odd-numbers":       "hidden-mixed-values",
+		"ignore-negative-evens": "hidden-negative-values",
+	}
+	for _, wrong := range plan.WrongSolutions {
+		want, ok := expected[wrong.ID]
+		if !ok {
+			t.Fatalf("unexpected wrong solution %q", wrong.ID)
+		}
+		if wrong.ExpectedFailure == nil {
+			t.Fatalf("wrong solution %q has no expected failure", wrong.ID)
+		}
+		if wrong.ExpectedFailure.TestID != want {
+			t.Fatalf("wrong solution %q expected test = %q, want %q", wrong.ID, wrong.ExpectedFailure.TestID, want)
+		}
+	}
+}
+
+func TestGoCountEvenNumbersCaseBindsReferenceAndPlan(t *testing.T) {
+	caseDir := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "cases", "go-count-even-numbers")
+	c, err := problemquality.LoadCase(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.DevelopmentFixture {
+		t.Fatal("development_fixture = false, want explicit fixture label")
+	}
+	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
+		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
+	}
+	if got := config.ReferenceData.Files["solution.go"]; !strings.Contains(got, "CountEven") {
+		t.Fatalf("reference content = %q", got)
+	}
+	if config.Manifest.Commands == nil {
+		t.Fatal("manifest commands are missing")
+	}
+	if got := config.Manifest.Commands.Test; !strings.Contains(got, "-v") {
+		t.Fatalf("test command = %q, want verbose go test so CODEGYM_TEST lines are visible", got)
+	}
+	plan, err := c.AssessmentPlan(&config.ReferenceData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reference == nil || len(plan.CorrectAlternatives) != 1 || len(plan.WrongSolutions) != 2 {
+		t.Fatalf("plan = %+v, want one reference, one alternative, and two wrong solutions", plan)
+	}
+	if plan.CorrectAlternatives[0].ID != "alt-01" {
+		t.Fatalf("correct alternatives = %+v", plan.CorrectAlternatives)
+	}
+	expected := map[string]string{
+		"count-odd-numbers":         "hidden-mixed-values",
+		"count-positive-evens-only": "hidden-negative-values",
+	}
+	for _, wrong := range plan.WrongSolutions {
+		want, ok := expected[wrong.ID]
+		if !ok {
+			t.Fatalf("unexpected wrong solution %q", wrong.ID)
+		}
+		if wrong.ExpectedFailure == nil {
+			t.Fatalf("wrong solution %q has no expected failure", wrong.ID)
+		}
+		if wrong.ExpectedFailure.TestID != want {
+			t.Fatalf("wrong solution %q expected test = %q, want %q", wrong.ID, wrong.ExpectedFailure.TestID, want)
+		}
+	}
+}
+
+func TestExpressGreetingEndpointCaseBindsReferenceAndPlan(t *testing.T) {
+	caseDir := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "cases", "express-greeting-endpoint")
+	c, err := problemquality.LoadCase(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.DevelopmentFixture {
+		t.Fatal("development_fixture = false, want explicit fixture label")
+	}
+	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
+		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
+	}
+	if got := config.ReferenceData.Files["src/app.js"]; !strings.Contains(got, "/greeting") {
+		t.Fatalf("reference content = %q", got)
+	}
+	if config.Manifest.Environment == nil || len(config.Manifest.Environment.Lockfiles) != 1 ||
+		config.Manifest.Environment.Lockfiles[0] != "package-lock.json" {
+		t.Fatalf("manifest lockfiles = %+v, want package-lock.json", config.Manifest.Environment)
+	}
+	if config.Manifest.Commands == nil || config.Manifest.Commands.Test != "npm test" {
+		t.Fatalf("manifest commands = %+v, want npm test", config.Manifest.Commands)
+	}
+	plan, err := c.AssessmentPlan(&config.ReferenceData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reference == nil || len(plan.CorrectAlternatives) != 1 || len(plan.WrongSolutions) != 2 {
+		t.Fatalf("plan = %+v, want one reference, one alternative, and two wrong solutions", plan)
+	}
+	if plan.CorrectAlternatives[0].ID != "alt-01" {
+		t.Fatalf("correct alternatives = %+v", plan.CorrectAlternatives)
+	}
+	expected := map[string]string{
+		"missing-name-validation": "hidden-missing-name",
+		"wrong-response-field":    "hidden-response-shape",
+	}
+	for _, wrong := range plan.WrongSolutions {
+		want, ok := expected[wrong.ID]
+		if !ok {
+			t.Fatalf("unexpected wrong solution %q", wrong.ID)
+		}
+		if wrong.ExpectedFailure == nil {
+			t.Fatalf("wrong solution %q has no expected failure", wrong.ID)
+		}
+		if wrong.ExpectedFailure.TestID != want {
+			t.Fatalf("wrong solution %q expected test = %q, want %q", wrong.ID, wrong.ExpectedFailure.TestID, want)
+		}
+	}
+}
+
+func TestSpringBootGreetingEndpointCaseBindsReferenceAndPlan(t *testing.T) {
+	caseDir := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "cases", "spring-boot-greeting-endpoint")
+	c, err := problemquality.LoadCase(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.DevelopmentFixture {
+		t.Fatal("development_fixture = false, want explicit fixture label")
+	}
+	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
+		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
+	}
+	if got := config.ReferenceData.Files["src/main/java/com/codegym/exercise/GreetingController.java"]; !strings.Contains(got, "/greeting") {
+		t.Fatalf("reference content = %q", got)
+	}
+	if config.Manifest.Environment == nil || config.Manifest.Environment.Base != "java-21" {
+		t.Fatalf("manifest environment = %+v, want java-21 base", config.Manifest.Environment)
+	}
+	if config.Manifest.Commands == nil || config.Manifest.Commands.Test != "mvn -q test" {
+		t.Fatalf("manifest commands = %+v, want mvn -q test", config.Manifest.Commands)
+	}
+	if len(config.Manifest.Assessment.HiddenTests) != 1 ||
+		config.Manifest.Assessment.HiddenTests[0] != "src/test/java/com/codegym/exercise/GreetingEndpointTest.java" {
+		t.Fatalf("manifest hidden tests = %+v, want the protected Spring Boot endpoint test", config.Manifest.Assessment.HiddenTests)
+	}
+	plan, err := c.AssessmentPlan(&config.ReferenceData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reference == nil || len(plan.CorrectAlternatives) != 1 || len(plan.WrongSolutions) != 2 {
+		t.Fatalf("plan = %+v, want one reference, one alternative, and two wrong solutions", plan)
+	}
+	if plan.CorrectAlternatives[0].ID != "alt-01" {
+		t.Fatalf("correct alternatives = %+v", plan.CorrectAlternatives)
+	}
+	expected := map[string]string{
+		"missing-name-validation": "hidden-missing-name",
+		"wrong-response-field":    "hidden-response-shape",
+	}
+	for _, wrong := range plan.WrongSolutions {
+		want, ok := expected[wrong.ID]
+		if !ok {
+			t.Fatalf("unexpected wrong solution %q", wrong.ID)
+		}
+		if wrong.ExpectedFailure == nil {
+			t.Fatalf("wrong solution %q has no expected failure", wrong.ID)
+		}
+		if wrong.ExpectedFailure.TestID != want {
+			t.Fatalf("wrong solution %q expected test = %q, want %q", wrong.ID, wrong.ExpectedFailure.TestID, want)
+		}
+	}
+}
+
 func TestWrongOutcomeExclusionIsNotSurvival(t *testing.T) {
 	outcome := environmentverify.AssessmentOutcome{
 		ID:                  "equivalent",
@@ -312,10 +523,17 @@ func TestBuildReportIndependentGenerationMetricsAreUnavailable(t *testing.T) {
 		t.Fatalf("generation status = %v, want unavailable", report.GenerationConfig["status"])
 	}
 	generation := report.Cases[0].Generation
-	if generation.Status != GenerationUnavailable || generation.BlindAgreement != nil ||
+	if generation.Status != GenerationUnavailable || generation.FirstAttemptAgreement != nil ||
 		generation.ReconciliationCount != nil || generation.ReconciliationDirection != nil ||
 		generation.NonConvergence != nil {
 		t.Fatalf("generation = %+v, want unavailable with no copied expected observations", generation)
+	}
+	metrics := report.Summary.Metrics
+	for _, metric := range []Metric{metrics.FirstAttemptAgreement, metrics.ReconciliationFrequency, metrics.NonConvergenceRate} {
+		if metric.Status != MetricUnavailable || metric.Value != nil ||
+			metric.ExclusionReasons["missing_observation"] != 1 {
+			t.Fatalf("generation metric = %+v, want missing observation excluded, not zero", metric)
+		}
 	}
 	validateReportSchema(t, report)
 }
@@ -359,7 +577,7 @@ func TestBuildReportDoesNotCopyExpectedOutcomesIntoObservedFields(t *testing.T) 
 		t.Fatalf("status = %q, want passed from observed evidence", caseReport.Status)
 	}
 	if caseReport.Generation.Status != "not_applicable" ||
-		caseReport.Generation.BlindAgreement != nil ||
+		caseReport.Generation.FirstAttemptAgreement != nil ||
 		caseReport.Generation.ReconciliationCount != nil ||
 		caseReport.Generation.NonConvergence != nil {
 		t.Fatalf("generation = %+v, want unobserved not_applicable fields", caseReport.Generation)

@@ -58,6 +58,7 @@ type Meta struct {
 	BaselineKind       string
 	ExecutionMode      string
 	GenerationUsage    []GenerationUsageRecord
+	PaidOperations     bool
 	ModelRevision      string
 	PromptRevision     string
 	CorpusRoot         string
@@ -429,7 +430,7 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 			config := map[string]any{
 				"status":                             generationMetricStatus(meta.BaselineKind, meta.DevelopmentFixture),
 				"assessment_run_usage":               UsageStatusNotApplicable,
-				"paid_operations":                    false,
+				"paid_operations":                    meta.PaidOperations,
 				"baseline_kind":                      meta.BaselineKind,
 				"saved_exercise_provenance":          savedProvenanceFor(rawModelRevision, rawPromptRevision, meta.DevelopmentFixture),
 				"assessment_run_generation_occurred": liveGeneration,
@@ -454,7 +455,7 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 			Local:           executionMode == "local",
 			Sandbox:         sandboxMode,
 			ModelOperations: liveGeneration,
-			PaidOperations:  false,
+			PaidOperations:  meta.PaidOperations,
 			TimeoutSeconds:  int(meta.Timeout.Seconds()),
 		},
 	}

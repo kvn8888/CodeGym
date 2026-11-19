@@ -19,6 +19,10 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/problemquality"
 )
 
+// sandboxEstimateMicros is the bounded maximum reserved for one Daytona
+// sandbox case. It is a conservative planning cap, not provider-reported cost.
+const sandboxEstimateMicros int64 = 500_000
+
 type GenerationUsageRecord struct {
 	CaseID    string `json:"case_id"`
 	Provider  string `json:"provider"`
@@ -47,6 +51,8 @@ type Options struct {
 	SandboxWorkspaceDir string
 	SandboxEphemeral    bool
 	BudgetSnapshot      *benchmarkbudget.Snapshot
+	BudgetStore         *benchmarkbudget.Store
+	PaidOperations      bool
 	ReviewAuthorities   []string
 	GenerationUsage     []GenerationUsageRecord
 
@@ -179,6 +185,7 @@ func Execute(ctx context.Context, opts Options) (Result, error) {
 		BaselineKind:       opts.BaselineKind,
 		ExecutionMode:      opts.ExecutionMode,
 		GenerationUsage:    opts.GenerationUsage,
+		PaidOperations:     opts.PaidOperations,
 		ModelRevision:      opts.ModelRevision,
 		PromptRevision:     opts.PromptRevision,
 		CorpusRoot:         corpusRoot,
@@ -263,7 +270,7 @@ func runCase(ctx context.Context, runID string, opts Options, loaded problemqual
 			mode := strings.ToLower(strings.TrimSpace(limits.NetworkMode))
 			networkBlockAll = mode == "none" || mode == "block-all"
 		}
-		sandbox, cleanup, err := createBenchmarkSandbox(ctx, opts, networkBlockAll)
+		sandbox, cleanup, err := createBenchmarkSandbox(ctx, opts, networkBlockAll, "sandbox:"+runID+":"+loaded.Case.CaseID)
 		if err != nil {
 			result.Err = fmt.Errorf("create sandbox: %w", err)
 			return result
@@ -317,9 +324,21 @@ func runCase(ctx context.Context, runID string, opts Options, loaded problemqual
 	return result
 }
 
-func createBenchmarkSandbox(ctx context.Context, opts Options, networkBlockAll bool) (agentruntime.SandboxExecutor, func(), error) {
+func createBenchmarkSandbox(ctx context.Context, opts Options, networkBlockAll bool, operationID string) (agentruntime.SandboxExecutor, func(), error) {
 	if opts.SandboxExecutor != nil {
 		return opts.SandboxExecutor, func() {}, nil
+	}
+	reserved := false
+	if opts.BudgetStore != nil {
+		if _, err := opts.BudgetStore.Reserve(operationID, sandboxEstimateMicros); err != nil {
+			return nil, nil, fmt.Errorf("reserve sandbox budget: %w", err)
+		}
+		reserved = true
+	}
+	settleOnFailure := func() {
+		if reserved {
+			_, _ = opts.BudgetStore.Settle(operationID, 0)
+		}
 	}
 	apiKey := strings.TrimSpace(opts.DaytonaAPIKey)
 	apiURL := strings.TrimSpace(opts.DaytonaAPIURL)
@@ -330,6 +349,7 @@ func createBenchmarkSandbox(ctx context.Context, opts Options, networkBlockAll b
 		apiURL = strings.TrimSpace(os.Getenv("DAYTONA_API_URL"))
 	}
 	if apiKey == "" || apiURL == "" {
+		settleOnFailure()
 		return nil, nil, errors.New("Daytona credentials are required for sandbox execution")
 	}
 	snapshot := strings.TrimSpace(opts.SandboxSnapshot)
@@ -337,18 +357,25 @@ func createBenchmarkSandbox(ctx context.Context, opts Options, networkBlockAll b
 		snapshot = strings.TrimSpace(os.Getenv("CODEGYM_BASE_SNAPSHOT"))
 	}
 	if snapshot == "" {
+		settleOnFailure()
 		return nil, nil, errors.New("a Daytona base snapshot is required for sandbox execution")
 	}
 	client, err := envintegration.NewDaytonaClient(apiKey, apiURL)
 	if err != nil {
+		settleOnFailure()
 		return nil, nil, err
 	}
 	labels := map[string]string{"codegym": "problem-quality-benchmark"}
 	sandbox, err := client.Create(ctx, envintegration.SandboxParams(snapshot, labels, networkBlockAll, opts.SandboxEphemeral))
 	if err != nil {
+		settleOnFailure()
 		return nil, nil, fmt.Errorf("create Daytona sandbox: %w", err)
 	}
 	cleanup := func() {
+		if reserved {
+			_, _ = opts.BudgetStore.Settle(operationID, sandboxEstimateMicros)
+			reserved = false
+		}
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		_ = sandbox.Delete(cleanupCtx)

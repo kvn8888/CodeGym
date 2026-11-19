@@ -19,6 +19,13 @@ import (
 // smoke run. It keeps a bounded baseline run far below the $30 milestone.
 const generationMaxCostMicros int64 = 1_000_000
 
+// estimateGenerationCostMicros converts provider token counts into a
+// conservative planning cost at $2 per million tokens. It is used to settle a
+// reserved maximum when the provider does not report a benchmark cost.
+func estimateGenerationCostMicros(usage generation.GenerateResult) int64 {
+	return int64(usage.TokensIn+usage.TokensOut) * 2
+}
+
 // emptyMemory gives the generation orchestrator a valid but neutral profile.
 // A benchmark baseline must not inherit a developer's personal memory.
 type emptyMemory struct{}

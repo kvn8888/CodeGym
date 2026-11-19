@@ -99,17 +99,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	var budgetSnapshot *benchmarkbudget.Snapshot
+	var budgetStore *benchmarkbudget.Store
 	if strings.TrimSpace(*budgetState) != "" {
-		budgetStore, err := benchmarkbudget.Open(*budgetState, *priorSpendMicros)
+		store, err := benchmarkbudget.Open(*budgetState, *priorSpendMicros)
 		if err != nil {
 			fmt.Fprintf(stderr, "problem-quality-benchmark: %v\n", err)
 			return 2
 		}
-		snapshot, err := budgetStore.Snapshot()
+		snapshot, err := store.Snapshot()
 		if err != nil {
 			fmt.Fprintf(stderr, "problem-quality-benchmark: %v\n", err)
 			return 2
 		}
+		budgetStore = store
 		budgetSnapshot = &snapshot
 	}
 
@@ -131,10 +133,27 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		generatedCases := make([]string, 0, len(cases))
 		for _, caseDir := range cases {
+			caseID := filepath.Base(caseDir)
+			operationID := "generation:" + caseID
+			if budgetStore != nil {
+				if _, err := budgetStore.Reserve(operationID, generationMaxCostMicros); err != nil {
+					fmt.Fprintf(stderr, "problem-quality-benchmark: reserve generation budget for %s: %v\n", caseID, err)
+					return 2
+				}
+			}
 			solution, usage, err := baseline.generateReference(ctx, caseDir)
 			if err != nil {
-				fmt.Fprintf(stderr, "problem-quality-benchmark: generate reference for %s: %v\n", caseDir, err)
+				if budgetStore != nil {
+					_, _ = budgetStore.Settle(operationID, 0)
+				}
+				fmt.Fprintf(stderr, "problem-quality-benchmark: generate reference for %s: %v\n", caseID, err)
 				return 2
+			}
+			if budgetStore != nil {
+				if _, err := budgetStore.Settle(operationID, estimateGenerationCostMicros(usage)); err != nil {
+					fmt.Fprintf(stderr, "problem-quality-benchmark: settle generation budget for %s: %v\n", caseID, err)
+					return 2
+				}
 			}
 			dest, err := materializeGeneratedCase(caseDir, solution)
 			if err != nil {
@@ -155,6 +174,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		cases = generatedCases
 	}
 
+	if budgetStore != nil {
+		snapshot, err := budgetStore.Snapshot()
+		if err != nil {
+			fmt.Fprintf(stderr, "problem-quality-benchmark: %v\n", err)
+			return 2
+		}
+		budgetSnapshot = &snapshot
+	}
+
+	paidOperations := budgetStore != nil && (*generateReference || strings.TrimSpace(*execution) == "sandbox")
 	result, err := benchmark.Execute(ctx, benchmark.Options{
 		CorpusRoot:          *corpus,
 		CaseDirs:            cases,
@@ -174,6 +203,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		SandboxWorkspaceDir: strings.TrimSpace(*sandboxWorkspace),
 		SandboxEphemeral:    *sandboxEphemeral,
 		BudgetSnapshot:      budgetSnapshot,
+		BudgetStore:         budgetStore,
+		PaidOperations:      paidOperations,
 		ReviewAuthorities:   reviewAuthorities,
 		GenerationUsage:     generationUsage,
 	})

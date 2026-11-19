@@ -596,11 +596,18 @@ locking. Windows builds explicitly reject persistent enforcement rather than
 claim weaker process-local locking. The report's `budget` snapshot records the
 accounting state.
 
-This is only the accounting and enforcement primitive. No paid generation,
-model, or sandbox adapter is connected to it yet, so local runs do not exercise
-reservations or demonstrate paid-budget compliance. The paid-budget assessment
-below records the exact missing integration; do not add speculative wiring just
-to exercise the budget.
+When a paid adapter is selected, the benchmark connects it to the budget
+primitive: model generation and Daytona sandbox creation reserve a bounded
+maximum before work, settle a conservative estimated cost afterward, and settle
+zero on pre-call failure. The report marks `execution.paid_operations: true`
+and records the resulting snapshot. On platforms where persistent cross-process
+file locking is unavailable, the budget state cannot be used and the command
+must run with `-budget-state ''`; such a run does not demonstrate paid-budget
+enforcement.
+
+The conservative estimates are planning caps, not provider invoices: generation
+settles at $2 per million input+output tokens, and one sandbox case settles at
+$0.50. Provider-reported cost reconciliation remains future work.
 
 ### Reviewed-case eligibility policy
 

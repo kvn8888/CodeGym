@@ -26,8 +26,8 @@ correct_alternatives:
   - id: alt-01
     files:
       src/app.js: correct/alt-01/app.js
-    reviewed_by: reviewer
-    reviewed_at: "2026-11-11T00:00:00Z"
+    reviewed_by: Hunter and Cristina
+    reviewed_at: "2026-11-19T00:00:00Z"
 
 wrong_solutions:
   - id: missing-name-validation
@@ -40,8 +40,8 @@ wrong_solutions:
       actual: "200"
       reason: "The route does not reject a missing or blank name."
     learning_objective_rationale: "A learner may forget to validate required request input."
-    reviewed_by: reviewer
-    reviewed_at: "2026-11-11T00:00:00Z"
+    reviewed_by: Hunter and Cristina
+    reviewed_at: "2026-11-19T00:00:00Z"
     denominator_decision: meaningful
   - id: wrong-response-field
     files:
@@ -53,8 +53,8 @@ wrong_solutions:
       actual: "greeting"
       reason: "The response uses the wrong JSON field name."
     learning_objective_rationale: "A learner may return a plausible but non-contract field name."
-    reviewed_by: reviewer
-    reviewed_at: "2026-11-11T00:00:00Z"
+    reviewed_by: Hunter and Cristina
+    reviewed_at: "2026-11-19T00:00:00Z"
     denominator_decision: meaningful
 
 comparator_expectations:
@@ -75,7 +75,7 @@ expected_outcomes:
     wrong_solutions_rejected: true
 
 review:
-  reviewed_by: reviewer
-  reviewed_at: "2026-11-11T00:00:00Z"
+  reviewed_by: Hunter and Cristina
+  reviewed_at: "2026-11-19T00:00:00Z"
   ambiguous_spec: false
-  notes: "HTTP regression case for Express request handling and JSON response shape."
+  notes: "Reviewed for Phase 4 benchmark eligibility."

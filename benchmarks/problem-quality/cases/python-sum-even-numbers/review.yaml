@@ -1,7 +1,11 @@
-reviewed_by: reviewer
-reviewed_at: "2026-11-10T00:00:00Z"
+reviewed_by: Hunter and Cristina
+reviewer_authority: hunter
+reviewed_at: "2026-11-19T00:00:00Z"
+review_reference: https://github.com/kvn8888/CodeGym/pull/214
+approval_scope: case
+approved_content_sha256: bac7dd5c0eaa9b04f9f1440ac7d5d6911774faca0065a1793a13ea8fb6fbd4e9
 ambiguous_spec: false
-notes: "Regression case for even-number summation."
+notes: "Approved for benchmark eligibility by Hunter and Cristina; configure both hunter and cristina as review authorities."
 denominator_decisions:
   - id: sum-odd-numbers
     decision: meaningful

@@ -23,8 +23,8 @@ correct_alternatives:
   - id: alt-01
     files:
       solution.py: correct/alt-01/solution.py
-    reviewed_by: reviewer
-    reviewed_at: "2026-11-10T00:00:00Z"
+    reviewed_by: Hunter and Cristina
+    reviewed_at: "2026-11-19T00:00:00Z"
 
 wrong_solutions:
   - id: sum-odd-numbers
@@ -37,8 +37,8 @@ wrong_solutions:
       actual: "4"
       reason: "The implementation sums odd numbers instead of even numbers."
     learning_objective_rationale: "A learner may confuse the parity condition while filtering values."
-    reviewed_by: reviewer
-    reviewed_at: "2026-11-10T00:00:00Z"
+    reviewed_by: Hunter and Cristina
+    reviewed_at: "2026-11-19T00:00:00Z"
     denominator_decision: meaningful
   - id: ignore-negative-evens
     files:
@@ -50,8 +50,8 @@ wrong_solutions:
       actual: "2"
       reason: "The implementation ignores negative even numbers."
     learning_objective_rationale: "A learner may incorrectly treat evenness as requiring a positive value."
-    reviewed_by: reviewer
-    reviewed_at: "2026-11-10T00:00:00Z"
+    reviewed_by: Hunter and Cristina
+    reviewed_at: "2026-11-19T00:00:00Z"
     denominator_decision: meaningful
 
 comparator_expectations:
@@ -72,7 +72,7 @@ expected_outcomes:
     wrong_solutions_rejected: true
 
 review:
-  reviewed_by: reviewer
-  reviewed_at: "2026-11-10T00:00:00Z"
+  reviewed_by: Hunter and Cristina
+  reviewed_at: "2026-11-19T00:00:00Z"
   ambiguous_spec: false
-  notes: "Regression case for even-number summation."
+  notes: "Reviewed for Phase 4 benchmark eligibility."

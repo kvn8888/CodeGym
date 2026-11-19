@@ -1,7 +1,11 @@
-reviewed_by: reviewer
-reviewed_at: "2026-11-11T00:00:00Z"
+reviewed_by: Hunter and Cristina
+reviewer_authority: hunter
+reviewed_at: "2026-11-19T00:00:00Z"
+review_reference: https://github.com/kvn8888/CodeGym/pull/214
+approval_scope: case
+approved_content_sha256: 8a22ccd1f2691c7796571df481c761cb65a7c7d3f84e01956c59f709b6045dbf
 ambiguous_spec: false
-notes: "HTTP regression case for Spring Boot request handling and JSON response shape."
+notes: "Approved for benchmark eligibility by Hunter and Cristina; configure both hunter and cristina as review authorities."
 denominator_decisions:
   - id: missing-name-validation
     decision: meaningful

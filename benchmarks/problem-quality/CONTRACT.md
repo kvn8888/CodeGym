@@ -611,12 +611,15 @@ $0.50. Provider-reported cost reconciliation remains future work.
 
 ### Reviewed-case eligibility policy
 
-The harness implements support for this policy, but no owner-approved policy text
-or authorized reviewer roles are recorded locally. Runs without
-`-review-authority` and cases without complete `review.yaml` approval evidence
-continue to report `benchmark_eligibility: unresolved`. The owner must still
-approve the policy, name roles, and define revocation/re-review triggers before
-the corpus can claim reviewed eligibility.
+The owner-approved policy is now recorded locally for the four milestone cases.
+Authorized reviewer authorities are `hunter` and `cristina`; approval is
+case-scoped; the review reference is the corpus merge PR
+`https://github.com/kvn8888/CodeGym/pull/214`; and approval binds the governed
+content SHA-256. Runs must pass `-review-authority hunter -review-authority
+cristina` for these cases to report `benchmark_eligible: true`. The four cases
+are no longer development fixtures. Runs without configured authorities or
+cases without complete `review.yaml` approval evidence still report
+`benchmark_eligibility: unresolved`.
 
 The minimum decision set is:
 
@@ -644,8 +647,9 @@ The minimum decision set is:
    eligible/unresolved counters are unchanged; adding a separate `ineligible`
    state would require a schema and summary update.
 
-Until those decisions land, fixtures and all other cases remain excluded from
-reviewed totals and the report must not present execution success as trust.
+Any future case that does not carry complete, human-approved `review.yaml`
+evidence remains excluded from reviewed totals. Execution success alone is
+never trust, and a changed governed digest forces re-review.
 
 Implementation support:
 
@@ -660,6 +664,19 @@ Implementation support:
 - `benchmark.ValidateSavedCaseReadiness` and the CLI `-readiness` mode validate
   saved inputs and report missing generation-provenance fields without
   executing commands or mutating the budget.
+
+To reproduce reviewed eligibility for the four cases:
+
+```sh
+go run ./cmd/problem-quality-benchmark \
+  -execution local \
+  -case ../benchmarks/problem-quality/cases/python-sum-even-numbers \
+  -case ../benchmarks/problem-quality/cases/go-count-even-numbers \
+  -case ../benchmarks/problem-quality/cases/express-greeting-endpoint \
+  -case ../benchmarks/problem-quality/cases/spring-boot-greeting-endpoint \
+  -review-authority hunter -review-authority cristina \
+  -output /tmp/pqb-reviewed-report.json
+```
 
 ### Paid-budget assessment
 

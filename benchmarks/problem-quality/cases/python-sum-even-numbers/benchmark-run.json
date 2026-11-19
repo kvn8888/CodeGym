@@ -4,14 +4,14 @@
   "artifact_version": "0.1.0",
   "artifact_root": "artifact",
   "manifest_path": "manifest.json",
-  "development_fixture": true,
+  "development_fixture": false,
   "reference": {
     "id": "development-reference",
     "files": {
       "solution.py": "reference/solution.py"
     },
-    "reviewed_by": "development-fixture",
-    "reviewed_at": "2026-11-17T00:00:00Z",
-    "reviewed_reference": "development fixture only; not human approval"
+    "reviewed_by": "Hunter and Cristina",
+    "reviewed_at": "2026-11-19T00:00:00Z",
+    "reviewed_reference": "https://github.com/kvn8888/CodeGym/pull/214"
   }
 }

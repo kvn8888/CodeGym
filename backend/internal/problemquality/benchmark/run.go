@@ -29,6 +29,7 @@ type Options struct {
 	DevelopmentFixture bool
 	ExecuteLocal       bool
 	BudgetSnapshot     *benchmarkbudget.Snapshot
+	ReviewAuthorities  []string
 
 	now func() time.Time
 }
@@ -205,6 +206,10 @@ func runCase(ctx context.Context, runID string, opts Options, loaded problemqual
 		return result
 	}
 	result.Identity = identity
+	if err := validateGenerationObservationIdentity(config, identity, opts.BaselineKind); err != nil {
+		result.Err = err
+		return result
+	}
 	manifestPath := config.ArtifactManifestPath()
 	builder := environmentverify.BuilderResult{
 		SchemaVersion:        environmentverify.BuilderResultSchemaVersion,
@@ -225,6 +230,12 @@ func runCase(ctx context.Context, runID string, opts Options, loaded problemqual
 	verifyOptions.Assessor = assessor
 	verifierResult, collection := environmentverify.VerifyAssessmentPlanWithOptions(
 		ctx, commandRunner, builder, config.ArtifactRoot, runID+":"+loaded.Case.CaseID, verifyOptions, *plan)
+	if !collection.Blocked {
+		review := EvaluateReviewEligibility(loaded.Case, identity, opts.ReviewAuthorities, config.DevelopmentFixture)
+		collection.BenchmarkEligible = review.Eligible()
+		collection.BenchmarkEligibility = review.Status
+		collection.BenchmarkEligibilityReason = review.Reason
+	}
 	result.Verifier = verifierResult
 	result.Collection = collection
 	return result

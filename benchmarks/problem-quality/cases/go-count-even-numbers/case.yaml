@@ -9,7 +9,7 @@ build_test_run:
   strategy: unit
   entrypoint: solution.go
   commands:
-    test: go test ./...
+    test: go test -v ./...
   limits:
     timeout_seconds: 60
     memory_mb: 256

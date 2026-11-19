@@ -1,0 +1,14 @@
+{
+  "name": "codegym-express-greeting-endpoint",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development integration fixture for an Express greeting endpoint.",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "test": "node test/greeting.test.js && node --test test/capture.test.js"
+  },
+  "dependencies": {
+    "express": "4.22.2"
+  }
+}

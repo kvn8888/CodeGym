@@ -8,7 +8,9 @@
   "environment": {
     "base": "java-21",
     "network": "setup-only",
-    "dependencyFiles": ["pom.xml"],
+    "dependencyFiles": [
+      "pom.xml"
+    ],
     "lockfiles": []
   },
   "workspace": {
@@ -16,7 +18,11 @@
     "learnerEditable": [
       "src/main/java/com/codegym/exercise/GreetingController.java"
     ],
-    "protected": []
+    "protected": [
+      "pom.xml",
+      "src/main/java/com/codegym/exercise/GreetingApplication.java",
+      "src/test/java/com/codegym/exercise/GreetingEndpointTest.java"
+    ]
   },
   "commands": {
     "setup": "mvn -q dependency:go-offline",
@@ -27,11 +33,19 @@
   "assessment": {
     "type": "http-tests",
     "visibleTests": [],
-    "hiddenTests": []
+    "hiddenTests": [
+      "src/test/java/com/codegym/exercise/GreetingEndpointTest.java"
+    ]
   },
   "compatibility": {
     "requestedTechnology": "Spring Boot",
     "requestedObjective": "Implement a greeting REST endpoint",
-    "reuseTags": ["spring-boot", "rest", "http", "json", "java-21"]
+    "reuseTags": [
+      "spring-boot",
+      "rest",
+      "http",
+      "json",
+      "java-21"
+    ]
   }
 }

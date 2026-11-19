@@ -8,7 +8,9 @@
   "environment": {
     "base": "go",
     "network": "none",
-    "dependencyFiles": [],
+    "dependencyFiles": [
+      "go.mod"
+    ],
     "lockfiles": []
   },
   "workspace": {
@@ -16,22 +18,32 @@
     "learnerEditable": [
       "solution.go"
     ],
-    "protected": []
+    "protected": [
+      "solution_test.go",
+      "go.mod"
+    ]
   },
   "commands": {
-    "setup": "",
-    "build": "go build ./...",
-    "test": "go test ./...",
+    "setup": "go version",
+    "build": "go build -o /dev/null ./...",
+    "test": "go test -v ./...",
     "run": ""
   },
   "assessment": {
     "type": "unit-tests",
     "visibleTests": [],
-    "hiddenTests": []
+    "hiddenTests": [
+      "solution_test.go"
+    ]
   },
   "compatibility": {
     "requestedTechnology": "Go",
     "requestedObjective": "Count even numbers in a slice",
-    "reuseTags": ["go", "slices", "filtering", "aggregation"]
+    "reuseTags": [
+      "go",
+      "slices",
+      "filtering",
+      "aggregation"
+    ]
   }
 }

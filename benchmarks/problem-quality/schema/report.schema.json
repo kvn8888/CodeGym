@@ -1,9 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://codegym.dev/schemas/problem-quality/report.v1.json",
+  "$id": "https://codegym.dev/schemas/problem-quality/report.v2.json",
   "title": "ProblemQualityReport",
   "type": "object",
   "required": [
+    "report_version",
     "run_id",
     "started_at",
     "completed_at",
@@ -164,9 +165,15 @@
         "unresolved_eligibility_cases": {
           "type": "integer",
           "minimum": 0
+        },
+        "metrics": {
+          "$ref": "#/$defs/metrics"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "required": [
+        "metrics"
+      ]
     },
     "cases": {
       "type": "array",
@@ -196,12 +203,6 @@
           "generation": {
             "type": "object",
             "properties": {
-              "blind_agreement": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
-              },
               "reconciliation_count": {
                 "type": [
                   "integer",
@@ -234,6 +235,41 @@
                   "unavailable",
                   "not_applicable"
                 ]
+              },
+              "first_attempt_agreement": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Observed agreement between the first generation attempt and the accepted reference. Expected outcomes are never copied here."
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "artifact_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "input_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "unavailable_reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "generation_failed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Explicit historical generation-failure observation. Null means unavailable; it is never inferred from disagreement or non-convergence."
+              },
+              "generation_failure_details": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Recorded details for an explicit historical generation failure."
               }
             },
             "additionalProperties": false
@@ -853,6 +889,15 @@
               }
             },
             "additionalProperties": false
+          },
+          "ambiguous_spec_recorded": {
+            "type": "boolean"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/finding"
+            }
           }
         },
         "additionalProperties": false
@@ -930,6 +975,17 @@
         }
       },
       "additionalProperties": false
+    },
+    "report_version": {
+      "type": "string",
+      "const": "2.0.0",
+      "description": "Problem-quality report format version. Bump when required report fields or metric semantics change."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
     }
   },
   "additionalProperties": false,
@@ -1098,6 +1154,288 @@
         "sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metric": {
+      "type": "object",
+      "required": [
+        "status",
+        "definition",
+        "numerator",
+        "denominator",
+        "excluded"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "measured",
+            "unavailable",
+            "not_applicable"
+          ]
+        },
+        "definition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "numerator": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excluded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exclusion_reasons": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "unavailable_reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "correct_alternative_acceptance",
+        "wrong_solution_rejection",
+        "discrimination_score",
+        "ambiguous_specification_rate",
+        "first_attempt_agreement",
+        "reconciliation_frequency",
+        "non_convergence_rate",
+        "cases"
+      ],
+      "properties": {
+        "correct_alternative_acceptance": {
+          "$ref": "#/$defs/metric"
+        },
+        "wrong_solution_rejection": {
+          "$ref": "#/$defs/metric"
+        },
+        "discrimination_score": {
+          "$ref": "#/$defs/metric"
+        },
+        "ambiguous_specification_rate": {
+          "$ref": "#/$defs/metric"
+        },
+        "first_attempt_agreement": {
+          "$ref": "#/$defs/metric"
+        },
+        "reconciliation_frequency": {
+          "$ref": "#/$defs/metric"
+        },
+        "non_convergence_rate": {
+          "$ref": "#/$defs/metric"
+        },
+        "reconciliation_directions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "cases": {
+          "$ref": "#/$defs/metricCaseBasis"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metricCaseBasis": {
+      "type": "object",
+      "required": [
+        "total",
+        "eligible",
+        "development_fixtures_excluded",
+        "unresolved_eligibility_excluded",
+        "observed_generation_cases"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "eligible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "development_fixtures_excluded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_eligibility_excluded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed_generation_cases": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "followUp": {
+      "type": "object",
+      "required": [
+        "action",
+        "owner"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "findingEvidence": {
+      "type": "object",
+      "required": [
+        "source",
+        "detail"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "id",
+        "case_id",
+        "kind",
+        "summary",
+        "cause_established",
+        "follow_ups"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "surviving_wrong_solution",
+            "setup_failure",
+            "case_not_run",
+            "ambiguous_specification",
+            "generation_failure",
+            "first_attempt_disagreement",
+            "reconciliation",
+            "non_convergence"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "assessment_quality",
+            "historical_generation"
+          ]
+        },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_identity_status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable"
+          ]
+        },
+        "artifact_identity_unavailable_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quality_metric_treatment": {
+          "type": "string",
+          "enum": [
+            "included",
+            "excluded",
+            "not_applicable"
+          ]
+        },
+        "quality_metric_treatment_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "solution_id": {
+          "type": "string"
+        },
+        "test_id": {
+          "type": "string"
+        },
+        "assertion_code": {
+          "type": "string"
+        },
+        "comparator_context": {
+          "type": "string"
+        },
+        "hypothesis": {
+          "type": "string"
+        },
+        "cause_established": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/findingEvidence"
+          }
+        },
+        "review_action": {
+          "type": "string"
+        },
+        "follow_ups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/followUp"
+          }
         }
       },
       "additionalProperties": false

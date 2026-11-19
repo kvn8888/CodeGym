@@ -9,8 +9,8 @@ build_test_run:
   strategy: http
   entrypoint: src/app.js
   commands:
-    setup: npm install
-    build: ""
+    setup: npm ci
+    build: node --check src/app.js && node --check test/greeting.test.js && node --check test/capture.js && node --check test/capture.test.js
     test: npm test
     run: node src/app.js
   limits:

@@ -42,6 +42,7 @@ const (
 	ReviewStatusReviewed   = "reviewed"
 	ReviewStatusUnresolved = "unresolved"
 
+	BenchmarkEligibilityEligible   = "eligible"
 	BenchmarkEligibilityUnresolved = "unresolved"
 )
 

@@ -50,10 +50,32 @@ type ReferenceConfig struct {
 // generation provenance. The harness never fabricates these values: when the
 // field is absent, saved generated exercises report unavailable revisions.
 type GenerationProvenanceConfig struct {
-	ModelRevision  string           `json:"model_revision,omitempty"`
-	PromptRevision string           `json:"prompt_revision,omitempty"`
-	Config         map[string]any   `json:"config,omitempty"`
-	Usage          *GenerationUsage `json:"usage,omitempty"`
+	ModelRevision  string                        `json:"model_revision,omitempty"`
+	PromptRevision string                        `json:"prompt_revision,omitempty"`
+	Config         map[string]any                `json:"config,omitempty"`
+	Usage          *GenerationUsage              `json:"usage,omitempty"`
+	Observations   *GenerationObservationsConfig `json:"observations,omitempty"`
+}
+
+// GenerationObservationsConfig is an optional historical record supplied with
+// a saved independently generated exercise. It is evidence about how that
+// exercise was produced, not a new model call. The artifact/input digests bind
+// the record to the exact saved inputs; a mismatch rejects the run config.
+//
+// A failure that produced no saved artifact or reference cannot be represented
+// here because both identity digests would have to be fabricated. Such evidence
+// needs a separate identity path; this configuration records only failures with
+// saved content identity.
+type GenerationObservationsConfig struct {
+	Source                   string `json:"source"`
+	ArtifactSHA256           string `json:"artifact_sha256"`
+	InputSHA256              string `json:"input_sha256"`
+	FirstAttemptAgreement    *bool  `json:"first_attempt_agreement,omitempty"`
+	ReconciliationCount      *int   `json:"reconciliation_count,omitempty"`
+	ReconciliationDirection  string `json:"reconciliation_direction,omitempty"`
+	NonConvergence           *bool  `json:"non_convergence,omitempty"`
+	GenerationFailed         *bool  `json:"generation_failed,omitempty"`
+	GenerationFailureDetails string `json:"generation_failure_details,omitempty"`
 }
 
 func (r *RunConfig) ArtifactManifestPath() string {
@@ -87,8 +109,81 @@ func decodeRunConfig(data []byte) (*RunConfig, error) {
 		if err := validateGenerationUsage(config.GenerationProvenance.Usage); err != nil {
 			return nil, fmt.Errorf("generation_provenance.usage: %w", err)
 		}
+		if err := validateGenerationObservations(config.GenerationProvenance.Observations); err != nil {
+			return nil, fmt.Errorf("generation_provenance.observations: %w", err)
+		}
+	}
+	if config.GenerationProvenance != nil && config.GenerationProvenance.Observations != nil && config.DevelopmentFixture {
+		return nil, errors.New("development fixtures cannot supply generation observations")
 	}
 	return &config, nil
+}
+
+func validateGenerationObservations(observations *GenerationObservationsConfig) error {
+	if observations == nil {
+		return nil
+	}
+	observations.Source = strings.TrimSpace(observations.Source)
+	if observations.Source == "" {
+		return errors.New("source is required")
+	}
+	var err error
+	observations.ArtifactSHA256, err = normalizeSHA256Digest("artifact_sha256", observations.ArtifactSHA256)
+	if err != nil {
+		return err
+	}
+	observations.InputSHA256, err = normalizeSHA256Digest("input_sha256", observations.InputSHA256)
+	if err != nil {
+		return err
+	}
+	observations.GenerationFailureDetails = strings.TrimSpace(observations.GenerationFailureDetails)
+	if observations.GenerationFailed == nil && observations.GenerationFailureDetails != "" {
+		return errors.New("generation_failure_details requires generation_failed to be recorded")
+	}
+	if observations.FirstAttemptAgreement == nil && observations.ReconciliationCount == nil &&
+		strings.TrimSpace(observations.ReconciliationDirection) == "" && observations.NonConvergence == nil &&
+		observations.GenerationFailed == nil {
+		return errors.New("at least one of first_attempt_agreement, reconciliation_count, reconciliation_direction, non_convergence, or generation_failed is required")
+	}
+	if observations.GenerationFailed != nil {
+		if *observations.GenerationFailed && observations.GenerationFailureDetails == "" {
+			return errors.New("generation_failure_details is required when generation_failed is true")
+		}
+		if !*observations.GenerationFailed && observations.GenerationFailureDetails != "" {
+			return errors.New("generation_failure_details must be empty when generation_failed is false")
+		}
+	}
+	if observations.ReconciliationCount != nil && *observations.ReconciliationCount < 0 {
+		return errors.New("reconciliation_count must be non-negative")
+	}
+	direction := strings.TrimSpace(observations.ReconciliationDirection)
+	if direction != "" {
+		switch direction {
+		case "reference", "tests", "both":
+		default:
+			return fmt.Errorf("reconciliation_direction must be reference, tests, or both, got %q", observations.ReconciliationDirection)
+		}
+		if observations.ReconciliationCount == nil || *observations.ReconciliationCount == 0 {
+			return errors.New("reconciliation_direction requires a positive reconciliation_count")
+		}
+	} else if observations.ReconciliationCount != nil && *observations.ReconciliationCount > 0 {
+		return errors.New("reconciliation_direction is required when reconciliation_count is positive")
+	}
+	observations.ReconciliationDirection = direction
+	return nil
+}
+
+func normalizeSHA256Digest(field, value string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if len(normalized) != 64 {
+		return "", fmt.Errorf("%s must be a 64-character SHA-256 hex digest", field)
+	}
+	for _, character := range normalized {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return "", fmt.Errorf("%s must be a SHA-256 hex digest", field)
+		}
+	}
+	return normalized, nil
 }
 
 // LoadRunConfig reads and validates the per-case run configuration. The
@@ -249,4 +344,29 @@ func resolveInside(root, rel string) (string, error) {
 		return "", fmt.Errorf("%q escapes the artifact root", rel)
 	}
 	return candidate, nil
+}
+
+func validateGenerationObservationIdentity(config *RunConfig, identity *ContentIdentity, baselineKind string) error {
+	if config == nil || config.GenerationProvenance == nil || config.GenerationProvenance.Observations == nil {
+		return nil
+	}
+	if strings.TrimSpace(baselineKind) != "independent" {
+		return errors.New("generation observations are supported only for baseline_kind independent")
+	}
+	if config.DevelopmentFixture {
+		return errors.New("development fixtures cannot supply generation observations")
+	}
+	if identity == nil {
+		return errors.New("generation observations require saved input identity")
+	}
+	observations := config.GenerationProvenance.Observations
+	if observations.ArtifactSHA256 != identity.Artifact.SHA256 {
+		return fmt.Errorf("generation observations artifact_sha256 %q does not match saved artifact identity %q",
+			observations.ArtifactSHA256, identity.Artifact.SHA256)
+	}
+	if observations.InputSHA256 != identity.Reference.SHA256 {
+		return fmt.Errorf("generation observations input_sha256 %q does not match saved reference input identity %q",
+			observations.InputSHA256, identity.Reference.SHA256)
+	}
+	return nil
 }

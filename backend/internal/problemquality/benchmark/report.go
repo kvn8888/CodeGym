@@ -30,6 +30,7 @@ type Meta struct {
 	Branch             string
 	Dirty              bool
 	BaselineKind       string
+	ExecutionMode      string
 	ModelRevision      string
 	PromptRevision     string
 	CorpusRoot         string
@@ -273,6 +274,15 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 	if promptRevision == "" {
 		promptRevision = unavailableReason(meta.DevelopmentFixture)
 	}
+	executionMode := strings.TrimSpace(meta.ExecutionMode)
+	if executionMode == "" {
+		executionMode = "local"
+	}
+	sandboxMode := executionMode == "sandbox"
+	modeLabel := "local-development"
+	if sandboxMode {
+		modeLabel = "sandbox"
+	}
 	report := Report{
 		RunID:              meta.RunID,
 		StartedAt:          meta.StartedAt.UTC().Format(time.RFC3339Nano),
@@ -311,9 +321,9 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 				"budget ledger, and is not evidence that paid enforcement occurred.",
 		},
 		Execution: ExecutionReport{
-			Mode:            "local-development",
-			Local:           true,
-			Sandbox:         false,
+			Mode:            modeLabel,
+			Local:           executionMode == "local",
+			Sandbox:         sandboxMode,
 			ModelOperations: false,
 			PaidOperations:  false,
 			TimeoutSeconds:  int(meta.Timeout.Seconds()),

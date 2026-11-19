@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/kvn8888/codegym/backend/internal/agentruntime"
 	"github.com/kvn8888/codegym/backend/internal/benchmarkbudget"
 	"github.com/kvn8888/codegym/backend/internal/envintegration"
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
@@ -18,17 +20,26 @@ import (
 )
 
 type Options struct {
-	CorpusRoot         string
-	CaseDirs           []string
-	OutputPath         string
-	SchemaPath         string
-	Timeout            time.Duration
-	BaselineKind       string
-	ModelRevision      string
-	PromptRevision     string
-	DevelopmentFixture bool
-	ExecuteLocal       bool
-	BudgetSnapshot     *benchmarkbudget.Snapshot
+	CorpusRoot          string
+	CaseDirs            []string
+	OutputPath          string
+	SchemaPath          string
+	Timeout             time.Duration
+	BaselineKind        string
+	ModelRevision       string
+	PromptRevision      string
+	DevelopmentFixture  bool
+	ExecuteLocal        bool
+	ExecuteSandbox      bool
+	ExecutionMode       string
+	SandboxExecutor     agentruntime.SandboxExecutor
+	DaytonaAPIKey       string
+	DaytonaAPIURL       string
+	SandboxSnapshot     string
+	SandboxWorkspaceDir string
+	SandboxEphemeral    bool
+	BudgetSnapshot      *benchmarkbudget.Snapshot
+	ReviewAuthorities   []string
 
 	now func() time.Time
 }
@@ -54,9 +65,23 @@ type Result struct {
 // failure); CLI exit codes distinguish quality from execution failures in the
 // returned Result.
 func Execute(ctx context.Context, opts Options) (Result, error) {
-	if !opts.ExecuteLocal {
-		return Result{}, errors.New("local execution must be explicitly selected with -execution local")
+	executionMode := strings.TrimSpace(opts.ExecutionMode)
+	if executionMode == "" {
+		if opts.ExecuteSandbox {
+			executionMode = "sandbox"
+		} else if opts.ExecuteLocal {
+			executionMode = "local"
+		}
 	}
+	switch executionMode {
+	case "local", "sandbox":
+	default:
+		if executionMode == "" {
+			return Result{}, errors.New("execution mode must be explicitly selected with -execution local or -execution sandbox")
+		}
+		return Result{}, fmt.Errorf("execution mode %q is unsupported; only local and sandbox development execution are available", executionMode)
+	}
+	opts.ExecutionMode = executionMode
 	if opts.Timeout <= 0 {
 		return Result{}, errors.New("timeout must be greater than zero")
 	}
@@ -143,6 +168,7 @@ func Execute(ctx context.Context, opts Options) (Result, error) {
 		Branch:             branch,
 		Dirty:              dirty,
 		BaselineKind:       opts.BaselineKind,
+		ExecutionMode:      opts.ExecutionMode,
 		ModelRevision:      opts.ModelRevision,
 		PromptRevision:     opts.PromptRevision,
 		CorpusRoot:         corpusRoot,
@@ -213,8 +239,49 @@ func runCase(ctx context.Context, runID string, opts Options, loaded problemqual
 		ProposedManifestPath: &manifestPath,
 		Diagnostics:          []environmentverify.Diagnostic{},
 	}
-	commandRunner := &envintegration.LocalCommandRunner{}
-	assessor := &environmentverify.LocalProtocolAssessor{}
+	var commandRunner environmentverify.CommandRunner
+	var assessor environmentverify.AssessmentRunner
+	var cleanupSandbox func()
+	cleanupSandbox = func() {}
+	if strings.TrimSpace(opts.ExecutionMode) == "sandbox" {
+		networkBlockAll := false
+		if limits := loaded.Case.BuildTestRun.Limits; limits != nil {
+			mode := strings.ToLower(strings.TrimSpace(limits.NetworkMode))
+			networkBlockAll = mode == "none" || mode == "block-all"
+		}
+		sandbox, cleanup, err := createBenchmarkSandbox(ctx, opts, networkBlockAll)
+		if err != nil {
+			result.Err = fmt.Errorf("create sandbox: %w", err)
+			return result
+		}
+		cleanupSandbox = cleanup
+		defer cleanupSandbox()
+		remoteRoot := strings.TrimRight(strings.TrimSpace(opts.SandboxWorkspaceDir), "/")
+		if remoteRoot == "" {
+			remoteRoot = envintegration.DefaultSandboxWorkspaceDir
+		}
+		if err := envintegration.UploadTree(ctx, sandbox, config.ArtifactRoot, remoteRoot); err != nil {
+			result.Err = fmt.Errorf("upload artifact to sandbox: %w", err)
+			return result
+		}
+		commandRunner = envintegration.SandboxCommandRunner{
+			Executor: sandbox,
+			Paths: envintegration.SandboxPathMapper{
+				LocalRoot:  config.ArtifactRoot,
+				RemoteRoot: remoteRoot,
+			},
+			Timeout: opts.Timeout,
+		}
+		assessor = envintegration.SandboxAssessor{
+			Executor:   sandbox,
+			ScratchDir: "/tmp/codegym-assess",
+			Timeout:    opts.Timeout,
+		}
+		builder.Runtime = &environmentverify.RuntimeInfo{Name: "daytona-sandbox", Version: "development-only"}
+	} else {
+		commandRunner = &envintegration.LocalCommandRunner{}
+		assessor = &environmentverify.LocalProtocolAssessor{}
+	}
 	verifyOptions := environmentverify.DefaultVerifyOptions()
 	verifyOptions.Timeouts = environmentverify.StageTimeouts{
 		Setup:      opts.Timeout,
@@ -228,6 +295,45 @@ func runCase(ctx context.Context, runID string, opts Options, loaded problemqual
 	result.Verifier = verifierResult
 	result.Collection = collection
 	return result
+}
+
+func createBenchmarkSandbox(ctx context.Context, opts Options, networkBlockAll bool) (agentruntime.SandboxExecutor, func(), error) {
+	if opts.SandboxExecutor != nil {
+		return opts.SandboxExecutor, func() {}, nil
+	}
+	apiKey := strings.TrimSpace(opts.DaytonaAPIKey)
+	apiURL := strings.TrimSpace(opts.DaytonaAPIURL)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("DAYTONA_API_KEY"))
+	}
+	if apiURL == "" {
+		apiURL = strings.TrimSpace(os.Getenv("DAYTONA_API_URL"))
+	}
+	if apiKey == "" || apiURL == "" {
+		return nil, nil, errors.New("Daytona credentials are required for sandbox execution")
+	}
+	snapshot := strings.TrimSpace(opts.SandboxSnapshot)
+	if snapshot == "" {
+		snapshot = strings.TrimSpace(os.Getenv("CODEGYM_BASE_SNAPSHOT"))
+	}
+	if snapshot == "" {
+		return nil, nil, errors.New("a Daytona base snapshot is required for sandbox execution")
+	}
+	client, err := envintegration.NewDaytonaClient(apiKey, apiURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	labels := map[string]string{"codegym": "problem-quality-benchmark"}
+	sandbox, err := client.Create(ctx, envintegration.SandboxParams(snapshot, labels, networkBlockAll, opts.SandboxEphemeral))
+	if err != nil {
+		return nil, nil, fmt.Errorf("create Daytona sandbox: %w", err)
+	}
+	cleanup := func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_ = sandbox.Delete(cleanupCtx)
+	}
+	return sandbox, cleanup, nil
 }
 
 func validateBaselineKind(kind string) error {

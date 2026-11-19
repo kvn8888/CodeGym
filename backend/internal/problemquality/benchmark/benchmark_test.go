@@ -266,7 +266,7 @@ func TestExecuteRejectsPaidModeBeforeWork(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Execute = %+v, want explicit local-execution rejection", result)
 	}
-	if !strings.Contains(err.Error(), "local execution must be explicitly selected") {
+	if !strings.Contains(err.Error(), "execution mode must be explicitly selected") {
 		t.Fatalf("error = %v", err)
 	}
 }

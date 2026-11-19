@@ -44,9 +44,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("problem-quality-benchmark", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var cases stringList
-	execution := flags.String("execution", "", "execution mode; only 'local' is supported")
+	var reviewAuthorities stringList
+	execution := flags.String("execution", "", "execution mode: local or sandbox")
+	sandboxAPIKey := flags.String("sandbox-api-key", os.Getenv("DAYTONA_API_KEY"), "Daytona API key for sandbox execution (defaults to DAYTONA_API_KEY)")
+	sandboxAPIURL := flags.String("sandbox-api-url", os.Getenv("DAYTONA_API_URL"), "Daytona API URL for sandbox execution (defaults to DAYTONA_API_URL)")
+	sandboxSnapshot := flags.String("sandbox-snapshot", os.Getenv("CODEGYM_BASE_SNAPSHOT"), "Daytona base snapshot for sandbox execution (defaults to CODEGYM_BASE_SNAPSHOT)")
+	sandboxWorkspace := flags.String("sandbox-workspace", os.Getenv("CODEGYM_SANDBOX_WORKSPACE"), "sandbox workspace directory for artifact upload (defaults to CODEGYM_SANDBOX_WORKSPACE or /home/agent/work)")
+	sandboxEphemeral := flags.Bool("sandbox-ephemeral", true, "create an ephemeral Daytona sandbox")
 	corpus := flags.String("corpus", "", "problem-quality corpus directory")
 	flags.Var(&cases, "case", "explicit case directory (repeatable)")
+	flags.Var(&reviewAuthorities, "review-authority", "authorized human review authority (repeatable)")
 	output := flags.String("output", "problem-quality-report.json", "report output path")
 	schema := flags.String("schema", "", "report schema path (default: repository benchmark schema)")
 	timeout := flags.Duration("timeout", 2*time.Minute, "timeout for each setup/build/test/assessment command")
@@ -63,11 +70,18 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	if strings.TrimSpace(*execution) != "local" {
+	switch strings.TrimSpace(*execution) {
+	case "local":
+	case "sandbox":
+		if strings.TrimSpace(*sandboxAPIKey) == "" || strings.TrimSpace(*sandboxAPIURL) == "" || strings.TrimSpace(*sandboxSnapshot) == "" {
+			fmt.Fprintln(stderr, "problem-quality-benchmark: sandbox execution requires -sandbox-api-key, -sandbox-api-url, and -sandbox-snapshot (or their environment variables)")
+			return 2
+		}
+	default:
 		if strings.TrimSpace(*execution) == "" {
-			fmt.Fprintln(stderr, "problem-quality-benchmark: local execution must be explicitly selected with -execution local")
+			fmt.Fprintln(stderr, "problem-quality-benchmark: execution mode must be explicitly selected with -execution local or -execution sandbox")
 		} else {
-			fmt.Fprintf(stderr, "problem-quality-benchmark: execution mode %q is unsupported; only local development execution is available (paid/model/sandbox modes are rejected before any work)\n", *execution)
+			fmt.Fprintf(stderr, "problem-quality-benchmark: execution mode %q is unsupported; only local and sandbox development execution are available\n", *execution)
 		}
 		return 2
 	}
@@ -93,17 +107,25 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	result, err := benchmark.Execute(ctx, benchmark.Options{
-		CorpusRoot:         *corpus,
-		CaseDirs:           cases,
-		OutputPath:         *output,
-		SchemaPath:         schemaPath,
-		Timeout:            *timeout,
-		BaselineKind:       *baselineKind,
-		ModelRevision:      *modelRevision,
-		PromptRevision:     *promptRevision,
-		DevelopmentFixture: *developmentFixture,
-		ExecuteLocal:       true,
-		BudgetSnapshot:     budgetSnapshot,
+		CorpusRoot:          *corpus,
+		CaseDirs:            cases,
+		OutputPath:          *output,
+		SchemaPath:          schemaPath,
+		Timeout:             *timeout,
+		BaselineKind:        *baselineKind,
+		ModelRevision:       *modelRevision,
+		PromptRevision:      *promptRevision,
+		DevelopmentFixture:  *developmentFixture,
+		ExecutionMode:       strings.TrimSpace(*execution),
+		ExecuteLocal:        strings.TrimSpace(*execution) == "local",
+		ExecuteSandbox:      strings.TrimSpace(*execution) == "sandbox",
+		DaytonaAPIKey:       strings.TrimSpace(*sandboxAPIKey),
+		DaytonaAPIURL:       strings.TrimSpace(*sandboxAPIURL),
+		SandboxSnapshot:     strings.TrimSpace(*sandboxSnapshot),
+		SandboxWorkspaceDir: strings.TrimSpace(*sandboxWorkspace),
+		SandboxEphemeral:    *sandboxEphemeral,
+		BudgetSnapshot:      budgetSnapshot,
+		ReviewAuthorities:   reviewAuthorities,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "problem-quality-benchmark: %v\n", err)

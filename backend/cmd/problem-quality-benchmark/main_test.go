@@ -64,7 +64,8 @@ func strengthenNormalizationInput(t *testing.T, fixture string) {
     # case-sensitive survivor from the checked-in development fixture.
     try:
         got = normalize(["Alpha"])`
-	updated := strings.Replace(string(data), original, replacement, 1)
+	normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
+	updated := strings.Replace(normalized, original, replacement, 1)
 	if updated == string(data) {
 		t.Fatalf("temporary fixture test does not contain the expected weak normalization block")
 	}
@@ -265,7 +266,7 @@ func TestRunPerCaseExecutionFailureWritesPreliminaryReportAndExitsTwo(t *testing
 
 func TestRunRejectsUnsupportedExecutionModesBeforeAnyWork(t *testing.T) {
 	requirePython3(t)
-	for _, mode := range []string{"paid", "model", "sandbox"} {
+	for _, mode := range []string{"paid", "model"} {
 		t.Run(mode, func(t *testing.T) {
 			workDir := t.TempDir()
 			fixture := copyDevelopmentFixture(t)

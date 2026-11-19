@@ -336,6 +336,63 @@ func (a SandboxAssessor) timeoutFor(ctx context.Context) time.Duration {
 	return a.Timeout
 }
 
+// UploadTree copies a local directory tree into a sandbox, preserving relative
+// paths. It is the reverse of SandboxTreeMaterializer and lets host-owned
+// artifacts run in a sandbox without first being promoted to a snapshot.
+func UploadTree(ctx context.Context, executor agentruntime.SandboxExecutor, localRoot, remoteRoot string) error {
+	if executor == nil {
+		return errors.New("envintegration: sandbox executor is required to upload a tree")
+	}
+	localRoot = strings.TrimSpace(localRoot)
+	remoteRoot = strings.TrimRight(strings.TrimSpace(remoteRoot), "/")
+	if localRoot == "" || remoteRoot == "" {
+		return errors.New("envintegration: local and remote roots are required to upload a tree")
+	}
+	info, err := os.Stat(localRoot)
+	if err != nil {
+		return fmt.Errorf("envintegration: stat local root: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("envintegration: local root %q is not a directory", localRoot)
+	}
+	if _, _, err := executor.ExecuteCommand(ctx, "mkdir -p "+shellSingleQuote(remoteRoot), time.Minute); err != nil {
+		return fmt.Errorf("envintegration: create remote root: %w", err)
+	}
+	return filepath.WalkDir(localRoot, func(hostPath string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if walkErr := ctx.Err(); walkErr != nil {
+			return walkErr
+		}
+		rel, relErr := filepath.Rel(localRoot, hostPath)
+		if relErr != nil {
+			return relErr
+		}
+		if rel == "." {
+			return nil
+		}
+		remotePath := path.Join(remoteRoot, filepath.ToSlash(rel))
+		if entry.IsDir() {
+			if _, _, mkErr := executor.ExecuteCommand(ctx, "mkdir -p "+shellSingleQuote(remotePath), time.Minute); mkErr != nil {
+				return fmt.Errorf("envintegration: create remote directory %q: %w", remotePath, mkErr)
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("envintegration: local tree contains a non-regular file %q", rel)
+		}
+		content, readErr := os.ReadFile(hostPath)
+		if readErr != nil {
+			return fmt.Errorf("envintegration: read local file %q: %w", rel, readErr)
+		}
+		if upErr := executor.UploadFile(ctx, content, remotePath); upErr != nil {
+			return fmt.Errorf("envintegration: upload %q: %w", rel, upErr)
+		}
+		return nil
+	})
+}
+
 // shellSingleQuote quotes one argument for a POSIX shell.
 func shellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"

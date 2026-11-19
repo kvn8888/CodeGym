@@ -34,6 +34,12 @@ type SnapshottingSandbox interface {
 	ListFiles(ctx context.Context, dir string) ([]agentruntime.SandboxEntry, error)
 }
 
+// SandboxParams builds the SDK create request for one sandbox. It is shared so
+// practice, boot checks, builds, and benchmark runs request the same shape.
+func SandboxParams(snapshot string, labels map[string]string, networkBlockAll, ephemeral bool) types.SnapshotParams {
+	return sandboxParams(snapshot, labels, networkBlockAll, ephemeral)
+}
+
 // sandboxParams builds the SDK create request for one sandbox. It is shared so
 // practice, boot checks, and builds request the same shape.
 func sandboxParams(snapshot string, labels map[string]string, networkBlockAll, ephemeral bool) types.SnapshotParams {

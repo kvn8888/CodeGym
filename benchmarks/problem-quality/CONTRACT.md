@@ -277,8 +277,37 @@ The report is written to `/tmp/problem-quality-report.json`; the command exits
 state is written to `/tmp/problem-quality-budget.json` and reused by later runs
 when the same path is supplied.
 
-Local execution must be selected explicitly with `-execution local`. Model,
-paid, and sandbox execution modes are rejected before any work runs.
+Local execution must be selected explicitly with `-execution local`. Model and
+paid execution modes are rejected before any work runs. Sandbox execution is
+available with `-execution sandbox` (see below).
+
+### Sandbox development benchmark
+
+The benchmark can also run each case's setup/build/test/assessment commands in
+an isolated Daytona sandbox instead of the local shell:
+
+```sh
+go run ./cmd/problem-quality-benchmark \
+  -execution sandbox \
+  -case ../benchmarks/problem-quality/cases/python-sum-even-numbers \
+  -development-fixture \
+  -sandbox-snapshot "$CODEGYM_BASE_SNAPSHOT" \
+  -output /tmp/pqb-sandbox-report.json
+```
+
+Credentials and defaults are read from `DAYTONA_API_KEY`, `DAYTONA_API_URL`,
+`CODEGYM_BASE_SNAPSHOT`, and `CODEGYM_SANDBOX_WORKSPACE` unless the matching
+`-sandbox-*` flags are supplied. The artifact tree is uploaded to the sandbox
+workspace, stage commands run there through `SandboxCommandRunner`, and each
+solution's assessment runs in a fresh sandbox directory through
+`SandboxAssessor`. Sandboxes are ephemeral by default and deleted after each
+case, including after cancellation or timeout.
+
+Reports mark `execution.mode: "sandbox"` and `execution.sandbox: true`. They do
+**not** yet claim paid-budget enforcement; the existing budget state is still
+observed only until paid adapters are connected in a later phase. Sandbox
+execution still produces preliminary evidence and does not satisfy reviewer
+eligibility on its own.
 
 ### Run configuration
 

@@ -19,6 +19,14 @@ import (
 	"github.com/kvn8888/codegym/backend/internal/problemquality"
 )
 
+type GenerationUsageRecord struct {
+	CaseID    string `json:"case_id"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+	TokensIn  int    `json:"tokens_in"`
+	TokensOut int    `json:"tokens_out"`
+}
+
 type Options struct {
 	CorpusRoot          string
 	CaseDirs            []string
@@ -40,6 +48,7 @@ type Options struct {
 	SandboxEphemeral    bool
 	BudgetSnapshot      *benchmarkbudget.Snapshot
 	ReviewAuthorities   []string
+	GenerationUsage     []GenerationUsageRecord
 
 	now func() time.Time
 }
@@ -169,6 +178,7 @@ func Execute(ctx context.Context, opts Options) (Result, error) {
 		Dirty:              dirty,
 		BaselineKind:       opts.BaselineKind,
 		ExecutionMode:      opts.ExecutionMode,
+		GenerationUsage:    opts.GenerationUsage,
 		ModelRevision:      opts.ModelRevision,
 		PromptRevision:     opts.PromptRevision,
 		CorpusRoot:         corpusRoot,

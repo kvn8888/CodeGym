@@ -395,6 +395,36 @@ Local execution must be selected explicitly with `-execution local`. Model and
 paid execution modes are rejected before any work runs. Sandbox execution is
 available with `-execution sandbox` (see below).
 
+### Generation baseline development run
+
+A narrow first generation baseline can produce a fresh reference solution for a
+saved case before assessment:
+
+```sh
+doppler run -p codegym -c dev -- env CODEGYM_GENAI_PROVIDER_ORDER=meta \
+  go run ./cmd/problem-quality-benchmark \
+  -execution local \
+  -case ../benchmarks/problem-quality/cases/python-sum-even-numbers \
+  -development-fixture \
+  -generate-reference \
+  -generation-provider meta \
+  -output /tmp/pqb-generated-report.json \
+  -schema ../benchmarks/problem-quality/schema/report.schema.json \
+  -budget-state ''
+```
+
+The command makes exactly one model call per selected case. It copies the case
+to a temporary directory, replaces only the declared reference file with the
+generated solution, and leaves the reviewed spec, tests, correct alternatives,
+and wrong solutions untouched. The report records provider, model, tokens, and
+that a live model operation occurred in `generation_config.live_generation_usage`
+and `execution.model_operations`.
+
+This is deliberately a baseline for reference generation only. It does not yet
+measure blind agreement, reconciliation, or independently generated
+specifications/tests; those metrics remain unavailable until the independent
+generation mechanism is merged. Paid-budget settlement is still a later phase.
+
 ### Sandbox development benchmark
 
 The benchmark can also run each case's setup/build/test/assessment commands in

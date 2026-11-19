@@ -64,6 +64,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	checkReadiness := flags.Bool("readiness", false, "validate saved input readiness without executing")
 	budgetState := flags.String("budget-state", "problem-quality-budget.json", "persistent budget state path; blank disables budget accounting")
 	priorSpendMicros := flags.Int64("prior-spend-micros", 0, "explicit prior spending in micro-USD recorded when budget state is first created")
+	generateReference := flags.Bool("generate-reference", false, "generate a fresh reference solution with the selected baseline before assessing each case")
+	generationProvider := flags.String("generation-provider", "", "GenAI provider name for -generate-reference (defaults to the first configured provider)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -111,6 +113,48 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		budgetSnapshot = &snapshot
 	}
 
+	var generationUsage []benchmark.GenerationUsageRecord
+	if *generateReference {
+		if len(cases) == 0 {
+			fmt.Fprintln(stderr, "problem-quality-benchmark: -generate-reference requires at least one explicit -case")
+			return 2
+		}
+		if budgetSnapshot != nil && budgetSnapshot.RemainingMicros < generationMaxCostMicros {
+			fmt.Fprintf(stderr, "problem-quality-benchmark: remaining budget %d micro-USD is below the %d micro-USD generation guard\n",
+				budgetSnapshot.RemainingMicros, generationMaxCostMicros)
+			return 2
+		}
+		baseline, err := newGenerationBaseline(*generationProvider)
+		if err != nil {
+			fmt.Fprintf(stderr, "problem-quality-benchmark: %v\n", err)
+			return 2
+		}
+		generatedCases := make([]string, 0, len(cases))
+		for _, caseDir := range cases {
+			solution, usage, err := baseline.generateReference(ctx, caseDir)
+			if err != nil {
+				fmt.Fprintf(stderr, "problem-quality-benchmark: generate reference for %s: %v\n", caseDir, err)
+				return 2
+			}
+			dest, err := materializeGeneratedCase(caseDir, solution)
+			if err != nil {
+				fmt.Fprintf(stderr, "problem-quality-benchmark: %v\n", err)
+				return 2
+			}
+			generatedCases = append(generatedCases, dest)
+			generationUsage = append(generationUsage, benchmark.GenerationUsageRecord{
+				CaseID:    filepath.Base(caseDir),
+				Provider:  usage.Provider,
+				Model:     usage.Model,
+				TokensIn:  usage.TokensIn,
+				TokensOut: usage.TokensOut,
+			})
+			fmt.Fprintf(stdout, "generated: case=%s provider=%s model=%s tokens_in=%d tokens_out=%d\n",
+				filepath.Base(caseDir), usage.Provider, usage.Model, usage.TokensIn, usage.TokensOut)
+		}
+		cases = generatedCases
+	}
+
 	result, err := benchmark.Execute(ctx, benchmark.Options{
 		CorpusRoot:          *corpus,
 		CaseDirs:            cases,
@@ -131,6 +175,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		SandboxEphemeral:    *sandboxEphemeral,
 		BudgetSnapshot:      budgetSnapshot,
 		ReviewAuthorities:   reviewAuthorities,
+		GenerationUsage:     generationUsage,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "problem-quality-benchmark: %v\n", err)

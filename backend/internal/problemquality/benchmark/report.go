@@ -57,6 +57,7 @@ type Meta struct {
 	Dirty              bool
 	BaselineKind       string
 	ExecutionMode      string
+	GenerationUsage    []GenerationUsageRecord
 	ModelRevision      string
 	PromptRevision     string
 	CorpusRoot         string
@@ -394,6 +395,7 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 		executionMode = "local"
 	}
 	sandboxMode := executionMode == "sandbox"
+	liveGeneration := len(meta.GenerationUsage) > 0
 	modeLabel := "local-development"
 	if sandboxMode {
 		modeLabel = "sandbox"
@@ -423,24 +425,35 @@ func BuildReport(meta Meta, runs []CaseRun) Report {
 			"assessment_protocol": environmentverify.TestOutcomeProtocol,
 			"timeout_seconds":     int(meta.Timeout.Seconds()),
 		},
-		GenerationConfig: map[string]any{
-			"status":                             generationMetricStatus(meta.BaselineKind, meta.DevelopmentFixture),
-			"usage":                              "not_applicable",
-			"assessment_run_usage":               UsageStatusNotApplicable,
-			"model_operations":                   false,
-			"paid_operations":                    false,
-			"baseline_kind":                      meta.BaselineKind,
-			"assessment_run_generation_occurred": false,
-			"saved_exercise_provenance":          savedProvenanceFor(rawModelRevision, rawPromptRevision, meta.DevelopmentFixture),
-			"note": "No generation, model calls, token usage, or paid sandboxes were invoked by this " +
-				"assessment run. Saved-exercise usage is reported separately per case, is not charged to the " +
-				"budget ledger, and is not evidence that paid enforcement occurred.",
-		},
+		GenerationConfig: func() map[string]any {
+			config := map[string]any{
+				"status":                             generationMetricStatus(meta.BaselineKind, meta.DevelopmentFixture),
+				"assessment_run_usage":               UsageStatusNotApplicable,
+				"paid_operations":                    false,
+				"baseline_kind":                      meta.BaselineKind,
+				"saved_exercise_provenance":          savedProvenanceFor(rawModelRevision, rawPromptRevision, meta.DevelopmentFixture),
+				"assessment_run_generation_occurred": liveGeneration,
+				"model_operations":                   liveGeneration,
+			}
+			if liveGeneration {
+				config["usage"] = "measured"
+				config["live_generation_usage"] = meta.GenerationUsage
+				config["note"] = "This run invoked the selected generation baseline to produce a fresh " +
+					"reference for each selected case before assessment. Token usage is recorded from the provider; " +
+					"paid-budget settlement is not yet wired to these calls."
+			} else {
+				config["usage"] = "not_applicable"
+				config["note"] = "No generation, model calls, token usage, or paid sandboxes were invoked by this " +
+					"assessment run. Saved-exercise usage is reported separately per case, is not charged to the " +
+					"budget ledger, and is not evidence that paid enforcement occurred."
+			}
+			return config
+		}(),
 		Execution: ExecutionReport{
 			Mode:            modeLabel,
 			Local:           executionMode == "local",
 			Sandbox:         sandboxMode,
-			ModelOperations: false,
+			ModelOperations: liveGeneration,
 			PaidOperations:  false,
 			TimeoutSeconds:  int(meta.Timeout.Seconds()),
 		},

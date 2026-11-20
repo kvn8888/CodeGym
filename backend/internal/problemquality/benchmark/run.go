@@ -293,7 +293,7 @@ func runCase(ctx context.Context, runID string, opts Options, loaded problemqual
 			},
 			Timeout: opts.Timeout,
 		}
-		assessor = envintegration.SandboxAssessor{
+		assessor = &envintegration.SandboxProtocolAssessor{
 			Executor:   sandbox,
 			ScratchDir: "/tmp/codegym-assess",
 			Timeout:    opts.Timeout,

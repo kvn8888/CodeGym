@@ -111,11 +111,20 @@ func (b *generationBaseline) generateReference(ctx context.Context, caseDir stri
 	if err != nil {
 		return "", generation.GenerateResult{}, err
 	}
+	strategy, _ := spec["strategy"].(string)
 	instructions := "You write reference solutions for coding exercises. " +
 		"Return one JSON object with a single string field named \"solution\". " +
 		"The value must be raw source code only: define the requested function and any helpers it needs, " +
 		"with no markdown, no test code, no imports of hidden tests, no shell commands, and no file or network access. " +
 		"The code must satisfy every ambiguity resolution in the supplied spec."
+	if strings.EqualFold(strings.TrimSpace(strategy), "http") {
+		instructions = "You write reference implementations for HTTP coding exercises. " +
+			"Return one JSON object with a single string field named \"solution\". " +
+			"The value must be raw source code only, with no markdown or test code. " +
+			"Implement the exact HTTP method, path, request, and response contract in the supplied spec, including every ambiguity resolution. " +
+			"Produce a complete runnable server that listens on process.env.PORT || 3000 when run directly, " +
+			"and exports the app for tests. Do not use shell commands or access the filesystem outside normal framework setup."
+	}
 	result, err := b.orchestrator.GenerateWithProfile(ctx, generation.GenerateInput{
 		Kind: generation.KindProblem,
 		Spec: requestSpec,

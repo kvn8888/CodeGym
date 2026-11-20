@@ -98,7 +98,7 @@ func main() {
 			command: "set -e; " +
 				"ARCH=$(uname -m); " +
 				"case \"$ARCH\" in x86_64) GOARCH=amd64;; aarch64) GOARCH=arm64;; *) echo \"unsupported arch $ARCH\" >&2; exit 1;; esac; " +
-				"curl -fsSL \"https://go.dev/dl/go1.22.5.linux-${GOARCH}.tar.gz\" -o /tmp/go.tar.gz && " +
+				"curl -fsSL \"https://go.dev/dl/go1.27.0.linux-${GOARCH}.tar.gz\" -o /tmp/go.tar.gz && " +
 				"sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz && " +
 				"sudo ln -sf /usr/local/go/bin/go /usr/local/bin/go && " +
 				"sudo ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt",

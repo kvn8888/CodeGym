@@ -14,6 +14,10 @@ on:
         description: 'Run only the Python regression case'
         type: boolean
         default: true
+      skip_generation:
+        description: 'Debug mode: skip model call and assess saved reference only'
+        type: boolean
+        default: false
       baseline_kind:
         description: 'Generation baseline kind'
         type: choice
@@ -71,6 +75,7 @@ jobs:
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           SMOKE: ${{ inputs.smoke || 'true' }}
+          SKIP_GENERATION: ${{ inputs.skip_generation || 'true' }}
           BASELINE_KIND: ${{ inputs.baseline_kind || 'current' }}
           MODEL_REVISION: ${{ inputs.model_revision || '' }}
           PROMPT_REVISION: ${{ inputs.prompt_revision || '' }}
@@ -79,6 +84,7 @@ jobs:
           doppler run -p codegym -c stg -- bash ./scripts/problem-quality-preprod.sh
 
       - name: Upload report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: problem-quality-report-${{ steps.benchmark.outputs.run_id }}

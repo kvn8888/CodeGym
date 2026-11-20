@@ -29,6 +29,7 @@ PROMPT_REVISION="${PROMPT_REVISION:-}"
 BUDGET_STATE="${PQ_BUDGET_STATE:-$ROOT/budget/problem-quality-budget.json}"
 PRIOR_SPEND_MICROS="${PQ_PRIOR_SPEND_MICROS:-0}"
 GENERATION_PROVIDER="${GENERATION_PROVIDER:-meta}"
+SKIP_GENERATION="${SKIP_GENERATION:-false}"
 
 CASES=(
   "-case" "../benchmarks/problem-quality/cases/python-sum-even-numbers"
@@ -52,10 +53,14 @@ else
   BUDGET_ARGS=(-budget-state '')
 fi
 
+GENERATION_ARGS=()
+if [[ "$SKIP_GENERATION" != "true" ]]; then
+  GENERATION_ARGS=(-generate-reference -generation-provider "$GENERATION_PROVIDER")
+fi
+
 go run ./cmd/problem-quality-benchmark \
   -execution sandbox \
-  -generate-reference \
-  -generation-provider "$GENERATION_PROVIDER" \
+  "${GENERATION_ARGS[@]}" \
   "${CASES[@]}" \
   -baseline-kind "$BASELINE_KIND" \
   -model-revision "$MODEL_REVISION" \
@@ -70,8 +75,8 @@ go run ./cmd/problem-quality-benchmark \
 cat > "$OUT_DIR/README.md" <<EOF
 # Problem-quality preprod run: $RUN_ID
 
-Preliminary preprod evidence. Generated reference solutions were produced by
-\`$GENERATION_PROVIDER\` and assessed in Daytona sandboxes.
+Preliminary preprod evidence. Assessment ran in Daytona sandboxes.
+Generation baseline: $([[ "$SKIP_GENERATION" == "true" ]] && echo "skipped (debug run)" || echo "$GENERATION_PROVIDER")
 
 - Smoke run: $SMOKE
 - Baseline kind: $BASELINE_KIND

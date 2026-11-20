@@ -47,7 +47,7 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Install Doppler CLI
-        run: curl -Ls https://cli.doppler.com/install.sh | sh
+        run: curl -Ls https://cli.doppler.com/install.sh | sudo sh
 
       - name: Require Doppler token
         env:

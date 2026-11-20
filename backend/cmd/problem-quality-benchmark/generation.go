@@ -144,7 +144,9 @@ func (b *generationBaseline) generateReference(ctx context.Context, caseDir stri
 		default:
 			instructions += "Write JavaScript CommonJS source using require('express'), not ES module import syntax. " +
 				"The file is run directly as `node src/app.js` and must start listening immediately. " +
-				"Call app.listen(process.env.PORT || 3000) unconditionally at module load. " +
+				"Convert the port to a number with `Number(process.env.PORT) || 3000` before calling app.listen, " +
+				"because a string port is treated as a named pipe by Node. " +
+				"Call app.listen(port) unconditionally at module load. " +
 				"Never use `if (require.main === module)` or any other startup guard. " +
 				"Set module.exports = app after starting the server."
 		}

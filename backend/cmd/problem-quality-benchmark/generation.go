@@ -142,10 +142,16 @@ func (b *generationBaseline) generateReference(ctx context.Context, caseDir stri
 				"Return status 400 with JSON {\"error\":\"name is required\"} for missing or blank name " +
 				"and status 200 with JSON {\"message\":\"Hello, <name>!\"} otherwise."
 		default:
-			instructions += "Write JavaScript CommonJS source using require('express'). " +
-				"Call app.listen(process.env.PORT || 3000) unconditionally at module load — " +
-				"do not guard it with require.main === module — and set module.exports = app."
+			instructions += "Write JavaScript CommonJS source using require('express'), not ES module import syntax. " +
+				"The file is run directly as `node src/app.js` and must start listening immediately. " +
+				"Call app.listen(process.env.PORT || 3000) unconditionally at module load. " +
+				"Never use `if (require.main === module)` or any other startup guard. " +
+				"Set module.exports = app after starting the server."
 		}
+	} else if strings.EqualFold(strings.TrimSpace(language), "go") {
+		instructions += " Write Go source with `package main`. " +
+			"Define exactly the function named in the spec with the signature shown there. " +
+			"Do not use package solution, package main_test, or any other package name."
 	}
 	var lastResult generation.GenerateResult
 	var lastErr error

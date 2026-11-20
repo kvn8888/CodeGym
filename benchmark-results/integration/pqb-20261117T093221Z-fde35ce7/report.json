@@ -1,0 +1,1039 @@
+{
+  "run_id": "pqb-20261117T093221Z-fde35ce7",
+  "started_at": "2026-11-17T09:32:21.270113Z",
+  "completed_at": "2026-11-17T09:32:47.759717Z",
+  "tested_commit": "47e1d034695013b6316d60237441bf296f9fa4b2",
+  "branch": "feature/problem-quality-evaluation",
+  "tested_dirty": true,
+  "prompt_revision": "not_applicable",
+  "model_revision": "not_applicable",
+  "baseline_kind": "other",
+  "runtime_config": {
+    "assessment_protocol": "CODEGYM_TEST",
+    "command_source": "artifact_manifest",
+    "execution": "local-shell",
+    "network_isolation": "not_provided",
+    "sandbox": "none",
+    "timeout_seconds": 120,
+    "workspace_isolation": "verifier_temporary_directories"
+  },
+  "generation_config": {
+    "assessment_run_generation_occurred": false,
+    "assessment_run_usage": "not_applicable",
+    "baseline_kind": "other",
+    "model_operations": false,
+    "note": "No generation, model calls, token usage, or paid sandboxes were invoked by this assessment run. Saved-exercise usage is reported separately per case, is not charged to the budget ledger, and is not evidence that paid enforcement occurred.",
+    "paid_operations": false,
+    "saved_exercise_provenance": "not_applicable",
+    "status": "not_applicable",
+    "usage": "not_applicable"
+  },
+  "elapsed_ms": 26489,
+  "preliminary": true,
+  "development_fixture": true,
+  "corpus": {
+    "root": "",
+    "selection": "explicit_cases",
+    "case_count": 3
+  },
+  "selected_case_ids": [
+    "python-sum-even-numbers",
+    "go-count-even-numbers",
+    "express-greeting-endpoint"
+  ],
+  "execution": {
+    "mode": "local-development",
+    "local": true,
+    "sandbox": false,
+    "model_operations": false,
+    "paid_operations": false,
+    "timeout_seconds": 120
+  },
+  "summary": {
+    "blind_agreement_rate": "not_applicable",
+    "reconciliation_frequency": "not_applicable",
+    "non_convergence_rate": "not_applicable",
+    "cases_total": 3,
+    "cases_passed": 3,
+    "cases_failed": 0,
+    "cases_error": 0,
+    "cases_not_run": 0,
+    "development_fixture_cases": 3,
+    "eligible_cases": 0,
+    "unresolved_eligibility_cases": 3
+  },
+  "cases": [
+    {
+      "case_id": "python-sum-even-numbers",
+      "corpus_version": "1.0.0",
+      "technology": "python",
+      "status": "passed",
+      "generation": {
+        "blind_agreement": null,
+        "reconciliation_count": null,
+        "reconciliation_direction": null,
+        "non_convergence": null,
+        "status": "not_applicable"
+      },
+      "provenance": {
+        "generation_during_assessment": false,
+        "saved_exercise_provenance": "not_applicable",
+        "model_revision": "not_applicable",
+        "model_revision_status": "not_applicable",
+        "prompt_revision": "not_applicable",
+        "prompt_revision_status": "not_applicable",
+        "saved_exercise_usage": {
+          "status": "not_applicable"
+        },
+        "assessment_run_usage": {
+          "status": "not_applicable"
+        }
+      },
+      "content_identity": {
+        "algorithm": "sha256",
+        "case_definition": {
+          "path": "case.yaml",
+          "sha256": "99f2f3fe6d50954c9d84f24a280c6fe8f897d2c0490f87f36a8fbdade2cd170a"
+        },
+        "specification": {
+          "path": "spec.json",
+          "sha256": "7397fdd6ada5fbfdf2b624dc273cf7092e9ca1097c1c692f2bc4992e8645fee6"
+        },
+        "run_config": {
+          "path": "benchmark-run.json",
+          "sha256": "384368b569997a7aac8c628a0fb548297e76795ff5adef384ba4cf08816aa9da"
+        },
+        "reference": {
+          "id": "development-reference",
+          "files": [
+            {
+              "path": "reference/solution.py",
+              "sha256": "c23777237674e298b7d9352728023476e94347e6dd92995340232c5920a997c1"
+            }
+          ],
+          "sha256": "bb8d4530feb56c972ecb36eef806bb9f07e96cb65cf90d44d8c1a5a3cdf17fa8"
+        },
+        "correct_alternatives": [
+          {
+            "id": "alt-01",
+            "files": [
+              {
+                "path": "correct/alt-01/solution.py",
+                "sha256": "eb1bd0b7f8f5ce19974134d23bb89b87a6b0d3fd02b9af99ff5a1986b3103407"
+              }
+            ],
+            "sha256": "4ae3d353348a1d95f3d82bb5c6c828c822436af17847e4df4fc3c9ee4c6eff35"
+          }
+        ],
+        "wrong_solutions": [
+          {
+            "id": "sum-odd-numbers",
+            "files": [
+              {
+                "path": "wrong/sum-odd-numbers/solution.py",
+                "sha256": "96281527e8253bdf4507e7b4b67dd34440590dc9354fc8203554b0e4ac2221e5"
+              }
+            ],
+            "sha256": "ed507e3947aeb25fad15ec8dc212f14a9f1efd202a7c03460c97303c573896af"
+          },
+          {
+            "id": "ignore-negative-evens",
+            "files": [
+              {
+                "path": "wrong/ignore-negative-evens/solution.py",
+                "sha256": "54a5ac8f9d4cf1bf0fe10f0b35817fcd64b4513c3bed6dbdfd76874599119ec0"
+              }
+            ],
+            "sha256": "20895eb1fecb0816073934afe3bb9812999407dfa43297e1dd9bf90a3a7f11c5"
+          }
+        ],
+        "artifact": {
+          "files": [
+            {
+              "path": "manifest.json",
+              "sha256": "e1396f0799ca6c9f0f47930168cdd96e72c9f19b1fdc87cc66787ec41bfa7543"
+            },
+            {
+              "path": "protected/test_sum_even.py",
+              "sha256": "81e45bbdd849572bd925cd26a828bc4a3bed88067acbce1e093cdc509402e94a"
+            },
+            {
+              "path": "pytest.ini",
+              "sha256": "c1992f3b57820d126ba6ce85f098f96c09d27ee441e2b24d82ed1831f4b807fb"
+            },
+            {
+              "path": "solution.py",
+              "sha256": "63a8a731887dd58f7301325d79fe69741e1ce434ad09ac222afb09a234b2ba7b"
+            }
+          ],
+          "sha256": "db7d80bcf7413e624db05005fea1340588b1241e267a37f3a755882a5c8f2858"
+        }
+      },
+      "artifact": {
+        "id": "python-sum-even-numbers",
+        "version": "0.1.0",
+        "root": "/Users/cristinavaldes/SCOOP/CodeGym/benchmarks/problem-quality/cases/python-sum-even-numbers/artifact",
+        "manifest_path": "manifest.json"
+      },
+      "reference": {
+        "id": "development-reference",
+        "role": "generated-reference",
+        "files": [
+          "solution.py"
+        ],
+        "reviewed_by": "development-fixture",
+        "reviewed_at": "2026-11-17T00:00:00Z",
+        "reviewed_reference": "development fixture only; not human approval",
+        "review_status": "reviewed",
+        "artifact_id": "python-sum-even-numbers",
+        "artifact_version": "0.1.0"
+      },
+      "reference_outcome": {
+        "id": "development-reference",
+        "role": "generated-reference",
+        "accepted": true,
+        "passed": true,
+        "execution_status": "completed",
+        "exit_code": 0,
+        "elapsed_ms": 187,
+        "review_status": "reviewed",
+        "reviewed_by": "development-fixture",
+        "reviewed_at": "2026-11-17T00:00:00Z",
+        "reviewed_reference": "development fixture only; not human approval",
+        "tests": [
+          {
+            "test_id": "hidden-mixed-values",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-negative-values",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-empty-values",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-zero-value",
+            "passed": true
+          }
+        ]
+      },
+      "correct_alternatives": [
+        {
+          "id": "alt-01",
+          "role": "correct-alternative",
+          "accepted": true,
+          "passed": true,
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 184,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-10T00:00:00Z",
+          "reviewed_reference": "case:python-sum-even-numbers;correct:alt-01",
+          "tests": [
+            {
+              "test_id": "hidden-mixed-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-negative-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-empty-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-zero-value",
+              "passed": true
+            }
+          ]
+        }
+      ],
+      "wrong_solutions": [
+        {
+          "id": "sum-odd-numbers",
+          "role": "wrong-solution",
+          "rejected": true,
+          "passed": true,
+          "denominator_decision": "meaningful",
+          "intended_failure_matched": true,
+          "intended_failure": {
+            "test_id": "hidden-mixed-values",
+            "code": "WRONG_SUM",
+            "expected": "6",
+            "actual": "4",
+            "reason": "The implementation sums odd numbers instead of even numbers."
+          },
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 186,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-10T00:00:00Z",
+          "reviewed_reference": "case:python-sum-even-numbers;wrong:sum-odd-numbers",
+          "tests": [
+            {
+              "test_id": "hidden-mixed-values",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "WRONG_SUM",
+                "expected": "6",
+                "actual": "4"
+              }
+            },
+            {
+              "test_id": "hidden-negative-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-empty-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-zero-value",
+              "passed": true
+            }
+          ]
+        },
+        {
+          "id": "ignore-negative-evens",
+          "role": "wrong-solution",
+          "rejected": true,
+          "passed": true,
+          "denominator_decision": "meaningful",
+          "intended_failure_matched": true,
+          "intended_failure": {
+            "test_id": "hidden-negative-values",
+            "code": "WRONG_SUM",
+            "expected": "0",
+            "actual": "2",
+            "reason": "The implementation ignores negative even numbers."
+          },
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 197,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-10T00:00:00Z",
+          "reviewed_reference": "case:python-sum-even-numbers;wrong:ignore-negative-evens",
+          "tests": [
+            {
+              "test_id": "hidden-mixed-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-negative-values",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "WRONG_SUM",
+                "expected": "0",
+                "actual": "2"
+              }
+            },
+            {
+              "test_id": "hidden-empty-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-zero-value",
+              "passed": true
+            }
+          ]
+        }
+      ],
+      "required_test_ids": [
+        "hidden-mixed-values",
+        "hidden-negative-values"
+      ],
+      "comparator_config": "exact: Exact integer equality for the summed result.",
+      "comparator_result": "not_measured_by_harness",
+      "ambiguous_spec": false,
+      "development_fixture": true,
+      "excluded_from_reviewed_totals": true,
+      "blocked": false,
+      "benchmark_eligible": false,
+      "benchmark_eligibility": "unresolved",
+      "benchmark_eligibility_reason": "benchmark eligibility policy is unresolved; execution success alone does not establish eligibility",
+      "review_status": "reviewed",
+      "run_config": "/Users/cristinavaldes/SCOOP/CodeGym/benchmarks/problem-quality/cases/python-sum-even-numbers/benchmark-run.json",
+      "elapsed_ms": 1190
+    },
+    {
+      "case_id": "go-count-even-numbers",
+      "corpus_version": "1.0.0",
+      "technology": "go",
+      "status": "passed",
+      "generation": {
+        "blind_agreement": null,
+        "reconciliation_count": null,
+        "reconciliation_direction": null,
+        "non_convergence": null,
+        "status": "not_applicable"
+      },
+      "provenance": {
+        "generation_during_assessment": false,
+        "saved_exercise_provenance": "not_applicable",
+        "model_revision": "not_applicable",
+        "model_revision_status": "not_applicable",
+        "prompt_revision": "not_applicable",
+        "prompt_revision_status": "not_applicable",
+        "saved_exercise_usage": {
+          "status": "not_applicable"
+        },
+        "assessment_run_usage": {
+          "status": "not_applicable"
+        }
+      },
+      "content_identity": {
+        "algorithm": "sha256",
+        "case_definition": {
+          "path": "case.yaml",
+          "sha256": "17df92b79cd42cc52ac2fb1806df6a4e75d950224397bdae5b64a30484ff1e99"
+        },
+        "specification": {
+          "path": "spec.json",
+          "sha256": "27943f6e6f11ad69dc99849c63b5bb9961389875bed4e04b7376426f27d18806"
+        },
+        "run_config": {
+          "path": "benchmark-run.json",
+          "sha256": "c9e7653bad92dfa728850c50b43691c9391bcb6aa470613c0e0d7c353c8b3be1"
+        },
+        "reference": {
+          "id": "development-reference",
+          "files": [
+            {
+              "path": "reference/solution.go",
+              "sha256": "698108b9cd2f7426bf43e86f35fcd36cee0957ab3ecd2bc4686415cf64e4becc"
+            }
+          ],
+          "sha256": "beea8acd55bad88303535bc4775144d52a4ba4941dc9a1fa1e1251c1a34ec5d6"
+        },
+        "correct_alternatives": [
+          {
+            "id": "alt-01",
+            "files": [
+              {
+                "path": "correct/alt-01/solution.go",
+                "sha256": "698108b9cd2f7426bf43e86f35fcd36cee0957ab3ecd2bc4686415cf64e4becc"
+              }
+            ],
+            "sha256": "efb5a32016ffc7f478db6ad68422a1ceb6b301a89e0caff770e7d8ae86637b7c"
+          }
+        ],
+        "wrong_solutions": [
+          {
+            "id": "count-odd-numbers",
+            "files": [
+              {
+                "path": "wrong/count-odd-numbers/solution.go",
+                "sha256": "fef503c7edd89c478dabed5014a2472e86d88b0ff64baae52cf34fadf289e5b5"
+              }
+            ],
+            "sha256": "d8764b28d91e585fab373c1e67ee427a8b49452cdc7f5c69a9cb1284ff549b6d"
+          },
+          {
+            "id": "count-positive-evens-only",
+            "files": [
+              {
+                "path": "wrong/count-positive-evens-only/solution.go",
+                "sha256": "a98728eb86b263bc5a7d7b4c29f2612b7afeb6dc9d38d0edbb911a7262402e9f"
+              }
+            ],
+            "sha256": "c94eb054f7eb1b0dd25111e536bb1d6d998543c3f589688ac22b4152c7f1de4e"
+          }
+        ],
+        "artifact": {
+          "files": [
+            {
+              "path": "go.mod",
+              "sha256": "6efac38647d868e7d74a8310598d2981ba0b4c945e03536ecd0f79f698e5ed3b"
+            },
+            {
+              "path": "manifest.json",
+              "sha256": "82e45faf6a28526710c18af70b829608aa6ba30b1ebb78d5e781b7840ac864ed"
+            },
+            {
+              "path": "solution.go",
+              "sha256": "6eb2ffc1f275b176b5d01f28706f3653b6a2ec28b53713a23035c35e185eb662"
+            },
+            {
+              "path": "solution_test.go",
+              "sha256": "f325215310c4696aaa691f5bfa7867b70f591ddfb259bfb903a603c3d4c36d2e"
+            }
+          ],
+          "sha256": "4a27895276a72fe6bef3d20ed5c87e862a37e3138d229e6828a4ab62ee2f277e"
+        }
+      },
+      "artifact": {
+        "id": "go-count-even-numbers",
+        "version": "0.1.0",
+        "root": "/Users/cristinavaldes/SCOOP/CodeGym/benchmarks/problem-quality/cases/go-count-even-numbers/artifact",
+        "manifest_path": "manifest.json"
+      },
+      "reference": {
+        "id": "development-reference",
+        "role": "generated-reference",
+        "files": [
+          "solution.go"
+        ],
+        "reviewed_by": "development-fixture",
+        "reviewed_at": "2026-11-17T00:00:00Z",
+        "reviewed_reference": "development fixture only; not human approval",
+        "review_status": "reviewed",
+        "artifact_id": "go-count-even-numbers",
+        "artifact_version": "0.1.0"
+      },
+      "reference_outcome": {
+        "id": "development-reference",
+        "role": "generated-reference",
+        "accepted": true,
+        "passed": true,
+        "execution_status": "completed",
+        "exit_code": 0,
+        "elapsed_ms": 1069,
+        "review_status": "reviewed",
+        "reviewed_by": "development-fixture",
+        "reviewed_at": "2026-11-17T00:00:00Z",
+        "reviewed_reference": "development fixture only; not human approval",
+        "tests": [
+          {
+            "test_id": "hidden-mixed-values",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-negative-values",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-empty-values",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-zero-value",
+            "passed": true
+          }
+        ]
+      },
+      "correct_alternatives": [
+        {
+          "id": "alt-01",
+          "role": "correct-alternative",
+          "accepted": true,
+          "passed": true,
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 901,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-10T00:00:00Z",
+          "reviewed_reference": "case:go-count-even-numbers;correct:alt-01",
+          "tests": [
+            {
+              "test_id": "hidden-mixed-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-negative-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-empty-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-zero-value",
+              "passed": true
+            }
+          ]
+        }
+      ],
+      "wrong_solutions": [
+        {
+          "id": "count-odd-numbers",
+          "role": "wrong-solution",
+          "rejected": true,
+          "passed": true,
+          "denominator_decision": "meaningful",
+          "intended_failure_matched": true,
+          "intended_failure": {
+            "test_id": "hidden-mixed-values",
+            "code": "WRONG_COUNT",
+            "expected": "2",
+            "actual": "3",
+            "reason": "The implementation counts odd numbers instead of even numbers."
+          },
+          "execution_status": "completed",
+          "exit_code": 1,
+          "elapsed_ms": 937,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-10T00:00:00Z",
+          "reviewed_reference": "case:go-count-even-numbers;wrong:count-odd-numbers",
+          "tests": [
+            {
+              "test_id": "hidden-mixed-values",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "WRONG_COUNT",
+                "expected": "2",
+                "actual": "3"
+              }
+            },
+            {
+              "test_id": "hidden-negative-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-empty-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-zero-value",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "WRONG_COUNT",
+                "expected": "1",
+                "actual": "0"
+              }
+            }
+          ]
+        },
+        {
+          "id": "count-positive-evens-only",
+          "role": "wrong-solution",
+          "rejected": true,
+          "passed": true,
+          "denominator_decision": "meaningful",
+          "intended_failure_matched": true,
+          "intended_failure": {
+            "test_id": "hidden-negative-values",
+            "code": "WRONG_COUNT",
+            "expected": "2",
+            "actual": "1",
+            "reason": "The implementation ignores negative even numbers."
+          },
+          "execution_status": "completed",
+          "exit_code": 1,
+          "elapsed_ms": 906,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-10T00:00:00Z",
+          "reviewed_reference": "case:go-count-even-numbers;wrong:count-positive-evens-only",
+          "tests": [
+            {
+              "test_id": "hidden-mixed-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-negative-values",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "WRONG_COUNT",
+                "expected": "2",
+                "actual": "1"
+              }
+            },
+            {
+              "test_id": "hidden-empty-values",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-zero-value",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "WRONG_COUNT",
+                "expected": "1",
+                "actual": "0"
+              }
+            }
+          ]
+        }
+      ],
+      "required_test_ids": [
+        "hidden-mixed-values",
+        "hidden-negative-values"
+      ],
+      "comparator_config": "exact: Exact integer equality for the counted result.",
+      "comparator_result": "not_measured_by_harness",
+      "ambiguous_spec": false,
+      "development_fixture": true,
+      "excluded_from_reviewed_totals": true,
+      "blocked": false,
+      "benchmark_eligible": false,
+      "benchmark_eligibility": "unresolved",
+      "benchmark_eligibility_reason": "benchmark eligibility policy is unresolved; execution success alone does not establish eligibility",
+      "review_status": "reviewed",
+      "run_config": "/Users/cristinavaldes/SCOOP/CodeGym/benchmarks/problem-quality/cases/go-count-even-numbers/benchmark-run.json",
+      "elapsed_ms": 4389
+    },
+    {
+      "case_id": "express-greeting-endpoint",
+      "corpus_version": "1.0.0",
+      "technology": "express",
+      "status": "passed",
+      "generation": {
+        "blind_agreement": null,
+        "reconciliation_count": null,
+        "reconciliation_direction": null,
+        "non_convergence": null,
+        "status": "not_applicable"
+      },
+      "provenance": {
+        "generation_during_assessment": false,
+        "saved_exercise_provenance": "not_applicable",
+        "model_revision": "not_applicable",
+        "model_revision_status": "not_applicable",
+        "prompt_revision": "not_applicable",
+        "prompt_revision_status": "not_applicable",
+        "saved_exercise_usage": {
+          "status": "not_applicable"
+        },
+        "assessment_run_usage": {
+          "status": "not_applicable"
+        }
+      },
+      "content_identity": {
+        "algorithm": "sha256",
+        "case_definition": {
+          "path": "case.yaml",
+          "sha256": "dc41f967e7163c3f914ce400327dfb7cb5f62a2261bbba318bcf1821f3775ad1"
+        },
+        "specification": {
+          "path": "spec.json",
+          "sha256": "f9283b0dc64676b18ef57a9ee230ad193e40bb311a9b655c945910a8dccfb4ed"
+        },
+        "run_config": {
+          "path": "benchmark-run.json",
+          "sha256": "046feab8bef71abe8987b7ff37aa90825eec74cba3eb0b323b6640e5feac9a2a"
+        },
+        "reference": {
+          "id": "development-reference",
+          "files": [
+            {
+              "path": "reference/app.js",
+              "sha256": "29967835a2646fd56853f8e7b34c37368fb9066576558da03fb2bdedd34fb270"
+            }
+          ],
+          "sha256": "61f5dea92b47f505cadd8193ec72dc002b3177f1cf0525c9fa94bb4b45492f70"
+        },
+        "correct_alternatives": [
+          {
+            "id": "alt-01",
+            "files": [
+              {
+                "path": "correct/alt-01/app.js",
+                "sha256": "29967835a2646fd56853f8e7b34c37368fb9066576558da03fb2bdedd34fb270"
+              }
+            ],
+            "sha256": "d55e3d74a80b3e353a5f548f14c53af82f823e9cf332d66ff5032b32f1bf5920"
+          }
+        ],
+        "wrong_solutions": [
+          {
+            "id": "missing-name-validation",
+            "files": [
+              {
+                "path": "wrong/missing-name-validation/app.js",
+                "sha256": "a79be817653884d3d8117f96b41ec15fb4f6306819e3d223bd90479f1224a81e"
+              }
+            ],
+            "sha256": "7fa67cac2aec3b995d523f1c8d1dd47d749271297f37eaab5012d2b93f773558"
+          },
+          {
+            "id": "wrong-response-field",
+            "files": [
+              {
+                "path": "wrong/wrong-response-field/app.js",
+                "sha256": "52c57fc46613054bea68882f3524d6d02f0b13c7305bf0070511b76495abb391"
+              }
+            ],
+            "sha256": "4ce2abd6671ccaa465a1fd555e287b637afb970ab3d17c0306946c592d0ec742"
+          }
+        ],
+        "artifact": {
+          "files": [
+            {
+              "path": "manifest.json",
+              "sha256": "63a8202093770902e2413208f12ac0f2c2e71ca68c0338817b2597d7e1a2a607"
+            },
+            {
+              "path": "package-lock.json",
+              "sha256": "995c72a72bd271c1f7ae941c196e378eec46c983a5f7274497697493159262ea"
+            },
+            {
+              "path": "package.json",
+              "sha256": "57f74471516e6c6cc4197e320629aa4436c5921d8360b5f0a078f87b0c34d888"
+            },
+            {
+              "path": "src/app.js",
+              "sha256": "29967835a2646fd56853f8e7b34c37368fb9066576558da03fb2bdedd34fb270"
+            },
+            {
+              "path": "test/greeting.test.js",
+              "sha256": "9ec29d6c035c0fe6ba7667c8ed7eeea8d451164bc9dde310efecaaa23212b26b"
+            }
+          ],
+          "sha256": "c399ec9235e3965e1a405e595ef635f3761f96f7e51f5cf6b702c71c584230e3"
+        }
+      },
+      "artifact": {
+        "id": "express-greeting-endpoint",
+        "version": "0.1.0",
+        "root": "/Users/cristinavaldes/SCOOP/CodeGym/benchmarks/problem-quality/cases/express-greeting-endpoint/artifact",
+        "manifest_path": "manifest.json"
+      },
+      "reference": {
+        "id": "development-reference",
+        "role": "generated-reference",
+        "files": [
+          "src/app.js"
+        ],
+        "reviewed_by": "development-fixture",
+        "reviewed_at": "2026-11-17T00:00:00Z",
+        "reviewed_reference": "development fixture only; not human approval",
+        "review_status": "reviewed",
+        "artifact_id": "express-greeting-endpoint",
+        "artifact_version": "0.1.0"
+      },
+      "reference_outcome": {
+        "id": "development-reference",
+        "role": "generated-reference",
+        "accepted": true,
+        "passed": true,
+        "execution_status": "completed",
+        "exit_code": 0,
+        "elapsed_ms": 3812,
+        "review_status": "reviewed",
+        "reviewed_by": "development-fixture",
+        "reviewed_at": "2026-11-17T00:00:00Z",
+        "reviewed_reference": "development fixture only; not human approval",
+        "tests": [
+          {
+            "test_id": "hidden-success",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-response-shape",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-missing-name",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-blank-name",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-unknown-query",
+            "passed": true
+          },
+          {
+            "test_id": "hidden-no-trimming",
+            "passed": true
+          }
+        ]
+      },
+      "correct_alternatives": [
+        {
+          "id": "alt-01",
+          "role": "correct-alternative",
+          "accepted": true,
+          "passed": true,
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 3824,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-11T00:00:00Z",
+          "reviewed_reference": "case:express-greeting-endpoint;correct:alt-01",
+          "tests": [
+            {
+              "test_id": "hidden-success",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-response-shape",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-missing-name",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-blank-name",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-unknown-query",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-no-trimming",
+              "passed": true
+            }
+          ]
+        }
+      ],
+      "wrong_solutions": [
+        {
+          "id": "missing-name-validation",
+          "role": "wrong-solution",
+          "rejected": true,
+          "passed": true,
+          "denominator_decision": "meaningful",
+          "intended_failure_matched": true,
+          "intended_failure": {
+            "test_id": "hidden-missing-name",
+            "code": "HTTP_STATUS",
+            "expected": "400",
+            "actual": "200",
+            "reason": "The route does not reject a missing or blank name."
+          },
+          "execution_status": "completed",
+          "exit_code": 1,
+          "elapsed_ms": 3853,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-11T00:00:00Z",
+          "reviewed_reference": "case:express-greeting-endpoint;wrong:missing-name-validation",
+          "tests": [
+            {
+              "test_id": "hidden-success",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-response-shape",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-missing-name",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "HTTP_STATUS",
+                "expected": "400",
+                "actual": "200"
+              }
+            },
+            {
+              "test_id": "hidden-blank-name",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "HTTP_STATUS",
+                "expected": "400",
+                "actual": "200"
+              }
+            },
+            {
+              "test_id": "hidden-unknown-query",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-no-trimming",
+              "passed": true
+            }
+          ]
+        },
+        {
+          "id": "wrong-response-field",
+          "role": "wrong-solution",
+          "rejected": true,
+          "passed": true,
+          "denominator_decision": "meaningful",
+          "intended_failure_matched": true,
+          "intended_failure": {
+            "test_id": "hidden-response-shape",
+            "code": "JSON_FIELD",
+            "expected": "message",
+            "actual": "greeting",
+            "reason": "The response uses the wrong JSON field name."
+          },
+          "execution_status": "completed",
+          "exit_code": 1,
+          "elapsed_ms": 3795,
+          "review_status": "reviewed",
+          "reviewed_by": "reviewer",
+          "reviewed_at": "2026-11-11T00:00:00Z",
+          "reviewed_reference": "case:express-greeting-endpoint;wrong:wrong-response-field",
+          "tests": [
+            {
+              "test_id": "hidden-success",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-response-shape",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "JSON_FIELD",
+                "expected": "message",
+                "actual": "greeting"
+              }
+            },
+            {
+              "test_id": "hidden-missing-name",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-blank-name",
+              "passed": true
+            },
+            {
+              "test_id": "hidden-unknown-query",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "JSON_VALUE",
+                "expected": "Hello,_Ada!",
+                "actual": "(missing)"
+              }
+            },
+            {
+              "test_id": "hidden-no-trimming",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "JSON_VALUE",
+                "expected": "Hello,_Ada_!",
+                "actual": "(missing)"
+              }
+            }
+          ]
+        }
+      ],
+      "required_test_ids": [
+        "hidden-missing-name",
+        "hidden-response-shape"
+      ],
+      "comparator_config": "exact: Exact status code and exact JSON field/value comparison for the greeting response.",
+      "comparator_result": "not_measured_by_harness",
+      "ambiguous_spec": false,
+      "development_fixture": true,
+      "excluded_from_reviewed_totals": true,
+      "blocked": false,
+      "benchmark_eligible": false,
+      "benchmark_eligibility": "unresolved",
+      "benchmark_eligibility_reason": "benchmark eligibility policy is unresolved; execution success alone does not establish eligibility",
+      "review_status": "reviewed",
+      "run_config": "/Users/cristinavaldes/SCOOP/CodeGym/benchmarks/problem-quality/cases/express-greeting-endpoint/benchmark-run.json",
+      "elapsed_ms": 20827
+    }
+  ],
+  "recommendations": [
+    "Treat this report as preliminary local development evidence, not as broad trust in generated problems.",
+    "Benchmark eligibility remains unresolved until the shared per-solution review policy is agreed; execution success alone is not eligibility.",
+    "This local run does not establish sandbox network or memory isolation and does not satisfy the paid-budget milestone.",
+    "Quality rates are unset because no benchmark-eligible, non-development-fixture case produced a completed sample; development fixtures, cases with unresolved benchmark eligibility, and non-completed execution outcomes are excluded from quality denominators."
+  ]
+}

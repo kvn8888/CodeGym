@@ -1,0 +1,17 @@
+{
+  "case_id": "go-count-even-numbers",
+  "artifact_id": "go-count-even-numbers",
+  "artifact_version": "0.1.0",
+  "artifact_root": "artifact",
+  "manifest_path": "manifest.json",
+  "development_fixture": false,
+  "reference": {
+    "id": "development-reference",
+    "files": {
+      "solution.go": "reference/solution.go"
+    },
+    "reviewed_by": "Hunter and Cristina",
+    "reviewed_at": "2026-11-19T00:00:00Z",
+    "reviewed_reference": "https://github.com/kvn8888/CodeGym/pull/214"
+  }
+}

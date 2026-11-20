@@ -1,0 +1,27 @@
+{
+  "language": "python",
+  "strategy": "unit",
+  "title": "Sum Even Numbers",
+  "description": "Given a list of integers, return the sum of all even integers in the list.",
+  "category": "basics",
+  "subcategory": "filtering-and-aggregation",
+  "tags": ["lists", "integers", "even", "sum"],
+  "difficulty": 1,
+  "estimated_minutes": 10,
+  "hints": ["Check whether each number is divisible by 2.", "An empty list has sum 0."],
+  "entrypoint": "solution.py",
+  "signature": "def sum_even(numbers: list[int]) -> int",
+  "io_contract": "sum_even(numbers) returns the arithmetic sum of every integer in numbers that is divisible by 2. Negative even integers are included. An empty list returns 0.",
+  "comparator": { "kind": "exact" },
+  "ambiguity_resolutions": [
+    "Zero is an even integer and is included in the sum.",
+    "Negative even integers are included.",
+    "An empty list returns 0, not an error or null.",
+    "The input order does not affect the result."
+  ],
+  "function_name": "sum_even",
+  "parameters": [
+    { "name": "numbers", "type": "list[int]" }
+  ],
+  "return_type": "int"
+}

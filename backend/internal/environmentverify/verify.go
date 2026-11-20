@@ -138,6 +138,21 @@ func Verify(ctx context.Context, runner CommandRunner, builder BuilderResult, ar
 // VerifyWithOptions is Verify with explicit backend policy. Timeouts caps
 // each command stage; use DefaultVerifyOptions for standing policy.
 func VerifyWithOptions(ctx context.Context, runner CommandRunner, builder BuilderResult, artifactRoot, verifierRunID string, opts VerifyOptions) VerifierResult {
+	result, _ := verifyWithPlan(ctx, runner, builder, artifactRoot, verifierRunID, opts, nil)
+	return result
+}
+
+// VerifyAssessmentPlanWithOptions runs the same environment verification as
+// VerifyWithOptions, then collects benchmark assessment outcomes for the
+// generated reference, every correct alternative, and every wrong solution.
+// The collection continues after individual solution failures; it stops only
+// when the reference blocks the case, the parent context dies, or the shared
+// environment fails. The single-pair VerifyWithOptions path is unchanged.
+func VerifyAssessmentPlanWithOptions(ctx context.Context, runner CommandRunner, builder BuilderResult, artifactRoot, verifierRunID string, opts VerifyOptions, plan AssessmentPlan) (VerifierResult, AssessmentCollection) {
+	return verifyWithPlan(ctx, runner, builder, artifactRoot, verifierRunID, opts, &plan)
+}
+
+func verifyWithPlan(ctx context.Context, runner CommandRunner, builder BuilderResult, artifactRoot, verifierRunID string, opts VerifyOptions, plan *AssessmentPlan) (VerifierResult, AssessmentCollection) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -149,7 +164,21 @@ func VerifyWithOptions(ctx context.Context, runner CommandRunner, builder Builde
 		timeouts:    opts.Timeouts,
 		assessment:  opts.Assessment,
 		assessor:    opts.Assessor,
+		plan:        plan,
 	}
+	result := v.verify(builder, artifactRoot, opts)
+	collection := AssessmentCollection{}
+	if plan != nil {
+		if v.collection != nil {
+			collection = *v.collection
+		} else {
+			collection = blockedAssessmentCollection(*plan, "assessment did not run: "+firstDiagnosticMessage(result))
+		}
+	}
+	return result, collection
+}
+
+func (v *verifier) verify(builder BuilderResult, artifactRoot string, opts VerifyOptions) VerifierResult {
 	// The entry point enforces the builder contract itself, so a directly
 	// constructed BuilderResult that bypasses ParseBuilderResult gets the
 	// same validation as a parsed one.
@@ -231,15 +260,23 @@ func VerifyWithOptions(ctx context.Context, runner CommandRunner, builder Builde
 		}
 	}
 
-	if opts.Assessment == nil {
+	if v.plan != nil {
+		if opts.Assessment != nil {
+			return v.reject(StageValidation, CodeAssessmentInputsMissing, false,
+				"Assessment inputs and an assessment plan cannot both be supplied.",
+				map[string]any{"field": "assessmentPlan"})
+		}
+		if outcome := v.assessPlan(workspaceDir, manifest, *v.plan); outcome != nil {
+			return *outcome
+		}
+	} else if opts.Assessment == nil {
 		pending := v.reject(StageValidation, CodeAssessmentEvidencePending, false,
 			"Setup, build, and test checks passed, but reviewed-correct and plausible-wrong "+
 				"solution verification is pending, so no verified verdict is issued.",
 			map[string]any{"pending": []string{"reviewed-correct solution", "plausible-wrong solution"}})
 		pending.Promotion.Reason = "No promotion: passing commands alone do not authorize promotion while assessment verification is pending."
 		return pending
-	}
-	if outcome := v.assessSolutions(workspaceDir, manifest); outcome != nil {
+	} else if outcome := v.assessSolutions(workspaceDir, manifest); outcome != nil {
 		return *outcome
 	}
 	// Every required check passed: manifest, artifact, setup, build, test,
@@ -275,7 +312,9 @@ type verifier struct {
 	verifierRun string
 	timeouts    StageTimeouts
 	assessment  *AssessmentSpec
+	plan        *AssessmentPlan
 	assessor    AssessmentRunner
+	collection  *AssessmentCollection
 	checks      []EvidenceCheck
 }
 

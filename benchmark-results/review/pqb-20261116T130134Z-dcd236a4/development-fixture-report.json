@@ -1,0 +1,478 @@
+{
+  "run_id": "pqb-20261116T130134Z-dcd236a4",
+  "started_at": "2026-11-13T13:01:34.557913Z",
+  "completed_at": "2026-11-13T13:01:35.285543Z",
+  "tested_commit": "48f4790c1d9b756337e620203740452f99153721",
+  "branch": "feature/problem-quality-harness",
+  "tested_dirty": true,
+  "prompt_revision": "not_applicable",
+  "model_revision": "not_applicable",
+  "baseline_kind": "other",
+  "runtime_config": {
+    "assessment_protocol": "CODEGYM_TEST",
+    "command_source": "artifact_manifest",
+    "execution": "local-shell",
+    "network_isolation": "not_provided",
+    "sandbox": "none",
+    "timeout_seconds": 120,
+    "workspace_isolation": "verifier_temporary_directories"
+  },
+  "generation_config": {
+    "assessment_run_generation_occurred": false,
+    "assessment_run_usage": "not_applicable",
+    "baseline_kind": "other",
+    "model_operations": false,
+    "note": "No generation, model calls, token usage, or paid sandboxes were invoked by this assessment run. Saved-exercise usage is reported separately per case, is not charged to the budget ledger, and is not evidence that paid enforcement occurred.",
+    "paid_operations": false,
+    "saved_exercise_provenance": "not_applicable",
+    "status": "not_applicable",
+    "usage": "not_applicable"
+  },
+  "elapsed_ms": 727,
+  "preliminary": true,
+  "development_fixture": true,
+  "corpus": {
+    "root": "",
+    "selection": "explicit_cases",
+    "case_count": 1
+  },
+  "selected_case_ids": [
+    "development-order-tools"
+  ],
+  "budget": {
+    "currency": "USD",
+    "limit_micros": 30000000,
+    "prior_spend_micros": 0,
+    "reserved_micros": 0,
+    "settled_micros": 0,
+    "committed_micros": 0,
+    "remaining_micros": 30000000,
+    "reservations": []
+  },
+  "execution": {
+    "mode": "local-development",
+    "local": true,
+    "sandbox": false,
+    "model_operations": false,
+    "paid_operations": false,
+    "timeout_seconds": 120
+  },
+  "summary": {
+    "blind_agreement_rate": "not_applicable",
+    "reconciliation_frequency": "not_applicable",
+    "non_convergence_rate": "not_applicable",
+    "cases_total": 1,
+    "cases_passed": 0,
+    "cases_failed": 1,
+    "cases_error": 0,
+    "cases_not_run": 0,
+    "development_fixture_cases": 1,
+    "eligible_cases": 0,
+    "unresolved_eligibility_cases": 1
+  },
+  "cases": [
+    {
+      "case_id": "development-order-tools",
+      "corpus_version": "1.0.0",
+      "technology": "python",
+      "status": "failed",
+      "generation": {
+        "blind_agreement": null,
+        "reconciliation_count": null,
+        "reconciliation_direction": null,
+        "non_convergence": null,
+        "status": "not_applicable"
+      },
+      "provenance": {
+        "generation_during_assessment": false,
+        "saved_exercise_provenance": "not_applicable",
+        "model_revision": "not_applicable",
+        "model_revision_status": "not_applicable",
+        "prompt_revision": "not_applicable",
+        "prompt_revision_status": "not_applicable",
+        "saved_exercise_usage": {
+          "status": "not_applicable"
+        },
+        "assessment_run_usage": {
+          "status": "not_applicable"
+        }
+      },
+      "content_identity": {
+        "algorithm": "sha256",
+        "case_definition": {
+          "path": "case.yaml",
+          "sha256": "66f48c04735f7084382829e1d5139866f08462f764a257b5f609242ae215b28f"
+        },
+        "specification": {
+          "path": "spec.json",
+          "sha256": "8d715ae56900e19865a24979b1d008b0d9aec0e23459cd8722762754fbcce7c2"
+        },
+        "run_config": {
+          "path": "benchmark-run.json",
+          "sha256": "239c7d1d3c23fd2c76550ae5b1310db5ac60199b4e00d64848aff709a469596e"
+        },
+        "reference": {
+          "id": "development-reference",
+          "files": [
+            {
+              "path": "reference/solution.py",
+              "sha256": "8d5f9c6a666d3eda49f629ade670b5f9c7bad89d973759a441906a092b22b7ec"
+            }
+          ],
+          "sha256": "a5353972a4f2435d95e692a81a4c49e55104f3be83c35a285c2dbb027c6fc26a"
+        },
+        "correct_alternatives": [
+          {
+            "id": "alt-01",
+            "files": [
+              {
+                "path": "correct/alt-01/solution.py",
+                "sha256": "013eb47183ec3adf5e386ec86cc0dba19e5e6532afc272aeb468bd5c996915e5"
+              }
+            ],
+            "sha256": "1b504cfac432a89b22c213b360f6b65f4b6ea597c3ac320855ef8ce8c2484ae2"
+          },
+          {
+            "id": "alt-02",
+            "files": [
+              {
+                "path": "correct/alt-02/solution.py",
+                "sha256": "a430ccc2a08120d49927f48bcd860b5d4d321d3e91fb305117c43c6a362f935e"
+              }
+            ],
+            "sha256": "fc695bd2a14675b1cd818126c0332c62ba69f61ea7985858fa9e746885f9d8b8"
+          }
+        ],
+        "wrong_solutions": [
+          {
+            "id": "no-dedupe",
+            "files": [
+              {
+                "path": "wrong/no-dedupe/solution.py",
+                "sha256": "f372a4b8322190d8d53a8a09f2afac248fa1b0eddfb2a8d902afd2848d272caf"
+              }
+            ],
+            "sha256": "efebaaacb74c36752eea32f5b7a196a03b2ceed3db4cf0897d1ad94c5f5fec1c"
+          },
+          {
+            "id": "wrong-empty",
+            "files": [
+              {
+                "path": "wrong/wrong-empty/solution.py",
+                "sha256": "05d3c9e986119711ece9b8b1382b13e49d6f2c31185bc05bb1b1222819b68b1d"
+              }
+            ],
+            "sha256": "fe4fcd574fa391678f6d4b241ad9d4bba219fc7ece77e9e09e0214dda963fca3"
+          },
+          {
+            "id": "case-sensitive",
+            "files": [
+              {
+                "path": "wrong/case-sensitive/solution.py",
+                "sha256": "8033298ecf04f3b5e656a41b3d2619f16ec7425a059b248f8ce2a3fd10dec09f"
+              }
+            ],
+            "sha256": "132f7c96b97d2fd6a5ee5a83e8156526419c2f857c620a7488ccdf5f333cf5c7"
+          }
+        ],
+        "artifact": {
+          "files": [
+            {
+              "path": "manifest.json",
+              "sha256": "f0e33e3f9b81416845da0d2af0e9f3a4579bc56b15712a4e7a26750ccd9a7b49"
+            },
+            {
+              "path": "protected/test_order_tools.py",
+              "sha256": "8bcd895c2159c19a5f42f26cc6411dec1ed282a556770535a0f8a366afc8801e"
+            },
+            {
+              "path": "solution.py",
+              "sha256": "8d5f9c6a666d3eda49f629ade670b5f9c7bad89d973759a441906a092b22b7ec"
+            }
+          ],
+          "sha256": "4429de9a7dc6a70984ef623e7c66c6507652359713234854e95d131fc0e69f3e"
+        }
+      },
+      "artifact": {
+        "id": "development-order-tools-artifact",
+        "version": "0.1.0",
+        "root": "/Users/cristinavaldes/SCOOP/CodeGym/backend/internal/problemquality/testdata/development-order-tools/artifact",
+        "manifest_path": "manifest.json"
+      },
+      "reference": {
+        "id": "development-reference",
+        "role": "generated-reference",
+        "files": [
+          "solution.py"
+        ],
+        "reviewed_by": "development-fixture",
+        "reviewed_at": "2026-11-13T00:00:00Z",
+        "reviewed_reference": "development fixture only; not human approval",
+        "review_status": "reviewed",
+        "artifact_id": "development-order-tools-artifact",
+        "artifact_version": "0.1.0"
+      },
+      "reference_outcome": {
+        "id": "development-reference",
+        "role": "generated-reference",
+        "accepted": true,
+        "passed": true,
+        "execution_status": "completed",
+        "exit_code": 0,
+        "elapsed_ms": 69,
+        "review_status": "reviewed",
+        "reviewed_by": "development-fixture",
+        "reviewed_at": "2026-11-13T00:00:00Z",
+        "reviewed_reference": "development fixture only; not human approval",
+        "tests": [
+          {
+            "test_id": "deduplicates",
+            "passed": true
+          },
+          {
+            "test_id": "empty-input",
+            "passed": true
+          },
+          {
+            "test_id": "order-insensitive",
+            "passed": true
+          },
+          {
+            "test_id": "normalization",
+            "passed": true
+          }
+        ]
+      },
+      "correct_alternatives": [
+        {
+          "id": "alt-01",
+          "role": "correct-alternative",
+          "accepted": true,
+          "passed": true,
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 69,
+          "review_status": "reviewed",
+          "reviewed_by": "development-fixture",
+          "reviewed_at": "2026-11-13T00:00:00Z",
+          "reviewed_reference": "case:development-order-tools;correct:alt-01",
+          "tests": [
+            {
+              "test_id": "deduplicates",
+              "passed": true
+            },
+            {
+              "test_id": "empty-input",
+              "passed": true
+            },
+            {
+              "test_id": "order-insensitive",
+              "passed": true
+            },
+            {
+              "test_id": "normalization",
+              "passed": true
+            }
+          ]
+        },
+        {
+          "id": "alt-02",
+          "role": "correct-alternative",
+          "accepted": true,
+          "passed": true,
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 72,
+          "review_status": "reviewed",
+          "reviewed_by": "development-fixture",
+          "reviewed_at": "2026-11-13T00:00:00Z",
+          "reviewed_reference": "case:development-order-tools;correct:alt-02",
+          "tests": [
+            {
+              "test_id": "deduplicates",
+              "passed": true
+            },
+            {
+              "test_id": "empty-input",
+              "passed": true
+            },
+            {
+              "test_id": "order-insensitive",
+              "passed": true
+            },
+            {
+              "test_id": "normalization",
+              "passed": true
+            }
+          ]
+        }
+      ],
+      "wrong_solutions": [
+        {
+          "id": "no-dedupe",
+          "role": "wrong-solution",
+          "rejected": true,
+          "passed": true,
+          "denominator_decision": "meaningful",
+          "intended_failure_matched": true,
+          "intended_failure": {
+            "test_id": "deduplicates",
+            "code": "DEDUPE",
+            "expected": "2",
+            "actual": "3",
+            "reason": "Duplicate tags are not removed."
+          },
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 70,
+          "review_status": "reviewed",
+          "reviewed_by": "development-fixture",
+          "reviewed_at": "2026-11-13T00:00:00Z",
+          "reviewed_reference": "case:development-order-tools;wrong:no-dedupe",
+          "tests": [
+            {
+              "test_id": "deduplicates",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "DEDUPE",
+                "expected": "2",
+                "actual": "3"
+              }
+            },
+            {
+              "test_id": "empty-input",
+              "passed": true
+            },
+            {
+              "test_id": "order-insensitive",
+              "passed": true
+            },
+            {
+              "test_id": "normalization",
+              "passed": true
+            }
+          ]
+        },
+        {
+          "id": "wrong-empty",
+          "role": "wrong-solution",
+          "rejected": true,
+          "passed": true,
+          "denominator_decision": "meaningful",
+          "intended_failure_matched": true,
+          "intended_failure": {
+            "test_id": "empty-input",
+            "code": "EMPTY",
+            "expected": "0",
+            "actual": "1",
+            "reason": "The empty collection is replaced with one empty tag."
+          },
+          "execution_status": "completed",
+          "exit_code": 0,
+          "elapsed_ms": 66,
+          "review_status": "reviewed",
+          "reviewed_by": "development-fixture",
+          "reviewed_at": "2026-11-13T00:00:00Z",
+          "reviewed_reference": "case:development-order-tools;wrong:wrong-empty",
+          "tests": [
+            {
+              "test_id": "deduplicates",
+              "passed": true
+            },
+            {
+              "test_id": "empty-input",
+              "passed": false,
+              "failure_class": "assertion",
+              "assertion": {
+                "code": "EMPTY",
+                "expected": "0",
+                "actual": "1"
+              }
+            },
+            {
+              "test_id": "order-insensitive",
+              "passed": true
+            },
+            {
+              "test_id": "normalization",
+              "passed": true
+            }
+          ]
+        },
+        {
+          "id": "case-sensitive",
+          "role": "wrong-solution",
+          "rejected": false,
+          "passed": false,
+          "denominator_decision": "meaningful",
+          "surviving": true,
+          "intended_failure_matched": false,
+          "intended_failure": {
+            "test_id": "normalization",
+            "code": "CASE",
+            "expected": "alpha",
+            "actual": "Alpha",
+            "reason": "Uppercase input is not lowercased; the weak fixture omits uppercase coverage."
+          },
+          "execution_status": "completed",
+          "failure_category": "test_failure",
+          "diagnostic_code": "WRONG_SOLUTION_PASSED",
+          "message": "The wrong solution passed all 4 assessment tests, including the expected rejection assertion \"normalization\".",
+          "failure": "The wrong solution passed all 4 assessment tests, including the expected rejection assertion \"normalization\".",
+          "exit_code": 0,
+          "elapsed_ms": 67,
+          "review_status": "reviewed",
+          "reviewed_by": "development-fixture",
+          "reviewed_at": "2026-11-13T00:00:00Z",
+          "reviewed_reference": "case:development-order-tools;wrong:case-sensitive",
+          "tests": [
+            {
+              "test_id": "deduplicates",
+              "passed": true
+            },
+            {
+              "test_id": "empty-input",
+              "passed": true
+            },
+            {
+              "test_id": "order-insensitive",
+              "passed": true
+            },
+            {
+              "test_id": "normalization",
+              "passed": true
+            }
+          ]
+        }
+      ],
+      "required_test_ids": [
+        "deduplicates",
+        "empty-input",
+        "normalization"
+      ],
+      "comparator_config": "set: Set equality for tags; result order is not significant.",
+      "comparator_result": "not_measured_by_harness",
+      "ambiguous_spec": false,
+      "development_fixture": true,
+      "excluded_from_reviewed_totals": true,
+      "blocked": false,
+      "benchmark_eligible": false,
+      "benchmark_eligibility": "unresolved",
+      "benchmark_eligibility_reason": "benchmark eligibility policy is unresolved; execution success alone does not establish eligibility",
+      "review_status": "reviewed",
+      "run_config": "/Users/cristinavaldes/SCOOP/CodeGym/backend/internal/problemquality/testdata/development-order-tools/benchmark-run.json",
+      "failure_category": "test_failure",
+      "failure_details": "The wrong solution passed all 4 assessment tests, including the expected rejection assertion \"normalization\".",
+      "elapsed_ms": 680
+    }
+  ],
+  "recommendations": [
+    "Treat this report as preliminary local development evidence, not as broad trust in generated problems.",
+    "Benchmark eligibility remains unresolved until the shared per-solution review policy is agreed; execution success alone is not eligibility.",
+    "This local run does not establish sandbox network or memory isolation and does not satisfy the paid-budget milestone.",
+    "The budget snapshot shows persisted accounting only: no paid adapter is connected to reserve, settle, or reconcile paid operations, so this run does not demonstrate paid-budget enforcement.",
+    "Strengthen the fixture tests for case \"development-order-tools\": wrong solution \"case-sensitive\" survived the current assertions.",
+    "Quality rates are unset because no benchmark-eligible, non-development-fixture case produced a completed sample; development fixtures, cases with unresolved benchmark eligibility, and non-completed execution outcomes are excluded from quality denominators."
+  ]
+}

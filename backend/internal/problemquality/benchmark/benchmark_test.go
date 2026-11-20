@@ -1,0 +1,929 @@
+package benchmark
+
+import (
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/kvn8888/codegym/backend/internal/benchmarkbudget"
+	"github.com/kvn8888/codegym/backend/internal/environmentverify"
+	"github.com/kvn8888/codegym/backend/internal/problemquality"
+)
+
+const fixtureDir = "../testdata/development-order-tools"
+
+func TestRunCaseRecordsElapsedTimeOnSetupFailure(t *testing.T) {
+	base := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	calls := 0
+	opts := Options{now: func() time.Time {
+		calls++
+		return base.Add(time.Duration(calls-1) * 1500 * time.Millisecond)
+	}}
+	run := runCase(context.Background(), "run", opts, problemquality.CorpusCase{
+		Dir: "/tmp/broken-case",
+		Err: errors.New("case.yaml is missing"),
+	})
+	if run.ElapsedMS != 1500 {
+		t.Fatalf("elapsed_ms = %d, want 1500 from the injected clock", run.ElapsedMS)
+	}
+}
+
+func TestLoadRunConfigBindsArtifactAndExplicitReference(t *testing.T) {
+	c, err := problemquality.LoadCase(fixtureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ArtifactID != "development-order-tools-artifact" || config.ArtifactVersion != "0.1.0" {
+		t.Fatalf("artifact = %q/%q", config.ArtifactID, config.ArtifactVersion)
+	}
+	if !config.DevelopmentFixture {
+		t.Fatal("development_fixture = false, want explicit fixture label")
+	}
+	if got := config.ReferenceData.Files["solution.py"]; !strings.Contains(got, "def normalize_tags") {
+		t.Fatalf("reference content = %q", got)
+	}
+	if config.Manifest.Artifact == nil || config.Manifest.Artifact.ID != config.ArtifactID {
+		t.Fatalf("manifest identity = %+v", config.Manifest.Artifact)
+	}
+}
+
+func TestPythonSumEvenNumbersCaseBindsReferenceAndPlan(t *testing.T) {
+	caseDir := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "cases", "python-sum-even-numbers")
+	c, err := problemquality.LoadCase(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.DevelopmentFixture {
+		t.Fatal("development_fixture = true, want reviewed non-fixture case")
+	}
+	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
+		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
+	}
+	if got := config.ReferenceData.Files["solution.py"]; !strings.Contains(got, "filter") {
+		t.Fatalf("reference content = %q", got)
+	}
+	plan, err := c.AssessmentPlan(&config.ReferenceData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reference == nil || len(plan.CorrectAlternatives) != 1 || len(plan.WrongSolutions) != 2 {
+		t.Fatalf("plan = %+v, want one reference, one alternative, and two wrong solutions", plan)
+	}
+	if plan.CorrectAlternatives[0].ID != "alt-01" {
+		t.Fatalf("correct alternatives = %+v", plan.CorrectAlternatives)
+	}
+	expected := map[string]string{
+		"sum-odd-numbers":       "hidden-mixed-values",
+		"ignore-negative-evens": "hidden-negative-values",
+	}
+	for _, wrong := range plan.WrongSolutions {
+		want, ok := expected[wrong.ID]
+		if !ok {
+			t.Fatalf("unexpected wrong solution %q", wrong.ID)
+		}
+		if wrong.ExpectedFailure == nil {
+			t.Fatalf("wrong solution %q has no expected failure", wrong.ID)
+		}
+		if wrong.ExpectedFailure.TestID != want {
+			t.Fatalf("wrong solution %q expected test = %q, want %q", wrong.ID, wrong.ExpectedFailure.TestID, want)
+		}
+	}
+}
+
+func TestGoCountEvenNumbersCaseBindsReferenceAndPlan(t *testing.T) {
+	caseDir := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "cases", "go-count-even-numbers")
+	c, err := problemquality.LoadCase(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.DevelopmentFixture {
+		t.Fatal("development_fixture = true, want reviewed non-fixture case")
+	}
+	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
+		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
+	}
+	if got := config.ReferenceData.Files["solution.go"]; !strings.Contains(got, "CountEven") {
+		t.Fatalf("reference content = %q", got)
+	}
+	if config.Manifest.Commands == nil {
+		t.Fatal("manifest commands are missing")
+	}
+	if got := config.Manifest.Commands.Test; !strings.Contains(got, "-v") {
+		t.Fatalf("test command = %q, want verbose go test so CODEGYM_TEST lines are visible", got)
+	}
+	plan, err := c.AssessmentPlan(&config.ReferenceData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reference == nil || len(plan.CorrectAlternatives) != 1 || len(plan.WrongSolutions) != 2 {
+		t.Fatalf("plan = %+v, want one reference, one alternative, and two wrong solutions", plan)
+	}
+	if plan.CorrectAlternatives[0].ID != "alt-01" {
+		t.Fatalf("correct alternatives = %+v", plan.CorrectAlternatives)
+	}
+	expected := map[string]string{
+		"count-odd-numbers":         "hidden-mixed-values",
+		"count-positive-evens-only": "hidden-negative-values",
+	}
+	for _, wrong := range plan.WrongSolutions {
+		want, ok := expected[wrong.ID]
+		if !ok {
+			t.Fatalf("unexpected wrong solution %q", wrong.ID)
+		}
+		if wrong.ExpectedFailure == nil {
+			t.Fatalf("wrong solution %q has no expected failure", wrong.ID)
+		}
+		if wrong.ExpectedFailure.TestID != want {
+			t.Fatalf("wrong solution %q expected test = %q, want %q", wrong.ID, wrong.ExpectedFailure.TestID, want)
+		}
+	}
+}
+
+func TestExpressGreetingEndpointCaseBindsReferenceAndPlan(t *testing.T) {
+	caseDir := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "cases", "express-greeting-endpoint")
+	c, err := problemquality.LoadCase(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.DevelopmentFixture {
+		t.Fatal("development_fixture = true, want reviewed non-fixture case")
+	}
+	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
+		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
+	}
+	if got := config.ReferenceData.Files["src/app.js"]; !strings.Contains(got, "/greeting") {
+		t.Fatalf("reference content = %q", got)
+	}
+	if config.Manifest.Environment == nil || len(config.Manifest.Environment.Lockfiles) != 1 ||
+		config.Manifest.Environment.Lockfiles[0] != "package-lock.json" {
+		t.Fatalf("manifest lockfiles = %+v, want package-lock.json", config.Manifest.Environment)
+	}
+	if config.Manifest.Commands == nil || config.Manifest.Commands.Test != "npm test" {
+		t.Fatalf("manifest commands = %+v, want npm test", config.Manifest.Commands)
+	}
+	plan, err := c.AssessmentPlan(&config.ReferenceData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reference == nil || len(plan.CorrectAlternatives) != 1 || len(plan.WrongSolutions) != 2 {
+		t.Fatalf("plan = %+v, want one reference, one alternative, and two wrong solutions", plan)
+	}
+	if plan.CorrectAlternatives[0].ID != "alt-01" {
+		t.Fatalf("correct alternatives = %+v", plan.CorrectAlternatives)
+	}
+	expected := map[string]string{
+		"missing-name-validation": "hidden-missing-name",
+		"wrong-response-field":    "hidden-response-shape",
+	}
+	for _, wrong := range plan.WrongSolutions {
+		want, ok := expected[wrong.ID]
+		if !ok {
+			t.Fatalf("unexpected wrong solution %q", wrong.ID)
+		}
+		if wrong.ExpectedFailure == nil {
+			t.Fatalf("wrong solution %q has no expected failure", wrong.ID)
+		}
+		if wrong.ExpectedFailure.TestID != want {
+			t.Fatalf("wrong solution %q expected test = %q, want %q", wrong.ID, wrong.ExpectedFailure.TestID, want)
+		}
+	}
+}
+
+func TestSpringBootGreetingEndpointCaseBindsReferenceAndPlan(t *testing.T) {
+	caseDir := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "cases", "spring-boot-greeting-endpoint")
+	c, err := problemquality.LoadCase(caseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRunConfig(filepath.Join(c.Dir, RunConfigFileName), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.DevelopmentFixture {
+		t.Fatal("development_fixture = true, want reviewed non-fixture case")
+	}
+	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
+		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
+	}
+	if got := config.ReferenceData.Files["src/main/java/com/codegym/exercise/GreetingController.java"]; !strings.Contains(got, "/greeting") {
+		t.Fatalf("reference content = %q", got)
+	}
+	if config.Manifest.Environment == nil || config.Manifest.Environment.Base != "java-21" {
+		t.Fatalf("manifest environment = %+v, want java-21 base", config.Manifest.Environment)
+	}
+	if config.Manifest.Commands == nil || config.Manifest.Commands.Test != "mvn -q test" {
+		t.Fatalf("manifest commands = %+v, want mvn -q test", config.Manifest.Commands)
+	}
+	if len(config.Manifest.Assessment.HiddenTests) != 1 ||
+		config.Manifest.Assessment.HiddenTests[0] != "src/test/java/com/codegym/exercise/GreetingEndpointTest.java" {
+		t.Fatalf("manifest hidden tests = %+v, want the protected Spring Boot endpoint test", config.Manifest.Assessment.HiddenTests)
+	}
+	plan, err := c.AssessmentPlan(&config.ReferenceData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reference == nil || len(plan.CorrectAlternatives) != 1 || len(plan.WrongSolutions) != 2 {
+		t.Fatalf("plan = %+v, want one reference, one alternative, and two wrong solutions", plan)
+	}
+	if plan.CorrectAlternatives[0].ID != "alt-01" {
+		t.Fatalf("correct alternatives = %+v", plan.CorrectAlternatives)
+	}
+	expected := map[string]string{
+		"missing-name-validation": "hidden-missing-name",
+		"wrong-response-field":    "hidden-response-shape",
+	}
+	for _, wrong := range plan.WrongSolutions {
+		want, ok := expected[wrong.ID]
+		if !ok {
+			t.Fatalf("unexpected wrong solution %q", wrong.ID)
+		}
+		if wrong.ExpectedFailure == nil {
+			t.Fatalf("wrong solution %q has no expected failure", wrong.ID)
+		}
+		if wrong.ExpectedFailure.TestID != want {
+			t.Fatalf("wrong solution %q expected test = %q, want %q", wrong.ID, wrong.ExpectedFailure.TestID, want)
+		}
+	}
+}
+
+func TestWrongOutcomeExclusionIsNotSurvival(t *testing.T) {
+	outcome := environmentverify.AssessmentOutcome{
+		ID:                  "equivalent",
+		Role:                environmentverify.RoleWrongSolution,
+		DenominatorDecision: environmentverify.DenominatorEquivalent,
+		ExecutionStatus:     environmentverify.ExecutionExcluded,
+		Passed:              false,
+	}
+	report := wrongOutcome(outcome, nil)
+	if !report.Excluded || report.Rejected || report.Surviving {
+		t.Fatalf("wrongOutcome = %+v, want excluded and not surviving", report)
+	}
+}
+
+func TestExecuteDevelopmentFixtureWritesDeliberateQualityFailure(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is required to execute the development fixture; not masking it with mocked success")
+	}
+	output := filepath.Join(t.TempDir(), "report.json")
+	schema := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "schema", "report.schema.json")
+	result, err := Execute(context.Background(), Options{
+		CaseDirs:           []string{fixtureDir},
+		OutputPath:         output,
+		SchemaPath:         schema,
+		Timeout:            30 * time.Second,
+		BaselineKind:       "other",
+		DevelopmentFixture: true,
+		ExecuteLocal:       true,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.QualityFailure {
+		t.Fatalf("quality failure = false, want the surviving wrong solution to fail the benchmark")
+	}
+	if result.ExecutionFailure {
+		t.Fatalf("execution failure = true, report=%+v", result.Report)
+	}
+	if len(result.Report.Cases) != 1 {
+		t.Fatalf("cases = %d", len(result.Report.Cases))
+	}
+	caseReport := result.Report.Cases[0]
+	if caseReport.Status != CaseStatusFailed {
+		t.Fatalf("case status = %q, want failed", caseReport.Status)
+	}
+	if caseReport.ReferenceOutcome == nil || !caseReport.ReferenceOutcome.Accepted {
+		t.Fatalf("reference outcome = %+v", caseReport.ReferenceOutcome)
+	}
+	if len(caseReport.CorrectAlternatives) != 2 {
+		t.Fatalf("correct alternatives = %d", len(caseReport.CorrectAlternatives))
+	}
+	for _, alternative := range caseReport.CorrectAlternatives {
+		if !alternative.Accepted {
+			t.Fatalf("correct alternative %q was not accepted: %+v", alternative.ID, alternative)
+		}
+	}
+	surviving := 0
+	for _, wrong := range caseReport.WrongSolutions {
+		if wrong.Surviving {
+			surviving++
+			if wrong.DiagnosticCode != environmentverify.CodeWrongSolutionPassed {
+				t.Fatalf("surviving wrong diagnostic = %q", wrong.DiagnosticCode)
+			}
+		}
+	}
+	if surviving != 1 {
+		t.Fatalf("surviving wrong solutions = %d, want 1", surviving)
+	}
+	if caseReport.BenchmarkEligibility != environmentverify.BenchmarkEligibilityUnresolved || caseReport.BenchmarkEligible {
+		t.Fatalf("eligibility = %q eligible=%v, want unresolved and ineligible", caseReport.BenchmarkEligibility, caseReport.BenchmarkEligible)
+	}
+	if !strings.HasPrefix(caseReport.ComparatorConfig, "set:") {
+		t.Fatalf("comparator config = %q, want the declared set comparator", caseReport.ComparatorConfig)
+	}
+	if caseReport.ComparatorResult != "not_measured_by_harness" {
+		t.Fatalf("comparator result = %q, want an explicit unmeasured marker", caseReport.ComparatorResult)
+	}
+	if result.Report.GenerationConfig["usage"] != "not_applicable" {
+		t.Fatalf("generation usage = %v, want not_applicable", result.Report.GenerationConfig["usage"])
+	}
+	if !result.Report.Preliminary || !caseReport.DevelopmentFixture || !caseReport.ExcludedFromReviewedTotals {
+		t.Fatalf("fixture/preliminary labels missing: report=%+v case=%+v", result.Report, caseReport)
+	}
+	if caseReport.ContentIdentity == nil || caseReport.ContentIdentity.Artifact.SHA256 == "" ||
+		caseReport.ContentIdentity.Specification.SHA256 == "" ||
+		caseReport.ContentIdentity.Reference.SHA256 == "" {
+		t.Fatalf("content identity missing from report: %+v", caseReport.ContentIdentity)
+	}
+	if caseReport.Provenance == nil ||
+		caseReport.Provenance.SavedExerciseProvenance != "not_applicable" ||
+		caseReport.Provenance.GenerationDuringAssessment {
+		t.Fatalf("fixture provenance = %+v, want not_applicable with no generation", caseReport.Provenance)
+	}
+	if result.Report.ModelRevision != "not_applicable" || result.Report.PromptRevision != "not_applicable" {
+		t.Fatalf("run revisions = %q/%q, want not_applicable", result.Report.ModelRevision, result.Report.PromptRevision)
+	}
+	if result.Report.Execution.ModelOperations || result.Report.Execution.PaidOperations || result.Report.Execution.Sandbox {
+		t.Fatalf("execution claims operations that did not happen: %+v", result.Report.Execution)
+	}
+	if result.Report.Summary.WrongSolutionRejection != nil || result.Report.Summary.CorrectAlternativeAcceptance != nil {
+		t.Fatalf("quality rates = %v/%v, want unset because the fixture is not benchmark-eligible",
+			result.Report.Summary.CorrectAlternativeAcceptance, result.Report.Summary.WrongSolutionRejection)
+	}
+	if result.Report.Summary.EligibleCases != 0 || result.Report.Summary.UnresolvedEligibilityCases != 1 {
+		t.Fatalf("summary eligibility = %+v, want fixture excluded as unresolved", result.Report.Summary)
+	}
+	if !hasRecommendation(result.Report.Recommendations, "no benchmark-eligible") {
+		t.Fatalf("recommendations = %v, want an explanation for unset quality rates", result.Report.Recommendations)
+	}
+	if result.Report.Summary.BlindAgreementRate != "not_applicable" {
+		t.Fatalf("blind agreement = %v, want not_applicable", result.Report.Summary.BlindAgreementRate)
+	}
+	if err := ValidateReportJSON(mustRead(t, output), schema); err != nil {
+		t.Fatalf("written report does not validate: %v", err)
+	}
+}
+
+func TestBuildReportFixtureProvenanceIsNotApplicable(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:              "pqb-fixture",
+		StartedAt:          now,
+		CompletedAt:        now.Add(time.Second),
+		TestedCommit:       "abc123",
+		BaselineKind:       "other",
+		Timeout:            time.Second,
+		DevelopmentFixture: true,
+	}, []CaseRun{{Config: &RunConfig{DevelopmentFixture: true}}})
+	if report.ModelRevision != "not_applicable" || report.PromptRevision != "not_applicable" {
+		t.Fatalf("run revisions = %q/%q, want not_applicable", report.ModelRevision, report.PromptRevision)
+	}
+	if report.GenerationConfig["assessment_run_generation_occurred"] != false {
+		t.Fatalf("assessment run generation = %v", report.GenerationConfig["assessment_run_generation_occurred"])
+	}
+	if report.GenerationConfig["saved_exercise_provenance"] != "not_applicable" {
+		t.Fatalf("saved provenance = %v, want not_applicable", report.GenerationConfig["saved_exercise_provenance"])
+	}
+	provenance := report.Cases[0].Provenance
+	if provenance == nil || provenance.SavedExerciseProvenance != "not_applicable" ||
+		provenance.GenerationDuringAssessment ||
+		provenance.ModelRevision != "not_applicable" ||
+		provenance.PromptRevision != "not_applicable" ||
+		provenance.ModelRevisionStatus != "not_applicable" ||
+		provenance.PromptRevisionStatus != "not_applicable" {
+		t.Fatalf("case provenance = %+v", provenance)
+	}
+}
+
+func TestBuildReportSavedExerciseMissingProvenanceIsUnavailable(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:        "pqb-generated",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "current",
+		Timeout:      time.Second,
+	}, []CaseRun{{Config: &RunConfig{}}})
+	if report.ModelRevision != "unavailable" || report.PromptRevision != "unavailable" {
+		t.Fatalf("run revisions = %q/%q, want unavailable", report.ModelRevision, report.PromptRevision)
+	}
+	if report.GenerationConfig["saved_exercise_provenance"] != "unavailable" {
+		t.Fatalf("saved provenance = %v, want unavailable", report.GenerationConfig["saved_exercise_provenance"])
+	}
+	provenance := report.Cases[0].Provenance
+	if provenance == nil || provenance.SavedExerciseProvenance != "unavailable" ||
+		provenance.ModelRevision != "unavailable" ||
+		provenance.PromptRevision != "unavailable" ||
+		provenance.ModelRevisionStatus != "unavailable" ||
+		provenance.PromptRevisionStatus != "unavailable" {
+		t.Fatalf("case provenance = %+v", provenance)
+	}
+}
+
+func TestBuildReportPreservesKnownSavedProvenance(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:        "pqb-known",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "independent",
+		Timeout:      time.Second,
+	}, []CaseRun{{Config: &RunConfig{
+		GenerationProvenance: &GenerationProvenanceConfig{
+			ModelRevision:  "model-x",
+			PromptRevision: "prompt-y",
+			Config:         map[string]any{"temperature": 0.2},
+		},
+	}}})
+	provenance := report.Cases[0].Provenance
+	if provenance == nil || provenance.SavedExerciseProvenance != "known" ||
+		provenance.ModelRevision != "model-x" || provenance.PromptRevision != "prompt-y" ||
+		provenance.ModelRevisionStatus != "known" || provenance.PromptRevisionStatus != "known" {
+		t.Fatalf("case provenance = %+v", provenance)
+	}
+	if provenance.GenerationConfig["temperature"] != 0.2 {
+		t.Fatalf("generation config = %+v, want supplied config preserved", provenance.GenerationConfig)
+	}
+}
+
+func TestExecuteRejectsPaidModeBeforeWork(t *testing.T) {
+	result, err := Execute(context.Background(), Options{
+		CaseDirs:     []string{fixtureDir},
+		BaselineKind: "other",
+		ExecuteLocal: false,
+	})
+	if err == nil {
+		t.Fatalf("Execute = %+v, want explicit local-execution rejection", result)
+	}
+	if !strings.Contains(err.Error(), "execution mode must be explicitly selected") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestBuildReportIndependentGenerationMetricsAreUnavailable(t *testing.T) {
+	blindAgreement := true
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:        "pqb-independent",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "independent",
+		Timeout:      time.Second,
+	}, []CaseRun{{
+		Case: &problemquality.Case{
+			CaseID:     "independent-case",
+			Technology: "python",
+			ExpectedOutcomes: &problemquality.ExpectedOutcomes{
+				Generation: &problemquality.GenerationExpectations{
+					BlindAgreement: &blindAgreement,
+					Status:         "measured",
+				},
+			},
+		},
+	}})
+	if report.Summary.BlindAgreementRate != GenerationUnavailable ||
+		report.Summary.ReconciliationFrequency != GenerationUnavailable ||
+		report.Summary.NonConvergenceRate != GenerationUnavailable {
+		t.Fatalf("generation rates = %v/%v/%v, want unavailable for an applicable independent baseline",
+			report.Summary.BlindAgreementRate, report.Summary.ReconciliationFrequency, report.Summary.NonConvergenceRate)
+	}
+	if report.GenerationConfig["status"] != GenerationUnavailable {
+		t.Fatalf("generation status = %v, want unavailable", report.GenerationConfig["status"])
+	}
+	generation := report.Cases[0].Generation
+	if generation.Status != GenerationUnavailable || generation.FirstAttemptAgreement != nil ||
+		generation.ReconciliationCount != nil || generation.ReconciliationDirection != nil ||
+		generation.NonConvergence != nil {
+		t.Fatalf("generation = %+v, want unavailable with no copied expected observations", generation)
+	}
+	metrics := report.Summary.Metrics
+	for _, metric := range []Metric{metrics.FirstAttemptAgreement, metrics.ReconciliationFrequency, metrics.NonConvergenceRate} {
+		if metric.Status != MetricUnavailable || metric.Value != nil ||
+			metric.ExclusionReasons["missing_observation"] != 1 {
+			t.Fatalf("generation metric = %+v, want missing observation excluded, not zero", metric)
+		}
+	}
+	validateReportSchema(t, report)
+}
+
+func TestBuildReportDoesNotCopyExpectedOutcomesIntoObservedFields(t *testing.T) {
+	blindAgreement := true
+	wrongRejected := false
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:        "pqb-expected",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{{
+		Case: &problemquality.Case{
+			CaseID:     "observed-case",
+			Technology: "python",
+			ExpectedOutcomes: &problemquality.ExpectedOutcomes{
+				Generation: &problemquality.GenerationExpectations{
+					BlindAgreement: &blindAgreement,
+					Status:         "measured",
+				},
+				Assessment: &problemquality.AssessmentExpectations{
+					WrongSolutionsRejected: &wrongRejected,
+				},
+			},
+		},
+		Collection: environmentverify.AssessmentCollection{
+			Reference: &environmentverify.AssessmentOutcome{
+				ID:              "reference",
+				Role:            environmentverify.RoleGeneratedReference,
+				Passed:          true,
+				ExecutionStatus: environmentverify.ExecutionCompleted,
+			},
+		},
+	}})
+	caseReport := report.Cases[0]
+	if caseReport.Status != CaseStatusPassed {
+		t.Fatalf("status = %q, want passed from observed evidence", caseReport.Status)
+	}
+	if caseReport.Generation.Status != "not_applicable" ||
+		caseReport.Generation.FirstAttemptAgreement != nil ||
+		caseReport.Generation.ReconciliationCount != nil ||
+		caseReport.Generation.NonConvergence != nil {
+		t.Fatalf("generation = %+v, want unobserved not_applicable fields", caseReport.Generation)
+	}
+	if report.Summary.WrongSolutionRejection != nil {
+		t.Fatalf("wrong rejection = %v, want nil without observed wrong solutions", report.Summary.WrongSolutionRejection)
+	}
+}
+
+func TestBuildReportRecordsBlockedCaseErrorWithoutAborting(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:        "pqb-test",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+		Selection:    "corpus",
+		CorpusRoot:   "/tmp/corpus",
+	}, []CaseRun{{
+		Dir: "/tmp/corpus/incomplete-case",
+		Err: errors.New("case.yaml is missing"),
+	}})
+	if len(report.Cases) != 1 {
+		t.Fatalf("cases = %d", len(report.Cases))
+	}
+	caseReport := report.Cases[0]
+	if caseReport.Status != CaseStatusError || !caseReport.Blocked ||
+		!strings.Contains(caseReport.BlockReason, "case.yaml is missing") {
+		t.Fatalf("case report = %+v, want explicit blocked error", caseReport)
+	}
+	if report.Summary.CasesError != 1 {
+		t.Fatalf("summary = %+v", report.Summary)
+	}
+	schema := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "schema", "report.schema.json")
+	data, err := MarshalReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateReportJSON(data, schema); err != nil {
+		t.Fatalf("blocked-case report does not validate: %v", err)
+	}
+}
+
+func TestBuildReportExcludesFixtureAndUnresolvedCasesFromQualityRates(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	fixture := testCaseRun("fixture-case", true, false, environmentverify.BenchmarkEligibilityUnresolved, environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("fixture-alternative", true)},
+		WrongSolutions:      []environmentverify.AssessmentOutcome{completedWrong("fixture-wrong", true, environmentverify.DenominatorMeaningful)},
+	})
+	unresolved := testCaseRun("unresolved-case", false, false, environmentverify.BenchmarkEligibilityUnresolved, environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("unresolved-alternative", true)},
+		WrongSolutions:      []environmentverify.AssessmentOutcome{completedWrong("unresolved-wrong", true, environmentverify.DenominatorMeaningful)},
+	})
+	report := BuildReport(Meta{
+		RunID:        "pqb-ineligible",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{fixture, unresolved})
+	if report.Summary.CorrectAlternativeAcceptance != nil || report.Summary.WrongSolutionRejection != nil {
+		t.Fatalf("quality rates = %v/%v, want unset for ineligible samples",
+			report.Summary.CorrectAlternativeAcceptance, report.Summary.WrongSolutionRejection)
+	}
+	if report.Summary.EligibleCases != 0 || report.Summary.DevelopmentFixtureCases != 1 ||
+		report.Summary.UnresolvedEligibilityCases != 2 {
+		t.Fatalf("summary = %+v, want execution and eligibility counts preserved", report.Summary)
+	}
+	if len(report.Cases) != 2 || len(report.Cases[0].CorrectAlternatives) != 1 || len(report.Cases[1].WrongSolutions) != 1 {
+		t.Fatalf("cases = %+v, want per-solution evidence preserved", report.Cases)
+	}
+	if !hasRecommendation(report.Recommendations, "no benchmark-eligible") {
+		t.Fatalf("recommendations = %v, want an explanation for unset quality rates", report.Recommendations)
+	}
+}
+
+func TestBuildReportIncludesOnlyEligibleCasesInQualityDenominators(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	eligible := testCaseRun("eligible-case", false, true, "eligible", environmentverify.AssessmentCollection{
+		Reference: completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{
+			completedCorrect("accepted", true),
+			completedCorrect("rejected", false),
+			{
+				ID:              "timed-out-alternative",
+				Role:            environmentverify.RoleCorrectAlternative,
+				ExecutionStatus: environmentverify.ExecutionTimeout,
+				FailureCategory: environmentverify.FailureCategoryTimeout,
+			},
+		},
+		WrongSolutions: []environmentverify.AssessmentOutcome{
+			completedWrong("rejected-wrong", true, environmentverify.DenominatorMeaningful),
+			completedWrong("surviving-wrong", false, environmentverify.DenominatorMeaningful),
+			{
+				ID:                  "timed-out-wrong",
+				Role:                environmentverify.RoleWrongSolution,
+				DenominatorDecision: environmentverify.DenominatorMeaningful,
+				ExecutionStatus:     environmentverify.ExecutionTimeout,
+				FailureCategory:     environmentverify.FailureCategoryTimeout,
+			},
+			completedWrong("equivalent-wrong", true, environmentverify.DenominatorEquivalent),
+		},
+	})
+	eligible.Collection.WrongSolutions[3].ExecutionStatus = environmentverify.ExecutionExcluded
+	ineligible := testCaseRun("ineligible-case", false, false, environmentverify.BenchmarkEligibilityUnresolved, environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("ineligible-accepted", true)},
+		WrongSolutions:      []environmentverify.AssessmentOutcome{completedWrong("ineligible-rejected", true, environmentverify.DenominatorMeaningful)},
+	})
+	report := BuildReport(Meta{
+		RunID:        "pqb-eligible",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{eligible, ineligible})
+	if report.Summary.EligibleCases != 1 || report.Summary.UnresolvedEligibilityCases != 1 {
+		t.Fatalf("summary eligibility = %+v", report.Summary)
+	}
+	if report.Summary.CorrectAlternativeAcceptance == nil || *report.Summary.CorrectAlternativeAcceptance != 0.5 {
+		t.Fatalf("correct alternative acceptance = %v, want 1/2", report.Summary.CorrectAlternativeAcceptance)
+	}
+	if report.Summary.WrongSolutionRejection == nil || *report.Summary.WrongSolutionRejection != 0.5 {
+		t.Fatalf("wrong solution rejection = %v, want 1/2", report.Summary.WrongSolutionRejection)
+	}
+}
+
+func TestBuildReportLeavesRatesUnsetWithZeroEligibleCases(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	report := BuildReport(Meta{
+		RunID:        "pqb-no-eligible",
+		StartedAt:    now,
+		CompletedAt:  now.Add(time.Second),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{testCaseRun("unresolved-only", false, false, environmentverify.BenchmarkEligibilityUnresolved, environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("alternative", true)},
+		WrongSolutions:      []environmentverify.AssessmentOutcome{completedWrong("wrong", true, environmentverify.DenominatorMeaningful)},
+	})})
+	if report.Summary.CorrectAlternativeAcceptance != nil || report.Summary.WrongSolutionRejection != nil {
+		t.Fatalf("quality rates = %v/%v, want unset without eligible samples",
+			report.Summary.CorrectAlternativeAcceptance, report.Summary.WrongSolutionRejection)
+	}
+	if !hasRecommendation(report.Recommendations, "unresolved benchmark eligibility") {
+		t.Fatalf("recommendations = %v, want the unset-rate reason", report.Recommendations)
+	}
+}
+
+func TestAssessCaseStatusSeparatesExecutionErrorsFromQualityFailures(t *testing.T) {
+	tests := []struct {
+		name         string
+		collection   environmentverify.AssessmentCollection
+		wantCategory string
+	}{
+		{
+			name: "reference timeout",
+			collection: environmentverify.AssessmentCollection{
+				Reference: &environmentverify.AssessmentOutcome{
+					ID:              "reference",
+					Role:            environmentverify.RoleGeneratedReference,
+					ExecutionStatus: environmentverify.ExecutionTimeout,
+					FailureCategory: environmentverify.FailureCategoryTimeout,
+					Message:         "assessment timed out",
+				},
+				Blocked: true,
+			},
+			wantCategory: environmentverify.FailureCategoryTimeout,
+		},
+		{
+			name: "reference platform error",
+			collection: environmentverify.AssessmentCollection{
+				Reference: &environmentverify.AssessmentOutcome{
+					ID:              "reference",
+					Role:            environmentverify.RoleGeneratedReference,
+					ExecutionStatus: environmentverify.ExecutionPlatformError,
+					FailureCategory: environmentverify.FailureCategoryPlatform,
+					Message:         "platform fault",
+				},
+				Blocked: true,
+			},
+			wantCategory: environmentverify.FailureCategoryPlatform,
+		},
+		{
+			name: "blocked not-run assessment",
+			collection: environmentverify.AssessmentCollection{
+				Reference: &environmentverify.AssessmentOutcome{
+					ID:              "reference",
+					Role:            environmentverify.RoleGeneratedReference,
+					ExecutionStatus: environmentverify.ExecutionNotRun,
+					Message:         "not run: assessment plan is invalid",
+				},
+				Blocked:     true,
+				BlockReason: "assessment plan is invalid",
+			},
+			wantCategory: "setup_failure",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			run := testCaseRun("execution-error", false, false, environmentverify.BenchmarkEligibilityUnresolved, test.collection)
+			status, category, details := assessCaseStatus(run)
+			if status != CaseStatusError || category != test.wantCategory || strings.TrimSpace(details) == "" {
+				t.Fatalf("assessCaseStatus = %q/%q/%q, want execution error %q", status, category, details, test.wantCategory)
+			}
+		})
+	}
+}
+
+func TestAssessCaseStatusKeepsCompletedSurvivingWrongSolutionAsQualityFailure(t *testing.T) {
+	collection := environmentverify.AssessmentCollection{
+		Reference:           completedReference(true),
+		CorrectAlternatives: []environmentverify.AssessmentOutcome{completedCorrect("alternative", true)},
+		WrongSolutions: []environmentverify.AssessmentOutcome{{
+			ID:                  "survivor",
+			Role:                environmentverify.RoleWrongSolution,
+			DenominatorDecision: environmentverify.DenominatorMeaningful,
+			ExecutionStatus:     environmentverify.ExecutionCompleted,
+			Passed:              false,
+			FailureCategory:     environmentverify.FailureCategoryTest,
+			DiagnosticCode:      environmentverify.CodeWrongSolutionPassed,
+			Message:             "wrong solution passed its intended rejection test",
+		}},
+	}
+	run := testCaseRun("quality-failure", false, false, environmentverify.BenchmarkEligibilityUnresolved, collection)
+	status, category, details := assessCaseStatus(run)
+	if status != CaseStatusFailed || category != environmentverify.FailureCategoryTest || strings.TrimSpace(details) == "" {
+		t.Fatalf("assessCaseStatus = %q/%q/%q, want completed quality failure", status, category, details)
+	}
+	report := BuildReport(Meta{
+		RunID:        "pqb-quality",
+		StartedAt:    time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC),
+		CompletedAt:  time.Date(2026, 11, 13, 12, 0, 1, 0, time.UTC),
+		TestedCommit: "abc123",
+		BaselineKind: "other",
+		Timeout:      time.Second,
+	}, []CaseRun{run})
+	if report.Cases[0].Status != CaseStatusFailed || len(report.Cases[0].WrongSolutions) != 1 ||
+		!report.Cases[0].WrongSolutions[0].Surviving {
+		t.Fatalf("case report = %+v, want surviving wrong solution preserved as quality failure", report.Cases[0])
+	}
+}
+
+func testCaseRun(id string, fixture, eligible bool, eligibility string, collection environmentverify.AssessmentCollection) CaseRun {
+	collection.BenchmarkEligible = eligible
+	collection.BenchmarkEligibility = eligibility
+	return CaseRun{
+		Dir:        filepath.Join("/tmp", id),
+		Case:       &problemquality.Case{CaseID: id, Technology: "python", Version: "test"},
+		Config:     &RunConfig{DevelopmentFixture: fixture},
+		Collection: collection,
+	}
+}
+
+func completedReference(passed bool) *environmentverify.AssessmentOutcome {
+	outcome := completedOutcome("reference", environmentverify.RoleGeneratedReference, passed)
+	return &outcome
+}
+
+func completedCorrect(id string, passed bool) environmentverify.AssessmentOutcome {
+	return completedOutcome(id, environmentverify.RoleCorrectAlternative, passed)
+}
+
+func completedOutcome(id, role string, passed bool) environmentverify.AssessmentOutcome {
+	return environmentverify.AssessmentOutcome{
+		ID:              id,
+		Role:            role,
+		ExecutionStatus: environmentverify.ExecutionCompleted,
+		Passed:          passed,
+	}
+}
+
+func completedWrong(id string, passed bool, decision string) environmentverify.AssessmentOutcome {
+	outcome := completedOutcome(id, environmentverify.RoleWrongSolution, passed)
+	outcome.DenominatorDecision = decision
+	if !passed {
+		outcome.DiagnosticCode = environmentverify.CodeWrongSolutionPassed
+		outcome.FailureCategory = environmentverify.FailureCategoryTest
+		outcome.Message = "wrong solution survived"
+	}
+	return outcome
+}
+
+func hasRecommendation(recommendations []string, fragment string) bool {
+	for _, recommendation := range recommendations {
+		if strings.Contains(recommendation, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildReportCarriesBudgetSnapshotAndPaidAdapterCaveat(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	actual := int64(2_000_000)
+	snapshot := benchmarkbudget.Snapshot{
+		Currency:         benchmarkbudget.Currency,
+		LimitMicros:      benchmarkbudget.MilestoneLimitMicros,
+		PriorSpendMicros: 1_000_000,
+		ReservedMicros:   3_000_000,
+		SettledMicros:    actual,
+		CommittedMicros:  6_000_000,
+		RemainingMicros:  benchmarkbudget.MilestoneLimitMicros - 6_000_000,
+		Reservations: []benchmarkbudget.Reservation{
+			{
+				OperationID:      "settled-operation",
+				MaxCostMicros:    3_000_000,
+				ActualCostMicros: &actual,
+				Status:           benchmarkbudget.ReservationSettled,
+			},
+			{
+				OperationID:   "unknown-operation",
+				MaxCostMicros: 3_000_000,
+				Status:        benchmarkbudget.ReservationUnknown,
+			},
+		},
+	}
+	report := BuildReport(Meta{
+		RunID:          "pqb-budget",
+		StartedAt:      now,
+		CompletedAt:    now.Add(time.Second),
+		TestedCommit:   "abc123",
+		BaselineKind:   "other",
+		Timeout:        time.Second,
+		BudgetSnapshot: &snapshot,
+	}, nil)
+	if report.Budget == nil || report.Budget.CommittedMicros != 6_000_000 ||
+		report.Budget.RemainingMicros != benchmarkbudget.MilestoneLimitMicros-6_000_000 {
+		t.Fatalf("report budget = %+v", report.Budget)
+	}
+	if !hasRecommendation(report.Recommendations, "no paid adapter is connected") {
+		t.Fatalf("recommendations = %v, want paid-adapter distinction", report.Recommendations)
+	}
+	schema := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "schema", "report.schema.json")
+	data, err := MarshalReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateReportJSON(data, schema); err != nil {
+		t.Fatalf("budget report does not validate: %v", err)
+	}
+}

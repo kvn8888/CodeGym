@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "environment.manifest.v1",
+  "artifact": {
+    "id": "python-sum-even-numbers",
+    "technology": "python",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "base": "python",
+    "network": "none",
+    "dependencyFiles": [],
+    "lockfiles": []
+  },
+  "workspace": {
+    "root": ".",
+    "learnerEditable": [
+      "solution.py"
+    ],
+    "protected": [
+      "protected/test_sum_even.py",
+      "pytest.ini"
+    ]
+  },
+  "commands": {
+    "setup": "python3 --version",
+    "build": "python3 -c 'import pathlib; [compile(pathlib.Path(path).read_text(), path, \"exec\") for path in (\"solution.py\", \"protected/test_sum_even.py\")]'",
+    "test": "python -m pytest -q",
+    "run": ""
+  },
+  "assessment": {
+    "type": "unit-tests",
+    "visibleTests": [],
+    "hiddenTests": [
+      "protected/test_sum_even.py"
+    ]
+  },
+  "compatibility": {
+    "requestedTechnology": "Python",
+    "requestedObjective": "Sum even numbers in a list",
+    "reuseTags": [
+      "python",
+      "lists",
+      "filtering",
+      "aggregation"
+    ]
+  }
+}

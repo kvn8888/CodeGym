@@ -22,6 +22,7 @@ frontend/dist/
 # Environment
 .env
 .env.local
+.venv/
 
 # Vercel CLI link metadata (local only)
 .vercel/
@@ -41,8 +42,10 @@ docker/tmp/
 
 # Generated
 backend/internal/store/db/generated/
+benchmarks/problem-quality/cases/*/artifact/target/
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Local development state
 /.codegym/

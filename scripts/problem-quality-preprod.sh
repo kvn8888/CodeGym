@@ -33,11 +33,15 @@ BUDGET_STATE="${PQ_BUDGET_STATE:-$ROOT/budget/problem-quality-budget.json}"
 PRIOR_SPEND_MICROS="${PQ_PRIOR_SPEND_MICROS:-0}"
 GENERATION_PROVIDER="${GENERATION_PROVIDER:-meta}"
 SKIP_GENERATION="${SKIP_GENERATION:-false}"
+DUMP_GENERATED="${DUMP_GENERATED:-false}"
+DIAGNOSTIC_EXPRESS="${DIAGNOSTIC_EXPRESS:-false}"
 
 CASES=(
   "-case" "../benchmarks/problem-quality/cases/python-sum-even-numbers"
 )
-if [[ "$SMOKE" != "true" ]]; then
+if [[ "$DIAGNOSTIC_EXPRESS" == "true" ]]; then
+  CASES=("-case" "../benchmarks/problem-quality/cases/express-greeting-endpoint")
+elif [[ "$SMOKE" != "true" ]]; then
   CASES+=(
     "-case" "../benchmarks/problem-quality/cases/go-count-even-numbers"
     "-case" "../benchmarks/problem-quality/cases/express-greeting-endpoint"
@@ -59,6 +63,9 @@ fi
 GENERATION_ARGS=()
 if [[ "$SKIP_GENERATION" != "true" ]]; then
   GENERATION_ARGS=(-generate-reference -generation-provider "$GENERATION_PROVIDER")
+fi
+if [[ "$DUMP_GENERATED" == "true" ]]; then
+  GENERATION_ARGS+=(-dump-generated)
 fi
 
 go run ./cmd/problem-quality-benchmark \

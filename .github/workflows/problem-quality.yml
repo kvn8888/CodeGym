@@ -78,6 +78,8 @@ jobs:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           SMOKE: 'false'
           SKIP_GENERATION: 'false'
+          DIAGNOSTIC_EXPRESS: 'true'
+          DUMP_GENERATED: 'true'
           BASELINE_KIND: ${{ inputs.baseline_kind || 'current' }}
           MODEL_REVISION: ${{ inputs.model_revision || '' }}
           PROMPT_REVISION: ${{ inputs.prompt_revision || '' }}

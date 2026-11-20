@@ -87,7 +87,9 @@ func main() {
 			timeout: 20 * time.Minute,
 			command: "export DEBIAN_FRONTEND=noninteractive && " +
 				"sudo apt-get update -y && sudo apt-get install -y --no-install-recommends " +
-				"openjdk-21-jdk-headless maven nodejs npm python3 python3-pip && " +
+				"openjdk-21-jdk-headless maven nodejs npm python3 python3-pip python3-pytest python-is-python3 && " +
+				"sudo python3 -m pip install --break-system-packages pytest && " +
+				"sudo ln -sf /usr/bin/python3 /usr/local/bin/python && " +
 				"sudo rm -rf /var/lib/apt/lists/*",
 		},
 		{
@@ -152,6 +154,9 @@ func main() {
 		"npm --version; " +
 		"go version; " +
 		"python3 --version; " +
+		"python --version; " +
+		"python3 -m pytest --version; " +
+		"python -m pytest --version; " +
 		"command -v opencode || true; " +
 		opencodeBin + " --version; " +
 		"cd " + configDir + " && node -e \"import('@opencode-ai/plugin').then(function(){console.log('plugin-runtime ok')}).catch(function(e){console.error(e);process.exit(1)})\""

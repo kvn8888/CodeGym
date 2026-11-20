@@ -4,7 +4,7 @@ name: Problem Quality Benchmark
 # has been validated. The runner is always a clean Linux host so results do not
 # depend on a developer's OS or locally installed toolchains.
 # Preprod Daytona base snapshot is configured in Doppler as
-# CODEGYM_BASE_SNAPSHOT=codegym-base-v2.
+# CODEGYM_BASE_SNAPSHOT=codegym-base-v3.
 on:
   # Temporary push trigger for pre-merge validation. Remove after the smoke run.
   push:

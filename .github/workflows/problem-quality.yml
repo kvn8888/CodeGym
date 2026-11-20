@@ -4,6 +4,10 @@ name: Problem Quality Benchmark
 # has been validated. The runner is always a clean Linux host so results do not
 # depend on a developer's OS or locally installed toolchains.
 on:
+  # Temporary push trigger for pre-merge validation. Remove after the smoke run.
+  push:
+    branches:
+      - feature/problem-quality-preprod-pipeline
   workflow_dispatch:
     inputs:
       smoke:
@@ -66,10 +70,10 @@ jobs:
         id: benchmark
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-          SMOKE: ${{ inputs.smoke }}
-          BASELINE_KIND: ${{ inputs.baseline_kind }}
-          MODEL_REVISION: ${{ inputs.model_revision }}
-          PROMPT_REVISION: ${{ inputs.prompt_revision }}
+          SMOKE: ${{ inputs.smoke || 'true' }}
+          BASELINE_KIND: ${{ inputs.baseline_kind || 'current' }}
+          MODEL_REVISION: ${{ inputs.model_revision || '' }}
+          PROMPT_REVISION: ${{ inputs.prompt_revision || '' }}
           PQ_BUDGET_STATE: ${{ github.workspace }}/budget/problem-quality-budget.json
         run: |
           doppler run -p codegym -c stg -- bash ./scripts/problem-quality-preprod.sh

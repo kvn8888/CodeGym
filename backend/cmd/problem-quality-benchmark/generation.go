@@ -100,11 +100,22 @@ func (b *generationBaseline) generateReference(ctx context.Context, caseDir stri
 	}
 	functionName, _ := spec["function_name"].(string)
 	language, _ := spec["language"].(string)
+	technology, _ := spec["technology"].(string)
 	if strings.TrimSpace(language) == "" {
-		language = "python"
+		switch strings.ToLower(strings.TrimSpace(technology)) {
+		case "spring-boot", "java":
+			language = "java"
+		case "express", "node", "nodejs", "javascript":
+			language = "javascript"
+		case "go", "golang":
+			language = "go"
+		default:
+			language = "python"
+		}
 	}
 	requestSpec, err := json.Marshal(map[string]any{
 		"language":      language,
+		"technology":    technology,
 		"function_name": functionName,
 		"spec":          spec,
 	})
@@ -122,8 +133,19 @@ func (b *generationBaseline) generateReference(ctx context.Context, caseDir stri
 			"Return one JSON object with a single string field named \"solution\". " +
 			"The value must be raw source code only, with no markdown or test code. " +
 			"Implement the exact HTTP method, path, request, and response contract in the supplied spec, including every ambiguity resolution. " +
-			"Produce a complete runnable server that listens on process.env.PORT || 3000 when run directly, " +
-			"and exports the app for tests. Do not use shell commands or access the filesystem outside normal framework setup."
+			"Produce a complete runnable server and also expose the application for tests. " +
+			"Do not use shell commands or access the filesystem outside normal framework setup. "
+		switch strings.ToLower(language) {
+		case "java":
+			instructions += "Write Java source for a Spring Boot @RestController in package com.codegym.exercise. " +
+				"Use Java double-quoted strings and single quotes only for char literals. " +
+				"Return status 400 with JSON {\"error\":\"name is required\"} for missing or blank name " +
+				"and status 200 with JSON {\"message\":\"Hello, <name>!\"} otherwise."
+		default:
+			instructions += "Write JavaScript CommonJS source using require('express'). " +
+				"Call app.listen(process.env.PORT || 3000) unconditionally at module load — " +
+				"do not guard it with require.main === module — and set module.exports = app."
+		}
 	}
 	result, err := b.orchestrator.GenerateWithProfile(ctx, generation.GenerateInput{
 		Kind: generation.KindProblem,

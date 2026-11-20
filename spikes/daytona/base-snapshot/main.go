@@ -11,7 +11,7 @@
 // This is a one-time setup step. Run it with Doppler supplying the Daytona
 // credentials, then put the printed snapshot name into CODEGYM_BASE_SNAPSHOT:
 //
-//	doppler run -p codegym -c dev -- go run ./base-snapshot -name codegym-base
+//	doppler run -p codegym -c stg -- go run ./base-snapshot -snapshot daytona-large -name codegym-base
 package main
 
 import (
@@ -43,6 +43,7 @@ const configDir = "/home/agent/.config/opencode"
 const opencodeBin = "/opt/codegym/bin/opencode"
 
 func main() {
+	baseSnapshot := flag.String("snapshot", "", "Daytona system snapshot/image to boot from (empty uses the account default)")
 	name := flag.String("name", "codegym-base", "snapshot name to create")
 	ttl := flag.Duration("ttl", time.Hour, "timeout for the snapshot-promote operation")
 	keep := flag.Bool("keep", false, "keep the build sandbox instead of deleting it after promotion")
@@ -60,6 +61,7 @@ func main() {
 
 	// A build sandbox is promoted, so it must not be ephemeral.
 	sandbox, err := client.Create(ctx, types.SnapshotParams{
+		Snapshot: strings.TrimSpace(*baseSnapshot),
 		SandboxBaseParams: types.SandboxBaseParams{
 			Labels:    map[string]string{"codegym": "base-snapshot"},
 			Ephemeral: false,

@@ -294,9 +294,11 @@ func runCase(ctx context.Context, runID string, opts Options, loaded problemqual
 			Timeout: opts.Timeout,
 		}
 		assessor = &envintegration.SandboxProtocolAssessor{
-			Executor:   sandbox,
-			ScratchDir: "/tmp/codegym-assess",
-			Timeout:    opts.Timeout,
+			Executor:          sandbox,
+			ScratchDir:        "/tmp/codegym-assess",
+			Timeout:           opts.Timeout,
+			SourceRemoteRoot:  remoteRoot,
+			CopyIntoWorkspace: []string{"node_modules"},
 		}
 		builder.Runtime = &environmentverify.RuntimeInfo{Name: "daytona-sandbox", Version: "development-only"}
 	} else {

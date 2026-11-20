@@ -401,6 +401,11 @@ type SandboxProtocolAssessor struct {
 	Executor   agentruntime.SandboxExecutor
 	ScratchDir string
 	Timeout    time.Duration
+	// SourceRemoteRoot is the sandbox artifact tree where setup commands
+	// installed dependencies. CopyIntoWorkspace lists directories that must
+	// be copied from that tree into each fresh assessment workspace.
+	SourceRemoteRoot  string
+	CopyIntoWorkspace []string
 }
 
 // Assess uploads the prepared workspace into a fresh sandbox directory, runs
@@ -424,6 +429,15 @@ func (a *SandboxProtocolAssessor) Assess(ctx context.Context, work environmentve
 	remoteDir := path.Join(scratch, "protocol-"+assessmentDirName(work.Role))
 	if err := uploadSandboxTree(ctx, a.Executor, workDir, remoteDir); err != nil {
 		return environmentverify.AssessmentReport{}, err
+	}
+	for _, relative := range a.CopyIntoWorkspace {
+		source := path.Join(a.SourceRemoteRoot, strings.Trim(relative, "/"))
+		destination := path.Join(remoteDir, strings.Trim(relative, "/"))
+		command := "if [ -d " + shellSingleQuote(source) + " ]; then cp -a " +
+			shellSingleQuote(source) + " " + shellSingleQuote(destination) + "; fi"
+		if _, _, err := a.Executor.ExecuteCommand(ctx, command, time.Minute); err != nil {
+			return environmentverify.AssessmentReport{}, fmt.Errorf("envintegration: copy dependency %q into assessment workspace: %w", relative, err)
+		}
 	}
 	defer func() {
 		_, _, _ = a.Executor.ExecuteCommand(context.WithoutCancel(ctx), "rm -rf "+shellSingleQuote(remoteDir), time.Minute)

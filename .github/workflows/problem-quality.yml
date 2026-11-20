@@ -90,5 +90,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: problem-quality-report-${{ steps.benchmark.outputs.run_id }}
-          path: benchmark-results/preprod/${{ steps.benchmark.outputs.run_id }}
-          if-no-files-found: error
+          path: benchmark-results/preprod/
+          if-no-files-found: warn

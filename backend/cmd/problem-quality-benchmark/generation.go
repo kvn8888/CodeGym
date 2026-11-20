@@ -128,7 +128,7 @@ func (b *generationBaseline) generateReference(ctx context.Context, caseDir stri
 				"properties":{"solution":{"type":"string"}}
 			}`),
 		},
-		ModelPolicy:  generation.ModelPolicy{MaxTokens: 2048},
+		ModelPolicy:  generation.ModelPolicy{MaxTokens: 4096},
 		Instructions: instructions,
 	}, memory.Profile{})
 	if err != nil {

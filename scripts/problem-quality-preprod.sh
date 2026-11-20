@@ -21,6 +21,9 @@ RUN_ID="pqb-$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -tx1 -N4 /dev/urandom 2>/dev/nul
 if [[ -z "${RUN_ID##*-}" ]]; then
   RUN_ID="${RUN_ID}$(date +%s | tail -c 5)"
 fi
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+fi
 
 SMOKE="${SMOKE:-false}"
 BASELINE_KIND="${BASELINE_KIND:-current}"
@@ -91,6 +94,3 @@ measure blind agreement/reconciliation until independent generation is merged.
 EOF
 
 echo "run_id=$RUN_ID"
-if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-fi

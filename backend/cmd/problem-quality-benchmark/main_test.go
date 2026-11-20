@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kvn8888/codegym/backend/internal/benchmarkbudget"
 	"github.com/kvn8888/codegym/backend/internal/environmentverify"
@@ -51,7 +52,6 @@ func TestRunPythonSumEvenNumbersCaseExitsZero(t *testing.T) {
 	code, stdout, stderr := runCommand(t,
 		"-execution", "local",
 		"-case", pythonSumEvenNumbersCase,
-		"-development-fixture",
 		"-output", output,
 		"-schema", reportSchemaPath,
 		"-budget-state", "",
@@ -65,8 +65,8 @@ func TestRunPythonSumEvenNumbersCaseExitsZero(t *testing.T) {
 		t.Fatalf("Go build left a binary in the artifact: %v", err)
 	}
 	report := loadValidatedReport(t, output)
-	if !report.Preliminary || !report.DevelopmentFixture {
-		t.Fatalf("report labels preliminary=%v development_fixture=%v, want both true",
+	if !report.Preliminary || report.DevelopmentFixture {
+		t.Fatalf("report labels preliminary=%v development_fixture=%v, want preliminary true and development_fixture false",
 			report.Preliminary, report.DevelopmentFixture)
 	}
 	if report.Summary.CasesTotal != 1 || report.Summary.CasesPassed != 1 ||
@@ -113,8 +113,8 @@ func TestRunPythonSumEvenNumbersCaseExitsZero(t *testing.T) {
 	if caseReport.BenchmarkEligible || caseReport.BenchmarkEligibility != environmentverify.BenchmarkEligibilityUnresolved {
 		t.Fatalf("eligibility = %v/%q, want false/unresolved", caseReport.BenchmarkEligible, caseReport.BenchmarkEligibility)
 	}
-	if !caseReport.DevelopmentFixture || !caseReport.ExcludedFromReviewedTotals {
-		t.Fatalf("fixture labels = %+v, want excluded development fixture", caseReport)
+	if caseReport.DevelopmentFixture || caseReport.ExcludedFromReviewedTotals {
+		t.Fatalf("fixture labels = %+v, want reviewed non-fixture case", caseReport)
 	}
 	if report.Summary.CorrectAlternativeAcceptance != nil || report.Summary.WrongSolutionRejection != nil {
 		t.Fatalf("quality rates = %v/%v, want unset for a development fixture",
@@ -133,7 +133,6 @@ func TestRunPythonAndGoCasesTogetherExitZero(t *testing.T) {
 		"-execution", "local",
 		"-case", pythonSumEvenNumbersCase,
 		"-case", goCountEvenNumbersCase,
-		"-development-fixture",
 		"-output", output,
 		"-schema", reportSchemaPath,
 		"-budget-state", "",
@@ -143,8 +142,8 @@ func TestRunPythonAndGoCasesTogetherExitZero(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s stdout=%s", code, stderr, stdout)
 	}
 	report := loadValidatedReport(t, output)
-	if !report.Preliminary || !report.DevelopmentFixture {
-		t.Fatalf("report labels preliminary=%v development_fixture=%v, want both true",
+	if !report.Preliminary || report.DevelopmentFixture {
+		t.Fatalf("report labels preliminary=%v development_fixture=%v, want preliminary true and development_fixture false",
 			report.Preliminary, report.DevelopmentFixture)
 	}
 	if report.Summary.CasesTotal != 2 || report.Summary.CasesPassed != 2 ||
@@ -175,8 +174,8 @@ func TestRunPythonAndGoCasesTogetherExitZero(t *testing.T) {
 		if caseReport.BenchmarkEligible || caseReport.BenchmarkEligibility != environmentverify.BenchmarkEligibilityUnresolved {
 			t.Fatalf("case %q eligibility = %v/%q, want false/unresolved", caseID, caseReport.BenchmarkEligible, caseReport.BenchmarkEligibility)
 		}
-		if !caseReport.DevelopmentFixture || !caseReport.ExcludedFromReviewedTotals {
-			t.Fatalf("case %q fixture labels = %+v, want excluded development fixture", caseID, caseReport)
+		if caseReport.DevelopmentFixture || caseReport.ExcludedFromReviewedTotals {
+			t.Fatalf("case %q fixture labels = %+v, want reviewed non-fixture case", caseID, caseReport)
 		}
 	}
 
@@ -249,6 +248,18 @@ func requireNodeNPM(t *testing.T) {
 	t.Setenv("npm_config_audit", "false")
 	t.Setenv("npm_config_fund", "false")
 	t.Setenv("npm_config_update_notifier", "false")
+
+	artifactDir := filepath.Join(expressGreetingCase, "artifact")
+	if _, err := os.Stat(filepath.Join(artifactDir, "node_modules", "express")); err == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	install := exec.CommandContext(ctx, "npm", "ci", "--ignore-scripts")
+	install.Dir = artifactDir
+	if output, err := install.CombinedOutput(); err != nil {
+		t.Skipf("skipping express-greeting-endpoint CLI test: npm ci failed: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
 }
 
 func requireJava21Maven(t *testing.T) {
@@ -300,7 +311,6 @@ func TestRunSpringBootGreetingEndpointCaseExitsZero(t *testing.T) {
 	code, stdout, stderr := runCommand(t,
 		"-execution", "local",
 		"-case", springBootGreetingCase,
-		"-development-fixture",
 		"-output", output,
 		"-schema", reportSchemaPath,
 		"-budget-state", "",
@@ -310,8 +320,8 @@ func TestRunSpringBootGreetingEndpointCaseExitsZero(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s stdout=%s", code, stderr, stdout)
 	}
 	report := loadValidatedReport(t, output)
-	if !report.Preliminary || !report.DevelopmentFixture {
-		t.Fatalf("report labels preliminary=%v development_fixture=%v, want both true",
+	if !report.Preliminary || report.DevelopmentFixture {
+		t.Fatalf("report labels preliminary=%v development_fixture=%v, want preliminary true and development_fixture false",
 			report.Preliminary, report.DevelopmentFixture)
 	}
 	if report.Summary.CasesTotal != 1 || report.Summary.CasesPassed != 1 ||
@@ -359,8 +369,8 @@ func TestRunSpringBootGreetingEndpointCaseExitsZero(t *testing.T) {
 	if caseReport.BenchmarkEligible || caseReport.BenchmarkEligibility != environmentverify.BenchmarkEligibilityUnresolved {
 		t.Fatalf("eligibility = %v/%q, want false/unresolved", caseReport.BenchmarkEligible, caseReport.BenchmarkEligibility)
 	}
-	if !caseReport.DevelopmentFixture || !caseReport.ExcludedFromReviewedTotals {
-		t.Fatalf("fixture labels = %+v, want excluded development fixture", caseReport)
+	if caseReport.DevelopmentFixture || caseReport.ExcludedFromReviewedTotals {
+		t.Fatalf("fixture labels = %+v, want reviewed non-fixture case", caseReport)
 	}
 }
 
@@ -371,7 +381,6 @@ func TestRunExpressGreetingEndpointCaseExitsZero(t *testing.T) {
 	code, stdout, stderr := runCommand(t,
 		"-execution", "local",
 		"-case", expressGreetingCase,
-		"-development-fixture",
 		"-output", output,
 		"-schema", reportSchemaPath,
 		"-budget-state", "",
@@ -381,8 +390,8 @@ func TestRunExpressGreetingEndpointCaseExitsZero(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s stdout=%s", code, stderr, stdout)
 	}
 	report := loadValidatedReport(t, output)
-	if !report.Preliminary || !report.DevelopmentFixture {
-		t.Fatalf("report labels preliminary=%v development_fixture=%v, want both true",
+	if !report.Preliminary || report.DevelopmentFixture {
+		t.Fatalf("report labels preliminary=%v development_fixture=%v, want preliminary true and development_fixture false",
 			report.Preliminary, report.DevelopmentFixture)
 	}
 	if report.Summary.CasesTotal != 1 || report.Summary.CasesPassed != 1 ||
@@ -430,8 +439,8 @@ func TestRunExpressGreetingEndpointCaseExitsZero(t *testing.T) {
 	if caseReport.BenchmarkEligible || caseReport.BenchmarkEligibility != environmentverify.BenchmarkEligibilityUnresolved {
 		t.Fatalf("eligibility = %v/%q, want false/unresolved", caseReport.BenchmarkEligible, caseReport.BenchmarkEligibility)
 	}
-	if !caseReport.DevelopmentFixture || !caseReport.ExcludedFromReviewedTotals {
-		t.Fatalf("fixture labels = %+v, want excluded development fixture", caseReport)
+	if caseReport.DevelopmentFixture || caseReport.ExcludedFromReviewedTotals {
+		t.Fatalf("fixture labels = %+v, want reviewed non-fixture case", caseReport)
 	}
 }
 
@@ -448,7 +457,6 @@ func TestRunPythonGoAndExpressCasesTogetherExitZero(t *testing.T) {
 		"-case", pythonSumEvenNumbersCase,
 		"-case", goCountEvenNumbersCase,
 		"-case", expressGreetingCase,
-		"-development-fixture",
 		"-output", output,
 		"-schema", reportSchemaPath,
 		"-budget-state", "",
@@ -462,8 +470,8 @@ func TestRunPythonGoAndExpressCasesTogetherExitZero(t *testing.T) {
 		t.Fatalf("Go build left a binary in the artifact: %v", err)
 	}
 	report := loadValidatedReport(t, output)
-	if !report.Preliminary || !report.DevelopmentFixture {
-		t.Fatalf("report labels preliminary=%v development_fixture=%v, want both true",
+	if !report.Preliminary || report.DevelopmentFixture {
+		t.Fatalf("report labels preliminary=%v development_fixture=%v, want preliminary true and development_fixture false",
 			report.Preliminary, report.DevelopmentFixture)
 	}
 	if report.Summary.CasesTotal != 3 || report.Summary.CasesPassed != 3 ||
@@ -513,8 +521,8 @@ func TestRunPythonGoAndExpressCasesTogetherExitZero(t *testing.T) {
 		if caseReport.BenchmarkEligible || caseReport.BenchmarkEligibility != environmentverify.BenchmarkEligibilityUnresolved {
 			t.Fatalf("case %q eligibility = %v/%q, want false/unresolved", caseID, caseReport.BenchmarkEligible, caseReport.BenchmarkEligibility)
 		}
-		if !caseReport.DevelopmentFixture || !caseReport.ExcludedFromReviewedTotals {
-			t.Fatalf("case %q fixture labels = %+v, want excluded development fixture", caseID, caseReport)
+		if caseReport.DevelopmentFixture || caseReport.ExcludedFromReviewedTotals {
+			t.Fatalf("case %q fixture labels = %+v, want reviewed non-fixture case", caseID, caseReport)
 		}
 		for _, wrong := range caseReport.WrongSolutions {
 			want, ok := wrongExpectations[wrong.ID]
@@ -550,7 +558,6 @@ func TestRunAllFourCorpusCasesTogetherExitZero(t *testing.T) {
 		"-case", goCountEvenNumbersCase,
 		"-case", expressGreetingCase,
 		"-case", springBootGreetingCase,
-		"-development-fixture",
 		"-output", output,
 		"-schema", reportSchemaPath,
 		"-budget-state", "",
@@ -564,8 +571,8 @@ func TestRunAllFourCorpusCasesTogetherExitZero(t *testing.T) {
 		t.Fatalf("Go build left a binary in the artifact: %v", err)
 	}
 	report := loadValidatedReport(t, output)
-	if !report.Preliminary || !report.DevelopmentFixture {
-		t.Fatalf("report labels preliminary=%v development_fixture=%v, want both true",
+	if !report.Preliminary || report.DevelopmentFixture {
+		t.Fatalf("report labels preliminary=%v development_fixture=%v, want preliminary true and development_fixture false",
 			report.Preliminary, report.DevelopmentFixture)
 	}
 	if report.Summary.CasesTotal != 4 || report.Summary.CasesPassed != 4 ||
@@ -622,8 +629,8 @@ func TestRunAllFourCorpusCasesTogetherExitZero(t *testing.T) {
 		if caseReport.BenchmarkEligible || caseReport.BenchmarkEligibility != environmentverify.BenchmarkEligibilityUnresolved {
 			t.Fatalf("case %q eligibility = %v/%q, want false/unresolved", caseID, caseReport.BenchmarkEligible, caseReport.BenchmarkEligibility)
 		}
-		if !caseReport.DevelopmentFixture || !caseReport.ExcludedFromReviewedTotals {
-			t.Fatalf("case %q fixture labels = %+v, want excluded development fixture", caseID, caseReport)
+		if caseReport.DevelopmentFixture || caseReport.ExcludedFromReviewedTotals {
+			t.Fatalf("case %q fixture labels = %+v, want reviewed non-fixture case", caseID, caseReport)
 		}
 		for _, wrong := range caseReport.WrongSolutions {
 			want, ok := wrongExpectations[wrong.ID]

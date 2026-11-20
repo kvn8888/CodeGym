@@ -66,8 +66,8 @@ func TestPythonSumEvenNumbersCaseBindsReferenceAndPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.DevelopmentFixture {
-		t.Fatal("development_fixture = false, want explicit fixture label")
+	if config.DevelopmentFixture {
+		t.Fatal("development_fixture = true, want reviewed non-fixture case")
 	}
 	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
 		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
@@ -113,8 +113,8 @@ func TestGoCountEvenNumbersCaseBindsReferenceAndPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.DevelopmentFixture {
-		t.Fatal("development_fixture = false, want explicit fixture label")
+	if config.DevelopmentFixture {
+		t.Fatal("development_fixture = true, want reviewed non-fixture case")
 	}
 	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
 		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
@@ -166,8 +166,8 @@ func TestExpressGreetingEndpointCaseBindsReferenceAndPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.DevelopmentFixture {
-		t.Fatal("development_fixture = false, want explicit fixture label")
+	if config.DevelopmentFixture {
+		t.Fatal("development_fixture = true, want reviewed non-fixture case")
 	}
 	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
 		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)
@@ -220,8 +220,8 @@ func TestSpringBootGreetingEndpointCaseBindsReferenceAndPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.DevelopmentFixture {
-		t.Fatal("development_fixture = false, want explicit fixture label")
+	if config.DevelopmentFixture {
+		t.Fatal("development_fixture = true, want reviewed non-fixture case")
 	}
 	if config.ArtifactID != c.ArtifactID || config.ArtifactVersion != c.ArtifactVersion {
 		t.Fatalf("artifact = %q/%q, case = %q/%q", config.ArtifactID, config.ArtifactVersion, c.ArtifactID, c.ArtifactVersion)

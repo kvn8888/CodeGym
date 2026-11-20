@@ -11,9 +11,17 @@ import (
 )
 
 func TestZZVerifySavedReports(t *testing.T) {
+	fourPath := "/tmp/pqb-verify-four.json"
+	fixturePath := "/tmp/pqb-verify-development-order-tools.json"
+	if _, err := os.Stat(fourPath); err != nil {
+		t.Skip("saved four-case verification report is not present")
+	}
+	if _, err := os.Stat(fixturePath); err != nil {
+		t.Skip("saved fixture verification report is not present")
+	}
 	schema := filepath.Join("..", "..", "..", "..", "benchmarks", "problem-quality", "schema", "report.schema.json")
 
-	four := readSavedReport(t, "/tmp/pqb-verify-four.json", schema)
+	four := readSavedReport(t, fourPath, schema)
 	if four.ReportVersion != "2.0.0" || !four.Preliminary || !four.DevelopmentFixture {
 		t.Fatalf("four-case labels = %q preliminary=%t fixture=%t", four.ReportVersion, four.Preliminary, four.DevelopmentFixture)
 	}
@@ -93,7 +101,7 @@ func TestZZVerifySavedReports(t *testing.T) {
 		}
 	}
 
-	fixture := readSavedReport(t, "/tmp/pqb-verify-development-order-tools.json", schema)
+	fixture := readSavedReport(t, fixturePath, schema)
 	if len(fixture.Cases) != 1 || fixture.Cases[0].Status != CaseStatusFailed {
 		t.Fatalf("fixture report cases = %+v", fixture.Cases)
 	}

@@ -28,7 +28,7 @@ func TestLoadReviewRecordReadsExistingCorpusRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.ReviewedBy != "reviewer" || record.AmbiguousSpec == nil || *record.AmbiguousSpec {
+	if record.ReviewedBy != "Hunter and Cristina" || record.AmbiguousSpec == nil || *record.AmbiguousSpec {
 		t.Fatalf("record = %+v, want existing reviewed record", record)
 	}
 	if len(record.DenominatorDecisions) != 2 {

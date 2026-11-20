@@ -66,6 +66,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	priorSpendMicros := flags.Int64("prior-spend-micros", 0, "explicit prior spending in micro-USD recorded when budget state is first created")
 	generateReference := flags.Bool("generate-reference", false, "generate a fresh reference solution with the selected baseline before assessing each case")
 	generationProvider := flags.String("generation-provider", "", "GenAI provider name for -generate-reference (defaults to the first configured provider)")
+	dumpGenerated := flags.Bool("dump-generated", false, "debug: print generated reference source to stderr")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -154,6 +155,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 					fmt.Fprintf(stderr, "problem-quality-benchmark: settle generation budget for %s: %v\n", caseID, err)
 					return 2
 				}
+			}
+			if *dumpGenerated {
+				fmt.Fprintf(stderr, "===== generated %s =====\n%s===== end %s =====\n", caseID, solution, caseID)
 			}
 			dest, err := materializeGeneratedCase(caseDir, solution)
 			if err != nil {

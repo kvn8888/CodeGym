@@ -425,6 +425,24 @@ measure blind agreement, reconciliation, or independently generated
 specifications/tests; those metrics remain unavailable until the independent
 generation mechanism is merged. Paid-budget settlement is still a later phase.
 
+### Preprod benchmark workflow
+
+The canonical non-local run is the GitHub Actions workflow
+`.github/workflows/problem-quality.yml`. It uses a clean Linux runner so results
+do not depend on a developer's OS or locally installed toolchains. Secrets come
+from Doppler config `stg` through a repository `DOPPLER_TOKEN` service token;
+individual secrets are never stored in GitHub Actions.
+
+Run it manually from the Actions tab with **Problem Quality Benchmark → Run
+workflow**. Start with `smoke: true` (one case) before a full four-case run.
+
+The workflow restores a budget ledger cache, calls
+`scripts/problem-quality-preprod.sh`, and uploads the saved report under
+`benchmark-results/preprod/<run-id>/` as a build artifact. The script uses
+`-execution sandbox`, `-generate-reference`, sandbox execution, review
+authorities `hunter` and `cristina`, and the report schema. It never passes
+`-development-fixture`.
+
 ### Sandbox development benchmark
 
 The benchmark can also run each case's setup/build/test/assessment commands in

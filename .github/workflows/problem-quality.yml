@@ -6,6 +6,10 @@ name: Problem Quality Benchmark
 # Preprod Daytona base snapshot is configured in Doppler as
 # CODEGYM_BASE_SNAPSHOT=codegym-base-v3.
 on:
+  # Temporary push trigger for one full pre-merge validation run.
+  push:
+    branches:
+      - feature/problem-quality-preprod-pipeline
   workflow_dispatch:
     inputs:
       smoke:
@@ -72,8 +76,8 @@ jobs:
         id: benchmark
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-          SMOKE: ${{ inputs.smoke }}
-          SKIP_GENERATION: ${{ inputs.skip_generation }}
+          SMOKE: 'false'
+          SKIP_GENERATION: 'false'
           BASELINE_KIND: ${{ inputs.baseline_kind || 'current' }}
           MODEL_REVISION: ${{ inputs.model_revision || '' }}
           PROMPT_REVISION: ${{ inputs.prompt_revision || '' }}

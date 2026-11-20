@@ -147,32 +147,50 @@ func (b *generationBaseline) generateReference(ctx context.Context, caseDir stri
 				"do not guard it with require.main === module — and set module.exports = app."
 		}
 	}
-	result, err := b.orchestrator.GenerateWithProfile(ctx, generation.GenerateInput{
-		Kind: generation.KindProblem,
-		Spec: requestSpec,
-		Schema: generation.Schema{
-			Name:    "generated_reference",
-			Version: "1",
-			JSONSchema: json.RawMessage(`{
-				"type":"object",
-				"required":["solution"],
-				"properties":{"solution":{"type":"string"}}
-			}`),
-		},
-		ModelPolicy:  generation.ModelPolicy{MaxTokens: 4096},
-		Instructions: instructions,
-	}, memory.Profile{})
-	if err != nil {
-		return "", generation.GenerateResult{}, err
+	var lastResult generation.GenerateResult
+	var lastErr error
+	for attempt, maxTokens := range []int{4096, 8192} {
+		result, err := b.orchestrator.GenerateWithProfile(ctx, generation.GenerateInput{
+			Kind: generation.KindProblem,
+			Spec: requestSpec,
+			Schema: generation.Schema{
+				Name:    "generated_reference",
+				Version: "1",
+				JSONSchema: json.RawMessage(`{
+					"type":"object",
+					"required":["solution"],
+					"properties":{"solution":{"type":"string"}}
+				}`),
+			},
+			ModelPolicy:  generation.ModelPolicy{MaxTokens: maxTokens},
+			Instructions: instructions,
+		}, memory.Profile{})
+		lastResult = result
+		if err != nil {
+			lastErr = err
+			if attempt == 0 {
+				continue
+			}
+			return "", result, err
+		}
+		var generated generatedReference
+		if err := json.Unmarshal(result.Object, &generated); err != nil {
+			lastErr = fmt.Errorf("decode generated reference: %w", err)
+			if attempt == 0 {
+				continue
+			}
+			return "", result, lastErr
+		}
+		if strings.TrimSpace(generated.Solution) == "" {
+			lastErr = errors.New("generated reference solution is empty")
+			if attempt == 0 {
+				continue
+			}
+			return "", result, lastErr
+		}
+		return strings.TrimSpace(generated.Solution) + "\n", result, nil
 	}
-	var generated generatedReference
-	if err := json.Unmarshal(result.Object, &generated); err != nil {
-		return "", result, fmt.Errorf("decode generated reference: %w", err)
-	}
-	if strings.TrimSpace(generated.Solution) == "" {
-		return "", result, errors.New("generated reference solution is empty")
-	}
-	return strings.TrimSpace(generated.Solution) + "\n", result, nil
+	return "", lastResult, lastErr
 }
 
 // materializeGeneratedCase copies a saved case to a temporary directory and

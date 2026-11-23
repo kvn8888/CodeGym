@@ -3,7 +3,7 @@ reviewer_authority: hunter
 reviewed_at: "2026-11-19T00:00:00Z"
 review_reference: https://github.com/kvn8888/CodeGym/pull/214
 approval_scope: case
-approved_content_sha256: aef24ce9ba4ad07840870f1bb908c12f982d6e90f4bd5bffe864b5a37aed6c84
+approved_content_sha256: d6ea0d83cd8a31a671b2f5fe40c03fd96a019935c32222bd0df12f039ad9220e
 ambiguous_spec: false
 notes: "Approved for benchmark eligibility by Hunter and Cristina; configure both hunter and cristina as review authorities."
 denominator_decisions:

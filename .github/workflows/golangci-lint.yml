@@ -11,7 +11,7 @@ on:
       - '.github/workflows/golangci-lint.yml'
       - 'backend/.golangci.yml'
   pull_request:
-    branches: [codegym-v2]
+    branches: [codegym-v2, "feat/**", "fix/**", "perf/**", "ui/**"]
     paths:
       - 'backend/**'
       - '.github/workflows/golangci-lint.yml'

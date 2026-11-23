@@ -1,0 +1,26 @@
+{
+  "language": "python",
+  "strategy": "unit",
+  "title": "Sum Two Integers",
+  "description": "Given two integers, return their sum.",
+  "category": "basics",
+  "subcategory": "arithmetic",
+  "tags": ["integers", "addition"],
+  "difficulty": 1,
+  "estimated_minutes": 10,
+  "hints": ["Use the + operator."],
+  "entrypoint": "solution.py",
+  "signature": "def add(a: int, b: int) -> int",
+  "io_contract": "add(a, b) returns the arithmetic sum of a and b.",
+  "comparator": { "kind": "exact" },
+  "ambiguity_resolutions": [
+    "Integer overflow is not a concern for the supported input range.",
+    "Negative inputs are valid and follow normal integer addition."
+  ],
+  "function_name": "add",
+  "parameters": [
+    { "name": "a", "type": "int" },
+    { "name": "b", "type": "int" }
+  ],
+  "return_type": "int"
+}

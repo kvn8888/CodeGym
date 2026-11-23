@@ -11,7 +11,7 @@
 // This is a one-time setup step. Run it with Doppler supplying the Daytona
 // credentials, then put the printed snapshot name into CODEGYM_BASE_SNAPSHOT:
 //
-//	doppler run -p codegym -c dev -- go run ./base-snapshot -name codegym-base
+//	doppler run -p codegym -c stg -- go run ./base-snapshot -snapshot daytona-large -name codegym-base
 package main
 
 import (
@@ -43,6 +43,7 @@ const configDir = "/home/agent/.config/opencode"
 const opencodeBin = "/opt/codegym/bin/opencode"
 
 func main() {
+	baseSnapshot := flag.String("snapshot", "", "Daytona system snapshot/image to boot from (empty uses the account default)")
 	name := flag.String("name", "codegym-base", "snapshot name to create")
 	ttl := flag.Duration("ttl", time.Hour, "timeout for the snapshot-promote operation")
 	keep := flag.Bool("keep", false, "keep the build sandbox instead of deleting it after promotion")
@@ -60,6 +61,7 @@ func main() {
 
 	// A build sandbox is promoted, so it must not be ephemeral.
 	sandbox, err := client.Create(ctx, types.SnapshotParams{
+		Snapshot: strings.TrimSpace(*baseSnapshot),
 		SandboxBaseParams: types.SandboxBaseParams{
 			Labels:    map[string]string{"codegym": "base-snapshot"},
 			Ephemeral: false,
@@ -85,7 +87,9 @@ func main() {
 			timeout: 20 * time.Minute,
 			command: "export DEBIAN_FRONTEND=noninteractive && " +
 				"sudo apt-get update -y && sudo apt-get install -y --no-install-recommends " +
-				"openjdk-21-jdk-headless maven nodejs npm python3 python3-pip && " +
+				"openjdk-21-jdk-headless maven nodejs npm python3 python3-pip python3-pytest python-is-python3 && " +
+				"sudo python3 -m pip install --break-system-packages pytest && " +
+				"sudo ln -sf /usr/bin/python3 /usr/local/bin/python && " +
 				"sudo rm -rf /var/lib/apt/lists/*",
 		},
 		{
@@ -94,7 +98,7 @@ func main() {
 			command: "set -e; " +
 				"ARCH=$(uname -m); " +
 				"case \"$ARCH\" in x86_64) GOARCH=amd64;; aarch64) GOARCH=arm64;; *) echo \"unsupported arch $ARCH\" >&2; exit 1;; esac; " +
-				"curl -fsSL \"https://go.dev/dl/go1.22.5.linux-${GOARCH}.tar.gz\" -o /tmp/go.tar.gz && " +
+				"curl -fsSL \"https://go.dev/dl/go1.27.0.linux-${GOARCH}.tar.gz\" -o /tmp/go.tar.gz && " +
 				"sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz && " +
 				"sudo ln -sf /usr/local/go/bin/go /usr/local/bin/go && " +
 				"sudo ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt",
@@ -150,6 +154,9 @@ func main() {
 		"npm --version; " +
 		"go version; " +
 		"python3 --version; " +
+		"python --version; " +
+		"python3 -m pytest --version; " +
+		"python -m pytest --version; " +
 		"command -v opencode || true; " +
 		opencodeBin + " --version; " +
 		"cd " + configDir + " && node -e \"import('@opencode-ai/plugin').then(function(){console.log('plugin-runtime ok')}).catch(function(e){console.error(e);process.exit(1)})\""

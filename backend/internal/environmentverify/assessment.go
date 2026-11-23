@@ -84,10 +84,25 @@ type TestOutcome struct {
 
 // AssessmentReport is the structured outcome of evaluating one solution.
 // CompileError is set when the solution could not compile or load and no
-// tests ran.
+// tests ran. ExitCode and ElapsedMS retain the real command outcome for
+// benchmark reporting; nil means the executor did not measure the value, so
+// missing evidence is never confused with an observed zero. A nonzero exit
+// never by itself proves the intended failure, and a zero exit never erases
+// structured failure evidence.
 type AssessmentReport struct {
 	Tests        []TestOutcome `json:"tests"`
 	CompileError *string       `json:"compileError,omitempty"`
+	ExitCode     *int          `json:"exitCode,omitempty"`
+	ElapsedMS    *int64        `json:"elapsedMs,omitempty"`
+	OutputTail   string        `json:"outputTail,omitempty"`
+}
+
+func intPointer(value int) *int {
+	return &value
+}
+
+func int64Pointer(value int64) *int64 {
+	return &value
 }
 
 // AssessmentWork is one isolated solution evaluation.
@@ -140,34 +155,9 @@ func (v *verifier) assessSolutions(workspaceDir string, manifest Manifest) *Veri
 	if failure != nil {
 		return failure
 	}
-	if correct.CompileError != nil {
-		return v.rejectWithCheck(StageValidation, CodeCorrectSolutionFailed, true,
-			fmt.Sprintf("The reviewed correct solution did not compile: %s.", truncateOutput(*correct.CompileError)),
-			map[string]any{"assessment": RoleCorrectSolution, "compileError": truncateOutput(*correct.CompileError)},
-			"Correct solution did not compile.")
-	}
-	if len(correct.Tests) == 0 {
-		return v.rejectWithCheck(StageValidation, CodeAssessmentMalformed, true,
-			"The correct-solution assessment reported no tests.",
-			map[string]any{"assessment": RoleCorrectSolution},
-			"Correct assessment reported no tests.")
-	}
-	if failed := failedTests(correct); len(failed) > 0 {
-		return v.rejectWithCheck(StageValidation, CodeCorrectSolutionFailed, true,
-			fmt.Sprintf("The reviewed correct solution failed %d of %d assessment tests: %s.",
-				len(failed), len(correct.Tests), strings.Join(testIDs(failed), ", ")),
-			map[string]any{"assessment": RoleCorrectSolution, "failedTests": testIDs(failed)},
-			"Correct solution failed assessment.")
-	}
-	// The intended rejection is only meaningful if the correct solution
-	// actually ran the expected test: a correct run that omits it proves
-	// nothing about the wrong solution's later failure there.
-	if _, found := findTest(correct.Tests, spec.ExpectedFailure.TestID); !found {
-		return v.rejectWithCheck(StageValidation, CodeAssessmentMalformed, true,
-			fmt.Sprintf("The correct-solution assessment did not run the expected test %q.",
-				spec.ExpectedFailure.TestID),
-			map[string]any{"assessment": RoleCorrectSolution, "expectedTest": spec.ExpectedFailure.TestID},
-			"Expected test missing from assessment.")
+	if issue := positiveReportIssue(correct, []string{spec.ExpectedFailure.TestID}, RoleCorrectSolution); issue != nil {
+		return v.rejectWithCheck(StageValidation, issue.Code, issue.Repairable,
+			issue.Message, assessmentDetails(issue, RoleCorrectSolution), issue.Summary)
 	}
 	v.appendCheck(EvidenceCheck{Stage: StageValidation,
 		Summary: fmt.Sprintf("Correct solution passed %d/%d assessment tests.", len(correct.Tests), len(correct.Tests))})
@@ -176,79 +166,15 @@ func (v *verifier) assessSolutions(workspaceDir string, manifest Manifest) *Veri
 	if failure != nil {
 		return failure
 	}
-	if wrong.CompileError != nil {
-		return v.rejectWithCheck(StageValidation, CodeWrongSolutionUnexpected, true,
-			fmt.Sprintf("The wrong solution could not compile, so it cannot fail for the intended reason: %s.",
-				truncateOutput(*wrong.CompileError)),
-			map[string]any{"assessment": RoleWrongSolution, "compileError": truncateOutput(*wrong.CompileError)},
-			"Wrong solution did not compile.")
-	}
-	if len(wrong.Tests) == 0 {
-		return v.rejectWithCheck(StageValidation, CodeAssessmentMalformed, true,
-			"The wrong-solution assessment reported no tests.",
-			map[string]any{"assessment": RoleWrongSolution},
-			"Wrong assessment reported no tests.")
-	}
-	expected, found := findTest(wrong.Tests, spec.ExpectedFailure.TestID)
-	if !found {
-		return v.rejectWithCheck(StageValidation, CodeAssessmentMalformed, true,
-			fmt.Sprintf("The wrong-solution assessment did not run the expected test %q.",
-				spec.ExpectedFailure.TestID),
-			map[string]any{"assessment": RoleWrongSolution, "expectedTest": spec.ExpectedFailure.TestID},
-			"Expected test missing from assessment.")
-	}
-	if len(failedTests(wrong)) == 0 {
-		return v.rejectWithCheck(StageValidation, CodeWrongSolutionPassed, true,
-			fmt.Sprintf("The wrong solution passed all %d assessment tests, including the expected rejection assertion %q.",
-				len(wrong.Tests), expected.TestID),
-			map[string]any{"assessment": RoleWrongSolution, "expectedTest": expected.TestID,
-				"reason": spec.ExpectedFailure.Reason},
-			"Wrong solution unexpectedly passed.")
-	}
-	if expected.Passed {
-		return v.rejectWithCheck(StageValidation, CodeWrongSolutionUnexpected, true,
-			fmt.Sprintf("The wrong solution passed the expected rejection assertion %q; other failures: %s.",
-				expected.TestID, describeOthers(wrong.Tests, expected.TestID)),
-			map[string]any{"assessment": RoleWrongSolution, "expectedTest": expected.TestID,
-				"reason": spec.ExpectedFailure.Reason},
-			"Wrong solution unexpectedly passed.")
-	}
-	if expected.FailureClass != ClassAssertion {
-		return v.rejectWithCheck(StageValidation, CodeWrongSolutionUnexpected, true,
-			fmt.Sprintf("The wrong solution failed %q with %s, want an assertion failure for: %s.",
-				expected.TestID, failureClassName(expected.FailureClass), spec.ExpectedFailure.Reason),
-			map[string]any{"assessment": RoleWrongSolution, "expectedTest": expected.TestID,
-				"failureClass": expected.FailureClass, "reason": spec.ExpectedFailure.Reason},
-			"Wrong solution failed for an unrelated reason.")
-	}
-	if mismatch := matchAssertion(spec.ExpectedFailure, expected.Assertion); mismatch != "" {
-		observed := map[string]any{"present": false}
-		if expected.Assertion != nil {
-			observed = map[string]any{
-				"present":  true,
-				"code":     expected.Assertion.Code,
-				"expected": expected.Assertion.Expected,
-				"actual":   expected.Assertion.Actual,
-			}
-		}
-		return v.rejectWithCheck(StageValidation, CodeAssertionMismatch, true,
-			fmt.Sprintf("The wrong solution failed %q but the assertion evidence does not match: %s.",
-				expected.TestID, mismatch),
-			map[string]any{"assessment": RoleWrongSolution, "expectedTest": expected.TestID,
-				"mismatch": mismatch,
-				"want": map[string]any{
-					"code":     spec.ExpectedFailure.Code,
-					"expected": spec.ExpectedFailure.Expected,
-					"actual":   spec.ExpectedFailure.Actual,
-				},
-				"observed": observed},
-			"Assertion evidence mismatch.")
+	if issue := wrongReportIssue(wrong, spec.ExpectedFailure, RoleWrongSolution); issue != nil {
+		return v.rejectWithCheck(StageValidation, issue.Code, issue.Repairable,
+			issue.Message, assessmentDetails(issue, RoleWrongSolution), issue.Summary)
 	}
 	// Additional assertion failures beyond the expected one are tolerated:
 	// only the intended rejection is required. They are recorded for review.
 	v.appendCheck(EvidenceCheck{Stage: StageValidation,
 		Summary: fmt.Sprintf("Wrong solution failed as intended: %s (%s): expected %q, observed %q.",
-			expected.TestID, spec.ExpectedFailure.Code,
+			spec.ExpectedFailure.TestID, spec.ExpectedFailure.Code,
 			spec.ExpectedFailure.Expected, spec.ExpectedFailure.Actual)})
 	return nil
 }
@@ -272,6 +198,192 @@ func matchAssertion(want ExpectedFailure, observed *ObservedAssertion) string {
 		return fmt.Sprintf("actual value is %q, want %q", observed.Actual, want.Actual)
 	}
 	return ""
+}
+
+// assessmentIssue is the shared classification of a report that does not meet
+// a solution role's criteria. The legacy pair path turns it into a rejection;
+// the plan path records it as a per-solution outcome. Both paths use these
+// helpers so compile, test, assertion, and required-test coverage checks do
+// not drift apart.
+type assessmentIssue struct {
+	Code       string
+	Category   string
+	Status     AssessmentExecutionStatus
+	Repairable bool
+	Message    string
+	Details    map[string]any
+	Summary    string
+}
+
+func positiveReportIssue(report AssessmentReport, required []string, role string) *assessmentIssue {
+	label := strings.ToLower(roleTitle(role))
+	if report.CompileError != nil {
+		compileError := truncateOutput(*report.CompileError)
+		return &assessmentIssue{
+			Code: CodeCorrectSolutionFailed, Category: FailureCategoryCompile,
+			Status: ExecutionCompileError, Repairable: true,
+			Message: fmt.Sprintf("The %s did not compile: %s.", label, compileError),
+			Details: map[string]any{"compileError": compileError},
+			Summary: roleTitle(role) + " did not compile.",
+		}
+	}
+	if len(report.Tests) == 0 {
+		return &assessmentIssue{
+			Code: CodeAssessmentMalformed, Category: FailureCategoryMalformed,
+			Status: ExecutionMalformed, Repairable: true,
+			Message: fmt.Sprintf("The %s assessment reported no tests.", label),
+			Summary: roleTitle(role) + " assessment reported no tests.",
+		}
+	}
+	if failed := failedTests(report); len(failed) > 0 {
+		failedIDs := testIDs(failed)
+		return &assessmentIssue{
+			Code: CodeCorrectSolutionFailed, Category: FailureCategoryTest,
+			Status: ExecutionCompleted, Repairable: true,
+			Message: fmt.Sprintf("The %s failed %d of %d assessment tests: %s.",
+				label, len(failed), len(report.Tests), strings.Join(failedIDs, ", ")),
+			Details: map[string]any{"failedTests": failedIDs},
+			Summary: roleTitle(role) + " failed assessment.",
+		}
+	}
+	if report.ExitCode != nil && *report.ExitCode != 0 {
+		return &assessmentIssue{
+			Code: CodeCorrectSolutionFailed, Category: FailureCategoryTest,
+			Status: ExecutionCompleted, Repairable: true,
+			Message: fmt.Sprintf("The %s test command exited with code %d without a structured failure.",
+				label, *report.ExitCode),
+			Details: map[string]any{"exitCode": *report.ExitCode},
+			Summary: roleTitle(role) + " test command failed.",
+		}
+	}
+	if missing := missingTestIDs(report.Tests, required); len(missing) > 0 {
+		details := map[string]any{"missingTests": missing}
+		if len(required) == 1 {
+			details["expectedTest"] = required[0]
+		}
+		return &assessmentIssue{
+			Code: CodeAssessmentMalformed, Category: FailureCategoryMalformed,
+			Status: ExecutionMalformed, Repairable: true,
+			Message: fmt.Sprintf("The %s assessment did not run required tests: %s.",
+				label, strings.Join(missing, ", ")),
+			Details: details,
+			Summary: roleTitle(role) + " did not run required assessment tests.",
+		}
+	}
+	return nil
+}
+
+func wrongReportIssue(report AssessmentReport, want ExpectedFailure, role string) *assessmentIssue {
+	label := strings.ToLower(roleTitle(role))
+	if report.CompileError != nil {
+		compileError := truncateOutput(*report.CompileError)
+		return &assessmentIssue{
+			Code: CodeWrongSolutionUnexpected, Category: FailureCategoryCompile,
+			Status: ExecutionCompileError, Repairable: true,
+			Message: fmt.Sprintf("The %s could not compile, so it cannot fail for the intended reason: %s.",
+				label, compileError),
+			Details: map[string]any{"compileError": compileError},
+			Summary: "Wrong solution did not compile.",
+		}
+	}
+	if len(report.Tests) == 0 {
+		return &assessmentIssue{
+			Code: CodeAssessmentMalformed, Category: FailureCategoryMalformed,
+			Status: ExecutionMalformed, Repairable: true,
+			Message: fmt.Sprintf("The %s assessment reported no tests.", label),
+			Summary: "Wrong assessment reported no tests.",
+		}
+	}
+	expected, found := findTest(report.Tests, want.TestID)
+	if !found {
+		return &assessmentIssue{
+			Code: CodeAssessmentMalformed, Category: FailureCategoryMalformed,
+			Status: ExecutionMalformed, Repairable: true,
+			Message: fmt.Sprintf("The %s assessment did not run the expected test %q.",
+				label, want.TestID),
+			Details: map[string]any{"expectedTest": want.TestID},
+			Summary: "Expected test missing from assessment.",
+		}
+	}
+	if len(failedTests(report)) == 0 {
+		return &assessmentIssue{
+			Code: CodeWrongSolutionPassed, Category: FailureCategoryTest,
+			Status: ExecutionCompleted, Repairable: true,
+			Message: fmt.Sprintf("The %s passed all %d assessment tests, including the expected rejection assertion %q.",
+				label, len(report.Tests), expected.TestID),
+			Details: map[string]any{"expectedTest": expected.TestID, "reason": want.Reason},
+			Summary: "Wrong solution unexpectedly passed.",
+		}
+	}
+	if expected.Passed {
+		return &assessmentIssue{
+			Code: CodeWrongSolutionUnexpected, Category: FailureCategoryTest,
+			Status: ExecutionCompleted, Repairable: true,
+			Message: fmt.Sprintf("The %s passed the expected rejection assertion %q; other failures: %s.",
+				label, expected.TestID, describeOthers(report.Tests, expected.TestID)),
+			Details: map[string]any{"expectedTest": expected.TestID, "reason": want.Reason},
+			Summary: "Wrong solution unexpectedly passed.",
+		}
+	}
+	if expected.FailureClass != ClassAssertion {
+		return &assessmentIssue{
+			Code: CodeWrongSolutionUnexpected, Category: FailureCategoryTest,
+			Status: ExecutionCompleted, Repairable: true,
+			Message: fmt.Sprintf("The %s failed %q with %s, want an assertion failure for: %s.",
+				label, expected.TestID, failureClassName(expected.FailureClass), want.Reason),
+			Details: map[string]any{"expectedTest": expected.TestID,
+				"failureClass": expected.FailureClass, "reason": want.Reason},
+			Summary: "Wrong solution failed for an unrelated reason.",
+		}
+	}
+	if mismatch := matchAssertion(want, expected.Assertion); mismatch != "" {
+		observed := map[string]any{"present": false}
+		if expected.Assertion != nil {
+			observed = map[string]any{
+				"present":  true,
+				"code":     expected.Assertion.Code,
+				"expected": expected.Assertion.Expected,
+				"actual":   expected.Assertion.Actual,
+			}
+		}
+		return &assessmentIssue{
+			Code: CodeAssertionMismatch, Category: FailureCategoryAssertion,
+			Status: ExecutionCompleted, Repairable: true,
+			Message: fmt.Sprintf("The %s failed %q but the assertion evidence does not match: %s.",
+				label, expected.TestID, mismatch),
+			Details: map[string]any{
+				"expectedTest": expected.TestID,
+				"mismatch":     mismatch,
+				"want": map[string]any{
+					"code": want.Code, "expected": want.Expected, "actual": want.Actual,
+				},
+				"observed": observed,
+			},
+			Summary: "Assertion evidence mismatch.",
+		}
+	}
+	return nil
+}
+
+func missingTestIDs(tests []TestOutcome, required []string) []string {
+	missing := []string{}
+	for _, testID := range required {
+		if strings.TrimSpace(testID) == "" {
+			continue
+		}
+		if _, found := findTest(tests, testID); !found {
+			missing = append(missing, testID)
+		}
+	}
+	return missing
+}
+
+func assessmentDetails(issue *assessmentIssue, role string) map[string]any {
+	details := map[string]any{"assessment": role}
+	for key, value := range issue.Details {
+		details[key] = value
+	}
+	return details
 }
 
 // assessOne evaluates one solution in a separate clean workspace: the source
@@ -333,14 +445,14 @@ func (v *verifier) assessOne(role string, manifest Manifest, workspaceDir string
 		result := v.reject(StageTimeout, CodeStageTimeout, false,
 			fmt.Sprintf("The %s assessment exceeded its deadline.", role),
 			map[string]any{"stage": StageValidation, "assessment": role, "timeout": true})
-		return AssessmentReport{}, &result
+		return report, &result
 	case err != nil:
 		v.appendCheck(EvidenceCheck{Stage: StageValidation, ExitCode: -1,
 			Summary: roleTitle(role) + " assessment hit a platform fault."})
 		platform := v.platformFailure(nil, StageValidation, err,
 			fmt.Sprintf("The %s assessment could not complete.", role))
 		platform.Diagnostics[0].Details = map[string]any{"stage": StageValidation, "assessment": role, "error": err.Error()}
-		return AssessmentReport{}, &platform
+		return report, &platform
 	default:
 		return report, nil
 	}
@@ -393,20 +505,24 @@ func validateAssessmentSpec(spec *AssessmentSpec, manifest Manifest) error {
 			}
 		}
 	}
-	if strings.TrimSpace(spec.ExpectedFailure.TestID) == "" {
-		return errors.New("assessment inputs: expectedFailure.testId is required")
+	return validateExpectedFailure(spec.ExpectedFailure, "assessment inputs")
+}
+
+func validateExpectedFailure(failure ExpectedFailure, label string) error {
+	if strings.TrimSpace(failure.TestID) == "" {
+		return fmt.Errorf("%s: expectedFailure.testId is required", label)
 	}
-	if strings.TrimSpace(spec.ExpectedFailure.Code) == "" {
-		return errors.New("assessment inputs: expectedFailure.code is required")
+	if strings.TrimSpace(failure.Code) == "" {
+		return fmt.Errorf("%s: expectedFailure.code is required", label)
 	}
-	if strings.TrimSpace(spec.ExpectedFailure.Expected) == "" {
-		return errors.New("assessment inputs: expectedFailure.expected is required")
+	if strings.TrimSpace(failure.Expected) == "" {
+		return fmt.Errorf("%s: expectedFailure.expected is required", label)
 	}
-	if strings.TrimSpace(spec.ExpectedFailure.Actual) == "" {
-		return errors.New("assessment inputs: expectedFailure.actual is required")
+	if strings.TrimSpace(failure.Actual) == "" {
+		return fmt.Errorf("%s: expectedFailure.actual is required", label)
 	}
-	if strings.TrimSpace(spec.ExpectedFailure.Reason) == "" {
-		return errors.New("assessment inputs: expectedFailure.reason is required")
+	if strings.TrimSpace(failure.Reason) == "" {
+		return fmt.Errorf("%s: expectedFailure.reason is required", label)
 	}
 	return nil
 }
@@ -559,6 +675,10 @@ func roleTitle(role string) string {
 		return "Correct solution"
 	case RoleWrongSolution:
 		return "Wrong solution"
+	case RoleGeneratedReference:
+		return "Generated reference"
+	case RoleCorrectAlternative:
+		return "Correct alternative"
 	default:
 		return role
 	}

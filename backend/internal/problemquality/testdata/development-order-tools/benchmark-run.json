@@ -1,0 +1,17 @@
+{
+  "case_id": "development-order-tools",
+  "artifact_id": "development-order-tools-artifact",
+  "artifact_version": "0.1.0",
+  "artifact_root": "artifact",
+  "manifest_path": "manifest.json",
+  "development_fixture": true,
+  "reference": {
+    "id": "development-reference",
+    "files": {
+      "solution.py": "reference/solution.py"
+    },
+    "reviewed_by": "development-fixture",
+    "reviewed_at": "2026-11-13T00:00:00Z",
+    "reviewed_reference": "development fixture only; not human approval"
+  }
+}

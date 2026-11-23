@@ -1,0 +1,46 @@
+{
+  "technology": "spring-boot",
+  "strategy": "http",
+  "title": "Greeting Endpoint",
+  "description": "Implement a Spring Boot REST endpoint that accepts a name query parameter and returns a JSON greeting.",
+  "category": "web",
+  "subcategory": "http-routing",
+  "tags": ["spring-boot", "rest", "http", "json", "validation"],
+  "difficulty": 2,
+  "estimated_minutes": 20,
+  "hints": ["Use @GetMapping for the route.", "Validate the name parameter before building the response."],
+  "entrypoint": "src/main/java/com/codegym/exercise/GreetingController.java",
+  "signature": "GET /greeting?name={name}",
+  "io_contract": "GET /greeting?name={name} returns 200 OK with JSON {\"message\":\"Hello, <name>!\"} when name is non-blank. A missing or blank name returns 400 Bad Request with JSON {\"error\":\"name is required\"}. Unknown query parameters are ignored.",
+  "comparator": { "kind": "exact" },
+  "ambiguity_resolutions": [
+    "A missing name returns 400 Bad Request.",
+    "A blank name returns 400 Bad Request.",
+    "The success response uses the JSON field \"message\".",
+    "The error response uses the JSON field \"error\".",
+    "Unknown query parameters are ignored.",
+    "The greeting includes the submitted name without trimming.",
+    "The response content type is application/json."
+  ],
+  "http_contract": {
+    "method": "GET",
+    "path": "/greeting",
+    "request": {
+      "query": {
+        "name": "string"
+      }
+    },
+    "responses": {
+      "200": {
+        "json": {
+          "message": "string"
+        }
+      },
+      "400": {
+        "json": {
+          "error": "string"
+        }
+      }
+    }
+  }
+}

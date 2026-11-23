@@ -225,7 +225,7 @@ func parseUnittestReport(output string, exitCode int) AssessmentReport {
 		}
 	}
 	if len(outcomes) > 0 {
-		return AssessmentReport{Tests: outcomes}
+		return AssessmentReport{Tests: outcomes, ExitCode: intPointer(exitCode)}
 	}
 	if exitCode != 0 {
 		excerpt := output
@@ -233,7 +233,7 @@ func parseUnittestReport(output string, exitCode int) AssessmentReport {
 			excerpt = excerpt[len(excerpt)-1000:]
 		}
 		compileErr := strings.TrimSpace(excerpt)
-		return AssessmentReport{CompileError: &compileErr}
+		return AssessmentReport{CompileError: &compileErr, ExitCode: intPointer(exitCode)}
 	}
 	return AssessmentReport{}
 }

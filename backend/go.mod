@@ -4,8 +4,10 @@ go 1.25.4
 
 require (
 	github.com/auth0/go-jwt-middleware/v3 v3.2.0
+	github.com/daytona/clients/api-client-go v0.196.0
 	github.com/daytona/clients/sdk-go v0.196.0
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -24,7 +26,6 @@ require (
 	github.com/aws/smithy-go v1.25.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/daytona/clients/api-client-go v0.196.0 // indirect
 	github.com/daytona/clients/toolbox-api-client-go v0.196.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect

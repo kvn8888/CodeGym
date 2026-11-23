@@ -230,7 +230,7 @@ func (a SandboxAssessor) Assess(ctx context.Context, work environmentverify.Asse
 	// A fresh, role-specific directory per assessment keeps the correct and
 	// wrong solutions from ever observing each other's files.
 	remoteDir := path.Join(scratch, assessmentDirName(work.Role))
-	if err := a.uploadTree(ctx, workDir, remoteDir); err != nil {
+	if err := uploadSandboxTree(ctx, a.Executor, workDir, remoteDir); err != nil {
 		return environmentverify.AssessmentReport{}, err
 	}
 	defer func() {
@@ -267,11 +267,11 @@ func assessmentDirName(role string) string {
 	return safe
 }
 
-// uploadTree mirrors a host workspace into the sandbox. Symlinks are not
-// followed: the verifier rejects artifact symlinks before assessment, so a
+// uploadSandboxTree mirrors a host workspace into the sandbox. Symlinks are
+// not followed: the verifier rejects artifact symlinks before assessment, so a
 // symlink here would already be a fault worth failing on.
-func (a SandboxAssessor) uploadTree(ctx context.Context, hostRoot, remoteRoot string) error {
-	if _, _, err := a.Executor.ExecuteCommand(ctx, "mkdir -p "+shellSingleQuote(remoteRoot), time.Minute); err != nil {
+func uploadSandboxTree(ctx context.Context, executor agentruntime.SandboxExecutor, hostRoot, remoteRoot string) error {
+	if _, _, err := executor.ExecuteCommand(ctx, "mkdir -p "+shellSingleQuote(remoteRoot), time.Minute); err != nil {
 		return fmt.Errorf("envintegration: create assessment scratch directory: %w", err)
 	}
 	return filepath.WalkDir(hostRoot, func(hostPath string, entry os.DirEntry, err error) error {
@@ -290,7 +290,7 @@ func (a SandboxAssessor) uploadTree(ctx context.Context, hostRoot, remoteRoot st
 		}
 		remotePath := path.Join(remoteRoot, filepath.ToSlash(rel))
 		if entry.IsDir() {
-			if _, _, mkErr := a.Executor.ExecuteCommand(ctx, "mkdir -p "+shellSingleQuote(remotePath), time.Minute); mkErr != nil {
+			if _, _, mkErr := executor.ExecuteCommand(ctx, "mkdir -p "+shellSingleQuote(remotePath), time.Minute); mkErr != nil {
 				return fmt.Errorf("envintegration: create sandbox directory %q: %w", remotePath, mkErr)
 			}
 			return nil
@@ -302,7 +302,7 @@ func (a SandboxAssessor) uploadTree(ctx context.Context, hostRoot, remoteRoot st
 		if readErr != nil {
 			return fmt.Errorf("envintegration: read workspace file %q: %w", rel, readErr)
 		}
-		if upErr := a.Executor.UploadFile(ctx, content, remotePath); upErr != nil {
+		if upErr := executor.UploadFile(ctx, content, remotePath); upErr != nil {
 			return fmt.Errorf("envintegration: upload workspace file %q: %w", rel, upErr)
 		}
 		return nil
@@ -327,6 +327,143 @@ func (r SandboxCommandRunner) timeoutFor(ctx context.Context) time.Duration {
 }
 
 func (a SandboxAssessor) timeoutFor(ctx context.Context) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			return remaining
+		}
+		return time.Nanosecond
+	}
+	return a.Timeout
+}
+
+// UploadTree copies a local directory tree into a sandbox, preserving relative
+// paths. It is the reverse of SandboxTreeMaterializer and lets host-owned
+// artifacts run in a sandbox without first being promoted to a snapshot.
+func UploadTree(ctx context.Context, executor agentruntime.SandboxExecutor, localRoot, remoteRoot string) error {
+	if executor == nil {
+		return errors.New("envintegration: sandbox executor is required to upload a tree")
+	}
+	localRoot = strings.TrimSpace(localRoot)
+	remoteRoot = strings.TrimRight(strings.TrimSpace(remoteRoot), "/")
+	if localRoot == "" || remoteRoot == "" {
+		return errors.New("envintegration: local and remote roots are required to upload a tree")
+	}
+	info, err := os.Stat(localRoot)
+	if err != nil {
+		return fmt.Errorf("envintegration: stat local root: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("envintegration: local root %q is not a directory", localRoot)
+	}
+	if _, _, err := executor.ExecuteCommand(ctx, "mkdir -p "+shellSingleQuote(remoteRoot), time.Minute); err != nil {
+		return fmt.Errorf("envintegration: create remote root: %w", err)
+	}
+	return filepath.WalkDir(localRoot, func(hostPath string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if walkErr := ctx.Err(); walkErr != nil {
+			return walkErr
+		}
+		rel, relErr := filepath.Rel(localRoot, hostPath)
+		if relErr != nil {
+			return relErr
+		}
+		if rel == "." {
+			return nil
+		}
+		remotePath := path.Join(remoteRoot, filepath.ToSlash(rel))
+		if entry.IsDir() {
+			if _, _, mkErr := executor.ExecuteCommand(ctx, "mkdir -p "+shellSingleQuote(remotePath), time.Minute); mkErr != nil {
+				return fmt.Errorf("envintegration: create remote directory %q: %w", remotePath, mkErr)
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("envintegration: local tree contains a non-regular file %q", rel)
+		}
+		content, readErr := os.ReadFile(hostPath)
+		if readErr != nil {
+			return fmt.Errorf("envintegration: read local file %q: %w", rel, readErr)
+		}
+		if upErr := executor.UploadFile(ctx, content, remotePath); upErr != nil {
+			return fmt.Errorf("envintegration: upload %q: %w", rel, upErr)
+		}
+		return nil
+	})
+}
+
+// SandboxProtocolAssessor runs one assessment in a sandbox and parses the
+// CODEGYM_TEST protocol from its output. Unlike SandboxAssessor, which only
+// reports suite-level pass/fail for practice runs, this assessor produces the
+// structured per-test evidence the problem-quality benchmark requires.
+type SandboxProtocolAssessor struct {
+	Executor   agentruntime.SandboxExecutor
+	ScratchDir string
+	Timeout    time.Duration
+	// SourceRemoteRoot is the sandbox artifact tree where setup commands
+	// installed dependencies. CopyIntoWorkspace lists directories that must
+	// be copied from that tree into each fresh assessment workspace.
+	SourceRemoteRoot  string
+	CopyIntoWorkspace []string
+}
+
+// Assess uploads the prepared workspace into a fresh sandbox directory, runs
+// the manifest test command there, and returns parsed test outcomes.
+func (a *SandboxProtocolAssessor) Assess(ctx context.Context, work environmentverify.AssessmentWork) (environmentverify.AssessmentReport, error) {
+	if a == nil || a.Executor == nil {
+		return environmentverify.AssessmentReport{}, errors.New("envintegration: sandbox executor is required to assess a solution")
+	}
+	testCommand := strings.TrimSpace(work.TestCommand)
+	if testCommand == "" {
+		return environmentverify.AssessmentReport{}, errors.New("envintegration: manifest declares no test command")
+	}
+	workDir := strings.TrimSpace(work.WorkDir)
+	if workDir == "" {
+		return environmentverify.AssessmentReport{}, errors.New("envintegration: assessment workspace is required")
+	}
+	scratch := strings.TrimRight(strings.TrimSpace(a.ScratchDir), "/")
+	if scratch == "" {
+		scratch = defaultAssessScratchDir
+	}
+	remoteDir := path.Join(scratch, "protocol-"+assessmentDirName(work.Role))
+	if err := uploadSandboxTree(ctx, a.Executor, workDir, remoteDir); err != nil {
+		return environmentverify.AssessmentReport{}, err
+	}
+	for _, relative := range a.CopyIntoWorkspace {
+		source := path.Join(a.SourceRemoteRoot, strings.Trim(relative, "/"))
+		destination := path.Join(remoteDir, strings.Trim(relative, "/"))
+		command := "if [ -d " + shellSingleQuote(source) + " ]; then cp -a " +
+			shellSingleQuote(source) + " " + shellSingleQuote(destination) + "; fi"
+		if _, _, err := a.Executor.ExecuteCommand(ctx, command, time.Minute); err != nil {
+			return environmentverify.AssessmentReport{}, fmt.Errorf("envintegration: copy dependency %q into assessment workspace: %w", relative, err)
+		}
+	}
+	defer func() {
+		_, _, _ = a.Executor.ExecuteCommand(context.WithoutCancel(ctx), "rm -rf "+shellSingleQuote(remoteDir), time.Minute)
+	}()
+	started := time.Now()
+	wrapped := "cd " + shellSingleQuote(remoteDir) + " && " + testCommand
+	exitCode, output, err := a.Executor.ExecuteCommand(ctx, wrapped, a.timeoutFor(ctx))
+	elapsed := time.Since(started).Milliseconds()
+	if err != nil {
+		return environmentverify.AssessmentReport{}, err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return environmentverify.AssessmentReport{}, ctxErr
+	}
+	report := environmentverify.AssessmentReport{
+		Tests:     environmentverify.ParseTestOutcomes(output),
+		ExitCode:  &exitCode,
+		ElapsedMS: &elapsed,
+	}
+	if len(report.Tests) == 0 {
+		report.OutputTail = tailOutput(output, 1000)
+	}
+	return report, nil
+}
+
+func (a *SandboxProtocolAssessor) timeoutFor(ctx context.Context) time.Duration {
 	if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining > 0 {
 			return remaining
